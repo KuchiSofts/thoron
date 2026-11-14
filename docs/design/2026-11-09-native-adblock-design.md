@@ -1792,10 +1792,11 @@ response's body. Thoron is the browser, so it does it for every page:
 - **HTML filtering** (`site##^script:has-text(adblock)`): the elements a rule names are taken out of a
   page's or a frame's HTML before it is parsed, so such a script never runs. A rule names one element by
   its tag (one whose content is text, as `script` or `style`, or that has none, as `meta`), its attributes
-  (`[src*="ads"]`, `[http-equiv="refresh"]`) and `:has-text(text)` or `:has-text(/pattern/flags)`. A rule
-  with any other part (combinators, `:upward()`), or for every site, is left out: about 360 of the
-  bundled lists' 386 rules are taken. `#@#^` takes a rule back on the sites it names. Not where the
-  menu's "no hiding" switch is on, nor where ads are allowed. From any list.
+  (`[src*="ads"]`, `[http-equiv="refresh"]`), its id and classes, `:has-text(text)` or
+  `:has-text(/pattern/flags)` and `:not()` of those: 357 of the bundled lists' 386 rules. A rule that
+  needs the page's structure goes to the page runner (12.55): the other 29. `#@#^` takes a rule back on
+  the sites it names. Not where the menu's "no hiding" switch is on, nor where ads are allowed. From any
+  list.
 - **`##^responseheader(name)`**: the header is taken out of a document's answer; only the headers uBlock
   Origin allows (`location`, `refresh`, `report-to`, `set-cookie`), from trusted lists only.
 - **`$replace=/pattern/text/flags`**: the text is replaced in an answer where the rule's address and
@@ -1818,6 +1819,30 @@ response's body. Thoron is the browser, so it does it for every page:
   sync carries it to the person's other computers when it is on for settings; without sync it stays on
   this computer. It is written only when the person chooses "Send to cloud storage".
 - **Checked** by `tools/qa/adblock_backup_check.py` (new step: send, reset, restore from cloud storage).
+
+### 12.55 HTML filters on the page's structure (P5.68, 2026-11-14)
+
+- The HTML filters that need the whole page to decide (`html > head > link[rel="canonical"]:not(...):upward(1)
+  > script`, `body:not(:has(#player)) > script`, any element with content) are compiled as the page runner's
+  rules (procedural.rs) and sent with the document, flagged to be taken out early. The runner watches the
+  document from its start and takes out what they find as soon as the parser adds it: the parser lets
+  pending observers run before it runs a script it added, and a script taken out by then never runs. With
+  12.53, every HTML filter of the bundled lists is applied (357 on the text, 29 by the runner).
+- **Checked** by `tools/qa/adblock_htmlfilter_check.py` (new step: two such rules keep their scripts from
+  running where their conditions hold, and let them run where they do not) and engine tests.
+
+### 12.56 The last of uBlock Origin's settings (P5.69, 2026-11-14)
+
+- **Accent color**, as uBlock Origin's "Custom accent color": a colour (`#rrggbb`, nothing else is taken) for
+  the settings page and the menu, kept with the options; "As it was" takes it back.
+- **Disable tooltips**, as uBlock Origin's: no tooltip on either page while it is on.
+- **Storage used**, as uBlock Origin shows it: what the blocker's store takes on disk (lists, engine,
+  settings), measured on the background sequence.
+- **The logger's "Reload"**: reloads the tab the logger shows, as uBlock Origin's logger.
+- **"Update now"** downloads every list again, with no saved copy reused: uBlock Origin's "Purge all caches"
+  and "Update now" in one; the page says so.
+- **Checked** by `tools/qa/adblock_tools_check.py` (new step "look") and `adblock_backup_check.py` (the
+  accent colour is taken back by a reset).
 
 ## 13. Credits
 

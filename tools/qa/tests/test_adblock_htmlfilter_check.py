@@ -24,6 +24,13 @@ class StepTests(unittest.TestCase):
         self.assertEqual(hc.other_problems("other", {"detector": "thoron-detector", "kept": "thoronOldWord"}), [])
         self.assertEqual(len(hc.other_problems("other", {"detector": None, "kept": "thoronOldWord"})), 1)
 
+    def test_structure(self):
+        gone = {"structured": None, "gtm": None}
+        ran = {"structured": "thoron-structure", "gtm": "thoron-gtm"}
+        self.assertEqual(hc.structure_problems(gone, ran), [])
+        self.assertEqual(len(hc.structure_problems(ran, gone)), 4)
+        self.assertIn('href="/recipes/1"', hc.RECIPES)
+
     def test_the_rules_and_pages(self):
         self.assertIn(f"{hc.SPARED}#@#^script:has-text(thoron-detector)", hc.MY_FILTERS)
         self.assertIn("thoron-detector", hc.PAGE)

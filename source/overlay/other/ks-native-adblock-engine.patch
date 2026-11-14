@@ -1433,10 +1433,10 @@ index 0000000000000000000000000000000000000000..e7fdc2cc1be5bcc44fbf06d71b7df8bb
 +}
 diff --git a/components/thoron_adblock/cosmetics.rs b/components/thoron_adblock/cosmetics.rs
 new file mode 100644
-index 0000000000000000000000000000000000000000..be9011fc2dfbbffe621e1ed2a56105e589372755
+index 0000000000000000000000000000000000000000..8ad5cef0e493e802a235f53b35d9de46a2774c13
 --- /dev/null
 +++ b/components/thoron_adblock/cosmetics.rs
-@@ -0,0 +1,327 @@
+@@ -0,0 +1,342 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -1621,6 +1621,9 @@ index 0000000000000000000000000000000000000000..be9011fc2dfbbffe621e1ed2a56105e5
 +    /// The text of each rule of `procedural` ("p:has-text(Ad)"), which the runner names to the
 +    /// logger.
 +    labels: Vec<String>,
++    /// HTML filters that need the page's structure (html.rs): for the runner, which takes the
++    /// elements out as the parser adds them; with their text.
++    early: Vec<(String, String)>,
 +    hide_mark: Option<String>,
 +    /// Declarations of `:style()` rules with a procedural selector, and the mark for each.
 +    style_marks: Vec<(String, String)>,
@@ -1697,16 +1700,19 @@ index 0000000000000000000000000000000000000000..be9011fc2dfbbffe621e1ed2a56105e5
 +    }
 +
 +    fn isolated_script(&self) -> String {
-+        if self.procedural.is_empty() {
++        if self.procedural.is_empty() && self.early.is_empty() {
 +            return String::new();
 +        }
-+        // each rule with its text ("r"), for the logger
-+        let rules: Vec<String> = self
++        // each rule with its text ("r"), for the logger; "e": taken out as the parser adds it
++        let mut rules: Vec<String> = self
 +            .procedural
 +            .iter()
 +            .zip(&self.labels)
 +            .map(|(rule, label)| format!("{},\"r\":{}}}", &rule[..rule.len() - 1], procedural::json_string(label)))
 +            .collect();
++        rules.extend(self.early.iter().map(|(rule, label)| {
++            format!("{},\"r\":{},\"e\":1}}", &rule[..rule.len() - 1], procedural::json_string(label))
++        }));
 +        format!("{}([{}]);\n", runner(), rules.join(","))
 +    }
 +}
@@ -1736,6 +1742,15 @@ index 0000000000000000000000000000000000000000..be9011fc2dfbbffe621e1ed2a56105e5
 +    for action in sorted(found.procedural_actions) {
 +        if let Some((selector, kind, arg)) = parse_action(&action) {
 +            cosmetics.act(&selector, &kind, &arg);
++        }
++    }
++    // HTML filters that need the page's structure: the runner takes the elements out early
++    let host = adblock::request::Request::new(url, url, "document", "GET")
++        .map(|r| r.hostname.to_ascii_lowercase())
++        .unwrap_or_default();
++    for selector in filters.html.structural_for_page(&host) {
++        if let Some(compiled) = procedural::compile(&selector) {
++            cosmetics.early.push((as_program(compiled).filter_json(&["remove"]), format!("^{selector}")));
 +        }
 +    }
 +    Page {
@@ -3582,10 +3597,10 @@ index 0000000000000000000000000000000000000000..5aeba22af3be4716ff8b31316d08da4a
 +}
 diff --git a/components/thoron_adblock/engine.rs b/components/thoron_adblock/engine.rs
 new file mode 100644
-index 0000000000000000000000000000000000000000..b15da9f53ef8d6c613e3ede8ec44f8d47880ff38
+index 0000000000000000000000000000000000000000..7039c741a56fad1aafa156043eae217198c618a5
 --- /dev/null
 +++ b/components/thoron_adblock/engine.rs
-@@ -0,0 +1,1294 @@
+@@ -0,0 +1,1310 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -4367,6 +4382,22 @@ index 0000000000000000000000000000000000000000..b15da9f53ef8d6c613e3ede8ec44f8d4
 +        assert!(engine.should_block("https://ads.example/a.js", "https://news.example/", "script"));
 +        assert!(!engine.should_block("https://ads.example/wanted.js", "https://news.example/", "script"));
 +        assert!(engine.document_resources("https://news.example/").hide_selectors.contains(&".promo".to_string()));
++    }
++
++    #[test]
++    fn html_filters_on_the_page_s_structure_go_to_the_runner() {
++        let e = engine_from_rules(
++            "news.example##^html > head > link[rel=\"canonical\"]:not([href*=\"/recipes/\"]):upward(1) > \
++             script:has-text(detect)\n\
++             news.example##^body:not(:has(#player)) > script:has-text(gtm)\n",
++        );
++        let d = e.document_resources(NEWS);
++        assert!(d.isolated_script.contains(r#""a":["remove"],"r":"^html > head > link"#), "{}", d.isolated_script);
++        assert!(d.isolated_script.contains(r#""e":1"#), "{}", d.isolated_script);
++        assert_eq!(d.isolated_script.matches(r#""e":1"#).count(), 2, "{}", d.isolated_script);
++        // not for another site, and not as a hide rule or a filter of the text
++        assert!(e.document_resources("https://shop.example/").isolated_script.is_empty());
++        assert!(e.html_rules_for(NEWS).is_empty());
 +    }
 +
 +    #[test]
@@ -5364,16 +5395,17 @@ index 0000000000000000000000000000000000000000..bf2854f6cc4c9af58acc054451588ff4
 +}
 diff --git a/components/thoron_adblock/engine_service.cc b/components/thoron_adblock/engine_service.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..95885a55fcaf5b51cb13e78dad793466339fb882
+index 0000000000000000000000000000000000000000..e469f4373a21ce219c445881e1eb64e40205010c
 --- /dev/null
 +++ b/components/thoron_adblock/engine_service.cc
-@@ -0,0 +1,1415 @@
+@@ -0,0 +1,1459 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
 +#include "components/thoron_adblock/engine_service.h"
 +
 +#include <string>
++#include <algorithm>
 +#include <utility>
 +
 +#include "base/command_line.h"
@@ -5524,11 +5556,19 @@ index 0000000000000000000000000000000000000000..95885a55fcaf5b51cb13e78dad793466
 +    // and "I am an advanced user" (the menu's grid of rules; on here)
 +    {"auto-update", true},       {"context-menu", true},
 +    {"advanced", true},          {"colorblind", false},
++    // uBlock Origin's "Disable tooltips"
++    {"no-tooltips", false},
 +};
 +// "Block media elements larger than N kB": what N is unless changed, and the
 +// most it may be.
 +constexpr int kDefaultMediaKb = 50;
 +constexpr int kMaxMediaKb = 1024 * 1024;
++
++// "#rrggbb": the only form of a colour the pages take.
++bool IsColor(std::string_view text) {
++  return text.size() == 7 && text[0] == '#' &&
++         std::all_of(text.begin() + 1, text.end(), base::IsHexDigit<char>);
++}
 +
 +// The switches that can be on for every site.
 +bool HasDefault(std::string_view name) {
@@ -5610,6 +5650,10 @@ index 0000000000000000000000000000000000000000..95885a55fcaf5b51cb13e78dad793466
 +          theme && (*theme == "light" || *theme == "dark")) {
 +        out.theme = *theme;
 +      }
++      if (const std::string* accent = value->GetDict().FindString("accent");
++          accent && IsColor(*accent)) {
++        out.accent = *accent;
++      }
 +      if (const base::DictValue* keys = value->GetDict().FindDict("shortcuts")) {
 +        for (const auto [command, combo] : *keys) {
 +          if (combo.is_string() && KnownShortcut(command) &&
@@ -5647,6 +5691,9 @@ index 0000000000000000000000000000000000000000..95885a55fcaf5b51cb13e78dad793466
 +  }
 +  if (theme_.empty()) {
 +    theme_ = std::move(state.theme);
++  }
++  if (accent_.empty()) {
++    accent_ = std::move(state.accent);
 +  }
 +  // shortcuts set before the file was read win
 +  if (shortcuts_.empty()) {
@@ -5760,6 +5807,31 @@ index 0000000000000000000000000000000000000000..95885a55fcaf5b51cb13e78dad793466
 +int EngineService::large_media_kb() const {
 +  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 +  return media_kb_ != 0 ? media_kb_ : kDefaultMediaKb;
++}
++
++bool EngineService::SetAccent(std::string_view accent) {
++  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
++  if (!accent.empty() && !IsColor(accent)) {
++    return false;
++  }
++  accent_ = std::string(accent);
++  SaveOptions();
++  return true;
++}
++
++void EngineService::StorageUsed(StorageUsedDone done) {
++  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
++  EnsureStarted();
++  if (store_dir_.empty()) {
++    std::move(done).Run(0);
++    return;
++  }
++  file_runner_->PostTaskAndReplyWithResult(
++      FROM_HERE,
++      base::BindOnce(
++          [](base::FilePath dir) { return base::ComputeDirectorySize(dir); },
++          store_dir_),
++      std::move(done));
 +}
 +
 +bool EngineService::SetTheme(std::string_view theme) {
@@ -6059,6 +6131,9 @@ index 0000000000000000000000000000000000000000..95885a55fcaf5b51cb13e78dad793466
 +  }
 +  if (!theme_.empty()) {
 +    dict.Set("theme", theme_);
++  }
++  if (!accent_.empty()) {
++    dict.Set("accent", accent_);
 +  }
 +  if (!shortcuts_.empty()) {
 +    base::DictValue keys;
@@ -6785,10 +6860,10 @@ index 0000000000000000000000000000000000000000..95885a55fcaf5b51cb13e78dad793466
 +}  // namespace thoron_adblock
 diff --git a/components/thoron_adblock/engine_service.h b/components/thoron_adblock/engine_service.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..5c98540264394f831185092e5fd25cdba164c9e6
+index 0000000000000000000000000000000000000000..da3a5050272d3b992b433fa4f4f7a80a39db66e2
 --- /dev/null
 +++ b/components/thoron_adblock/engine_service.h
-@@ -0,0 +1,427 @@
+@@ -0,0 +1,437 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -7100,6 +7175,13 @@ index 0000000000000000000000000000000000000000..5c98540264394f831185092e5fd25cdb
 +  // False for another name.
 +  const std::string& theme() const { return theme_; }
 +  bool SetTheme(std::string_view theme);
++  // uBlock Origin's "Custom accent color" of its pages: "#rrggbb", or "" (the
++  // pages' own). False for anything else.
++  const std::string& accent() const { return accent_; }
++  bool SetAccent(std::string_view accent);
++  // uBlock Origin's "Storage used": the bytes the store takes on disk.
++  using StorageUsedDone = base::OnceCallback<void(int64_t)>;
++  void StorageUsed(StorageUsedDone done);
 +  // uBlock Origin's keyboard shortcuts, set on chrome://adblock: command ->
 +  // keys ("Ctrl+Shift+E"). The commands: "picker", "zapper", "logger",
 +  // "dashboard", "power" (blocking off or on for the site), "cosmetic" (hiding
@@ -7147,6 +7229,7 @@ index 0000000000000000000000000000000000000000..5c98540264394f831185092e5fd25cdb
 +    std::map<std::string, bool> options;
 +    int media_kb = 0;
 +    std::string theme;
++    std::string accent;
 +    std::map<std::string, std::string> shortcuts;
 +    std::string my_rules;
 +    int64_t total = 0;
@@ -7184,6 +7267,8 @@ index 0000000000000000000000000000000000000000..5c98540264394f831185092e5fd25cdb
 +  int media_kb_ = 0;
 +  // "" (as the system), "light" or "dark".
 +  std::string theme_;
++  // "" or "#rrggbb".
++  std::string accent_;
 +  std::map<std::string, std::string> shortcuts_;
 +  // "My rules" as saved, and the rules in force (with what the menu's grid
 +  // changed for now); `my_rules_` is read from the second.
@@ -8412,10 +8497,10 @@ index 0000000000000000000000000000000000000000..14d8a42b54fdbb2d0b66c56140e37796
 +}
 diff --git a/components/thoron_adblock/html.rs b/components/thoron_adblock/html.rs
 new file mode 100644
-index 0000000000000000000000000000000000000000..eaf5962065cc279cc4a210f38f6d7d24b2b044f7
+index 0000000000000000000000000000000000000000..3ee75daa92e17f76f0aa9cad148e94a69b105d88
 --- /dev/null
 +++ b/components/thoron_adblock/html.rs
-@@ -0,0 +1,837 @@
+@@ -0,0 +1,870 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -8426,8 +8511,11 @@ index 0000000000000000000000000000000000000000..eaf5962065cc279cc4a210f38f6d7d24
 +//!   before it is parsed, so a script never runs. A rule names one element by its tag (one whose
 +//!   content is text, as `script`, or that has none, as `meta`), its id and classes (`#ads`,
 +//!   `.promo`), its attributes (`[src*="ads"]`), `:has-text(text)` or `:has-text(/pattern/)`, and
-+//!   `:not()` with any of those. A rule with any other part, or for every site, is left out. `#@#^`
-+//!   takes a rule back on the sites it names.
++//!   `:not()` with any of those, is taken out of the HTML text. A rule that needs the page's structure
++//!   (combinators, `:has()`, `:upward()`, or an element with content) is the page runner's: it takes
++//!   the element out as soon as the parser adds it, before a script among them runs (cosmetics.rs,
++//!   procedural.js). A rule for every site is left out. `#@#^` takes a rule back on the sites it
++//!   names.
 +//! - `example.com##^responseheader(location)`: a header taken out of a document's answer; only the
 +//!   headers uBlock Origin allows (`location`, `refresh`, `report-to`, `set-cookie`), from trusted
 +//!   lists only.
@@ -8711,6 +8799,8 @@ index 0000000000000000000000000000000000000000..eaf5962065cc279cc4a210f38f6d7d24
 +#[derive(Default)]
 +pub struct HtmlRules {
 +    rules: Vec<(Vec<String>, Vec<String>, Element)>,
++    /// The rules that need the page's structure: for the runner.
++    structural: Vec<(Vec<String>, Vec<String>, String)>,
 +    exceptions: Vec<(Vec<String>, Vec<String>, String)>,
 +    /// The rules as the lists wrote them, one per line: what is saved with the engine.
 +    pub text: String,
@@ -8736,6 +8826,8 @@ index 0000000000000000000000000000000000000000..eaf5962065cc279cc4a210f38f6d7d24
 +                continue; // not for every site: it would put the work on every page
 +            } else if let Some(found) = element(selector) {
 +                out.rules.push((yes, no, found));
++            } else if !selector.trim().is_empty() && selector.len() <= MAX_SELECTOR {
++                out.structural.push((yes, no, selector.trim().to_string()));
 +            } else {
 +                continue;
 +            }
@@ -8743,6 +8835,26 @@ index 0000000000000000000000000000000000000000..eaf5962065cc279cc4a210f38f6d7d24
 +            out.text.push('\n');
 +        }
 +        out
++    }
++
++    /// The rules that need the page's structure, for a page of `host` (the runner's).
++    pub fn structural_for_page(&self, host: &str) -> Vec<String> {
++        if self.structural.is_empty() || host.is_empty() {
++            return Vec::new();
++        }
++        let host = host.to_ascii_lowercase();
++        let taken_back: HashSet<&str> = self
++            .exceptions
++            .iter()
++            .filter(|(yes, no, _)| for_host(&host, yes, no))
++            .map(|(_, _, selector)| selector.as_str())
++            .collect();
++        self.structural
++            .iter()
++            .filter(|(yes, no, selector)| for_host(&host, yes, no) && !taken_back.contains(selector.as_str()))
++            .map(|(_, _, selector)| selector.clone())
++            .take(MAX_PAGE_RULES)
++            .collect()
 +    }
 +
 +    /// The selectors for a page of `host`, as JSON ("" for none): what `rewrite` takes.
@@ -9192,8 +9304,14 @@ index 0000000000000000000000000000000000000000..eaf5962065cc279cc4a210f38f6d7d24
 +    #[test]
 +    fn what_cannot_be_taken_out_is_left_out() {
 +        let rules = HtmlRules::from_rules(LISTS);
-+        // the div, the combinators, the rule for every site, the header rule: not HTML filters taken
++        // the div and the combinators are the runner's; the rule for every site and the header rule are
++        // not HTML filters taken
 +        assert_eq!(rules.rules.len(), 4);
++        assert_eq!(
++            rules.structural_for_page("news.example"),
++            vec!["div:has-text(x)".to_string(), "html > head > script".to_string()]
++        );
++        assert!(rules.structural_for_page("shop.example").is_empty());
 +        assert!(element("script:has-text(a):upward(1)").is_none());
 +        assert!(element("script[src*=\"a\"]:has-text(/(/)").is_none(), "a pattern that is not one");
 +        assert!(element("script[data-cfasync]:has-text(/h=decodeURIComponent|popundersPerIP/)").is_some());
@@ -9255,10 +9373,10 @@ index 0000000000000000000000000000000000000000..eaf5962065cc279cc4a210f38f6d7d24
 +}
 diff --git a/components/thoron_adblock/i18n.js b/components/thoron_adblock/i18n.js
 new file mode 100644
-index 0000000000000000000000000000000000000000..cef07f9ba4bef875705c292b1f45190f45b03a32
+index 0000000000000000000000000000000000000000..097df80653675a0bc62d6e7145cc06eed15f60a4
 --- /dev/null
 +++ b/components/thoron_adblock/i18n.js
-@@ -0,0 +1,1118 @@
+@@ -0,0 +1,1151 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -9664,6 +9782,33 @@ index 0000000000000000000000000000000000000000..cef07f9ba4bef875705c292b1f45190f
 +   `Das ist zu groß für den Cloud-Speicher (mehr als 100 kB): sichere stattdessen in eine Datei.`,
 +   `É grande demais para a nuvem (mais de 100 kB): faça backup em um arquivo.`,
 +   `Слишком большой объём для облачного хранилища (более 100 кБ): сохраните в файл.`],
++  [`Accent color`, `Color de acento`, `Couleur d'accent`, `Akzentfarbe`, `Cor de destaque`, `Цвет акцента`],
++  [`As it was`, `Como estaba`, `Comme avant`, `Wie vorher`, `Como era`, `Как было`],
++  [`Disable tooltips`, `Desactivar las descripciones emergentes`, `Désactiver les infobulles`,
++   `Tooltips ausschalten`, `Desativar as dicas`, `Отключить всплывающие подсказки`],
++  [`The accent color was changed.`, `Se cambió el color de acento.`, `La couleur d'accent a été changée.`,
++   `Die Akzentfarbe wurde geändert.`, `A cor de destaque foi alterada.`, `Цвет акцента изменён.`],
++  [`This is not a colour.`, `Esto no es un color.`, `Ce n'est pas une couleur.`, `Das ist keine Farbe.`,
++   `Isto não é uma cor.`, `Это не цвет.`],
++  [`"Update now" downloads every list again, as uBlock Origin's "Purge all caches" and "Update now" ` +
++       `together: no saved copy is reused.`,
++   `"Update now" vuelve a descargar todas las listas, como "Purge all caches" y "Update now" de uBlock ` +
++       `Origin juntos: no se reutiliza ninguna copia guardada.`,
++   `"Update now" télécharge de nouveau toutes les listes, comme "Purge all caches" et "Update now" ` +
++       `d'uBlock Origin ensemble : aucune copie enregistrée n'est réutilisée.`,
++   `"Update now" lädt alle Listen neu, wie "Purge all caches" und "Update now" von uBlock Origin ` +
++       `zusammen: keine gespeicherte Kopie wird wiederverwendet.`,
++   `"Update now" baixa todas as listas de novo, como "Purge all caches" e "Update now" do uBlock ` +
++       `Origin juntos: nenhuma cópia salva é reutilizada.`,
++   `"Update now" заново загружает все списки, как "Purge all caches" и "Update now" в uBlock Origin ` +
++       `вместе: сохранённые копии не используются.`],
++  [`Reload`, `Recargar`, `Recharger`, `Neu laden`, `Recarregar`, `Перезагрузить`],
++  [`Reload the tab shown`, `Recargar la pestaña mostrada`, `Recharger l'onglet affiché`,
++   `Den gezeigten Tab neu laden`, `Recarregar a aba mostrada`, `Перезагрузить показанную вкладку`],
++  [`The tab was reloaded.`, `Se recargó la pestaña.`, `L'onglet a été rechargé.`, `Der Tab wurde neu geladen.`,
++   `A aba foi recarregada.`, `Вкладка перезагружена.`],
++  [`That tab is closed.`, `Esa pestaña está cerrada.`, `Cet onglet est fermé.`, `Dieser Tab ist geschlossen.`,
++   `Essa aba está fechada.`, `Эта вкладка закрыта.`],
 +  [`View`, `Ver`, `Voir`, `Ansehen`, `Ver`, `Просмотр`],
 +  [`Only the first 200,000 of these lines are shown: the box above finds the others.`,
 +   `Solo se muestran las primeras 200.000 de estas líneas: el cuadro de arriba encuentra las demás.`,
@@ -10169,6 +10314,12 @@ index 0000000000000000000000000000000000000000..cef07f9ba4bef875705c292b1f45190f
 +    `Deine Regeln sind gespeichert und in Gebrauch. $1 Schalterzeilen wurden auf die Websites und Einstellungen angewandt.`,
 +    `Suas regras estão salvas e em uso. $1 linhas de interruptores foram aplicadas aos sites e às configurações.`,
 +    `Ваши правила сохранены и используются. Строк переключателей применено к сайтам и настройкам: $1.`]],
++  [/^Storage used: ([\d,.\s]+) MB$/, {},
++   [`Almacenamiento usado: $1 MB`, `Stockage utilisé : $1 Mo`, `Belegter Speicher: $1 MB`,
++    `Armazenamento usado: $1 MB`, `Занято места: $1 МБ`]],
++  [/^Storage used: ([\d,.\s]+) kB$/, {},
++   [`Almacenamiento usado: $1 kB`, `Stockage utilisé : $1 ko`, `Belegter Speicher: $1 kB`,
++    `Armazenamento usado: $1 kB`, `Занято места: $1 кБ`]],
 +  [/^These lines are not filters this blocker can use: (.*)$/, {},
 +   [`Estas líneas no son filtros que este bloqueador pueda usar: $1`,
 +    `Ces lignes ne sont pas des filtres utilisables par ce bloqueur : $1`,
@@ -13966,10 +14117,10 @@ index 0000000000000000000000000000000000000000..b9b582a7c40d6d0454ab92ce8358f54c
 +</html>
 diff --git a/components/thoron_adblock/popup_page.js b/components/thoron_adblock/popup_page.js
 new file mode 100644
-index 0000000000000000000000000000000000000000..d2cbde70dae9c7cdd6c2208f6363acfa386a2518
+index 0000000000000000000000000000000000000000..9040774cffef5a0afca5baaa1e40105d1dc1de4e
 --- /dev/null
 +++ b/components/thoron_adblock/popup_page.js
-@@ -0,0 +1,225 @@
+@@ -0,0 +1,251 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -13983,6 +14134,31 @@ index 0000000000000000000000000000000000000000..d2cbde70dae9c7cdd6c2208f6363acfa
 +const number = (n) => (n || 0).toLocaleString();
 +
 +let state = null;
++
++// uBlock Origin's "Custom accent color" and "Disable tooltips".
++let tooltipsOff = false;
++function showLook(accent, noTooltips) {
++  if (accent) {
++    document.documentElement.style.setProperty('--accent', accent);
++    document.documentElement.style.setProperty('--switch-on', accent);
++  } else {
++    document.documentElement.style.removeProperty('--accent');
++    document.documentElement.style.removeProperty('--switch-on');
++  }
++  tooltipsOff = !!noTooltips;
++  if (tooltipsOff) {
++    for (const element of document.querySelectorAll('[title]')) {
++      element.removeAttribute('title');
++    }
++  }
++}
++new MutationObserver(() => {
++  if (tooltipsOff) {
++    for (const element of document.querySelectorAll('[title]')) {
++      element.removeAttribute('title');
++    }
++  }
++}).observe(document.documentElement, {subtree: true, childList: true, attributes: true, attributeFilter: ['title']});
 +
 +function show(next) {
 +  state = next;
@@ -14024,6 +14200,7 @@ index 0000000000000000000000000000000000000000..d2cbde70dae9c7cdd6c2208f6363acfa
 +  } else {
 +    delete document.documentElement.dataset.theme;
 +  }
++  showLook(next.accent, next.noTooltips);
 +}
 +
 +// --- uBlock Origin's grid of rules (dynamic filtering): a change is in force at once, for now; Save keeps
@@ -14197,10 +14374,10 @@ index 0000000000000000000000000000000000000000..d2cbde70dae9c7cdd6c2208f6363acfa
 +setInterval(refresh, 1000);
 diff --git a/components/thoron_adblock/procedural.js b/components/thoron_adblock/procedural.js
 new file mode 100644
-index 0000000000000000000000000000000000000000..337c367213c015e03f65c4d3b7385e73c47d98be
+index 0000000000000000000000000000000000000000..c90d28eb43b9f193fb2eb74bae78c933b6a8454a
 --- /dev/null
 +++ b/components/thoron_adblock/procedural.js
-@@ -0,0 +1,367 @@
+@@ -0,0 +1,393 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +//
@@ -14435,7 +14612,8 @@ index 0000000000000000000000000000000000000000..337c367213c015e03f65c4d3b7385e73
 +    };
 +  }
 +
-+  const rules = filters.map((filter) => ({find: build(filter), action: filter.a, label: filter.r}));
++  const rules = filters.map((filter) => ({find: build(filter), action: filter.a, label: filter.r,
++                                          early: filter.e === 1}));
 +  // For the logger, while it is open: each rule the first time it finds an element (thoronReportHit is
 +  // there only then).
 +  const reported = new Set();
@@ -14556,6 +14734,31 @@ index 0000000000000000000000000000000000000000..337c367213c015e03f65c4d3b7385e73
 +    if (timer === 0) {
 +      timer = setTimeout(lookNow, Math.min(Math.max(50, cost * 10), 5000));
 +    }
++  }
++
++  // HTML filters that need the page's structure (uBlock Origin's `##^` with :has(), :upward()...): the
++  // elements are taken out as soon as the parser adds them. The parser lets pending observers run before
++  // it runs a script it added, and a script taken out by then never runs.
++  const early = rules.filter((rule) => rule.early);
++  if (early.length) {
++    const takeOut = () => {
++      for (const rule of early) {
++        let nodes;
++        try {
++          nodes = rule.find();
++        } catch (e) {
++          nodes = [];
++        }
++        for (const node of nodes) {
++          node.remove();
++        }
++        if (nodes.length) {
++          report(rule);
++        }
++      }
++    };
++    new MutationObserver(takeOut).observe(doc, {childList: true, subtree: true});
++    takeOut();
 +  }
 +
 +  new MutationObserver(schedule).observe(doc, {
@@ -16995,10 +17198,10 @@ index 0000000000000000000000000000000000000000..8ca3ab6f12cffec05fc98fb17aa21f44
 +#endif  // COMPONENTS_THORON_ADBLOCK_RENDERER_DOCUMENT_AGENT_H_
 diff --git a/components/thoron_adblock/settings_page.html b/components/thoron_adblock/settings_page.html
 new file mode 100644
-index 0000000000000000000000000000000000000000..c2cb8ab009af42e624d482081241a6e60a1cb769
+index 0000000000000000000000000000000000000000..9014fa4b5576e5222b518dbf80de6e403216ddb1
 --- /dev/null
 +++ b/components/thoron_adblock/settings_page.html
-@@ -0,0 +1,408 @@
+@@ -0,0 +1,417 @@
 +<!doctype html>
 +<!-- Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +     found in the LICENSE file.
@@ -17187,6 +17390,11 @@ index 0000000000000000000000000000000000000000..c2cb8ab009af42e624d482081241a6e6
 +        <option value="light">Light</option>
 +        <option value="dark">Dark</option>
 +      </select></div>
++    <div class="option"><label for="accent">Accent color</label>
++      <input id="accent" type="color" value="#7235da">
++      <button id="accent-default" type="button">As it was</button></div>
++    <label class="option"><input type="checkbox" data-setting="no-tooltips">
++      <span>Disable tooltips</span></label>
 +    <label class="option"><input type="checkbox" data-setting="colorblind">
 +      <span>Color-blind friendly: the menu's grid of rules in blue and orange instead of green and red</span></label>
 +    <label class="option"><input type="checkbox" data-setting="context-menu">
@@ -17230,6 +17438,7 @@ index 0000000000000000000000000000000000000000..c2cb8ab009af42e624d482081241a6e6
 +      from the defaults, to paste where you ask for help. No address you visited is in it.</p>
 +    <div class="row">
 +      <button id="copy-info" type="button">Copy troubleshooting info</button>
++      <span id="storage-used"></span>
 +    </div>
 +    <h3>Backup</h3>
 +    <p>A file with your lists, your own rules, allowed sites, switches and these settings. It stays where
@@ -17259,6 +17468,8 @@ index 0000000000000000000000000000000000000000..c2cb8ab009af42e624d482081241a6e6
 +      <button id="update-now" type="button">Update now</button>
 +      <span id="last-check"></span>
 +    </div>
++    <p class="note">"Update now" downloads every list again, as uBlock Origin's "Purge all caches" and "Update
++      now" together: no saved copy is reused.</p>
 +    <details id="result-box" hidden>
 +      <summary>What the last update did</summary>
 +      <pre id="result"></pre>
@@ -17384,6 +17595,7 @@ index 0000000000000000000000000000000000000000..c2cb8ab009af42e624d482081241a6e6
 +      <button id="log-pause" type="button" aria-pressed="false">Pause</button>
 +      <button id="log-clear" type="button">Clear</button>
 +      <button id="log-export" type="button">Export</button>
++      <button id="log-reload" type="button" title="Reload the tab shown">Reload</button>
 +      <span id="log-count"></span>
 +    </div>
 +    <div id="log"><table><tbody id="log-rows"></tbody></table></div>
@@ -17409,10 +17621,10 @@ index 0000000000000000000000000000000000000000..c2cb8ab009af42e624d482081241a6e6
 +</html>
 diff --git a/components/thoron_adblock/settings_page.js b/components/thoron_adblock/settings_page.js
 new file mode 100644
-index 0000000000000000000000000000000000000000..b11ad23ed0480e74fc53bc6bbccb2964e0e7b1b3
+index 0000000000000000000000000000000000000000..ce9e1018ec86152bb5746d1446bf7301d63a9088
 --- /dev/null
 +++ b/components/thoron_adblock/settings_page.js
-@@ -0,0 +1,1306 @@
+@@ -0,0 +1,1366 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -17710,6 +17922,56 @@ index 0000000000000000000000000000000000000000..b11ad23ed0480e74fc53bc6bbccb2964
 +                      '-3p-frame': 'third-party frames allowed'};
 +
 +// --- Settings ---
++// uBlock Origin's "Custom accent color" and "Disable tooltips".
++let tooltipsOff = false;
++function showLook(accent, noTooltips) {
++  if (accent) {
++    document.documentElement.style.setProperty('--accent', accent);
++  } else {
++    document.documentElement.style.removeProperty('--accent');
++  }
++  tooltipsOff = !!noTooltips;
++  if (tooltipsOff) {
++    for (const element of document.querySelectorAll('[title]')) {
++      element.removeAttribute('title');
++    }
++  }
++}
++new MutationObserver(() => {
++  if (tooltipsOff) {
++    for (const element of document.querySelectorAll('[title]')) {
++      element.removeAttribute('title');
++    }
++  }
++}).observe(document.documentElement, {subtree: true, childList: true, attributes: true, attributeFilter: ['title']});
++
++async function setAccent(accent) {
++  const error = await sendWithPromise('setSetting', 'accent', accent);
++  if (!error) {
++    showLook(accent, tooltipsOff);
++  }
++  say(error || 'The accent color was changed.', !!error);
++}
++$('accent').addEventListener('change', () => setAccent($('accent').value));
++$('accent-default').addEventListener('click', () => {
++  $('accent').value = '#7235da';
++  setAccent('');
++});
++
++// uBlock Origin's "Storage used".
++async function showStorageUsed() {
++  let bytes = 0;
++  try {
++    bytes = await sendWithPromise('getStorageUsed');
++  } catch {
++    return;
++  }
++  $('storage-used').textContent = bytes < 1024 * 1024 ?
++      `Storage used: ${Math.max(1, Math.round(bytes / 1024)).toLocaleString()} kB` :
++      `Storage used: ${(bytes / (1024 * 1024)).toFixed(1)} MB`;
++}
++showStorageUsed();
++
 +// uBlock Origin's theme: the page in the colours chosen ("auto": as the system).
 +function showTheme(theme) {
 +  if (theme === 'light' || theme === 'dark') {
@@ -17741,6 +18003,8 @@ index 0000000000000000000000000000000000000000..b11ad23ed0480e74fc53bc6bbccb2964
 +  showShortcuts(settings.shortcuts || {});
 +  $('theme').value = settings.theme || 'auto';
 +  showTheme(settings.theme);
++  $('accent').value = settings.accent || '#7235da';
++  showLook(settings.accent, settings['no-tooltips']);
 +  if (document.activeElement !== $('media-kb')) {
 +    $('media-kb').value = String(settings['media-kb'] || SETTING_DEFAULTS['media-kb']);
 +  }
@@ -17986,7 +18250,7 @@ index 0000000000000000000000000000000000000000..b11ad23ed0480e74fc53bc6bbccb2964
 +                          'default-fonts': false, javascript: false, 'ignore-generic': false,
 +                          'default-3p-script': false, 'default-3p-frame': false, 'auto-update': true,
 +                          'context-menu': true, advanced: true, 'media-kb': 50, colorblind: false,
-+                          theme: 'auto'};
++                          theme: 'auto', accent: '', 'no-tooltips': false};
 +// a setting as the backup keeps it: a number for the one that is a number, else on or off
 +const asSetting = (name, value) => (typeof SETTING_DEFAULTS[name] === 'number' ? Number(value) :
 +                                    typeof SETTING_DEFAULTS[name] === 'string' ? String(value) : !!value);
@@ -18540,6 +18804,14 @@ index 0000000000000000000000000000000000000000..b11ad23ed0480e74fc53bc6bbccb2964
 +  if (!logPaused) {
 +    refreshLog();
 +  }
++});
++$('log-reload').addEventListener('click', async () => {
++  const tab = log[Number($('log-tab').value)];
++  if (!tab) {
++    return;
++  }
++  const error = await sendWithPromise('reloadTab', tab.id);
++  say(error || 'The tab was reloaded.', !!error);
 +});
 +$('log-clear').addEventListener('click', () => {
 +  logClearedAt = Date.now();

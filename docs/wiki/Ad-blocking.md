@@ -103,8 +103,8 @@ Open `chrome://adblock`.
   Origin's "medium mode"), which the menu's switches change for one
   site; ignoring hide rules written for every site; the size of "large media"; "Block element..." in
   the right-click menu; the grid of rules in the menu ("I am an advanced user"), in blue and orange
-  with "Color-blind friendly"; the theme of these pages (as the system, light or dark); and, under
-  the lists,
+  with "Color-blind friendly"; the theme of these pages (as the system, light or dark), their accent
+  color and "Disable tooltips"; and, under the lists,
   whether they update on their own (otherwise only "Update now" downloads them).
 - **Language:** the settings page and the menu follow the browser's language: English, Spanish,
   French, German, Portuguese or Russian. Rules, addresses and list names stay as they are.

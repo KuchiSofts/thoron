@@ -100,6 +100,9 @@ def default_problems(got: dict) -> list[str]:
         elif name == "theme":
             if on != "auto":  # P5.59: as the system unless chosen
                 out.append(f"reset: the theme is {on!r}, not 'auto'")
+        elif name == "accent":
+            if on != "":  # P5.69: the pages' own unless chosen
+                out.append(f"reset: the accent colour is {on!r}")
         elif on != (name in DEFAULT_ON):
             out.append(f"reset: the setting {name} is {'on' if on else 'off'}")
     if got.get("myFilters"):

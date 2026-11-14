@@ -73,6 +73,14 @@ class FilesTests(unittest.TestCase):
         self.assertEqual(len(tc.rules_problems("", "x")), 2)
 
 
+class CustomLookTests(unittest.TestCase):
+    def test_look(self):
+        seen = {"settings-accent": "#ff0000", "settings-titles": 0, "menu-accent": "#ff0000", "menu-titles": 0,
+                "storage": "Storage used: 12.3 MB", "reloaded": True}
+        self.assertEqual(tc.look_problems(seen), [])
+        self.assertEqual(len(tc.look_problems({**seen, "menu-titles": 3, "storage": "", "reloaded": False})), 3)
+
+
 class LookTests(unittest.TestCase):
     def test_colorblind(self):
         self.assertEqual(tc.colorblind_problems(True, {"class": True, "allow": "#1a73e8"}), [])

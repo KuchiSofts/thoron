@@ -1743,10 +1743,10 @@ index 0000000000000000000000000000000000000000..74bb1e36e87cc5e12248f5c5735b1c20
 +#endif  // CHROME_BROWSER_UI_VIEWS_TOOLBAR_THORON_ADBLOCK_BUTTON_H_
 diff --git a/chrome/browser/ui/webui/thoron_adblock_popup_ui.cc b/chrome/browser/ui/webui/thoron_adblock_popup_ui.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..a0abef07f985b0207f30ab7a4da6093b67382d2f
+index 0000000000000000000000000000000000000000..07c03c940f8a6da8ccad3de9cac8298a82269aaa
 --- /dev/null
 +++ b/chrome/browser/ui/webui/thoron_adblock_popup_ui.cc
-@@ -0,0 +1,539 @@
+@@ -0,0 +1,542 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -1987,6 +1987,9 @@ index 0000000000000000000000000000000000000000..a0abef07f985b0207f30ab7a4da6093b
 +    state.Set("colorblind",
 +              thoron_adblock::EngineService::Get().Option("colorblind"));
 +    state.Set("theme", thoron_adblock::EngineService::Get().theme());
++    state.Set("accent", thoron_adblock::EngineService::Get().accent());
++    state.Set("noTooltips",
++              thoron_adblock::EngineService::Get().Option("no-tooltips"));
 +    state.Set("blockedPage", BlockedPage(tab, site));
 +    // the grid of rules, unless "I am an advanced user" is off
 +    if (site.is_valid() &&
@@ -2415,10 +2418,10 @@ index 0000000000000000000000000000000000000000..775954638d4dbf1764c678318776e97d
 +#endif  // CHROME_BROWSER_UI_WEBUI_THORON_ADBLOCK_SITE_JAVASCRIPT_H_
 diff --git a/chrome/browser/ui/webui/thoron_adblock_ui.cc b/chrome/browser/ui/webui/thoron_adblock_ui.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..ba2eabefa00ce5dd17f65c0c23092754eab93908
+index 0000000000000000000000000000000000000000..b01e0f10105264522e98a6fe2982680ea4e7ec64
 --- /dev/null
 +++ b/chrome/browser/ui/webui/thoron_adblock_ui.cc
-@@ -0,0 +1,773 @@
+@@ -0,0 +1,825 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -2447,6 +2450,9 @@ index 0000000000000000000000000000000000000000..ba2eabefa00ce5dd17f65c0c23092754
 +#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 +#include "chrome/browser/ui/browser_window/public/browser_window_interface_iterator.h"
 +#include "chrome/browser/ui/tabs/tab_strip_model.h"
++#include "components/sessions/content/session_tab_helper.h"
++#include "content/public/browser/navigation_controller.h"
++#include "content/public/browser/reload_type.h"
 +#include "components/content_settings/core/browser/host_content_settings_map.h"
 +#include "components/content_settings/core/common/content_settings_pattern.h"
 +#include "chrome/browser/ui/webui/thoron_adblock_site_javascript.h"
@@ -2578,6 +2584,8 @@ index 0000000000000000000000000000000000000000..ba2eabefa00ce5dd17f65c0c23092754
 +    Register("getRulesForNow", &ThoronAdblockHandler::GetRulesForNow);
 +    Register("sendToCloud", &ThoronAdblockHandler::SendToCloud);
 +    Register("getFromCloud", &ThoronAdblockHandler::GetFromCloud);
++    Register("getStorageUsed", &ThoronAdblockHandler::GetStorageUsed);
++    Register("reloadTab", &ThoronAdblockHandler::ReloadTab);
 +    Register("setMyRules", &ThoronAdblockHandler::SetMyRules);
 +    Register("setSetting", &ThoronAdblockHandler::SetSetting);
 +  }
@@ -2716,6 +2724,45 @@ index 0000000000000000000000000000000000000000..ba2eabefa00ce5dd17f65c0c23092754
 +      ResolveJavascriptCallback(base::Value(*id),
 +                                base::Value(Service().my_rules()));
 +    }
++  }
++
++  // uBlock Origin's "Storage used": [id] -> bytes.
++  void GetStorageUsed(const base::ListValue& args) {
++    if (const std::string* id = AnswerId(args, 0)) {
++      Service().StorageUsed(base::BindOnce(
++          [](base::WeakPtr<ThoronAdblockHandler> self, std::string id,
++             int64_t bytes) {
++            if (self) {
++              self->ResolveJavascriptCallback(
++                  base::Value(id), base::Value(static_cast<double>(bytes)));
++            }
++          },
++          weak_factory_.GetWeakPtr(), *id));
++    }
++  }
++
++  // The logger's "Reload": [id, tab id (getLog's)] -> "" or what went wrong.
++  void ReloadTab(const base::ListValue& args) {
++    const std::string* id = AnswerId(args, 1);
++    if (!id || !args[1].is_int()) {
++      return;
++    }
++    Profile* profile = Profile::FromWebUI(web_ui());
++    for (BrowserWindowInterface* browser : GetAllBrowserWindowInterfaces()) {
++      if (browser->GetProfile() != profile) {
++        continue;
++      }
++      TabStripModel* strip = browser->GetTabStripModel();
++      for (int i = 0; i < strip->count(); ++i) {
++        content::WebContents* tab = strip->GetWebContentsAt(i);
++        if (sessions::SessionTabHelper::IdForTab(tab).id() == args[1].GetInt()) {
++          tab->GetController().Reload(content::ReloadType::NORMAL, true);
++          Answer(*id, std::string());
++          return;
++        }
++      }
++    }
++    Answer(*id, "That tab is closed.");
 +  }
 +
 +  // uBlock Origin's cloud storage: the backup (settings_page.js makeBackup),
@@ -2882,10 +2929,11 @@ index 0000000000000000000000000000000000000000..ba2eabefa00ce5dd17f65c0c23092754
 +         {"badge", "block-csp-reports", "ignore-generic", "default-media",
 +          "default-cosmetic", "default-fonts", "default-3p-script",
 +          "default-3p-frame", "auto-update", "context-menu", "advanced",
-+          "colorblind"}) {
++          "colorblind", "no-tooltips"}) {
 +      settings.Set(name, Service().Option(name));
 +    }
 +    settings.Set("media-kb", Service().large_media_kb());
++    settings.Set("accent", Service().accent());
 +    settings.Set("theme",
 +                 Service().theme().empty() ? std::string("auto") : Service().theme());
 +    // for the troubleshooting information, as uBlock Origin's support page
@@ -2920,6 +2968,12 @@ index 0000000000000000000000000000000000000000..ba2eabefa00ce5dd17f65c0c23092754
 +    }
 +    const std::string& name = args[1].GetString();
 +    // "Block media elements larger than N kB": a whole number
++    if (name == "accent") {
++      Answer(*id, args[2].is_string() && Service().SetAccent(args[2].GetString())
++                      ? std::string()
++                      : std::string("This is not a colour."));
++      return;
++    }
 +    if (name == "theme") {
 +      Answer(*id, args[2].is_string() && Service().SetTheme(args[2].GetString())
 +                      ? std::string()
@@ -3009,6 +3063,7 @@ index 0000000000000000000000000000000000000000..ba2eabefa00ce5dd17f65c0c23092754
 +                          .Set("thirdParty", third_party));
 +        }
 +        tabs.Append(base::DictValue()
++                        .Set("id", sessions::SessionTabHelper::IdForTab(tab).id())
 +                        .Set("title", base::UTF16ToUTF8(tab->GetTitle()))
 +                        .Set("url", tab->GetLastCommittedURL().spec())
 +                        .Set("entries", std::move(list)));

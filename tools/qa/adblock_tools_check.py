@@ -18,6 +18,8 @@ the page saves go to a folder of the run. Steps:
     sites       "Import" of allowed sites adds a site, a pattern and an address; "Export" saves all three
     rules       "Import and append" of My rules adds the file's lines below; "Export" saves the box
     colorblind  "Color-blind friendly" colours the menu's grid blue and orange; off, the menu is as before
+    look        (P5.69) a custom accent colour on both pages; "Disable tooltips" takes every tooltip off them;
+                "Storage used" is shown; the logger's "Reload" reloads the tab shown
     info        "Copy troubleshooting info" gives the version, the lists and the changed settings, and no
                 address of a page visited or a site allowed
 
@@ -203,6 +205,24 @@ def colorblind_problems(on: bool, seen: dict) -> list[str]:
     else:
         ok = seen.get("class") is False and seen.get("allow") not in COLORBLIND_ALLOW
     return [] if ok else [f"colorblind: with the setting {'on' if on else 'off'} the menu has {seen}"]
+
+
+def look_problems(seen: dict) -> list[str]:
+    out = []
+    for page in ("settings", "menu"):
+        if seen.get(f"{page}-accent") != "#ff0000":
+            out.append(f"look: the {page}'s accent is {seen.get(f'{page}-accent')!r}")
+        if seen.get(f"{page}-titles") != 0:
+            out.append(f"look: the {page} still has {seen.get(f'{page}-titles')} tooltips")
+    if not str(seen.get("storage", "")).startswith("Storage used: ") or not seen["storage"].endswith(("kB", "MB")):
+        out.append(f"look: the storage used says {seen.get('storage')!r}")
+    if not seen.get("reloaded"):
+        out.append("look: the logger's Reload did not reload the tab")
+    return out
+
+
+LOOK = ("JSON.stringify({accent: getComputedStyle(document.documentElement).getPropertyValue('--accent').trim(),"
+        " titles: document.querySelectorAll('[title]').length})")
 
 
 def info_problems(text: str) -> list[str]:
@@ -400,6 +420,34 @@ def run(browser: Path, work: Path) -> list[str]:
                     finally:
                         menu.close()
                     report("colorblind", colorblind_problems(on, seen), seen)
+
+                # look: the accent colour and tooltips on both pages, storage used, the logger's reload
+                _eval(settings, "(() => { const a = document.getElementById('accent'); a.value = '#ff0000';"
+                                " a.dispatchEvent(new Event('change')); return 1; })()")
+                time.sleep(1)
+                _eval(settings, "document.querySelector('[data-setting=\"no-tooltips\"]').click(); 1")
+                time.sleep(1.5)
+                seen = {}
+                mine = json.loads(_eval(settings, LOOK) or "{}")
+                seen.update({"settings-accent": mine.get("accent"), "settings-titles": mine.get("titles")})
+                menu = WebSocket(_open(port, MENU_URL)["webSocketDebuggerUrl"])
+                try:
+                    time.sleep(SETTLE_S)
+                    theirs = json.loads(_eval(menu, LOOK) or "{}")
+                finally:
+                    menu.close()
+                seen.update({"menu-accent": theirs.get("accent"), "menu-titles": theirs.get("titles")})
+                seen["storage"] = _eval(settings, "document.getElementById('storage-used').textContent")
+                before = _eval(page, "performance.timeOrigin")
+                _eval(settings, CHOOSE_TAB)
+                _eval(settings, "document.getElementById('log-reload').click(); 1")
+                time.sleep(SETTLE_S)
+                seen["reloaded"] = _eval(page, "performance.timeOrigin") != before
+                report("look", look_problems(seen), seen)
+                # back as they were, for the troubleshooting info
+                _eval(settings, "document.getElementById('accent-default').click(); 1")
+                _eval(settings, "document.querySelector('[data-setting=\"no-tooltips\"]').click(); 1")
+                time.sleep(1)
 
                 # info: what was copied, read where the page puts it
                 _eval(settings, "navigator.clipboard.writeText = async (text) => { window.copiedInfo = text; }; 1")

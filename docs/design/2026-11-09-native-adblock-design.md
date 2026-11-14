@@ -1831,6 +1831,19 @@ response's body. Thoron is the browser, so it does it for every page:
 - **Checked** by `tools/qa/adblock_htmlfilter_check.py` (new step: two such rules keep their scripts from
   running where their conditions hold, and let them run where they do not) and engine tests.
 
+### 12.56 The last of uBlock Origin's settings (P5.69, 2026-11-14)
+
+- **Accent color**, as uBlock Origin's "Custom accent color": a colour (`#rrggbb`, nothing else is taken) for
+  the settings page and the menu, kept with the options; "As it was" takes it back.
+- **Disable tooltips**, as uBlock Origin's: no tooltip on either page while it is on.
+- **Storage used**, as uBlock Origin shows it: what the blocker's store takes on disk (lists, engine,
+  settings), measured on the background sequence.
+- **The logger's "Reload"**: reloads the tab the logger shows, as uBlock Origin's logger.
+- **"Update now"** downloads every list again, with no saved copy reused: uBlock Origin's "Purge all caches"
+  and "Update now" in one; the page says so.
+- **Checked** by `tools/qa/adblock_tools_check.py` (new step "look") and `adblock_backup_check.py` (the
+  accent colour is taken back by a reset).
+
 ## 13. Credits
 
 The procedural operators and the rest of the filter syntax are uBlock Origin's (with forms from Adblock

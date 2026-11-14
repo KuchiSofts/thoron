@@ -152,7 +152,8 @@ scripts that only uBlock Origin's own lists may use, unless you allow it for you
 ### Beyond uBlock Origin in Chromium
 
 - **HTML filtering, `##^responseheader()` and `$replace`** work in every page: uBlock Origin
-  can do these only in Firefox. A script a list names is taken out of the page before it runs.
+  can do these only in Firefox. A script a list names is taken out of the page before it runs, also
+  when the rule depends on the rest of the page.
 
 ## uBlock Origin
 

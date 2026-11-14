@@ -16,6 +16,8 @@ nothing leaves the PC). Steps:
     logger    the logger lists the HTML filter and the replacement that acted
     other     a page of another site keeps all of it
     except    #@#^ takes the HTML filter back on a site
+    structure (P5.68) rules on the page's structure (`:upward()`, `:has()` in `:not()`, combinators): a script
+              they name does not run where their conditions hold, and runs where they do not
 
     py -3 -I tools/qa/adblock_htmlfilter_check.py --browser <out>\\thoron.exe --work <scratch dir>
 Exit status 0 only when every step passes.
@@ -47,15 +49,24 @@ MY_FILTERS = (f"{SITE},{SPARED}##^script:has-text(thoron-detector)\n"
               f"{SITE}##^meta[http-equiv=\"refresh\"]\n"
               f"{SITE}##^responseheader(refresh)\n"
               f"||{SITE}^$replace=/thoronOldWord/thoronNewWord/g\n"
-              f"{SPARED}#@#^script:has-text(thoron-detector)\n")
-PAGE = (f"<!doctype html><title>{TITLE}</title>"
+              f"{SPARED}#@#^script:has-text(thoron-detector)\n"
+              f"{SITE}##^html > head > link[rel=\"canonical\"]:not([href*=\"/recipes/\"]):upward(1) > "
+              "script:has-text(thoron-structure)\n"
+              f"{SITE}##^body:not(:has(#player)) > script:has-text(thoron-gtm)\n")
+PAGE = (f"<!doctype html><title>{TITLE}</title><link rel=\"canonical\" href=\"/news/1\">"
+        "<script>window.structured = 'thoron-structure';</script>"
         "<script>window.detector = 'thoron-detector';</script>"
         "<script>window.kept = 'thoronOldWord';</script>"
         "<script src=\"/lib.js\"></script>"
-        "<p id=\"word\">thoronOldWord</p>")
+        "<p id=\"word\">thoronOldWord</p><script>window.gtm = 'thoron-gtm';</script>")
+# where the structure rules' conditions do not hold: a canonical address under /recipes/, a player
+RECIPES = (f"<!doctype html><title>{TITLE} recipes</title><link rel=\"canonical\" href=\"/recipes/1\">"
+           "<script>window.structured = 'thoron-structure';</script><div id=\"player\"></div>"
+           "<script>window.gtm = 'thoron-gtm';</script>")
 META_PAGE = f"<!doctype html><title>{TITLE} meta</title><meta http-equiv=\"refresh\" content=\"1;url=/gone.html\"><p>meta</p>"
 LIB = "window.fromLib = 'thoronOldWord';"
 READ = ("JSON.stringify({detector: window.detector || null, kept: window.kept || null, lib: window.fromLib || null,"
+        " structured: window.structured || null, gtm: window.gtm || null,"
         " word: (document.getElementById('word') || {}).textContent || null,"
         " inPage: document.documentElement.outerHTML.includes('thoron-detector'), at: location.pathname})")
 
@@ -91,6 +102,17 @@ def logger_problems(rows: list[str]) -> list[str]:
     return out
 
 
+def structure_problems(here: dict, there: dict) -> list[str]:
+    """`here`: the page the rules' conditions hold on; `there`: the one they do not."""
+    out = []
+    for key in ("structured", "gtm"):
+        if here.get(key) is not None:
+            out.append(f"structure: on the page the rules are for, {key} ran")
+        if there.get(key) is None:
+            out.append(f"structure: on the page whose structure is not theirs, {key} did not run")
+    return out
+
+
 def other_problems(step: str, seen: dict) -> list[str]:
     if seen.get("detector") != "thoron-detector" or seen.get("kept") != "thoronOldWord":
         return [f"{step}: the page was changed ({seen})"]
@@ -110,6 +132,8 @@ class Server:
                 headers = {}
                 if path == "/lib.js":
                     body, ctype = LIB.encode(), "text/javascript"
+                elif path == "/recipes.html":
+                    body, ctype = RECIPES.encode(), "text/html; charset=utf-8"
                 elif path == "/meta.html":
                     body, ctype = META_PAGE.encode(), "text/html; charset=utf-8"
                 elif path == "/header.html":
@@ -185,6 +209,9 @@ def run(browser: Path, work: Path) -> list[str]:
 
                 seen = visit(SITE)
                 report("html", html_problems(seen), seen)
+                there = visit(SITE, "/recipes.html")
+                report("structure", structure_problems(seen, there),
+                       [{k: seen.get(k) for k in ("structured", "gtm")}, {k: there.get(k) for k in ("structured", "gtm")}])
                 report("replace", replace_problems(seen), {k: seen.get(k) for k in ("kept", "word", "lib")})
                 for step, path in (("meta", "/meta.html"), ("header", "/header.html")):
                     after = visit(SITE, path, wait=SETTLE_S + 1)

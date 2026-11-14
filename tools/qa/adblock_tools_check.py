@@ -10,7 +10,8 @@ the page saves go to a folder of the run. Steps:
     filters     saving My filters with a line that is no filter names that line, and only that line
     types       the logger's type filter offers the page's types; "script" shows only the script
     hidden      (P5.61) the logger lists the site's and the generic hide rule that hid an element of the
-                page, as "hidden", and not the one that hid nothing
+                page, as "hidden", and not the one that hid nothing; (P5.65) the procedural rule that hid
+                something too, and the scriptlet the page got, as "injected" (and it ran)
     pause       while paused, a new request of the page is not shown; after "Resume" it is
     clear       after "Clear" nothing is shown, and a request made after it is
     export      the logger's "Export" saves what it shows, one request a line
@@ -51,8 +52,10 @@ SETTLE_S = 3.0
 GOOD_FILTER = f"||{BLOCKED_HOST}^"
 BAD_FILTER = "||bad-tools.test^$nosuchoption"
 # hide rules of the site and for every site, and one that hides nothing on the page
-HIDE_RULES = f"{PAGE_HOST}##.thoron-promo\n##.thoron-generic-ad\n{PAGE_HOST}##.not-on-the-page\n"
-HIDDEN = {"##.thoron-promo", "##.thoron-generic-ad"}
+HIDE_RULES = (f"{PAGE_HOST}##.thoron-promo\n##.thoron-generic-ad\n{PAGE_HOST}##.not-on-the-page\n"
+              f"{PAGE_HOST}##p:has-text(thoron-sponsored)\n{PAGE_HOST}##+js(set-constant, thoronToolsCheck, 1)\n")
+HIDDEN = {"##.thoron-promo", "##.thoron-generic-ad", "##p:has-text(thoron-sponsored)"}
+INJECTED = {"##+js(set-constant, thoronToolsCheck, 1)"}
 IMPORTED_SITES = "imported-one.test\n[*.]imported-two.test\n# a note\nhttps://imported-three.test/page\n"
 WANTED_SITES = ("[*.]imported-one.test", "[*.]imported-two.test", "[*.]imported-three.test")
 IMPORTED_RULES = "* imported-rule.test * block\n"
@@ -64,7 +67,8 @@ def page_html() -> str:
     return (f"<!doctype html><title>{TITLE}</title>"
             f'<img src="http://{BLOCKED_HOST}/ad.png" alt=""><img src="http://{PLAIN_HOST}/pic.png" alt="">'
             f'<script src="http://{PLAIN_HOST}/plain.js"></script>'
-            '<div class="thoron-promo">promo</div><div class="thoron-generic-ad">ad</div>')
+            '<div class="thoron-promo">promo</div><div class="thoron-generic-ad">ad</div>'
+            '<p>thoron-sponsored</p>')
 
 
 READ_ROWS = """JSON.stringify(Array.from(document.querySelectorAll('#log-rows tr')).map((tr) =>
@@ -119,9 +123,14 @@ def types_problems(options: list[str], rows: list[dict], script_rows: list[dict]
     return out
 
 
-def hidden_problems(rows: list[dict]) -> list[str]:
+def hidden_problems(rows: list[dict], ran: object = 1) -> list[str]:
     cosmetic = [r for r in rows if r["type"] == "cosmetic"]
+    injected = [r for r in rows if r["type"] == "scriptlet"]
     out = []
+    if {r["url"] for r in injected} != INJECTED or any(r.get("shown") != "injected" for r in injected):
+        out.append(f"hidden: the scriptlets listed are {[(r['url'], r.get('shown')) for r in injected]}")
+    if ran != 1:
+        out.append(f"hidden: the scriptlet did not run on the page ({ran!r})")
     if {r["url"] for r in cosmetic} != HIDDEN:
         out.append(f"hidden: the hide rules listed are {sorted(r['url'] for r in cosmetic)}, not {sorted(HIDDEN)}")
     if any(r.get("shown") != "hidden" for r in cosmetic):
@@ -329,7 +338,9 @@ def run(browser: Path, work: Path) -> list[str]:
                 script_rows = json.loads(_eval(settings, READ_ROWS) or "[]")
                 _eval(settings, choose_type(""))
                 report("types", types_problems(options, rows, script_rows), options)
-                report("hidden", hidden_problems(rows), sorted(r["url"] for r in rows if r["type"] == "cosmetic"))
+                ran = _eval(page, "window.thoronToolsCheck")
+                report("hidden", hidden_problems(rows, ran),
+                       sorted(r["url"] for r in rows if r["type"] in ("cosmetic", "scriptlet")))
 
                 # pause: what is shown stays as it is until "Resume"
                 _eval(settings, "document.getElementById('log-pause').click(); 1")

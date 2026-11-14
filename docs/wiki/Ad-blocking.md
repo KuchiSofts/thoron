@@ -62,7 +62,8 @@ It is **off by default** until its last correctness checks are done.
     comes next, and **Export** what is shown as a text file. "3p" marks a request to another site;
     show first or third party only. The filter takes words that must all be there, `-word` for one
     that must not, and `/.../` for a regular expression. While it is open, the hide rules that
-    hid something on a page you load are listed too, as "hidden";
+    hid something on a page you load are listed too, as "hidden", and the scriptlets it got, as
+    "injected";
   - **Settings:** the full page, `chrome://adblock`;
   - switches for this site: pop-ups (no window the site opens, also from a click), large media (sound
     and video over 50 KB, or the size you set; a stopped one gets a bar: click it to load it), no hiding, remote fonts, JavaScript, 3rd-party scripts and 3rd-party frames
@@ -121,7 +122,8 @@ Open `chrome://adblock`.
   go to the sites' switches and the settings; Export writes them, so the file also works in uBlock Origin.
 - **Backup:** "Back up to file" saves your lists, own rules, allowed sites, switches and settings in a
   file; "Restore from file" brings them back, on this or another computer; "Reset to default settings"
-  starts over (back up first).
+  starts over (back up first). "Send to cloud storage" keeps the same backup with the browser's own
+  sync (on your other computers too, when sync is on); "Restore from cloud storage" brings it back.
 - **Troubleshooting:** "Copy troubleshooting info" copies the browser's version, the lists in use and
   the settings you changed, to paste where you ask for help. It holds no address you visited.
 
@@ -147,9 +149,10 @@ two weeks; every 4 days when it does not say), without cookies; the page shows i
 Rules of a list you add, and your own rules, block and hide like any other. They cannot use the powerful
 scripts that only uBlock Origin's own lists may use, unless you allow it for your own filters (above).
 
-### What it cannot do yet
+### Beyond uBlock Origin in Chromium
 
-- **A few rare kinds of rules** in the lists are not applied yet (ROADMAP P5.26).
+- **HTML filtering, `##^responseheader()` and `$replace`** work in every page: uBlock Origin
+  can do these only in Firefox. A script a list names is taken out of the page before it runs.
 
 ## uBlock Origin
 

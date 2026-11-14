@@ -78,10 +78,10 @@ index 0f7d54fe9798d8726656c6cd8f30ea2194b8c4e1..908235300b443a23bea4c2a9b39d0715
        "//sandbox:sandbox_unittests",
 diff --git a/components/thoron_adblock/BUILD.gn b/components/thoron_adblock/BUILD.gn
 new file mode 100644
-index 0000000000000000000000000000000000000000..3ca14ddc3c1eb2f066e02c5f5116426000a98507
+index 0000000000000000000000000000000000000000..4cd6328864549455267634c3656a5c0eabb8b648
 --- /dev/null
 +++ b/components/thoron_adblock/BUILD.gn
-@@ -0,0 +1,251 @@
+@@ -0,0 +1,257 @@
 +# Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +# found in the LICENSE file.
 +
@@ -98,6 +98,7 @@ index 0000000000000000000000000000000000000000..3ca14ddc3c1eb2f066e02c5f51164260
 +    "cosmetics.rs",
 +    "dynamic.rs",
 +    "engine_core.rs",
++    "html.rs",
 +    "procedural.rs",
 +    "header.rs",
 +    "permissions.rs",
@@ -171,6 +172,8 @@ index 0000000000000000000000000000000000000000..3ca14ddc3c1eb2f066e02c5f51164260
 +  sources = [
 +    "blocked_count.cc",
 +    "blocked_count.h",
++    "body_rewriter.cc",
++    "body_rewriter.h",
 +    "document_loader_throttle.cc",
 +    "document_loader_throttle.h",
 +    "subresource_loader_throttle.cc",
@@ -280,6 +283,7 @@ index 0000000000000000000000000000000000000000..3ca14ddc3c1eb2f066e02c5f51164260
 +  sources = [
 +    crate_root,
 +    "engine_core.rs",
++    "html.rs",
 +    "header.rs",
 +    "permissions.rs",
 +    "popup.rs",
@@ -291,6 +295,7 @@ index 0000000000000000000000000000000000000000..3ca14ddc3c1eb2f066e02c5f51164260
 +    "//third_party/rust/adblock/v0_13:lib",
 +    "//third_party/rust/base64/v0_22:lib",
 +    "//third_party/rust/regex/v1:lib",
++    "//third_party/rust/serde_json/v1:lib",
 +  ]
 +}
 +
@@ -304,6 +309,7 @@ index 0000000000000000000000000000000000000000..3ca14ddc3c1eb2f066e02c5f51164260
 +    crate_root,
 +    "cosmetics.rs",
 +    "engine_core.rs",
++    "html.rs",
 +    "procedural.rs",
 +    "header.rs",
 +    "permissions.rs",
@@ -436,10 +442,10 @@ index 0000000000000000000000000000000000000000..f5da75eee11cccbbb2094285afb8a11e
 +fs.writeFileSync(outArg, JSON.stringify(resources) + '\n');
 diff --git a/components/thoron_adblock/blocked_count.cc b/components/thoron_adblock/blocked_count.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..59911672bd7d2677a016095947912e9959388592
+index 0000000000000000000000000000000000000000..94a2d5b6cfa0f2e5546030c0de727a0199c0f8d0
 --- /dev/null
 +++ b/components/thoron_adblock/blocked_count.cc
-@@ -0,0 +1,247 @@
+@@ -0,0 +1,283 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -542,6 +548,42 @@ index 0000000000000000000000000000000000000000..59911672bd7d2677a016095947912e99
 +// static
 +bool BlockedCount::LoggerIsOpen() {
 +  return LoggerOpen();
++}
++
++// static
++void BlockedCount::Rule(content::GlobalRenderFrameHostId frame,
++                        std::string_view rule,
++                        std::string_view type) {
++  content::RenderFrameHost* rfh = content::RenderFrameHost::FromID(frame);
++  if (!rfh || !LoggerOpen()) {
++    return;
++  }
++  BlockedCount* count =
++      GetOrCreateForPage(rfh->GetOutermostMainFrame()->GetPage());
++  count->recent_.push_back({base::Time::Now(),
++                            std::string(rule.substr(0, kMaxUrlLength)),
++                            /*blocked=*/true, std::string(type)});
++  if (count->recent_.size() > kMaxRecent) {
++    count->recent_.pop_front();
++  }
++}
++
++// static
++void BlockedCount::Injected(content::GlobalRenderFrameHostId frame,
++                            std::string_view scriptlet) {
++  content::RenderFrameHost* rfh = content::RenderFrameHost::FromID(frame);
++  if (!rfh || !LoggerOpen()) {
++    return;
++  }
++  BlockedCount* count =
++      GetOrCreateForPage(rfh->GetOutermostMainFrame()->GetPage());
++  count->recent_.push_back(
++      {base::Time::Now(),
++       base::StrCat({"##+js(", scriptlet.substr(0, kMaxUrlLength), ")"}),
++       /*blocked=*/true, "scriptlet"});
++  if (count->recent_.size() > kMaxRecent) {
++    count->recent_.pop_front();
++  }
 +}
 +
 +// static
@@ -689,10 +731,10 @@ index 0000000000000000000000000000000000000000..59911672bd7d2677a016095947912e99
 +}  // namespace thoron_adblock
 diff --git a/components/thoron_adblock/blocked_count.h b/components/thoron_adblock/blocked_count.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..f43be78df0476dccc7e1cfbb1a2fcdf38bace994
+index 0000000000000000000000000000000000000000..3e963de5557aa6ead1dac2fc27c9547156949d9e
 --- /dev/null
 +++ b/components/thoron_adblock/blocked_count.h
-@@ -0,0 +1,119 @@
+@@ -0,0 +1,130 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -780,6 +822,17 @@ index 0000000000000000000000000000000000000000..f43be78df0476dccc7e1cfbb1a2fcdf3
 +  // in the document of `frame`. A row of type "cosmetic"; nothing is counted.
 +  static void Hidden(content::GlobalRenderFrameHostId frame,
 +                     std::string_view selector);
++  // For the logger, while it is open: a scriptlet ran in the document of
++  // `frame` ("set-constant, a, 1"). A row of type "scriptlet"; nothing is
++  // counted.
++  static void Injected(content::GlobalRenderFrameHostId frame,
++                       std::string_view scriptlet);
++  // For the logger, while it is open: a rule changed the answer of a document
++  // or request of `frame` (HTML filtering, `$replace`). A row of `type`;
++  // nothing is counted.
++  static void Rule(content::GlobalRenderFrameHostId frame,
++                   std::string_view rule,
++                   std::string_view type);
 +
 +  // How many requests were blocked since counting started, on every page
 +  // (EngineService keeps it).
@@ -812,12 +865,405 @@ index 0000000000000000000000000000000000000000..f43be78df0476dccc7e1cfbb1a2fcdf3
 +}  // namespace thoron_adblock
 +
 +#endif  // COMPONENTS_THORON_ADBLOCK_BLOCKED_COUNT_H_
+diff --git a/components/thoron_adblock/body_rewriter.cc b/components/thoron_adblock/body_rewriter.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..f6ef2eaa6cefa18ee5be67409f446e9a0c55b4f4
+--- /dev/null
++++ b/components/thoron_adblock/body_rewriter.cc
+@@ -0,0 +1,319 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "components/thoron_adblock/body_rewriter.h"
++
++#include <deque>
++#include <memory>
++#include <optional>
++#include <string_view>
++#include <tuple>
++#include <utility>
++
++#include "base/containers/span.h"
++#include "base/functional/bind.h"
++#include "base/memory/weak_ptr.h"
++#include "base/strings/string_util.h"
++#include "base/task/sequenced_task_runner.h"
++#include "mojo/public/cpp/base/big_buffer.h"
++#include "net/url_request/redirect_info.h"
++#include "services/network/public/mojom/early_hints.mojom.h"
++#include "components/thoron_adblock/blocked_count.h"
++#include "components/thoron_adblock/document_observer.h"
++#include "components/thoron_adblock/engine.rs.h"
++#include "content/public/browser/browser_task_traits.h"
++#include "content/public/browser/browser_thread.h"
++#include "mojo/public/cpp/bindings/pending_receiver.h"
++#include "mojo/public/cpp/bindings/pending_remote.h"
++#include "mojo/public/cpp/bindings/receiver.h"
++#include "mojo/public/cpp/bindings/remote.h"
++#include "mojo/public/cpp/system/data_pipe_drainer.h"
++#include "mojo/public/cpp/system/data_pipe_producer.h"
++#include "mojo/public/cpp/system/string_data_source.h"
++#include "net/http/http_response_headers.h"
++#include "services/network/public/cpp/url_loader_completion_status.h"
++#include "services/network/public/mojom/url_loader.mojom.h"
++#include "services/network/public/mojom/url_response_head.mojom.h"
++
++namespace thoron_adblock {
++
++namespace {
++
++class Transformer : public mojo::DataPipeDrainer::Client {
++ public:
++  Transformer(mojo::ScopedDataPipeConsumerHandle source,
++              mojo::ScopedDataPipeProducerHandle destination,
++              std::string html_rules,
++              std::string replace_rules,
++              BodyTransformer::Done done)
++      : producer_(std::make_unique<mojo::DataPipeProducer>(
++            std::move(destination))),
++        html_rules_(std::move(html_rules)),
++        replace_rules_(std::move(replace_rules)),
++        done_(std::move(done)) {
++    drainer_ =
++        std::make_unique<mojo::DataPipeDrainer>(this, std::move(source));
++  }
++
++ private:
++  // mojo::DataPipeDrainer::Client:
++  void OnDataAvailable(base::span<const uint8_t> data) override {
++    const std::string_view chunk(reinterpret_cast<const char*>(data.data()),
++                                 data.size());
++    if (!passing_ && body_.size() + chunk.size() > BodyTransformer::kMaxBodyBytes) {
++      // too large to read at once: what came, and the rest, pass unchanged
++      passing_ = true;
++      queue_.push_back(std::move(body_));
++      body_.clear();
++    }
++    if (passing_) {
++      if (!chunk.empty()) {
++        queue_.emplace_back(chunk);
++      }
++      WriteNext();
++    } else {
++      body_.append(chunk);
++    }
++  }
++
++  void OnDataComplete() override {
++    drained_ = true;
++    if (!passing_) {
++      RewrittenBody rewritten = rewrite_body(
++          rust::Str(html_rules_.data(), html_rules_.size()),
++          rust::Str(replace_rules_.data(), replace_rules_.size()),
++          rust::Slice<const uint8_t>(
++              reinterpret_cast<const uint8_t*>(body_.data()), body_.size()));
++      if (!rewritten.body.empty()) {
++        queue_.emplace_back(reinterpret_cast<const char*>(rewritten.body.data()),
++                            rewritten.body.size());
++      }
++      for (const rust::String& rule : rewritten.applied) {
++        applied_.emplace_back(rule);
++      }
++      body_.clear();
++    }
++    WriteNext();
++  }
++
++  void WriteNext() {
++    if (writing_) {
++      return;
++    }
++    if (queue_.empty()) {
++      if (drained_ && !finishing_) {
++        // not from inside the drainer's or the producer's own call
++        finishing_ = true;
++        base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
++            FROM_HERE,
++            base::BindOnce(&Transformer::Finish, base::Unretained(this)));
++      }
++      return;
++    }
++    writing_ = true;
++    current_ = std::move(queue_.front());
++    queue_.pop_front();
++    producer_->Write(
++        std::make_unique<mojo::StringDataSource>(
++            base::span(current_),
++            mojo::StringDataSource::AsyncWritingMode::
++                STRING_STAYS_VALID_UNTIL_COMPLETION),
++        base::BindOnce(&Transformer::OnWritten, base::Unretained(this)));
++  }
++
++  void OnWritten(MojoResult result) {
++    writing_ = false;
++    current_.clear();
++    if (result != MOJO_RESULT_OK) {
++      // the reader went away: nothing more to write
++      queue_.clear();
++      drained_ = true;
++    }
++    WriteNext();
++  }
++
++  void Finish() {
++    producer_.reset();  // the reader sees the end of the body
++    drainer_.reset();
++    std::move(done_).Run(std::move(applied_));
++    delete this;
++  }
++
++  std::unique_ptr<mojo::DataPipeDrainer> drainer_;
++  std::unique_ptr<mojo::DataPipeProducer> producer_;
++  const std::string html_rules_;
++  const std::string replace_rules_;
++  BodyTransformer::Done done_;
++  std::string body_;
++  std::deque<std::string> queue_;
++  std::string current_;
++  std::vector<std::string> applied_;
++  bool passing_ = false;
++  bool drained_ = false;
++  bool writing_ = false;
++  bool finishing_ = false;
++};
++
++
++// Stands between a document's network loader and its navigation once the body
++// is taken over: the navigation gets the rewritten body, and the answer's end
++// (OnComplete) only after all of it.
++class DocumentRewriter : public network::mojom::URLLoaderClient {
++ public:
++  DocumentRewriter(content::FrameTreeNodeId frame_tree_node, const GURL& url)
++      : frame_tree_node_(frame_tree_node), url_(url) {}
++
++  mojo::Remote<network::mojom::URLLoaderClient>& new_client() {
++    return new_client_;
++  }
++
++  void Bind(mojo::PendingRemote<network::mojom::URLLoader> original_loader,
++            mojo::PendingReceiver<network::mojom::URLLoaderClient> original_client) {
++    original_loader_.Bind(std::move(original_loader));
++    original_client_.Bind(std::move(original_client));
++    original_client_.set_disconnect_handler(base::BindOnce(
++        &DocumentRewriter::OnOriginalGone, base::Unretained(this)));
++    // the navigation went away: so does the request
++    new_client_.set_disconnect_handler(
++        base::BindOnce(&DocumentRewriter::Close, base::Unretained(this)));
++  }
++
++  void OnBodyDone(std::vector<std::string> applied) {
++    body_done_ = true;
++    DocumentObserver::LogRewritten(frame_tree_node_, url_, std::move(applied));
++    MaybeFinish();
++  }
++
++  base::WeakPtr<DocumentRewriter> AsWeakPtr() {
++    return weak_factory_.GetWeakPtr();
++  }
++
++ private:
++  // network::mojom::URLLoaderClient (from the network, after the answer):
++  void OnReceiveEarlyHints(network::mojom::EarlyHintsPtr hints) override {}
++  void OnReceiveResponse(
++      network::mojom::URLResponseHeadPtr head,
++      mojo::ScopedDataPipeConsumerHandle body,
++      std::optional<mojo_base::BigBuffer> cached_metadata) override {}
++  void OnReceiveRedirect(const net::RedirectInfo& redirect_info,
++                         network::mojom::URLResponseHeadPtr head) override {}
++  void OnUploadProgress(int64_t current_position,
++                        int64_t total_size,
++                        OnUploadProgressCallback callback) override {
++    std::move(callback).Run();
++  }
++  void OnTransferSizeUpdated(int32_t transfer_size_diff) override {
++    if (new_client_.is_bound()) {
++      new_client_->OnTransferSizeUpdated(transfer_size_diff);
++    }
++  }
++  void OnComplete(const network::URLLoaderCompletionStatus& status) override {
++    status_ = status;
++    MaybeFinish();
++  }
++
++  void OnOriginalGone() {
++    if (!status_) {
++      status_ = network::URLLoaderCompletionStatus(net::ERR_ABORTED);
++    }
++    MaybeFinish();
++  }
++
++  void MaybeFinish() {
++    if (!body_done_ || !status_) {
++      return;
++    }
++    if (new_client_.is_bound()) {
++      new_client_->OnComplete(*status_);
++    }
++    Close();
++  }
++
++  void Close() { delete this; }
++
++  const content::FrameTreeNodeId frame_tree_node_;
++  const GURL url_;
++  mojo::Remote<network::mojom::URLLoader> original_loader_;
++  mojo::Receiver<network::mojom::URLLoaderClient> original_client_{this};
++  mojo::Remote<network::mojom::URLLoaderClient> new_client_;
++  std::optional<network::URLLoaderCompletionStatus> status_;
++  bool body_done_ = false;
++  base::WeakPtrFactory<DocumentRewriter> weak_factory_{this};
++};
++
++}  // namespace
++
++// static
++void BodyTransformer::Start(mojo::ScopedDataPipeConsumerHandle source,
++                            mojo::ScopedDataPipeProducerHandle destination,
++                            std::string html_rules,
++                            std::string replace_rules,
++                            Done done) {
++  new Transformer(std::move(source), std::move(destination),
++                  std::move(html_rules), std::move(replace_rules),
++                  std::move(done));
++}
++
++void LogRewritten(content::GlobalRenderFrameHostId frame,
++                  std::vector<std::string> applied) {
++  if (applied.empty()) {
++    return;
++  }
++  // the page's rows are kept on the UI thread
++  content::GetUIThreadTaskRunner({})->PostTask(
++      FROM_HERE, base::BindOnce(
++                     [](content::GlobalRenderFrameHostId frame,
++                        std::vector<std::string> applied) {
++                       for (const std::string& rule : applied) {
++                         BlockedCount::Rule(frame, rule,
++                                            rule.starts_with("$replace")
++                                                ? "replace"
++                                                : "cosmetic");
++                       }
++                     },
++                     frame, std::move(applied)));
++}
++
++bool IsRewritableText(const network::mojom::URLResponseHead& head) {
++  const std::string& mime = head.mime_type;
++  return mime.starts_with("text/") || mime == "application/javascript" ||
++         mime == "application/x-javascript" || mime == "application/json" ||
++         mime == "application/xml" || mime == "application/xhtml+xml" ||
++         mime == "application/ecmascript" || mime.ends_with("+json");
++}
++
++void RewriteDocumentBody(blink::URLLoaderThrottle::Delegate* delegate,
++                         network::mojom::URLResponseHead* head,
++                         std::string html_rules,
++                         std::string replace_rules,
++                         content::FrameTreeNodeId frame_tree_node,
++                         const GURL& url) {
++  mojo::ScopedDataPipeProducerHandle producer;
++  mojo::ScopedDataPipeConsumerHandle consumer;
++  if (!delegate || !head ||
++      mojo::CreateDataPipe(nullptr, producer, consumer) != MOJO_RESULT_OK) {
++    return;
++  }
++  auto* rewriter = new DocumentRewriter(frame_tree_node, url);
++  mojo::PendingRemote<network::mojom::URLLoader> unused_loader;
++  std::ignore = unused_loader.InitWithNewPipeAndPassReceiver();
++  mojo::PendingRemote<network::mojom::URLLoader> original_loader;
++  mojo::PendingReceiver<network::mojom::URLLoaderClient> original_client;
++  // In: the body the navigation reads from now on; out: the network's body.
++  mojo::ScopedDataPipeConsumerHandle body = std::move(consumer);
++  delegate->InterceptResponse(std::move(unused_loader),
++                              rewriter->new_client().BindNewPipeAndPassReceiver(),
++                              &original_loader, &original_client, &body);
++  rewriter->Bind(std::move(original_loader), std::move(original_client));
++  // the text is not as long as the server said any more
++  head->content_length = -1;
++  if (head->headers) {
++    head->headers->RemoveHeader("Content-Length");
++  }
++  BodyTransformer::Start(
++      std::move(body), std::move(producer), std::move(html_rules),
++      std::move(replace_rules),
++      base::BindOnce(&DocumentRewriter::OnBodyDone, rewriter->AsWeakPtr()));
++}
++
++}  // namespace thoron_adblock
+diff --git a/components/thoron_adblock/body_rewriter.h b/components/thoron_adblock/body_rewriter.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..322afd05fba387fa99e7a44b8101b5735a7df0bc
+--- /dev/null
++++ b/components/thoron_adblock/body_rewriter.h
+@@ -0,0 +1,62 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef COMPONENTS_THORON_ADBLOCK_BODY_REWRITER_H_
++#define COMPONENTS_THORON_ADBLOCK_BODY_REWRITER_H_
++
++#include <string>
++#include <vector>
++
++#include "base/functional/callback.h"
++#include "content/public/browser/frame_tree_node_id.h"
++#include "content/public/browser/global_routing_id.h"
++#include "url/gurl.h"
++#include "mojo/public/cpp/system/data_pipe.h"
++#include "services/network/public/mojom/url_response_head.mojom-forward.h"
++#include "third_party/blink/public/common/loader/url_loader_throttle.h"
++
++namespace thoron_adblock {
++
++// What uBlock Origin does to an answer's text before the page reads it (in
++// Firefox; here for every page): HTML filtering and `$replace` (html.rs).
++//
++// Reads the whole body from `source`, rewrites it with the rules (from
++// EngineService::HtmlRulesFor and ReplaceRulesFor) and writes the result into
++// `destination`, then calls `done` with the rules that changed it (for the
++// logger). A body larger than kMaxBodyBytes passes unchanged. Runs on the
++// calling sequence and deletes itself when done; nothing is kept.
++class BodyTransformer {
++ public:
++  static constexpr size_t kMaxBodyBytes = 16 * 1024 * 1024;
++  using Done = base::OnceCallback<void(std::vector<std::string> applied)>;
++  static void Start(mojo::ScopedDataPipeConsumerHandle source,
++                    mojo::ScopedDataPipeProducerHandle destination,
++                    std::string html_rules,
++                    std::string replace_rules,
++                    Done done);
++};
++
++// The rules that changed an answer ("##^script:has-text(x)", "$replace=/a/"),
++// as logger rows of the document of `frame`. From any sequence.
++void LogRewritten(content::GlobalRenderFrameHostId frame,
++                  std::vector<std::string> applied);
++
++// True for an answer whose body is text a rule can rewrite (HTML, script,
++// JSON, XML, plain text), by its MIME type.
++bool IsRewritableText(const network::mojom::URLResponseHead& head);
++
++// For a document's answer (DocumentLoaderThrottle::WillProcessResponse): takes
++// the body over through `delegate` (URLLoaderThrottle::Delegate::
++// InterceptResponse) and hands the navigation the rewritten one. The answer's
++// length becomes unknown. The rules that changed it become logger rows of
++// the document `url` commits as in the frame `frame_tree_node`.
++void RewriteDocumentBody(blink::URLLoaderThrottle::Delegate* delegate,
++                         network::mojom::URLResponseHead* head,
++                         std::string html_rules,
++                         std::string replace_rules,
++                         content::FrameTreeNodeId frame_tree_node,
++                         const GURL& url);
++
++}  // namespace thoron_adblock
++
++#endif  // COMPONENTS_THORON_ADBLOCK_BODY_REWRITER_H_
 diff --git a/components/thoron_adblock/compile_engine.rs b/components/thoron_adblock/compile_engine.rs
 new file mode 100644
-index 0000000000000000000000000000000000000000..8a78abf253c4d7e08d93e9e9215ef45b742494d7
+index 0000000000000000000000000000000000000000..e7fdc2cc1be5bcc44fbf06d71b7df8bba49660cb
 --- /dev/null
 +++ b/components/thoron_adblock/compile_engine.rs
-@@ -0,0 +1,165 @@
+@@ -0,0 +1,167 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -831,6 +1277,8 @@ index 0000000000000000000000000000000000000000..8a78abf253c4d7e08d93e9e9215ef45b
 +// This tool uses only part of what it shares with the browser's engine.
 +#[allow(dead_code)]
 +mod engine_core;
++#[allow(dead_code)]
++mod html;
 +#[allow(dead_code)]
 +mod header;
 +#[allow(dead_code)]
@@ -985,10 +1433,10 @@ index 0000000000000000000000000000000000000000..8a78abf253c4d7e08d93e9e9215ef45b
 +}
 diff --git a/components/thoron_adblock/cosmetics.rs b/components/thoron_adblock/cosmetics.rs
 new file mode 100644
-index 0000000000000000000000000000000000000000..5c176c878685ebf34e1a9f79e7dd3f5644214dc7
+index 0000000000000000000000000000000000000000..be9011fc2dfbbffe621e1ed2a56105e589372755
 --- /dev/null
 +++ b/components/thoron_adblock/cosmetics.rs
-@@ -0,0 +1,250 @@
+@@ -0,0 +1,327 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -1002,7 +1450,7 @@ index 0000000000000000000000000000000000000000..5c176c878685ebf34e1a9f79e7dd3f56
 +
 +use crate::engine_core::Filters;
 +use crate::procedural::{self, Compiled, Program};
-+use std::collections::HashSet;
++use std::collections::{HashMap, HashSet};
 +
 +/// A selector from a filter list goes into a style sheet as `selector{display:none!important}`. One
 +/// that could end its rule and start another, or comment out what follows, is left out: a list may
@@ -1016,6 +1464,63 @@ index 0000000000000000000000000000000000000000..5c176c878685ebf34e1a9f79e7dd3f56
 +
 +pub fn stylesheet(selectors: &[String]) -> String {
 +    selectors.iter().map(|s| format!("{s}{{display:none!important}}\n")).collect()
++}
++
++/// uBlock Origin's name of each scriptlet ("set-constant") by the name of the function its text
++/// defines ("setConstant"). A resource that defines none (an older template) has no entry.
++pub fn scriptlet_names(resources: &[adblock::resources::Resource]) -> HashMap<String, String> {
++    use base64::Engine as _;
++    let mut names = HashMap::new();
++    for resource in resources {
++        let Some(name) = resource.name.strip_suffix(".js") else { continue };
++        let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(&resource.content) else { continue };
++        let Ok(text) = std::str::from_utf8(&bytes) else { continue };
++        if let Some(function) = function_name(text) {
++            names.entry(function).or_insert_with(|| name.to_string());
++        }
++    }
++    names
++}
++
++/// The name of the first function a scriptlet's text defines ("function setConstant(" ->
++/// "setConstant").
++fn function_name(text: &str) -> Option<String> {
++    let at = text.find("function ")?;
++    let rest = text[at + "function ".len()..].trim_start();
++    let end = rest.find('(')?;
++    let name = rest[..end].trim();
++    (!name.is_empty() && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'$'))
++        .then(|| name.to_string())
++}
++
++/// The scriptlets of a page's script as uBlock Origin writes them ("set-constant, a, 1"): one for
++/// each call the engine wrote (each in its own `try`), named by `names`. At most 200.
++pub fn scriptlet_labels(script: &str, names: &HashMap<String, String>) -> Vec<String> {
++    let mut out = Vec::new();
++    for part in script.split("try {\n").skip(1) {
++        if out.len() >= 200 {
++            break;
++        }
++        let Some(call) = part.split("\n} catch ( e ) { }").next() else { continue };
++        let Some(open) = call.find('(') else { continue };
++        let Some(name) = names.get(call[..open].trim()) else { continue };
++        let inner = call[open + 1..].trim_end().strip_suffix(')').unwrap_or("");
++        let args: Vec<String> = if inner.trim().is_empty() {
++            Vec::new()
++        } else {
++            match serde_json::from_str(&format!("[{inner}]")) {
++                Ok(args) => args,
++                Err(_) => continue,
++            }
++        };
++        let mut label = name.clone();
++        for arg in args {
++            label.push_str(", ");
++            label.push_str(&arg);
++        }
++        out.push(label);
++    }
++    out
 +}
 +
 +/// uBlock Origin runs a page's scriptlets inside one function with a shared `scriptletGlobals`.
@@ -1113,6 +1618,9 @@ index 0000000000000000000000000000000000000000..5c176c878685ebf34e1a9f79e7dd3f56
 +    more_css: String,
 +    /// Rules for the runner, as JSON.
 +    procedural: Vec<String>,
++    /// The text of each rule of `procedural` ("p:has-text(Ad)"), which the runner names to the
++    /// logger.
++    labels: Vec<String>,
 +    hide_mark: Option<String>,
 +    /// Declarations of `:style()` rules with a procedural selector, and the mark for each.
 +    style_marks: Vec<(String, String)>,
@@ -1131,10 +1639,16 @@ index 0000000000000000000000000000000000000000..5c176c878685ebf34e1a9f79e7dd3f56
 +            Some(Compiled::Css(css)) if safe_selector(&css) => self.hide_selectors.push(css),
 +            Some(Compiled::Procedural(program)) => {
 +                let mark = self.hide_mark.get_or_insert_with(new_mark).clone();
-+                self.procedural.push(program.filter_json(&["mark", &mark, HIDE]));
++                self.run(program.filter_json(&["mark", &mark, HIDE]), selector.trim().to_string());
 +            }
 +            _ => {}
 +        }
++    }
++
++    /// One rule for the runner, and its text.
++    fn run(&mut self, rule: String, label: String) {
++        self.procedural.push(rule);
++        self.labels.push(label);
 +    }
 +
 +    fn act(&mut self, selector: &str, kind: &str, arg: &str) {
@@ -1161,11 +1675,13 @@ index 0000000000000000000000000000000000000000..5c176c878685ebf34e1a9f79e7dd3f56
 +                        mark
 +                    }
 +                };
-+                self.procedural.push(program.filter_json(&["mark", &mark, arg]));
++                self.run(program.filter_json(&["mark", &mark, arg]), format!("{selector}:style({arg})"));
 +            }
-+            (compiled, "remove") => self.procedural.push(as_program(compiled).filter_json(&["remove"])),
++            (compiled, "remove") => {
++                self.run(as_program(compiled).filter_json(&["remove"]), format!("{selector}:remove()"))
++            }
 +            (compiled, "remove-attr" | "remove-class") if procedural::safe_name(arg) => {
-+                self.procedural.push(as_program(compiled).filter_json(&[kind, arg]))
++                self.run(as_program(compiled).filter_json(&[kind, arg]), format!("{selector}:{kind}({arg})"))
 +            }
 +            _ => {}
 +        }
@@ -1184,7 +1700,14 @@ index 0000000000000000000000000000000000000000..5c176c878685ebf34e1a9f79e7dd3f56
 +        if self.procedural.is_empty() {
 +            return String::new();
 +        }
-+        format!("{}([{}]);\n", runner(), self.procedural.join(","))
++        // each rule with its text ("r"), for the logger
++        let rules: Vec<String> = self
++            .procedural
++            .iter()
++            .zip(&self.labels)
++            .map(|(rule, label)| format!("{},\"r\":{}}}", &rule[..rule.len() - 1], procedural::json_string(label)))
++            .collect();
++        format!("{}([{}]);\n", runner(), rules.join(","))
 +    }
 +}
 +
@@ -1197,6 +1720,7 @@ index 0000000000000000000000000000000000000000..5c176c878685ebf34e1a9f79e7dd3f56
 +    pub script: String,
 +    pub isolated_script: String,
 +    pub generichide: bool,
++    pub scriptlets: Vec<String>,
 +}
 +
 +/// What the document at `url` needs. Nothing for an address that is not one.
@@ -1220,6 +1744,7 @@ index 0000000000000000000000000000000000000000..5c176c878685ebf34e1a9f79e7dd3f56
 +        hide_selectors: cosmetics.hide_selectors,
 +        procedural: cosmetics.procedural,
 +        exceptions: sorted(found.exceptions),
++        scriptlets: scriptlet_labels(&found.injected_script, &filters.scriptlet_names),
 +        script: wrap_scriptlets(found.injected_script),
 +        generichide: found.generichide,
 +    }
@@ -1309,14 +1834,16 @@ index 0000000000000000000000000000000000000000..0cbfa61c7abca657a3291fcf94484a52
 +};
 diff --git a/components/thoron_adblock/document_loader_throttle.cc b/components/thoron_adblock/document_loader_throttle.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..5a728d49ff984f28f51269ee1bf84742d102c964
+index 0000000000000000000000000000000000000000..b3326f4da8b54e1bc18227c9c81674e148c8dfce
 --- /dev/null
 +++ b/components/thoron_adblock/document_loader_throttle.cc
-@@ -0,0 +1,155 @@
+@@ -0,0 +1,181 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
 +#include "components/thoron_adblock/document_loader_throttle.h"
++
++#include "components/thoron_adblock/body_rewriter.h"
 +
 +#include <optional>
 +#include <string>
@@ -1362,8 +1889,10 @@ index 0000000000000000000000000000000000000000..5a728d49ff984f28f51269ee1bf84742
 +  if (!document) {
 +    return nullptr;
 +  }
-+  return base::WrapUnique(new DocumentLoaderThrottle(
++  auto throttle = base::WrapUnique(new DocumentLoaderThrottle(
 +      std::move(settings), std::move(*document), request));
++  throttle->frame_tree_node_id_ = frame_tree_node_id;
++  return throttle;
 +}
 +
 +DocumentLoaderThrottle::DocumentLoaderThrottle(
@@ -1438,6 +1967,28 @@ index 0000000000000000000000000000000000000000..5a728d49ff984f28f51269ee1bf84742
 +  if (!permissions.empty() && response_head->headers) {
 +    response_head->headers->AddHeader("Permissions-Policy", permissions);
 +  }
++  // `##^responseheader()`: headers the trusted lists take out of the answer
++  if (response_head->headers) {
++    for (const std::string& name :
++         EngineService::Get().ResponseHeadersToRemove(response_url)) {
++      response_head->headers->RemoveHeader(name);
++    }
++  }
++  // HTML filtering and `$replace`: the page reads the rewritten text
++  if (!IsRewritableText(*response_head)) {
++    return;
++  }
++  std::string html_rules = response_head->mime_type == "text/html"
++                               ? EngineService::Get().HtmlRulesFor(response_url)
++                               : std::string();
++  std::string replace_rules = EngineService::Get().ReplaceRulesFor(
++      response_url, document_.SourceFor(response_url), destination_);
++  if (html_rules.empty() && replace_rules.empty()) {
++    return;
++  }
++  RewriteDocumentBody(delegate_, response_head, std::move(html_rules),
++                      std::move(replace_rules), frame_tree_node_id_,
++                      response_url);
 +}
 +
 +// static
@@ -1470,10 +2021,10 @@ index 0000000000000000000000000000000000000000..5a728d49ff984f28f51269ee1bf84742
 +}  // namespace thoron_adblock
 diff --git a/components/thoron_adblock/document_loader_throttle.h b/components/thoron_adblock/document_loader_throttle.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..9c637f7f4801d4388dfa412c3768687bd26b5e18
+index 0000000000000000000000000000000000000000..a643a79623debdc807427d49272889b3eaa94982
 --- /dev/null
 +++ b/components/thoron_adblock/document_loader_throttle.h
-@@ -0,0 +1,90 @@
+@@ -0,0 +1,94 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -1527,6 +2078,10 @@ index 0000000000000000000000000000000000000000..9c637f7f4801d4388dfa412c3768687b
 +  DocumentLoaderThrottle& operator=(const DocumentLoaderThrottle&) = delete;
 +  ~DocumentLoaderThrottle() override;
 +
++  // The frame the document is for (the logger's rows of rules that changed
++  // its answer).
++  content::FrameTreeNodeId frame_tree_node_id_;
++
 +  // Adds `policy` (the value of a Content-Security-Policy header) to a
 +  // document's response, as the header and in parsed form, which is the form
 +  // the navigation reads. Public for tests.
@@ -1566,10 +2121,10 @@ index 0000000000000000000000000000000000000000..9c637f7f4801d4388dfa412c3768687b
 +#endif  // COMPONENTS_THORON_ADBLOCK_DOCUMENT_LOADER_THROTTLE_H_
 diff --git a/components/thoron_adblock/document_observer.cc b/components/thoron_adblock/document_observer.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..e3a58aae92c7548dc6a56978762d3538156429e5
+index 0000000000000000000000000000000000000000..5a36a2dfe1eb3c856471d680dd96d2c8d5690e8a
 --- /dev/null
 +++ b/components/thoron_adblock/document_observer.cc
-@@ -0,0 +1,174 @@
+@@ -0,0 +1,233 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -1661,11 +2216,70 @@ index 0000000000000000000000000000000000000000..e3a58aae92c7548dc6a56978762d3538
 +  if (large_media) {
 +    document.isolated_script += std::string(large_media_js());
 +  }
++  if (BlockedCount::LoggerIsOpen() && !document.scriptlets.empty() &&
++      scriptlets_sent_.size() < 64) {
++    scriptlets_sent_[navigation_handle->GetNavigationId()] = document.scriptlets;
++  }
 +  mojo::AssociatedRemote<mojom::DocumentAgent> agent;
 +  frame->GetRemoteAssociatedInterfaces()->GetInterface(&agent);
 +  agent->SetForNextCommittedLoad(document.stylesheet, document.script,
 +                                 document.isolated_script, document.generic,
 +                                 BlockedCount::LoggerIsOpen(), large_media);
++}
++
++// static
++void DocumentObserver::LogRewritten(content::FrameTreeNodeId frame_tree_node,
++                                    const GURL& url,
++                                    std::vector<std::string> rules) {
++  content::WebContents* web_contents =
++      content::WebContents::FromFrameTreeNodeId(frame_tree_node);
++  DocumentObserver* observer =
++      web_contents ? FromWebContents(web_contents) : nullptr;
++  if (!observer || rules.empty() || !BlockedCount::LoggerIsOpen()) {
++    return;
++  }
++  content::RenderFrameHost* frame =
++      web_contents->UnsafeFindFrameByFrameTreeNodeId(frame_tree_node);
++  if (frame && frame->GetLastCommittedURL() == url) {
++    for (const std::string& rule : rules) {
++      BlockedCount::Rule(frame->GetGlobalId(), rule,
++                         rule.starts_with("$replace") ? "replace" : "cosmetic");
++    }
++    return;
++  }
++  if (observer->rows_for_commit_.size() < 64) {
++    observer->rows_for_commit_[frame_tree_node] = {url, std::move(rules)};
++  }
++}
++
++void DocumentObserver::DidFinishNavigation(
++    content::NavigationHandle* navigation_handle) {
++  if (auto rows = rows_for_commit_.find(navigation_handle->GetFrameTreeNodeId());
++      rows != rows_for_commit_.end()) {
++    const auto [url, rules] = std::move(rows->second);
++    rows_for_commit_.erase(rows);
++    content::RenderFrameHost* frame = navigation_handle->GetRenderFrameHost();
++    if (navigation_handle->HasCommitted() && frame &&
++        navigation_handle->GetURL() == url) {
++      for (const std::string& rule : rules) {
++        BlockedCount::Rule(frame->GetGlobalId(), rule,
++                           rule.starts_with("$replace") ? "replace" : "cosmetic");
++      }
++    }
++  }
++  auto it = scriptlets_sent_.find(navigation_handle->GetNavigationId());
++  if (it == scriptlets_sent_.end()) {
++    return;
++  }
++  const std::vector<std::string> scriptlets = std::move(it->second);
++  scriptlets_sent_.erase(it);
++  content::RenderFrameHost* frame = navigation_handle->GetRenderFrameHost();
++  if (!navigation_handle->HasCommitted() || !frame) {
++    return;
++  }
++  for (const std::string& scriptlet : scriptlets) {
++    BlockedCount::Injected(frame->GetGlobalId(), scriptlet);
++  }
 +}
 +
 +void DocumentObserver::GenericStylesheet(
@@ -1746,21 +2360,23 @@ index 0000000000000000000000000000000000000000..e3a58aae92c7548dc6a56978762d3538
 +}  // namespace thoron_adblock
 diff --git a/components/thoron_adblock/document_observer.h b/components/thoron_adblock/document_observer.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..7961af3a68e0930eb90d26c10a326c71e6c44091
+index 0000000000000000000000000000000000000000..f0d301fb7f644a882239df7852117f1553bb824a
 --- /dev/null
 +++ b/components/thoron_adblock/document_observer.h
-@@ -0,0 +1,81 @@
+@@ -0,0 +1,98 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
 +#ifndef COMPONENTS_THORON_ADBLOCK_DOCUMENT_OBSERVER_H_
 +#define COMPONENTS_THORON_ADBLOCK_DOCUMENT_OBSERVER_H_
 +
++#include <map>
 +#include <string>
 +#include <vector>
 +
 +#include "base/memory/scoped_refptr.h"
 +#include "components/thoron_adblock/document_agent.mojom.h"
++#include "content/public/browser/frame_tree_node_id.h"
 +#include "content/public/browser/render_frame_host_receiver_set.h"
 +#include "content/public/browser/web_contents_observer.h"
 +#include "content/public/browser/web_contents_user_data.h"
@@ -1804,6 +2420,8 @@ index 0000000000000000000000000000000000000000..7961af3a68e0930eb90d26c10a326c71
 +  // content::WebContentsObserver:
 +  void ReadyToCommitNavigation(
 +      content::NavigationHandle* navigation_handle) override;
++  void DidFinishNavigation(
++      content::NavigationHandle* navigation_handle) override;
 +
 +  // mojom::DocumentHost:
 +  void GenericStylesheet(const std::vector<std::string>& classes,
@@ -1812,6 +2430,13 @@ index 0000000000000000000000000000000000000000..7961af3a68e0930eb90d26c10a326c71
 +  void AddFilter(const std::string& rule) override;
 +  void ReportHidden(const std::vector<std::string>& selectors) override;
 +  void AllowLargeMedia() override;
++
++  // The rules that changed the answer of the document `url` in the frame
++  // `frame_tree_node` (body_rewriter.h), as logger rows of that document: now
++  // when it is the frame's document, else once it commits.
++  static void LogRewritten(content::FrameTreeNodeId frame_tree_node,
++                           const GURL& url,
++                           std::vector<std::string> rules);
 +
 +  // What one report may hold.
 +  static constexpr size_t kMaxHiddenReported = 200;
@@ -1825,6 +2450,12 @@ index 0000000000000000000000000000000000000000..7961af3a68e0930eb90d26c10a326c71
 +
 +  const scoped_refptr<HostContentSettingsMap> settings_;
 +  content::RenderFrameHostReceiverSet<mojom::DocumentHost> receivers_;
++  // For the logger, while it is open: the scriptlets sent with each navigation,
++  // logged on its page once it commits.
++  std::map<int64_t, std::vector<std::string>> scriptlets_sent_;
++  // Rows for a document not committed yet: by frame, its address and rules.
++  std::map<content::FrameTreeNodeId, std::pair<GURL, std::vector<std::string>>>
++      rows_for_commit_;
 +  WEB_CONTENTS_USER_DATA_KEY_DECL();
 +};
 +
@@ -2951,10 +3582,10 @@ index 0000000000000000000000000000000000000000..5aeba22af3be4716ff8b31316d08da4a
 +}
 diff --git a/components/thoron_adblock/engine.rs b/components/thoron_adblock/engine.rs
 new file mode 100644
-index 0000000000000000000000000000000000000000..af419e1fddd8f4404c39bc561989fd0c6da611f7
+index 0000000000000000000000000000000000000000..b15da9f53ef8d6c613e3ede8ec44f8d47880ff38
 --- /dev/null
 +++ b/components/thoron_adblock/engine.rs
-@@ -0,0 +1,1199 @@
+@@ -0,0 +1,1294 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -2966,6 +3597,7 @@ index 0000000000000000000000000000000000000000..af419e1fddd8f4404c39bc561989fd0c
 +
 +mod cosmetics;
 +mod dynamic;
++mod html;
 +mod engine_core;
 +mod header;
 +mod permissions;
@@ -2997,6 +3629,12 @@ index 0000000000000000000000000000000000000000..af419e1fddd8f4404c39bc561989fd0c
 +        transformed_url: String,
 +    }
 +
++    /// An answer's text after HTML filtering and `$replace` (html.rs), and the rules that changed it.
++    struct RewrittenBody {
++        body: Vec<u8>,
++        applied: Vec<String>,
++    }
++
 +    /// What one document needs.
 +    struct DocumentResources {
 +        /// A style sheet for this site: one `selector{display:none!important}` rule per line for
@@ -3019,6 +3657,9 @@ index 0000000000000000000000000000000000000000..af419e1fddd8f4404c39bc561989fd0c
 +        isolated_script: String,
 +        /// Generic hiding is switched off for this document (a `$generichide` exception).
 +        generichide: bool,
++        /// The scriptlets in `script` as uBlock Origin writes them ("set-constant, a, 1"), for the
++        /// logger. At most 200.
++        scriptlets: Vec<String>,
 +    }
 +
 +    extern "Rust" {
@@ -3173,6 +3814,16 @@ index 0000000000000000000000000000000000000000..af419e1fddd8f4404c39bc561989fd0c
 +        /// "Temporarily allow large media" (media.js): runs in the isolated world of a document whose
 +        /// site has large media blocked.
 +        fn large_media_js() -> &'static str;
++
++        /// HTML filtering for a document at `url`: its rules, for `rewrite_body`; "" for none.
++        fn html_rules_for(self: &Engine, url: &str) -> String;
++        /// `$replace` for an answer to `url` asked by a page of `source_url`: the replacements, for
++        /// `rewrite_body`; "" for none.
++        fn replace_rules_for(self: &Engine, url: &str, source_url: &str, request_type: &str) -> String;
++        /// `##^responseheader()`: the headers to take out of a document's answer.
++        fn response_headers_for(self: &Engine, url: &str) -> Vec<String>;
++        /// An answer's text with those rules applied (no engine needed: it runs where the answer is).
++        fn rewrite_body(html_rules: &str, replace_rules: &str, body: &[u8]) -> RewrittenBody;
 +    }
 +}
 +
@@ -3180,7 +3831,7 @@ index 0000000000000000000000000000000000000000..af419e1fddd8f4404c39bc561989fd0c
 +use cosmetics::safe_selector;
 +#[cfg(test)]
 +use engine_core::safe_policy;
-+use ffi::{DocumentResources, RequestDecision};
++use ffi::{DocumentResources, RequestDecision, RewrittenBody};
 +
 +/// The engine the browser holds: the filters of the lists, or nothing when a saved engine could
 +/// not be loaded. What it answers is worked out in engine_core.rs and cosmetics.rs.
@@ -3269,6 +3920,7 @@ index 0000000000000000000000000000000000000000..af419e1fddd8f4404c39bc561989fd0c
 +        let Ok(resources) = serde_json::from_str::<Vec<adblock::resources::Resource>>(json) else { return 0 };
 +        let count = resources.len();
 +        if count > 0 {
++            filters.scriptlet_names = cosmetics::scriptlet_names(&resources);
 +            filters.engine.use_resources(resources);
 +        }
 +        count
@@ -3325,6 +3977,18 @@ index 0000000000000000000000000000000000000000..af419e1fddd8f4404c39bc561989fd0c
 +        self.0.as_ref().map(|f| engine_core::policy(f, url, source_url, main_frame)).unwrap_or_default()
 +    }
 +
++    fn html_rules_for(&self, url: &str) -> String {
++        self.0.as_ref().map(|f| f.html.for_page(&host_of(url))).unwrap_or_default()
++    }
++
++    fn replace_rules_for(&self, url: &str, source_url: &str, request_type: &str) -> String {
++        self.0.as_ref().map(|f| f.replaces.for_request(url, source_url, request_type)).unwrap_or_default()
++    }
++
++    fn response_headers_for(&self, url: &str) -> Vec<String> {
++        self.0.as_ref().map(|f| f.response_headers.for_page(&host_of(url))).unwrap_or_default()
++    }
++
 +    fn generic_stylesheet(&self, url: &str, classes: &Vec<String>, ids: &Vec<String>) -> String {
 +        self.0.as_ref().map(|f| cosmetics::generic_stylesheet(f, url, classes, ids)).unwrap_or_default()
 +    }
@@ -3339,6 +4003,7 @@ index 0000000000000000000000000000000000000000..af419e1fddd8f4404c39bc561989fd0c
 +                script: String::new(),
 +                isolated_script: String::new(),
 +                generichide: false,
++                scriptlets: Vec::new(),
 +            };
 +        };
 +        let page = cosmetics::page(filters, url);
@@ -3350,6 +4015,7 @@ index 0000000000000000000000000000000000000000..af419e1fddd8f4404c39bc561989fd0c
 +            script: page.script,
 +            isolated_script: page.isolated_script,
 +            generichide: page.generichide,
++            scriptlets: page.scriptlets,
 +        }
 +    }
 +}
@@ -3449,6 +4115,18 @@ index 0000000000000000000000000000000000000000..af419e1fddd8f4404c39bc561989fd0c
 +
 +fn large_media_js() -> &'static str {
 +    include_str!("media.js")
++}
++
++fn rewrite_body(html_rules: &str, replace_rules: &str, body: &[u8]) -> RewrittenBody {
++    let (body, applied) = html::rewrite(html_rules, replace_rules, body);
++    RewrittenBody { body, applied }
++}
++
++/// The host of `url`, lower case ("" for none).
++fn host_of(url: &str) -> String {
++    adblock::request::Request::new(url, url, "document", "GET")
++        .map(|r| r.hostname.to_ascii_lowercase())
++        .unwrap_or_default()
 +}
 +
 +fn settings_page_js() -> &'static str {
@@ -3689,6 +4367,52 @@ index 0000000000000000000000000000000000000000..af419e1fddd8f4404c39bc561989fd0c
 +        assert!(engine.should_block("https://ads.example/a.js", "https://news.example/", "script"));
 +        assert!(!engine.should_block("https://ads.example/wanted.js", "https://news.example/", "script"));
 +        assert!(engine.document_resources("https://news.example/").hide_selectors.contains(&".promo".to_string()));
++    }
++
++    #[test]
++    fn answers_are_rewritten_as_the_lists_say() {
++        let lists = "! thoron-list: ublock-filters\n\
++                     news.example##^script:has-text(detect)\n\
++                     news.example##^responseheader(location)\n\
++                     ||news.example^$replace=/oldword/newword/g\n\
++                     ! thoron-list: easylist\n\
++                     shop.example##^responseheader(location)\n\
++                     ||shop.example^$replace=/a/b/\n";
++        let e = engine_from_rules(lists);
++        let rules = e.html_rules_for("https://news.example/");
++        let replace = e.replace_rules_for("https://news.example/", "https://news.example/", "document");
++        let out = rewrite_body(&rules, &replace, b"<p>oldword</p><script>detect()</script>");
++        assert_eq!(out.body, b"<p>newword</p>".to_vec());
++        assert_eq!(out.applied.len(), 2, "{:?}", out.applied);
++        assert_eq!(e.response_headers_for("https://news.example/x"), vec!["location".to_string()]);
++        // from a list that is not trusted: no headers, no replacements
++        assert!(e.response_headers_for("https://shop.example/").is_empty());
++        assert!(e.replace_rules_for("https://shop.example/", "https://shop.example/", "document").is_empty());
++        // the same from a saved engine
++        let restored = engine_from_serialized(&e.serialize());
++        assert_eq!(restored.html_rules_for("https://news.example/"), rules);
++        assert_eq!(restored.response_headers_for("https://news.example/"), vec!["location".to_string()]);
++        assert!(!restored.replace_rules_for("https://news.example/", "https://news.example/", "document").is_empty());
++    }
++
++    #[test]
++    fn the_logger_names_a_page_s_scriptlets_and_procedural_rules() {
++        use base64::Engine as _;
++        let mut e = engine_from_rules(
++            "news.example##+js(set-constant, thoron.check, 1)\nnews.example##p:has-text(Sponsored)\n",
++        );
++        let script = "function setConstant(chain = '', value = '') {\n  window.thoronDone = [chain, value];\n}\n";
++        let resources = format!(
++            r#"[{{"name":"set-constant.js","aliases":["set.js"],"kind":{{"mime":"application/javascript"}},"content":"{}"}}]"#,
++            base64::engine::general_purpose::STANDARD.encode(script)
++        );
++        assert_eq!(e.use_resources(&resources), 1);
++        let d = e.document_resources(NEWS);
++        assert_eq!(d.scriptlets, vec!["set-constant, thoron.check, 1".to_string()], "{}", d.script);
++        // the runner gets each rule's text for the logger; the programs stay as they are
++        assert!(d.isolated_script.contains(r#""r":"p:has-text(Sponsored)""#), "{}", d.isolated_script);
++        assert!(!d.procedural[0].contains("\"r\":"), "{:?}", d.procedural);
++        assert!(e.document_resources("https://other.example/").scriptlets.is_empty());
 +    }
 +
 +    #[test]
@@ -4053,7 +4777,9 @@ index 0000000000000000000000000000000000000000..af419e1fddd8f4404c39bc561989fd0c
 +        assert_eq!(d.stylesheet, format!(".plain{{display:none!important}}\n[{mark}]{{display:none!important}}\n"));
 +        // the runner, without its comments, called with the rules
 +        assert!(d.isolated_script.starts_with("(function(filters) {\n"), "{}", &d.isolated_script[..80]);
-+        assert!(d.isolated_script.ends_with(&format!("\n}})([{rule}]);\n")));
++        // each rule with its text, which the runner names to the logger
++        let labeled = format!("{},\"r\":\"div.card:has-text(Sponsored)\"}}", &rule[..rule.len() - 1]);
++        assert!(d.isolated_script.ends_with(&format!("\n}})([{labeled}]);\n")), "{}", d.isolated_script);
 +        assert!(!d.isolated_script.lines().any(|l| l.trim_start().starts_with("//")));
 +        // a new mark for every document
 +        assert_ne!(e.document_resources(NEWS).procedural, d.procedural);
@@ -4156,10 +4882,10 @@ index 0000000000000000000000000000000000000000..af419e1fddd8f4404c39bc561989fd0c
 +}
 diff --git a/components/thoron_adblock/engine_core.rs b/components/thoron_adblock/engine_core.rs
 new file mode 100644
-index 0000000000000000000000000000000000000000..b12baf0b2b0f73c0a9748a0e8d7086e7d7244906
+index 0000000000000000000000000000000000000000..bf2854f6cc4c9af58acc054451588ff430c808b0
 --- /dev/null
 +++ b/components/thoron_adblock/engine_core.rs
-@@ -0,0 +1,438 @@
+@@ -0,0 +1,476 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -4409,9 +5135,17 @@ index 0000000000000000000000000000000000000000..b12baf0b2b0f73c0a9748a0e8d7086e7
 +    /// Hide rules for every site that are written with a procedural operator; found by the
 +    /// engine (engine.rs) the first time a document asks, and never applied.
 +    pub siteless: std::sync::OnceLock<std::collections::HashSet<String>>,
++    /// HTML filtering (any list), `##^responseheader()` and `$replace` (trusted lists): html.rs.
++    pub html: crate::html::HtmlRules,
++    pub response_headers: crate::html::ResponseHeaderRules,
++    pub replaces: crate::html::ReplaceRules,
++    /// uBlock Origin's name of each scriptlet ("set-constant") by the function it defines
++    /// ("setConstant"), from the resources: how the logger names the scriptlets a page got.
++    pub scriptlet_names: std::collections::HashMap<String, String>,
 +}
 +
 +impl Filters {
++    #[allow(clippy::too_many_arguments)]
 +    fn new(
 +        engine: adblock::Engine,
 +        params: ParamRules,
@@ -4420,8 +5154,24 @@ index 0000000000000000000000000000000000000000..b12baf0b2b0f73c0a9748a0e8d7086e7
 +        skips: SkipRules,
 +        permissions: PermissionRules,
 +        transforms: TransformRules,
++        html: crate::html::HtmlRules,
++        response_headers: crate::html::ResponseHeaderRules,
++        replaces: crate::html::ReplaceRules,
 +    ) -> Filters {
-+        Filters { engine, params, headers, popups, skips, permissions, transforms, siteless: std::sync::OnceLock::new() }
++        Filters {
++            engine,
++            params,
++            headers,
++            popups,
++            skips,
++            permissions,
++            transforms,
++            siteless: std::sync::OnceLock::new(),
++            html,
++            response_headers,
++            replaces,
++            scriptlet_names: std::collections::HashMap::new(),
++        }
 +    }
 +}
 +
@@ -4435,6 +5185,9 @@ index 0000000000000000000000000000000000000000..b12baf0b2b0f73c0a9748a0e8d7086e7
 +        SkipRules::from_trusted_text(&trusted_lines(rules, "urlskip")),
 +        PermissionRules::from_trusted_text(&trusted_lines(rules, "permissions")),
 +        TransformRules::from_trusted_text(&trusted_lines(rules, "uritransform")),
++        crate::html::HtmlRules::from_rules(rules),
++        crate::html::ResponseHeaderRules::from_trusted_text(&trusted_lines(rules, "#^responseheader(")),
++        crate::html::ReplaceRules::from_trusted_text(&trusted_lines(rules, "replace")),
 +    )
 +}
 +
@@ -4558,9 +5311,17 @@ index 0000000000000000000000000000000000000000..b12baf0b2b0f73c0a9748a0e8d7086e7
 +    // bring (the `$removeparam` specials, `$header`, `$popup`), then the lines that only trusted lists may
 +    // bring (`$urlskip`, `$permissions`, `$uritransform`). They are kept apart so that a line of
 +    // the first can never count as one of the second.
-+    let any_list = format!("{}{}{}", filters.params.text, filters.headers.text, filters.popups.text);
++    let any_list =
++        format!("{}{}{}{}", filters.params.text, filters.headers.text, filters.popups.text, filters.html.text);
 +    let any_list = any_list.as_bytes();
-+    let trusted = format!("{}{}{}", filters.skips.text, filters.permissions.text, filters.transforms.text);
++    let trusted = format!(
++        "{}{}{}{}{}",
++        filters.skips.text,
++        filters.permissions.text,
++        filters.transforms.text,
++        filters.response_headers.text,
++        filters.replaces.text
++    );
 +    let engine = filters.engine.serialize();
 +    let mut data = Vec::with_capacity(SAVED.len() + 8 + any_list.len() + trusted.len() + engine.len());
 +    data.extend_from_slice(SAVED);
@@ -4596,14 +5357,17 @@ index 0000000000000000000000000000000000000000..b12baf0b2b0f73c0a9748a0e8d7086e7
 +        SkipRules::from_trusted_text(trusted),
 +        PermissionRules::from_trusted_text(trusted),
 +        TransformRules::from_trusted_text(trusted),
++        crate::html::HtmlRules::from_rules(any_list),
++        crate::html::ResponseHeaderRules::from_trusted_text(trusted),
++        crate::html::ReplaceRules::from_trusted_text(trusted),
 +    ))
 +}
 diff --git a/components/thoron_adblock/engine_service.cc b/components/thoron_adblock/engine_service.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..dcf6573810ee699602b7c07d0b40104165035deb
+index 0000000000000000000000000000000000000000..95885a55fcaf5b51cb13e78dad793466339fb882
 --- /dev/null
 +++ b/components/thoron_adblock/engine_service.cc
-@@ -0,0 +1,1370 @@
+@@ -0,0 +1,1415 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -5752,9 +6516,54 @@ index 0000000000000000000000000000000000000000..dcf6573810ee699602b7c07d0b401041
 +  const std::string& u = url.spec();
 +  DocumentResources found =
 +      (*engine_)->document_resources(rust::Str(u.data(), u.size()));
-+  return {std::string(found.stylesheet), std::string(found.script),
-+          std::string(found.isolated_script),
-+          !found.generichide && !Option("ignore-generic")};
++  Document document{std::string(found.stylesheet), std::string(found.script),
++                    std::string(found.isolated_script),
++                    !found.generichide && !Option("ignore-generic")};
++  for (const rust::String& scriptlet : found.scriptlets) {
++    document.scriptlets.emplace_back(scriptlet);
++  }
++  return document;
++}
++
++std::string EngineService::HtmlRulesFor(const GURL& url) const {
++  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
++  // HTML filtering is hiding: not where the menu's "no hiding" switch is on
++  if (!engine_ || !url.SchemeIsHTTPOrHTTPS() || SiteSwitch(url, "cosmetic")) {
++    return std::string();
++  }
++  const std::string& u = url.spec();
++  return std::string((*engine_)->html_rules_for(rust::Str(u.data(), u.size())));
++}
++
++std::string EngineService::ReplaceRulesFor(
++    const GURL& url,
++    const GURL& source,
++    network::mojom::RequestDestination destination) const {
++  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
++  if (!engine_ || !url.SchemeIsHTTPOrHTTPS()) {
++    return std::string();
++  }
++  const std::string& u = url.spec();
++  const std::string& s = source.is_valid() ? source.spec() : u;
++  const std::string_view type = RequestType(destination);
++  return std::string((*engine_)->replace_rules_for(
++      rust::Str(u.data(), u.size()), rust::Str(s.data(), s.size()),
++      rust::Str(type.data(), type.size())));
++}
++
++std::vector<std::string> EngineService::ResponseHeadersToRemove(
++    const GURL& url) const {
++  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
++  std::vector<std::string> out;
++  if (!engine_ || !url.SchemeIsHTTPOrHTTPS()) {
++    return out;
++  }
++  const std::string& u = url.spec();
++  for (const rust::String& name :
++       (*engine_)->response_headers_for(rust::Str(u.data(), u.size()))) {
++    out.emplace_back(name);
++  }
++  return out;
 +}
 +
 +std::string EngineService::GenericStylesheet(
@@ -5976,10 +6785,10 @@ index 0000000000000000000000000000000000000000..dcf6573810ee699602b7c07d0b401041
 +}  // namespace thoron_adblock
 diff --git a/components/thoron_adblock/engine_service.h b/components/thoron_adblock/engine_service.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..cd1a094d8aca05671edce8f13c7e75e2aa6074d2
+index 0000000000000000000000000000000000000000..5c98540264394f831185092e5fd25cdba164c9e6
 --- /dev/null
 +++ b/components/thoron_adblock/engine_service.h
-@@ -0,0 +1,415 @@
+@@ -0,0 +1,427 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -6137,10 +6946,22 @@ index 0000000000000000000000000000000000000000..cd1a094d8aca05671edce8f13c7e75e2
 +    // The document may ask for generic hide rules (GenericStylesheet): the
 +    // engine is loaded and the site has not switched generic hiding off.
 +    bool generic = false;
++    // The scriptlets in `script` as uBlock Origin writes them, for the logger.
++    std::vector<std::string> scriptlets;
 +  };
 +
 +  // For the http(s) document at `url`. Empty until the engine is loaded.
 +  Document ForDocument(const GURL& url) const;
++
++  // What uBlock Origin does to an answer before the page reads it (html.rs,
++  // body_rewriter.h): the HTML filters for a document at `url` ("" for none),
++  // the `$replace` rules for an answer to `url` ("" for none), and the headers
++  // `##^responseheader()` takes out of a document's answer.
++  std::string HtmlRulesFor(const GURL& url) const;
++  std::string ReplaceRulesFor(const GURL& url,
++                              const GURL& source,
++                              network::mojom::RequestDestination destination) const;
++  std::vector<std::string> ResponseHeadersToRemove(const GURL& url) const;
 +
 +  // The style sheet that hides, among the class names and ids the document
 +  // at `url` uses, what generic hide rules ask for. Empty when nothing
@@ -6603,10 +7424,10 @@ index 0000000000000000000000000000000000000000..1e9ac4ba59dde97b1c62b1e15042525b
 +#endif  // COMPONENTS_THORON_ADBLOCK_FEATURES_H_
 diff --git a/components/thoron_adblock/fuzz_lists.rs b/components/thoron_adblock/fuzz_lists.rs
 new file mode 100644
-index 0000000000000000000000000000000000000000..f146351d7cec00cc630a512f1a0d4dfde9b5ad8c
+index 0000000000000000000000000000000000000000..16a4768093d74c524ce945f2e81f918f1d710560
 --- /dev/null
 +++ b/components/thoron_adblock/fuzz_lists.rs
-@@ -0,0 +1,291 @@
+@@ -0,0 +1,293 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -6631,6 +7452,8 @@ index 0000000000000000000000000000000000000000..f146351d7cec00cc630a512f1a0d4dfd
 +mod cosmetics;
 +#[allow(dead_code)]
 +mod engine_core;
++#[allow(dead_code)]
++mod html;
 +#[allow(dead_code)]
 +mod procedural;
 +#[allow(dead_code)]
@@ -7587,12 +8410,855 @@ index 0000000000000000000000000000000000000000..14d8a42b54fdbb2d0b66c56140e37796
 +        assert_eq!(tests_for(&rules, "https://many.example/a.js", "script", "GET").lines().count(), MAX_TESTS);
 +    }
 +}
+diff --git a/components/thoron_adblock/html.rs b/components/thoron_adblock/html.rs
+new file mode 100644
+index 0000000000000000000000000000000000000000..eaf5962065cc279cc4a210f38f6d7d24b2b044f7
+--- /dev/null
++++ b/components/thoron_adblock/html.rs
+@@ -0,0 +1,837 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++//! What uBlock Origin does to an answer before the page sees it, which an extension can do only in
++//! Firefox and the browser can do everywhere:
++//!
++//! - HTML filtering, `example.com##^script:has-text(adblock)`: elements taken out of a document's HTML
++//!   before it is parsed, so a script never runs. A rule names one element by its tag (one whose
++//!   content is text, as `script`, or that has none, as `meta`), its id and classes (`#ads`,
++//!   `.promo`), its attributes (`[src*="ads"]`), `:has-text(text)` or `:has-text(/pattern/)`, and
++//!   `:not()` with any of those. A rule with any other part, or for every site, is left out. `#@#^`
++//!   takes a rule back on the sites it names.
++//! - `example.com##^responseheader(location)`: a header taken out of a document's answer; only the
++//!   headers uBlock Origin allows (`location`, `refresh`, `report-to`, `set-cookie`), from trusted
++//!   lists only.
++//! - `||example.com^$replace=/pattern/text/flags`: a text replaced in an answer, from trusted lists
++//!   only.
++//!
++//! The browser hands the text it gets to `rewrite`, which needs no engine (it runs where the answer is).
++
++use std::collections::{HashMap, HashSet};
++
++use adblock::lists::{FilterSet, ParseOptions};
++use adblock::request::Request;
++
++/// Elements whose content is text (the parser does not read tags inside them), and elements with no
++/// content: the only ones a rule can take out without parsing the whole document.
++const RAW_TEXT: [&str; 8] = ["script", "style", "title", "textarea", "xmp", "iframe", "noembed", "noframes"];
++const VOID: [&str; 14] =
++    ["meta", "link", "base", "img", "input", "br", "hr", "area", "col", "embed", "param", "source", "track", "wbr"];
++/// The headers uBlock Origin lets `responseheader()` take out.
++const HEADERS: [&str; 4] = ["location", "refresh", "report-to", "set-cookie"];
++/// At most this many rules for one page; a longer selector is not one a list writes.
++const MAX_PAGE_RULES: usize = 300;
++const MAX_SELECTOR: usize = 2000;
++
++#[derive(Clone, Debug, PartialEq)]
++enum Op {
++    Has,
++    Equals,
++    Contains,
++    Starts,
++    Ends,
++    Word,
++}
++
++#[derive(Clone, Debug)]
++enum TextTest {
++    Plain(String),
++    Pattern(regex::Regex),
++}
++
++/// One element a rule takes out.
++#[derive(Clone, Debug)]
++pub struct Element {
++    tag: String,
++    attributes: Vec<(String, Op, String)>,
++    text: Option<TextTest>,
++    /// `:not(...)`: what the element must not have.
++    not_attributes: Vec<(String, Op, String)>,
++    not_text: Vec<TextTest>,
++    /// The selector as written, for the logger.
++    pub rule: String,
++}
++
++/// The index of the `)` that closes what starts after an opening `(`; a `\` keeps the next
++/// character as it is.
++fn closing(text: &str) -> Option<usize> {
++    let mut depth = 1;
++    let mut chars = text.char_indices();
++    while let Some((i, c)) = chars.next() {
++        match c {
++            '\\' => {
++                chars.next();
++            }
++            '(' => depth += 1,
++            ')' => {
++                depth -= 1;
++                if depth == 0 {
++                    return Some(i);
++                }
++            }
++            _ => {}
++        }
++    }
++    None
++}
++
++/// `text` or `/pattern/flags` as uBlock Origin's `:has-text()` reads it.
++fn text_test(arg: &str) -> Option<TextTest> {
++    if let Some(body) = arg.strip_prefix('/') {
++        let end = body.rfind('/')?;
++        let flags = &body[end + 1..];
++        if !flags.chars().all(|c| "imsu".contains(c)) {
++            return None;
++        }
++        let mut pattern = String::new();
++        if flags.contains('i') {
++            pattern.push_str("(?i)");
++        }
++        if flags.contains('s') {
++            pattern.push_str("(?s)");
++        }
++        if flags.contains('m') {
++            pattern.push_str("(?m)");
++        }
++        pattern.push_str(&body[..end]);
++        return regex::RegexBuilder::new(&pattern).size_limit(1 << 20).build().ok().map(TextTest::Pattern);
++    }
++    // a `\` keeps the next character as it is
++    let mut plain = String::new();
++    let mut chars = arg.chars();
++    while let Some(c) = chars.next() {
++        plain.push(if c == '\\' { chars.next()? } else { c });
++    }
++    (!plain.is_empty()).then_some(TextTest::Plain(plain))
++}
++
++/// `name`, `name="value"`, `name*=value`... as in a CSS attribute selector.
++fn attribute(text: &str) -> Option<(String, Op, String)> {
++    let text = text.trim();
++    let Some(eq) = text.find('=') else {
++        let name = text.to_ascii_lowercase();
++        return valid_name(&name).then_some((name, Op::Has, String::new()));
++    };
++    let (op, name_end) = match text[..eq].chars().last() {
++        Some('*') => (Op::Contains, eq - 1),
++        Some('^') => (Op::Starts, eq - 1),
++        Some('$') => (Op::Ends, eq - 1),
++        Some('~') => (Op::Word, eq - 1),
++        _ => (Op::Equals, eq),
++    };
++    let name = text[..name_end].trim().to_ascii_lowercase();
++    let mut value = text[eq + 1..].trim();
++    // a trailing " i" (case-insensitive) is not supported: the rule is left out
++    if let Some(quote) = value.chars().next().filter(|c| *c == '"' || *c == '\'') {
++        value = value.strip_prefix(quote)?.strip_suffix(quote)?;
++    } else if value.contains(char::is_whitespace) {
++        return None;
++    }
++    valid_name(&name).then(|| (name, op, value.to_string()))
++}
++
++fn valid_name(name: &str) -> bool {
++    !name.is_empty() && name.bytes().all(|b| b.is_ascii_alphanumeric() || b"-_:".contains(&b))
++}
++
++/// The index of the `]` that closes an attribute selector, outside quotes.
++fn attribute_end(text: &str) -> Option<usize> {
++    let mut quote = None;
++    for (i, c) in text.char_indices() {
++        match (quote, c) {
++            (Some(q), c) if c == q => quote = None,
++            (Some(_), _) => {}
++            (None, '"' | '\'') => quote = Some(c),
++            (None, ']') => return Some(i),
++            _ => {}
++        }
++    }
++    None
++}
++
++/// The element a selector names, or `None` for one these rules cannot take out.
++pub fn element(selector: &str) -> Option<Element> {
++    let s = selector.trim();
++    if s.is_empty() || s.len() > MAX_SELECTOR {
++        return None;
++    }
++    let tag_end = s.find(|c: char| !c.is_ascii_alphanumeric()).unwrap_or(s.len());
++    let tag = s[..tag_end].to_ascii_lowercase();
++    if !RAW_TEXT.contains(&tag.as_str()) && !VOID.contains(&tag.as_str()) {
++        return None;
++    }
++    let mut rest = &s[tag_end..];
++    let mut attributes = Vec::new();
++    let mut text = None;
++    let mut not_attributes = Vec::new();
++    let mut not_text = Vec::new();
++    let ident_end = |t: &str| t.find(|c: char| !(c.is_ascii_alphanumeric() || c == '-' || c == '_')).unwrap_or(t.len());
++    while !rest.is_empty() {
++        if let Some(after) = rest.strip_prefix('#') {
++            let end = ident_end(after);
++            if end == 0 {
++                return None;
++            }
++            attributes.push(("id".to_string(), Op::Equals, after[..end].to_string()));
++            rest = &after[end..];
++        } else if let Some(after) = rest.strip_prefix('.') {
++            let end = ident_end(after);
++            if end == 0 {
++                return None;
++            }
++            attributes.push(("class".to_string(), Op::Word, after[..end].to_string()));
++            rest = &after[end..];
++        } else if let Some(inside) = rest.strip_prefix(":not(") {
++            let end = closing(inside)?;
++            // one attribute or one text test
++            let not = inside[..end].trim();
++            if let Some(attr) = not.strip_prefix('[').and_then(|a| a.strip_suffix(']')) {
++                not_attributes.push(attribute(attr)?);
++            } else if let Some(arg) = not.strip_prefix(":has-text(").and_then(|a| a.strip_suffix(')')) {
++                not_text.push(text_test(arg)?);
++            } else {
++                return None;
++            }
++            rest = &inside[end + 1..];
++        } else if let Some(inside) = rest.strip_prefix('[') {
++            let end = attribute_end(inside)?;
++            attributes.push(attribute(&inside[..end])?);
++            rest = &inside[end + 1..];
++        } else if let Some(inside) = rest.strip_prefix(":has-text(") {
++            if text.is_some() {
++                return None;
++            }
++            let end = closing(inside)?;
++            text = Some(text_test(&inside[..end])?);
++            rest = &inside[end + 1..];
++        } else {
++            return None;
++        }
++    }
++    Some(Element { tag, attributes, text, not_attributes, not_text, rule: s.to_string() })
++}
++
++fn attribute_holds(attributes: &[(String, String)], (name, op, want): &(String, Op, String)) -> bool {
++    let Some(value) = attributes.iter().find(|(n, _)| n == name).map(|(_, v)| v.as_str()) else { return false };
++    match op {
++        Op::Has => true,
++        Op::Equals => value == want,
++        Op::Contains => value.contains(want.as_str()),
++        Op::Starts => value.starts_with(want.as_str()),
++        Op::Ends => value.ends_with(want.as_str()),
++        Op::Word => value.split_ascii_whitespace().any(|w| w == want),
++    }
++}
++
++fn text_holds(test: &TextTest, text: &str) -> bool {
++    match test {
++        TextTest::Plain(plain) => text.contains(plain.as_str()),
++        TextTest::Pattern(pattern) => pattern.is_match(text),
++    }
++}
++
++impl Element {
++    fn matches(&self, attributes: &[(String, String)], text: &str) -> bool {
++        self.attributes.iter().all(|a| attribute_holds(attributes, a))
++            && !self.not_attributes.iter().any(|a| attribute_holds(attributes, a))
++            && self.text.as_ref().is_none_or(|t| text_holds(t, text))
++            && !self.not_text.iter().any(|t| text_holds(t, text))
++    }
++}
++
++/// A rule's sites: those it is for, and those it is not (`~`). "name.*" is that name under any
++/// ending, as uBlock Origin's entities.
++fn sites(list: &str) -> (Vec<String>, Vec<String>) {
++    let (mut yes, mut no) = (Vec::new(), Vec::new());
++    for entry in list.split(',').map(|e| e.trim().to_ascii_lowercase()).filter(|e| !e.is_empty()) {
++        match entry.strip_prefix('~') {
++            Some(not) => no.push(not.to_string()),
++            None => yes.push(entry),
++        }
++    }
++    (yes, no)
++}
++
++fn host_matches(host: &str, entry: &str) -> bool {
++    match entry.strip_suffix(".*") {
++        Some(name) => {
++            let mut from = 0;
++            while let Some(found) = host[from..].find(name) {
++                let start = from + found;
++                let end = start + name.len();
++                if (start == 0 || host.as_bytes()[start - 1] == b'.')
++                    && host.as_bytes().get(end) == Some(&b'.')
++                    && end + 1 < host.len()
++                {
++                    return true;
++                }
++                from = start + 1;
++            }
++            false
++        }
++        None => host == entry || (host.ends_with(entry) && host.as_bytes()[host.len() - entry.len() - 1] == b'.'),
++    }
++}
++
++/// For a page of `host`: a rule for `yes` (none: every site) but not for `no`.
++fn for_host(host: &str, yes: &[String], no: &[String]) -> bool {
++    (yes.is_empty() || yes.iter().any(|e| host_matches(host, e))) && !no.iter().any(|e| host_matches(host, e))
++}
++
++/// The HTML filters of the lists.
++#[derive(Default)]
++pub struct HtmlRules {
++    rules: Vec<(Vec<String>, Vec<String>, Element)>,
++    exceptions: Vec<(Vec<String>, Vec<String>, String)>,
++    /// The rules as the lists wrote them, one per line: what is saved with the engine.
++    pub text: String,
++}
++
++impl HtmlRules {
++    /// From the lists' text; every line that is not an HTML filter is skipped.
++    pub fn from_rules(rules: &str) -> HtmlRules {
++        let mut out = HtmlRules::default();
++        for line in rules.lines().map(str::trim) {
++            if !line.contains("#^") || line.starts_with('!') || line.contains("#^responseheader(") {
++                continue;
++            }
++            let (exception, (list, selector)) = match (line.split_once("#@#^"), line.split_once("##^")) {
++                (Some(parts), _) => (true, parts),
++                (None, Some(parts)) => (false, parts),
++                _ => continue,
++            };
++            let (yes, no) = sites(list);
++            if exception {
++                out.exceptions.push((yes, no, selector.trim().to_string()));
++            } else if yes.is_empty() {
++                continue; // not for every site: it would put the work on every page
++            } else if let Some(found) = element(selector) {
++                out.rules.push((yes, no, found));
++            } else {
++                continue;
++            }
++            out.text.push_str(line);
++            out.text.push('\n');
++        }
++        out
++    }
++
++    /// The selectors for a page of `host`, as JSON ("" for none): what `rewrite` takes.
++    pub fn for_page(&self, host: &str) -> String {
++        if self.rules.is_empty() || host.is_empty() {
++            return String::new();
++        }
++        let host = host.to_ascii_lowercase();
++        let taken_back: HashSet<&str> = self
++            .exceptions
++            .iter()
++            .filter(|(yes, no, _)| for_host(&host, yes, no))
++            .map(|(_, _, selector)| selector.as_str())
++            .collect();
++        let found: Vec<&str> = self
++            .rules
++            .iter()
++            .filter(|(yes, no, e)| for_host(&host, yes, no) && !taken_back.contains(e.rule.as_str()))
++            .map(|(_, _, e)| e.rule.as_str())
++            .take(MAX_PAGE_RULES)
++            .collect();
++        if found.is_empty() {
++            String::new()
++        } else {
++            serde_json::to_string(&found).unwrap_or_default()
++        }
++    }
++}
++
++/// The `##^responseheader()` rules of the trusted lists.
++#[derive(Default)]
++pub struct ResponseHeaderRules {
++    rules: Vec<(Vec<String>, Vec<String>, String)>,
++    exceptions: Vec<(Vec<String>, Vec<String>, String)>,
++    pub text: String,
++}
++
++impl ResponseHeaderRules {
++    pub fn from_trusted_text(lines: &str) -> ResponseHeaderRules {
++        let mut out = ResponseHeaderRules::default();
++        for line in lines.lines().map(str::trim).filter(|l| l.contains("#^responseheader(") && !l.starts_with('!')) {
++            let (exception, (list, rest)) = match (line.split_once("#@#^"), line.split_once("##^")) {
++                (Some(parts), _) => (true, parts),
++                (None, Some(parts)) => (false, parts),
++                _ => continue,
++            };
++            let Some(name) = rest.strip_prefix("responseheader(").and_then(|r| r.strip_suffix(')')) else { continue };
++            let name = name.trim().to_ascii_lowercase();
++            if !HEADERS.contains(&name.as_str()) {
++                continue;
++            }
++            let (yes, no) = sites(list);
++            if !exception && yes.is_empty() {
++                continue;
++            }
++            let target = if exception { &mut out.exceptions } else { &mut out.rules };
++            target.push((yes, no, name));
++            out.text.push_str(line);
++            out.text.push('\n');
++        }
++        out
++    }
++
++    /// The headers to take out of the answer for a document of `host`.
++    pub fn for_page(&self, host: &str) -> Vec<String> {
++        let host = host.to_ascii_lowercase();
++        let mut out: Vec<String> = Vec::new();
++        for (yes, no, name) in &self.rules {
++            let taken_back = self.exceptions.iter().any(|(y, n, other)| other == name && for_host(&host, y, n));
++            if for_host(&host, yes, no) && !taken_back && !out.contains(name) {
++                out.push(name.clone());
++            }
++        }
++        out
++    }
++}
++
++/// One `$replace`: what is replaced, by what, and whether every time.
++struct Replace {
++    pattern: String,
++    with: String,
++    every: bool,
++}
++
++/// The value of `$replace=`: `/pattern/text/flags`, a `\` keeping the next character (a `/` too).
++/// What follows it (`,` and more options), and the parts.
++fn replace_value(value: &str) -> Option<(Replace, &str)> {
++    let body = value.strip_prefix('/')?;
++    let mut parts = Vec::new();
++    let mut current = String::new();
++    let mut chars = body.char_indices();
++    let mut end = None;
++    while let Some((i, c)) = chars.next() {
++        match c {
++            '\\' => {
++                let (_, next) = chars.next()?;
++                if next != '/' {
++                    current.push('\\');
++                }
++                current.push(next);
++            }
++            '/' => {
++                parts.push(std::mem::take(&mut current));
++                if parts.len() == 2 {
++                    end = Some(i + 1);
++                    break;
++                }
++            }
++            _ => current.push(c),
++        }
++    }
++    let end = end?;
++    let after = &body[end..];
++    let flags_end = after.find(',').unwrap_or(after.len());
++    let flags = &after[..flags_end];
++    if parts[0].is_empty() || !flags.chars().all(|c| "gimsu".contains(c)) {
++        return None;
++    }
++    let mut pattern = String::new();
++    for (flag, inline) in [('i', "(?i)"), ('s', "(?s)"), ('m', "(?m)")] {
++        if flags.contains(flag) {
++            pattern.push_str(inline);
++        }
++    }
++    pattern.push_str(&parts[0]);
++    Some((Replace { pattern, with: js_replacement(&parts[1]), every: flags.contains('g') }, &after[flags_end..]))
++}
++
++/// A JavaScript replacement text ("$1", "$&", "$$") as the regex crate writes it.
++fn js_replacement(with: &str) -> String {
++    let mut out = String::new();
++    let mut chars = with.chars().peekable();
++    while let Some(c) = chars.next() {
++        if c != '$' {
++            out.push(c);
++            continue;
++        }
++        match chars.peek().copied() {
++            Some('$') => {
++                chars.next();
++                out.push_str("$$");
++            }
++            Some('&') => {
++                chars.next();
++                out.push_str("${0}");
++            }
++            Some(d) if d.is_ascii_digit() => {
++                chars.next();
++                out.push_str(&format!("${{{d}}}"));
++            }
++            _ => out.push_str("$$"),
++        }
++    }
++    out
++}
++
++/// `line` without its `replace` option (with or without a value).
++fn without_replace(line: &str) -> Option<String> {
++    let (pattern, options) = line.split_once('$')?;
++    let kept: Vec<&str> = options.split(',').filter(|o| *o != "replace" && !o.starts_with("replace=")).collect();
++    Some(if kept.is_empty() { pattern.to_string() } else { format!("{pattern}${}", kept.join(",")) })
++}
++
++/// The `$replace` rules of the trusted lists.
++#[derive(Default)]
++pub struct ReplaceRules {
++    engine: Option<adblock::Engine>,
++    plans: HashMap<String, Vec<Replace>>,
++    pub text: String,
++}
++
++impl ReplaceRules {
++    pub fn from_trusted_text(lines: &str) -> ReplaceRules {
++        let mut out = ReplaceRules::default();
++        let mut filters = Vec::new();
++        for line in lines
++            .lines()
++            .map(str::trim)
++            .filter(|l| (l.contains("$replace") || l.contains(",replace")) && !l.starts_with('!'))
++        {
++            if line.contains("##") || line.contains("#@#") {
++                continue; // a cosmetic rule
++            }
++            if line.starts_with("@@") {
++                // uBlock Origin's `@@||site^$replace`: no replacement where it applies
++                if let Some(filter) = without_replace(line) {
++                    filters.push(filter);
++                    out.text.push_str(line);
++                    out.text.push('\n');
++                }
++                continue;
++            }
++            let Some(at) = line.find("$replace=").or_else(|| line.find(",replace=")) else { continue };
++            let Some((replace, rest)) = replace_value(&line[at + "$replace=".len()..]) else { continue };
++            if regex::bytes::RegexBuilder::new(&replace.pattern).size_limit(1 << 20).build().is_err() {
++                continue;
++            }
++            // the rule without `replace=`, for the small engine that says where it applies
++            let before = &line[..at];
++            let more = rest.trim_start_matches(',');
++            let filter = match (line.as_bytes()[at], more.is_empty()) {
++                (b'$', true) => before.to_string(),
++                (b'$', false) => format!("{before}${more}"),
++                (_, true) => before.to_string(),
++                (_, false) => format!("{before},{more}"),
++            };
++            out.plans.entry(filter.clone()).or_default().push(replace);
++            filters.push(filter);
++            out.text.push_str(line);
++            out.text.push('\n');
++        }
++        if !out.plans.is_empty() {
++            let mut set = FilterSet::new(true);
++            set.add_filter_list(filters.join("\n"), ParseOptions::default());
++            out.engine = Some(adblock::Engine::new_with_filter_set_no_optimize(set));
++        }
++        out
++    }
++
++    /// The replacements for an answer to `url` (asked by a page of `source_url`), as JSON ("" for
++    /// none): what `rewrite` takes.
++    pub fn for_request(&self, url: &str, source_url: &str, request_type: &str) -> String {
++        let Some(engine) = &self.engine else { return String::new() };
++        let Ok(request) = Request::new(url, source_url, request_type, "GET") else { return String::new() };
++        let result = engine.check_network_request(&request);
++        if result.exception.is_some() {
++            return String::new();
++        }
++        let Some(filter) = result.filter.and_then(|f| f.raw_line) else { return String::new() };
++        let Some(plans) = self.plans.get(filter.trim()) else { return String::new() };
++        let list: Vec<(&str, &str, bool)> = plans.iter().map(|p| (p.pattern.as_str(), p.with.as_str(), p.every)).collect();
++        serde_json::to_string(&list).unwrap_or_default()
++    }
++}
++
++/// The attributes of a start tag (`<tag ...>`, the text between the name and the `>`).
++fn tag_attributes(text: &[u8]) -> Vec<(String, String)> {
++    let mut out = Vec::new();
++    let mut i = 0;
++    let n = text.len();
++    while i < n {
++        while i < n && (text[i].is_ascii_whitespace() || text[i] == b'/') {
++            i += 1;
++        }
++        let start = i;
++        while i < n && !text[i].is_ascii_whitespace() && !b"=/>".contains(&text[i]) {
++            i += 1;
++        }
++        if i == start {
++            i += 1;
++            continue;
++        }
++        let name = String::from_utf8_lossy(&text[start..i]).to_ascii_lowercase();
++        while i < n && text[i].is_ascii_whitespace() {
++            i += 1;
++        }
++        let mut value = String::new();
++        if i < n && text[i] == b'=' {
++            i += 1;
++            while i < n && text[i].is_ascii_whitespace() {
++                i += 1;
++            }
++            if i < n && (text[i] == b'"' || text[i] == b'\'') {
++                let quote = text[i];
++                let from = i + 1;
++                i = from;
++                while i < n && text[i] != quote {
++                    i += 1;
++                }
++                value = String::from_utf8_lossy(&text[from..i.min(n)]).into_owned();
++                i += 1;
++            } else {
++                let from = i;
++                while i < n && !text[i].is_ascii_whitespace() && text[i] != b'>' {
++                    i += 1;
++                }
++                value = String::from_utf8_lossy(&text[from..i]).into_owned();
++            }
++        }
++        if !out.iter().any(|(n, _): &(String, String)| *n == name) {
++            out.push((name, value));
++        }
++    }
++    out
++}
++
++fn find(haystack: &[u8], from: usize, needle: &[u8]) -> Option<usize> {
++    haystack.get(from..)?.windows(needle.len()).position(|w| w == needle).map(|p| p + from)
++}
++
++/// The index just after the `>` that ends the tag started before `from`, outside quotes.
++fn tag_end(html: &[u8], from: usize) -> Option<usize> {
++    let mut quote = 0u8;
++    for (i, &b) in html.iter().enumerate().skip(from) {
++        if quote != 0 {
++            if b == quote {
++                quote = 0;
++            }
++        } else if b == b'"' || b == b'\'' {
++            quote = b;
++        } else if b == b'>' {
++            return Some(i + 1);
++        }
++    }
++    None
++}
++
++/// Where the content of a raw-text element `tag` ends (its `</tag`), and the index after its end tag.
++fn raw_text_end(html: &[u8], from: usize, tag: &str) -> (usize, usize) {
++    let mut at = from;
++    while let Some(lt) = find(html, at, b"</") {
++        let name = &html[lt + 2..(lt + 2 + tag.len()).min(html.len())];
++        let after = html.get(lt + 2 + tag.len()).copied();
++        if name.eq_ignore_ascii_case(tag.as_bytes())
++            && matches!(after, Some(b'>' | b'/' | b' ' | b'\t' | b'\n' | b'\r' | b'\x0c'))
++        {
++            let end = tag_end(html, lt + 2).unwrap_or(html.len());
++            return (lt, end);
++        }
++        at = lt + 2;
++    }
++    (html.len(), html.len())
++}
++
++/// The HTML filters `rules` (JSON of selectors) applied to a document: the document without the
++/// elements they name, and the rules that took something out.
++fn filter_html(rules: &[Element], html: &[u8]) -> (Vec<u8>, Vec<String>) {
++    let tags: HashSet<&str> = rules.iter().map(|r| r.tag.as_str()).collect();
++    let mut out = Vec::with_capacity(html.len());
++    let mut applied: Vec<String> = Vec::new();
++    let mut last = 0;
++    let mut i = 0;
++    while let Some(lt) = find(html, i, b"<") {
++        if html[lt..].starts_with(b"<!--") {
++            i = find(html, lt + 4, b"-->").map(|e| e + 3).unwrap_or(html.len());
++            continue;
++        }
++        let name_start = lt + 1;
++        let mut j = name_start;
++        while j < html.len() && html[j].is_ascii_alphanumeric() {
++            j += 1;
++        }
++        if j == name_start {
++            i = lt + 1;
++            continue;
++        }
++        let tag = String::from_utf8_lossy(&html[name_start..j]).to_ascii_lowercase();
++        let Some(open_end) = tag_end(html, j) else { break };
++        let raw = RAW_TEXT.contains(&tag.as_str());
++        let (content_end, element_end) = if raw { raw_text_end(html, open_end, &tag) } else { (open_end, open_end) };
++        if tags.contains(tag.as_str()) {
++            let attributes = tag_attributes(&html[j..open_end - 1]);
++            let text = if raw { String::from_utf8_lossy(&html[open_end..content_end]).into_owned() } else { String::new() };
++            if let Some(rule) = rules.iter().find(|r| r.tag == tag && r.matches(&attributes, &text)) {
++                out.extend_from_slice(&html[last..lt]);
++                last = element_end;
++                if !applied.contains(&rule.rule) {
++                    applied.push(rule.rule.clone());
++                }
++            }
++        }
++        i = element_end.max(lt + 1);
++    }
++    out.extend_from_slice(&html[last..]);
++    (out, applied)
++}
++
++/// An answer's text after the page's HTML filters (`html_rules`, from `HtmlRules::for_page`) and
++/// `$replace` rules (`replace_rules`, from `ReplaceRules::for_request`): the text, and for the logger
++/// the rules that changed it ("##^script:has-text(ads)", "$replace=/a/b/").
++pub fn rewrite(html_rules: &str, replace_rules: &str, body: &[u8]) -> (Vec<u8>, Vec<String>) {
++    let mut text = body.to_vec();
++    let mut applied = Vec::new();
++    if !html_rules.is_empty() {
++        let selectors: Vec<String> = serde_json::from_str(html_rules).unwrap_or_default();
++        let elements: Vec<Element> = selectors.iter().filter_map(|s| element(s)).collect();
++        if !elements.is_empty() {
++            let (filtered, taken) = filter_html(&elements, &text);
++            text = filtered;
++            applied.extend(taken.into_iter().map(|rule| format!("##^{rule}")));
++        }
++    }
++    if !replace_rules.is_empty() {
++        let list: Vec<(String, String, bool)> = serde_json::from_str(replace_rules).unwrap_or_default();
++        for (pattern, with, every) in list {
++            let Ok(re) = regex::bytes::RegexBuilder::new(&pattern).size_limit(1 << 20).build() else { continue };
++            if !re.is_match(&text) {
++                continue;
++            }
++            text = if every {
++                re.replace_all(&text, with.as_bytes()).into_owned()
++            } else {
++                re.replace(&text, with.as_bytes()).into_owned()
++            };
++            applied.push(format!("$replace=/{pattern}/"));
++        }
++    }
++    (text, applied)
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    const LISTS: &str = "\
++news.example##^script:has-text(adblock)\n\
++news.example##^script[src*=\"ads\"]\n\
++news.example,shop.example##^meta[http-equiv=\"refresh\"]\n\
++gamestorrents.*##^script:has-text(/AaDetector|popunder/i)\n\
++news.example##^div:has-text(x)\n\
++news.example##^html > head > script\n\
++##^script:has-text(everywhere)\n\
++shop.example#@#^meta[http-equiv=\"refresh\"]\n\
++news.example##^responseheader(location)\n";
++
++    fn page(host: &str, html: &str) -> (String, Vec<String>) {
++        let rules = HtmlRules::from_rules(LISTS);
++        let (out, applied) = rewrite(&rules.for_page(host), "", html.as_bytes());
++        (String::from_utf8(out).unwrap(), applied)
++    }
++
++    #[test]
++    fn html_filters_take_the_elements_out() {
++        let html = "<html><head><meta http-equiv=\"refresh\" content=\"0;url=x\"><script>var adblock = 1;</script>\
++                    <script src=\"/js/ads.js\"></script><script>keep()</script><title>t</title></head>\
++                    <body><div>x</div><script>document.write('<script>adblock</scr' + 'ipt>')</script></body></html>";
++        let (out, applied) = page("www.news.example", html);
++        assert!(!out.contains("adblock = 1") && !out.contains("ads.js") && !out.contains("refresh"), "{out}");
++        assert!(out.contains("<script>keep()</script>") && out.contains("<div>x</div>"), "{out}");
++        // the script that writes "adblock" has the word too: taken out
++        assert!(!out.contains("document.write"), "{out}");
++        assert_eq!(applied.len(), 3, "{applied:?}");
++        assert!(applied.contains(&"##^script:has-text(adblock)".to_string()));
++    }
++
++    #[test]
++    fn only_on_their_sites_with_exceptions_and_entities() {
++        let html = "<meta http-equiv=\"refresh\" content=\"1\"><script>AADETECTOR()</script>";
++        assert_eq!(page("other.example", html).0, html);
++        // taken back on shop.example
++        assert_eq!(page("shop.example", html).0, html);
++        // an entity, and a pattern that ignores case
++        assert_eq!(page("gamestorrents.app", html).0, "<meta http-equiv=\"refresh\" content=\"1\">");
++        assert_eq!(page("sub.gamestorrents.co.uk", html).0, "<meta http-equiv=\"refresh\" content=\"1\">");
++    }
++
++    #[test]
++    fn what_cannot_be_taken_out_is_left_out() {
++        let rules = HtmlRules::from_rules(LISTS);
++        // the div, the combinators, the rule for every site, the header rule: not HTML filters taken
++        assert_eq!(rules.rules.len(), 4);
++        assert!(element("script:has-text(a):upward(1)").is_none());
++        assert!(element("script[src*=\"a\"]:has-text(/(/)").is_none(), "a pattern that is not one");
++        assert!(element("script[data-cfasync]:has-text(/h=decodeURIComponent|popundersPerIP/)").is_some());
++        assert!(element("script:has-text(\\'shift\\')").is_some());
++        assert!(rules.text.contains("#@#^meta"));
++    }
++
++    #[test]
++    fn ids_classes_and_not() {
++        let rules = HtmlRules::from_rules(
++            "a.example##^script#admiral-script\na.example##^script.pmc-ad\n\
++             a.example##^script:not([src]):has-text(lure)\na.example##^script[src]:not([src*=\"/app.js\"])\n",
++        );
++        let html = "<script id=\"admiral-script\">1</script><script class=\"x pmc-ad\">2</script>\
++                    <script>lure()</script><script src=\"/lure.js\">lure</script><script src=\"/app.js\"></script>\
++                    <script src=\"/other.js\"></script>";
++        let (out, applied) = rewrite(&rules.for_page("a.example"), "", html.as_bytes());
++        assert_eq!(String::from_utf8(out).unwrap(), "<script src=\"/app.js\"></script>");
++        assert_eq!(applied.len(), 4, "{applied:?}");
++    }
++
++    #[test]
++    fn response_headers_only_the_allowed_ones_and_from_their_sites() {
++        let rules = ResponseHeaderRules::from_trusted_text(
++            "news.example##^responseheader(location)\nnews.example##^responseheader(content-type)\n\
++             a.example,b.example##^responseheader(Set-Cookie)\nb.example#@#^responseheader(set-cookie)\n",
++        );
++        assert_eq!(rules.for_page("www.news.example"), vec!["location".to_string()]);
++        assert_eq!(rules.for_page("a.example"), vec!["set-cookie".to_string()]);
++        assert!(rules.for_page("b.example").is_empty());
++        assert!(rules.for_page("c.example").is_empty());
++    }
++
++    #[test]
++    fn replace_rules_change_the_answer_where_they_apply() {
++        let rules = ReplaceRules::from_trusted_text(
++            "||video.example^$replace=/openNewTab\\(\".*?\"\\)/null/g\n\
++             ||game.example/*.js?v=$replace=/try\\{GameMaster/try{return;GameMaster/\n\
++             ||x.example^$script,replace=/a\\/b/c$1/\n\
++             ||safe.example^$replace=/a/b/\n\
++             @@||safe.example^$replace\n",
++        );
++        // uBlock Origin's exception: no replacement there
++        assert!(rules.for_request("https://safe.example/", "https://safe.example/", "document").is_empty());
++        assert_eq!(js_replacement("$1-$&-$$-$x"), "${1}-${0}-$$-$$x");
++        let found = rules.for_request("https://video.example/watch", "https://video.example/", "document");
++        let (out, applied) = rewrite("", &found, b"go(); openNewTab(\"a\"); openNewTab(\"b\");");
++        assert_eq!(String::from_utf8(out).unwrap(), "go(); null; null;");
++        assert_eq!(applied.len(), 1);
++        let found = rules.for_request("https://game.example/app.js?v=3", "https://game.example/", "script");
++        let (out, _) = rewrite("", &found, b"try{GameMaster.x()}");
++        assert_eq!(String::from_utf8(out).unwrap(), "try{return;GameMaster.x()}");
++        // only where the rule applies
++        assert!(rules.for_request("https://other.example/", "https://other.example/", "document").is_empty());
++        assert!(rules.for_request("https://x.example/a.css", "https://x.example/", "stylesheet").is_empty());
++        let found = rules.for_request("https://x.example/a.js", "https://x.example/", "script");
++        assert_eq!(String::from_utf8(rewrite("", &found, b"a/b").0).unwrap(), "c");
++    }
++}
 diff --git a/components/thoron_adblock/i18n.js b/components/thoron_adblock/i18n.js
 new file mode 100644
-index 0000000000000000000000000000000000000000..d579fc0aac10ab4938b3b9a937d0ff70c370b8d9
+index 0000000000000000000000000000000000000000..cef07f9ba4bef875705c292b1f45190f45b03a32
 --- /dev/null
 +++ b/components/thoron_adblock/i18n.js
-@@ -0,0 +1,1073 @@
+@@ -0,0 +1,1118 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -7876,6 +9542,14 @@ index 0000000000000000000000000000000000000000..d579fc0aac10ab4938b3b9a937d0ff70
 +   `«3p» отмечает запрос к другому сайту, а не к сайту вкладки. Как в uBlock Origin, фильтр принимает ` +
 +       `слова, которые все должны быть в адресе, -слово для того, которого быть не должно, и /.../ для ` +
 +       `регулярного выражения.`],
++  [`replaced`, `reemplazado`, `remplacé`, `ersetzt`, `substituído`, `заменено`],
++  [`injected`, `inyectado`, `injecté`, `eingefügt`, `injetado`, `внедрено`],
++  [`The scriptlets such a page got are listed as "injected", as uBlock Origin writes them.`,
++   `Los scriptlets que recibió esa página se listan como "inyectado", como los escribe uBlock Origin.`,
++   `Les scriptlets reçus par une telle page sont listés comme "injecté", comme uBlock Origin les écrit.`,
++   `Die Scriptlets, die eine solche Seite bekam, werden als "eingefügt" aufgeführt, wie uBlock Origin sie schreibt.`,
++   `Os scriptlets que essa página recebeu são listados como "injetado", como o uBlock Origin os escreve.`,
++   `Скриптлеты, которые получила такая страница, показываются как «внедрено», как их пишет uBlock Origin.`],
 +  [`hidden`, `oculto`, `masqué`, `ausgeblendet`, `oculto`, `скрыто`],
 +  [`While the logger is open, the hide rules that hide something on a page loaded since are listed too, as ` +
 +       `"hidden", with the rule.`,
@@ -7953,6 +9627,43 @@ index 0000000000000000000000000000000000000000..d579fc0aac10ab4938b3b9a937d0ff70
 +  [`The rules changed in the menu were taken back.`, `Se deshicieron las reglas cambiadas en el menú.`,
 +   `Les règles modifiées dans le menu ont été annulées.`, `Die im Menü geänderten Regeln wurden zurückgenommen.`,
 +   `As regras alteradas no menu foram desfeitas.`, `Правила, изменённые в меню, отменены.`],
++  [`Cloud storage, as uBlock Origin's: the same backup, kept with the browser's own sync, which carries it ` +
++       `to your other computers when sync is on for settings. Without sync it stays on this computer.`,
++   `Almacenamiento en la nube, como el de uBlock Origin: la misma copia, guardada con la sincronización del ` +
++       `navegador, que la lleva a tus otros equipos si está activada para los ajustes. Sin ella, se queda en ` +
++       `este equipo.`,
++   `Stockage dans le cloud, comme celui d'uBlock Origin : la même sauvegarde, gardée avec la synchronisation ` +
++       `du navigateur, qui l'emporte sur vos autres ordinateurs si elle est activée pour les paramètres. Sans ` +
++       `elle, elle reste sur cet ordinateur.`,
++   `Cloud-Speicher wie bei uBlock Origin: dieselbe Sicherung, aufbewahrt mit der Synchronisierung des ` +
++       `Browsers, die sie auf deine anderen Computer bringt, wenn sie für Einstellungen an ist. Ohne sie ` +
++       `bleibt sie auf diesem Computer.`,
++   `Armazenamento na nuvem, como o do uBlock Origin: o mesmo backup, guardado com a sincronização do ` +
++       `navegador, que o leva aos seus outros computadores quando está ativa para as configurações. Sem ela, ` +
++       `fica neste computador.`,
++   `Облачное хранилище, как в uBlock Origin: та же резервная копия, хранится вместе с синхронизацией браузера, ` +
++       `которая переносит её на другие ваши компьютеры, если синхронизация настроек включена. Без неё она ` +
++       `остаётся на этом компьютере.`],
++  [`Send to cloud storage`, `Enviar al almacenamiento en la nube`, `Envoyer vers le stockage cloud`,
++   `In den Cloud-Speicher senden`, `Enviar para o armazenamento na nuvem`, `Отправить в облачное хранилище`],
++  [`Restore from cloud storage`, `Restaurar desde la nube`, `Restaurer depuis le stockage cloud`,
++   `Aus dem Cloud-Speicher wiederherstellen`, `Restaurar da nuvem`, `Восстановить из облачного хранилища`],
++  [`Your settings were sent to cloud storage.`, `Tus ajustes se enviaron a la nube.`,
++   `Vos paramètres ont été envoyés vers le stockage cloud.`, `Deine Einstellungen wurden in den Cloud-Speicher gesendet.`,
++   `Suas configurações foram enviadas para a nuvem.`, `Ваши настройки отправлены в облачное хранилище.`],
++  [`Your settings were restored from cloud storage.`, `Tus ajustes se restauraron desde la nube.`,
++   `Vos paramètres ont été restaurés depuis le stockage cloud.`,
++   `Deine Einstellungen wurden aus dem Cloud-Speicher wiederhergestellt.`,
++   `Suas configurações foram restauradas da nuvem.`, `Ваши настройки восстановлены из облачного хранилища.`],
++  [`There is nothing in cloud storage yet.`, `Todavía no hay nada en la nube.`,
++   `Il n'y a encore rien dans le stockage cloud.`, `Im Cloud-Speicher ist noch nichts.`,
++   `Ainda não há nada na nuvem.`, `В облачном хранилище пока ничего нет.`],
++  [`This is too large for cloud storage (more than 100 kB): back up to a file instead.`,
++   `Es demasiado grande para la nube (más de 100 kB): haz una copia en un archivo.`,
++   `C'est trop volumineux pour le stockage cloud (plus de 100 ko) : sauvegardez dans un fichier.`,
++   `Das ist zu groß für den Cloud-Speicher (mehr als 100 kB): sichere stattdessen in eine Datei.`,
++   `É grande demais para a nuvem (mais de 100 kB): faça backup em um arquivo.`,
++   `Слишком большой объём для облачного хранилища (более 100 кБ): сохраните в файл.`],
 +  [`View`, `Ver`, `Voir`, `Ansehen`, `Ver`, `Просмотр`],
 +  [`Only the first 200,000 of these lines are shown: the box above finds the others.`,
 +   `Solo se muestran las primeras 200.000 de estas líneas: el cuadro de arriba encuentra las demás.`,
@@ -12486,10 +14197,10 @@ index 0000000000000000000000000000000000000000..d2cbde70dae9c7cdd6c2208f6363acfa
 +setInterval(refresh, 1000);
 diff --git a/components/thoron_adblock/procedural.js b/components/thoron_adblock/procedural.js
 new file mode 100644
-index 0000000000000000000000000000000000000000..56dbc006a4d08d505444f31a5ccc6bdf299579ca
+index 0000000000000000000000000000000000000000..337c367213c015e03f65c4d3b7385e73c47d98be
 --- /dev/null
 +++ b/components/thoron_adblock/procedural.js
-@@ -0,0 +1,354 @@
+@@ -0,0 +1,367 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +//
@@ -12724,7 +14435,16 @@ index 0000000000000000000000000000000000000000..56dbc006a4d08d505444f31a5ccc6bdf
 +    };
 +  }
 +
-+  const rules = filters.map((filter) => ({find: build(filter), action: filter.a}));
++  const rules = filters.map((filter) => ({find: build(filter), action: filter.a, label: filter.r}));
++  // For the logger, while it is open: each rule the first time it finds an element (thoronReportHit is
++  // there only then).
++  const reported = new Set();
++  const report = (rule) => {
++    if (typeof thoronReportHit === 'function' && rule.label && !reported.has(rule.label)) {
++      reported.add(rule.label);
++      thoronReportHit(rule.label);
++    }
++  };
 +  // mark (an attribute name) -> the elements that carry it since the last look
 +  let marked = new Map();
 +  // mark -> its declarations as [property, value, priority], for elements in a shadow tree
@@ -12765,12 +14485,16 @@ index 0000000000000000000000000000000000000000..56dbc006a4d08d505444f31a5ccc6bdf
 +
 +  const look = () => {
 +    const now = new Map();
-+    for (const {find, action} of rules) {
++    for (const rule of rules) {
++      const {find, action} = rule;
 +      let nodes;
 +      try {
 +        nodes = find();
 +      } catch (e) {
 +        nodes = [];
++      }
++      if (nodes.length) {
++        report(rule);
 +      }
 +      const [kind, name] = action;
 +      if (kind === 'mark') {
@@ -13380,10 +15104,10 @@ index 0000000000000000000000000000000000000000..e8ba37d6d7127e3a48dab3fa94c3d34f
 +}
 diff --git a/components/thoron_adblock/proxying_url_loader_factory.cc b/components/thoron_adblock/proxying_url_loader_factory.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..4a8981e5de26d920040c45f5cdeb256d6384b4f4
+index 0000000000000000000000000000000000000000..5705cc25418dd08de59f52fc23701849fdf0a2f0
 --- /dev/null
 +++ b/components/thoron_adblock/proxying_url_loader_factory.cc
-@@ -0,0 +1,324 @@
+@@ -0,0 +1,328 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -13686,7 +15410,11 @@ index 0000000000000000000000000000000000000000..4a8981e5de26d920040c45f5cdeb256d
 +                          decision.header_tests,
 +                          decision.clean_url.is_valid() ? decision.clean_url
 +                                                        : request.url,
-+                          max_media},
++                          max_media,
++                          EngineService::Get().ReplaceRulesFor(
++                              decision.clean_url.is_valid() ? decision.clean_url
++                                                            : request.url,
++                              source, request.destination)},
 +                         std::move(loader_receiver), std::move(client),
 +                         std::move(target_loader),
 +                         std::move(watcher_client_receiver));
@@ -14167,14 +15895,16 @@ index 0000000000000000000000000000000000000000..93d4b7aef64a8427c748e773c0b2a3d0
 +}
 diff --git a/components/thoron_adblock/redirect_watcher.cc b/components/thoron_adblock/redirect_watcher.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..44efffccf92b785e7adabb7dc91e345065349610
+index 0000000000000000000000000000000000000000..d1486a5a01665a766e8ea53ea647b4c6f3053e5e
 --- /dev/null
 +++ b/components/thoron_adblock/redirect_watcher.cc
-@@ -0,0 +1,288 @@
+@@ -0,0 +1,334 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
 +#include "components/thoron_adblock/redirect_watcher.h"
++
++#include "components/thoron_adblock/body_rewriter.h"
 +
 +#include <utility>
 +
@@ -14306,8 +16036,40 @@ index 0000000000000000000000000000000000000000..44efffccf92b785e7adabb7dc91e3450
 +    EndBlocked();
 +    return;
 +  }
++  if (!context_.replace_rules.empty() && head && body &&
++      IsRewritableText(*head)) {
++    mojo::ScopedDataPipeProducerHandle producer;
++    mojo::ScopedDataPipeConsumerHandle consumer;
++    if (mojo::CreateDataPipe(nullptr, producer, consumer) == MOJO_RESULT_OK) {
++      rewriting_ = true;
++      head->content_length = -1;
++      if (head->headers) {
++        head->headers->RemoveHeader("Content-Length");
++      }
++      BodyTransformer::Start(std::move(body), std::move(producer),
++                             std::string(), context_.replace_rules,
++                             base::BindOnce(&RedirectWatcher::OnBodyRewritten,
++                                            weak_factory_.GetWeakPtr()));
++      client_->OnReceiveResponse(std::move(head), std::move(consumer),
++                                 std::move(cached_metadata));
++      return;
++    }
++  }
 +  client_->OnReceiveResponse(std::move(head), std::move(body),
 +                             std::move(cached_metadata));
++}
++
++void RedirectWatcher::OnBodyRewritten(std::vector<std::string> applied) {
++  rewriting_ = false;
++  LogRewritten(context_.frame, std::move(applied));
++  if (pending_status_ && client_.is_bound()) {
++    client_->OnComplete(*pending_status_);
++  }
++  pending_status_.reset();
++  if (network_closed_) {
++    CloseClient();
++    DeleteIfDone();
++  }
 +}
 +
 +void RedirectWatcher::OnReceiveRedirect(
@@ -14317,6 +16079,8 @@ index 0000000000000000000000000000000000000000..44efffccf92b785e7adabb7dc91e3450
 +  if (EndedByAnswer(head)) {
 +    return;
 +  }
++  // the replacements were for the address asked for
++  context_.replace_rules.clear();
 +  // Nothing more from the network for this request until the engine has
 +  // answered, so the client hears everything in the order it happened.
 +  target_client_receiver_.Pause();
@@ -14366,6 +16130,10 @@ index 0000000000000000000000000000000000000000..44efffccf92b785e7adabb7dc91e3450
 +
 +void RedirectWatcher::OnComplete(
 +    const network::URLLoaderCompletionStatus& status) {
++  if (rewriting_) {
++    pending_status_ = status;  // after the rewritten body
++    return;
++  }
 +  client_->OnComplete(status);
 +}
 +
@@ -14409,6 +16177,12 @@ index 0000000000000000000000000000000000000000..44efffccf92b785e7adabb7dc91e3450
 +}
 +
 +void RedirectWatcher::OnClientClosedByNetwork() {
++  if (rewriting_) {
++    // the client hears the end once all of the rewritten text is written
++    network_closed_ = true;
++    target_client_receiver_.reset();
++    return;
++  }
 +  CloseClient();
 +  DeleteIfDone();
 +}
@@ -14461,10 +16235,10 @@ index 0000000000000000000000000000000000000000..44efffccf92b785e7adabb7dc91e3450
 +}  // namespace thoron_adblock
 diff --git a/components/thoron_adblock/redirect_watcher.h b/components/thoron_adblock/redirect_watcher.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..113a400f1a143528ffca68f1c5737d78bfd1217e
+index 0000000000000000000000000000000000000000..9cba5fb115145b58de9f07eff569afa79c2f9c4d
 --- /dev/null
 +++ b/components/thoron_adblock/redirect_watcher.h
-@@ -0,0 +1,147 @@
+@@ -0,0 +1,159 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -14531,6 +16305,9 @@ index 0000000000000000000000000000000000000000..113a400f1a143528ffca68f1c5737d78
 +    // Above 0: an answer longer than this ends the request (the menu's
 +    // "large media" switch).
 +    int64_t max_media_bytes = 0;
++    // `$replace` for the answer (EngineService::ReplaceRulesFor); "" for none.
++    // Not carried to an address the request is redirected to.
++    std::string replace_rules;
 +  };
 +
 +  // Called on the UI thread with the four pipe ends of one request:
@@ -14599,6 +16376,15 @@ index 0000000000000000000000000000000000000000..113a400f1a143528ffca68f1c5737d78
 +  // True when it did; the watcher may be gone then.
 +  bool EndedByAnswer(const network::mojom::URLResponseHeadPtr& head);
 +
++  // The answer's body is being rewritten (`$replace`): the client hears the
++  // end only after all of it.
++  void OnBodyRewritten(std::vector<std::string> applied);
++  bool rewriting_ = false;
++  std::optional<network::URLLoaderCompletionStatus> pending_status_;
++  // The network closed its end while the text was being written: the client's
++  // end closes after it.
++  bool network_closed_ = false;
++
 +  Context context_;
 +  // Set while a redirect to a cleaned address waits to be followed.
 +  std::optional<GURL> clean_redirect_;
@@ -14614,15 +16400,16 @@ index 0000000000000000000000000000000000000000..113a400f1a143528ffca68f1c5737d78
 +#endif  // COMPONENTS_THORON_ADBLOCK_REDIRECT_WATCHER_H_
 diff --git a/components/thoron_adblock/renderer/document_agent.cc b/components/thoron_adblock/renderer/document_agent.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..14c657c9f4c0b6880df9d65e99cb5fde51afa39d
+index 0000000000000000000000000000000000000000..2040ca475759078fbccf20e7df7ca1d86c7a7b63
 --- /dev/null
 +++ b/components/thoron_adblock/renderer/document_agent.cc
-@@ -0,0 +1,411 @@
+@@ -0,0 +1,459 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
 +#include "components/thoron_adblock/renderer/document_agent.h"
 +
++#include <algorithm>
 +#include <array>
 +#include <string_view>
 +#include <utility>
@@ -14666,6 +16453,15 @@ index 0000000000000000000000000000000000000000..14c657c9f4c0b6880df9d65e99cb5fde
 +constexpr size_t kMaxWatched = 3000;
 +constexpr size_t kMaxReportedAtOnce = 200;
 +constexpr std::string_view kHideRuleEnd = "{display:none!important}";
++
++// The procedural runner's own mark ("[abcdefghijkl]": twelve random letters),
++// which hides what its rules find: the runner reports those rules by their text.
++bool IsRunnerMark(std::string_view selector) {
++  return selector.size() == 14 && selector.front() == '[' &&
++         selector.back() == ']' &&
++         std::all_of(selector.begin() + 1, selector.end() - 1,
++                     [](char c) { return c >= 'a' && c <= 'z'; });
++}
 +
 +// `thoronShadowRoot(element)`: the element's shadow tree, open or closed, or
 +// null. What chrome.dom.openOrClosedShadowRoot is to an extension, so that
@@ -14717,6 +16513,25 @@ index 0000000000000000000000000000000000000000..14c657c9f4c0b6880df9d65e99cb5fde
 +  if (DocumentAgent* agent =
 +          render_frame ? DocumentAgent::Get(render_frame) : nullptr) {
 +    agent->SendAllowLargeMedia();
++  }
++}
++
++// `thoronReportHit(rule)`: a procedural rule acted on the document (the
++// logger; there only while it is open).
++void ReportHit(const v8::FunctionCallbackInfo<v8::Value>& info) {
++  v8::Isolate* isolate = info.GetIsolate();
++  if (info.Length() < 1 || !info[0]->IsString()) {
++    return;
++  }
++  blink::WebLocalFrame* frame =
++      blink::WebLocalFrame::FrameForContext(isolate->GetCurrentContext());
++  content::RenderFrame* render_frame =
++      frame ? content::RenderFrame::FromWebFrame(frame) : nullptr;
++  DocumentAgent* agent =
++      render_frame ? DocumentAgent::Get(render_frame) : nullptr;
++  v8::String::Utf8Value text(isolate, info[0]);
++  if (agent && *text && text.length() <= 1000) {
++    agent->SendHit(std::string(*text, text.length()));
 +  }
 +}
 +
@@ -14809,6 +16624,7 @@ index 0000000000000000000000000000000000000000..14c657c9f4c0b6880df9d65e99cb5fde
 +  large_media_ = current_ && current_->large_media;
 +  watched_.clear();
 +  reported_.clear();
++  hits_sent_ = 0;
 +}
 +
 +void DocumentAgent::RunAtDocumentStart() {
@@ -14829,6 +16645,9 @@ index 0000000000000000000000000000000000000000..14c657c9f4c0b6880df9d65e99cb5fde
 +    AddShadowRootHelper(frame, isolated_world_id_);
 +    if (resources.large_media) {
 +      AddHelper(frame, isolated_world_id_, "thoronAllowMedia", &AllowMedia);
++    }
++    if (resources.log_hidden) {
++      AddHelper(frame, isolated_world_id_, "thoronReportHit", &ReportHit);
 +    }
 +    frame->ExecuteScriptInIsolatedWorld(
 +        isolated_world_id_,
@@ -14878,6 +16697,17 @@ index 0000000000000000000000000000000000000000..14c657c9f4c0b6880df9d65e99cb5fde
 +  host_->AddFilter(rule);
 +}
 +
++void DocumentAgent::SendHit(const std::string& rule) {
++  if (!log_hidden_ || hits_sent_ >= kMaxWatched) {
++    return;
++  }
++  ++hits_sent_;
++  if (!host_.is_bound()) {
++    render_frame()->GetRemoteAssociatedInterfaces()->GetInterface(&host_);
++  }
++  host_->ReportHidden({rule});
++}
++
 +void DocumentAgent::SendAllowLargeMedia() {
 +  if (!host_.is_bound()) {
 +    render_frame()->GetRemoteAssociatedInterfaces()->GetInterface(&host_);
@@ -14917,7 +16747,11 @@ index 0000000000000000000000000000000000000000..14c657c9f4c0b6880df9d65e99cb5fde
 +      break;
 +    }
 +    if (line.size() > kHideRuleEnd.size() && line.ends_with(kHideRuleEnd)) {
-+      watched_.emplace_back(line.substr(0, line.size() - kHideRuleEnd.size()));
++      const std::string_view selector =
++          line.substr(0, line.size() - kHideRuleEnd.size());
++      if (!IsRunnerMark(selector)) {
++        watched_.emplace_back(selector);
++      }
 +    }
 +  }
 +}
@@ -15031,10 +16865,10 @@ index 0000000000000000000000000000000000000000..14c657c9f4c0b6880df9d65e99cb5fde
 +}  // namespace thoron_adblock
 diff --git a/components/thoron_adblock/renderer/document_agent.h b/components/thoron_adblock/renderer/document_agent.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..25184aab1656d6c6822d008cb14b21eda3668a5d
+index 0000000000000000000000000000000000000000..8ca3ab6f12cffec05fc98fb17aa21f44ec60716e
 --- /dev/null
 +++ b/components/thoron_adblock/renderer/document_agent.h
-@@ -0,0 +1,121 @@
+@@ -0,0 +1,124 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -15111,6 +16945,8 @@ index 0000000000000000000000000000000000000000..25184aab1656d6c6822d008cb14b21ed
 +  void SendPickedRule(const std::string& rule);
 +  // The bar of large media was clicked (media.js, through thoronAllowMedia).
 +  void SendAllowLargeMedia();
++  // A procedural rule acted (procedural.js, through thoronReportHit).
++  void SendHit(const std::string& rule);
 +
 + private:
 +
@@ -15142,6 +16978,7 @@ index 0000000000000000000000000000000000000000..25184aab1656d6c6822d008cb14b21ed
 +  bool large_media_ = false;
 +  std::vector<std::string> watched_;
 +  std::set<std::string> reported_;
++  size_t hits_sent_ = 0;
 +  // Class names and ids of the current document the browser was asked about.
 +  std::set<std::string> seen_classes_;
 +  std::set<std::string> seen_ids_;
@@ -15158,10 +16995,10 @@ index 0000000000000000000000000000000000000000..25184aab1656d6c6822d008cb14b21ed
 +#endif  // COMPONENTS_THORON_ADBLOCK_RENDERER_DOCUMENT_AGENT_H_
 diff --git a/components/thoron_adblock/settings_page.html b/components/thoron_adblock/settings_page.html
 new file mode 100644
-index 0000000000000000000000000000000000000000..994dddbb49d85f728d9ab00bfb94b611e3d9fd66
+index 0000000000000000000000000000000000000000..c2cb8ab009af42e624d482081241a6e60a1cb769
 --- /dev/null
 +++ b/components/thoron_adblock/settings_page.html
-@@ -0,0 +1,400 @@
+@@ -0,0 +1,408 @@
 +<!doctype html>
 +<!-- Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +     found in the LICENSE file.
@@ -15403,6 +17240,13 @@ index 0000000000000000000000000000000000000000..994dddbb49d85f728d9ab00bfb94b611
 +      <input id="restore-file" type="file" accept=".json,application/json" hidden>
 +      <button id="reset" type="button">Reset to default settings</button>
 +    </div>
++    <p class="note">Cloud storage, as uBlock Origin's: the same backup, kept with the browser's own sync, which
++      carries it to your other computers when sync is on for settings. Without sync it stays on this
++      computer.</p>
++    <div class="row">
++      <button id="cloud-send" type="button">Send to cloud storage</button>
++      <button id="cloud-restore" type="button">Restore from cloud storage</button>
++    </div>
 +  </section>
 +
 +  <section id="lists-section">
@@ -15516,6 +17360,7 @@ index 0000000000000000000000000000000000000000..994dddbb49d85f728d9ab00bfb94b611
 +      the request or let it through, and its list.</p>
 +    <p class="note">While the logger is open, the hide rules that hide something on a page loaded since are
 +      listed too, as "hidden", with the rule.</p>
++    <p class="note">The scriptlets such a page got are listed as "injected", as uBlock Origin writes them.</p>
 +    <p class="note">"3p" marks a request to another site than the tab's. As in uBlock Origin, the filter takes
 +      words that must all be in the address, -word for one that must not be, and /.../ for a regular
 +      expression.</p>
@@ -15564,10 +17409,10 @@ index 0000000000000000000000000000000000000000..994dddbb49d85f728d9ab00bfb94b611
 +</html>
 diff --git a/components/thoron_adblock/settings_page.js b/components/thoron_adblock/settings_page.js
 new file mode 100644
-index 0000000000000000000000000000000000000000..e6f3414c549c677ce65ed8cef02ec8ebb22f94c6
+index 0000000000000000000000000000000000000000..b11ad23ed0480e74fc53bc6bbccb2964e0e7b1b3
 --- /dev/null
 +++ b/components/thoron_adblock/settings_page.js
-@@ -0,0 +1,1279 @@
+@@ -0,0 +1,1306 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -16300,6 +18145,29 @@ index 0000000000000000000000000000000000000000..e6f3414c549c677ce65ed8cef02ec8eb
 +  await finish(await apply(wanted), 'The backup was restored.');
 +});
 +
++// uBlock Origin's cloud storage: the same backup, kept with the browser's own sync.
++$('cloud-send').addEventListener('click', async () => {
++  const error = await sendWithPromise('sendToCloud', JSON.stringify(await makeBackup()));
++  say(error || 'Your settings were sent to cloud storage.', !!error);
++});
++$('cloud-restore').addEventListener('click', async () => {
++  const text = await sendWithPromise('getFromCloud');
++  if (!text) {
++    say('There is nothing in cloud storage yet.', true);
++    return;
++  }
++  let wanted;
++  try {
++    wanted = readBackup(JSON.parse(text));
++  } catch (error) {
++    say(error instanceof SyntaxError ? 'What is in cloud storage is not a backup of Thoron\'s ad blocking.' :
++                                       error.message, true);
++    return;
++  }
++  say('Restoring...');
++  await finish(await apply(wanted), 'Your settings were restored from cloud storage.');
++});
++
 +$('reset').addEventListener('click', async () => {
 +  if (!window.confirm('Reset ad blocking to its defaults? Your own rules, the lists you added, allowed sites ' +
 +                      'and switches are removed, and every setting goes back to its default. ' +
@@ -16626,7 +18494,8 @@ index 0000000000000000000000000000000000000000..e6f3414c549c677ce65ed8cef02ec8eb
 +      act.append(button);
 +    }
 +    const key = `${e.time}|${e.url}`;
-+    const cosmetic = e.type === 'cosmetic';  // a hide rule that hid something: the row names the rule
++    // a hide rule that hid something, or a scriptlet that ran: the row names the rule
++    const cosmetic = e.type === 'cosmetic' || e.type === 'scriptlet' || e.type === 'replace';
 +    if (!cosmetic) {
 +      const ask = make('button', 'why-button', 'Why?');
 +      ask.type = 'button';
@@ -16639,7 +18508,9 @@ index 0000000000000000000000000000000000000000..e6f3414c549c677ce65ed8cef02ec8eb
 +      url.append(make('div', 'why', whys.get(key)));
 +    }
 +    row.append(make('td', 'time', new Date(e.time).toLocaleTimeString()),
-+               make('td', 'kind', cosmetic ? 'hidden' : blocked ? 'blocked' : 'let through'),
++               make('td', 'kind', e.type === 'scriptlet' ? 'injected' : e.type === 'replace' ? 'replaced' :
++                                  cosmetic ? 'hidden' :
++                                  blocked ? 'blocked' : 'let through'),
 +               make('td', 'type', e.type || ''),
 +               make('td', 'party', e.thirdParty ? '3p' : ''), url, act);
 +    return row;
@@ -16677,7 +18548,8 @@ index 0000000000000000000000000000000000000000..e6f3414c549c677ce65ed8cef02ec8eb
 +$('log-export').addEventListener('click', () => {
 +  saveTextFile(`thoron-logger-${today()}.txt`, logShown.map((e) =>
 +      [new Date(e.time).toISOString(),
-+       e.type === 'cosmetic' ? 'hidden' : e.blocked !== false ? 'blocked' : 'let through', e.type || 'other',
++       e.type === 'scriptlet' ? 'injected' : e.type === 'replace' ? 'replaced' : e.type === 'cosmetic' ? 'hidden' :
++         e.blocked !== false ? 'blocked' : 'let through', e.type || 'other',
 +       e.thirdParty ? '3p' : '1p', e.url]
 +          .join('\t')).join('\n') + '\n');
 +  say('What the logger shows was saved as a file.');

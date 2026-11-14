@@ -1768,6 +1768,57 @@ What uBlock Origin's dashboard and logger have, and the settings page had not ye
 - **Checked** by `tools/qa/adblock_context_check.py` (new step: the item is in the menu, the bar goes and the
   video is let through).
 
+### 12.52 Scriptlets and procedural rules in the logger (P5.65, 2026-11-14)
+
+- As uBlock Origin's logger: while it is open, a page loaded since lists the scriptlets it got, as
+  "injected" rows written as uBlock Origin writes them (`##+js(set-constant, a, 1)`), and the procedural
+  rules that acted on it (`##p:has-text(Ad)`, `:remove()`, `:style()`...), as "hidden" rows.
+- **Scriptlets.** adblock-rust hands over a page's scriptlets as one script, each call in its own `try`
+  (`setConstant("a", "1")`). When the scriptlet resources load, the engine notes the function each one
+  defines and its uBlock Origin name; the calls of a page's script are read back into rules
+  (`cosmetics::scriptlet_labels`, at most 200). The browser logs them on the page once its navigation
+  commits.
+- **Procedural rules.** Each rule the runner gets carries its text (`"r"`); the runner names a rule to
+  the browser the first time it finds an element, through `thoronReportHit`, which its isolated world has
+  only while the logger is open. The runner's own random marks are not reported as hide rules.
+- **Checked** by `tools/qa/adblock_tools_check.py` (the scriptlet listed, and it ran; the procedural rule
+  listed) and engine tests.
+
+### 12.53 HTML filtering, response headers and `$replace`, in every page (P5.66, 2026-11-14)
+
+uBlock Origin can change an answer before the page reads it only in Firefox, whose extensions may read a
+response's body. Thoron is the browser, so it does it for every page:
+
+- **HTML filtering** (`site##^script:has-text(adblock)`): the elements a rule names are taken out of a
+  page's or a frame's HTML before it is parsed, so such a script never runs. A rule names one element by
+  its tag (one whose content is text, as `script` or `style`, or that has none, as `meta`), its attributes
+  (`[src*="ads"]`, `[http-equiv="refresh"]`) and `:has-text(text)` or `:has-text(/pattern/flags)`. A rule
+  with any other part (combinators, `:upward()`), or for every site, is left out: about 360 of the
+  bundled lists' 386 rules are taken. `#@#^` takes a rule back on the sites it names. Not where the
+  menu's "no hiding" switch is on, nor where ads are allowed. From any list.
+- **`##^responseheader(name)`**: the header is taken out of a document's answer; only the headers uBlock
+  Origin allows (`location`, `refresh`, `report-to`, `set-cookie`), from trusted lists only.
+- **`$replace=/pattern/text/flags`**: the text is replaced in an answer where the rule's address and
+  options apply (pages, frames and other requests whose answer is text), from trusted lists only;
+  `@@...$replace` takes it back.
+- **How.** The rules are read in `html.rs` and saved with the engine. A page's or a frame's answer is
+  taken over by its navigation throttle (`URLLoaderThrottle::Delegate::InterceptResponse`), another
+  request's by its response watcher; a transformer reads the whole body (up to 16 MB; a larger one
+  passes unchanged), applies the rules and writes the result, and the end of the answer follows the
+  rewritten text. The logger lists the rules that changed an answer.
+- **Checked** by `tools/qa/adblock_htmlfilter_check.py` (a script taken out, a meta refresh and a Refresh
+  header gone, a text replaced in a page and its script, the logger rows, another site untouched, an
+  exception) and engine tests.
+
+### 12.54 Cloud storage (P5.67, 2026-11-14)
+
+- As uBlock Origin's "Send to cloud storage" and "Restore from cloud storage": the same backup as the file
+  (lists, own rules, allowed sites, switches, settings), at most 100 kB, kept in a synced preference of the
+  profile (`thoron_adblock.cloud_backup`, in the browser's list of syncable preferences). The browser's own
+  sync carries it to the person's other computers when it is on for settings; without sync it stays on
+  this computer. It is written only when the person chooses "Send to cloud storage".
+- **Checked** by `tools/qa/adblock_backup_check.py` (new step: send, reset, restore from cloud storage).
+
 ## 13. Credits
 
 The procedural operators and the rest of the filter syntax are uBlock Origin's (with forms from Adblock

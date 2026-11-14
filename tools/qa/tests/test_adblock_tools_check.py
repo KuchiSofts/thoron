@@ -22,8 +22,10 @@ class FiltersTests(unittest.TestCase):
 class HiddenTests(unittest.TestCase):
     def test_the_hide_rules_that_hid_something(self):
         rows = [{"kind": "blocked", "type": "cosmetic", "url": u, "shown": "hidden"} for u in sorted(tc.HIDDEN)]
+        rows += [{"kind": "blocked", "type": "scriptlet", "url": u, "shown": "injected"} for u in tc.INJECTED]
         self.assertEqual(tc.hidden_problems(rows + [row("pic.png")]), [])
-        self.assertEqual(len(tc.hidden_problems(rows[:1])), 1)
+        self.assertEqual(len(tc.hidden_problems(rows[:1])), 2)
+        self.assertEqual(len(tc.hidden_problems(rows, ran=None)), 1)
         rows[0]["shown"] = "blocked"
         self.assertEqual(len(tc.hidden_problems(rows)), 1)
         self.assertIn('class="thoron-promo"', tc.page_html())

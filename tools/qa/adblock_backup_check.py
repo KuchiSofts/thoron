@@ -12,6 +12,8 @@ changes no added lists. Steps:
     backup   the file is saved and holds every one of those
     reset    after "Reset to default settings" (confirmed), each is back to its default
     restore  after "Restore from file" with that file, each is as it was changed again
+    cloud    (P5.67) "Send to cloud storage", "Reset", then "Restore from cloud storage": each is as it was
+             changed again (the browser's own sync is off here: it stays on the computer)
 
     py -3 -I tools/qa/adblock_backup_check.py --browser <out>\\thoron.exe --work <scratch dir>
 Exit status 0 only when every step passes.
@@ -193,6 +195,19 @@ def run(browser: Path, work: Path) -> list[str]:
                 report("restore", ["restore: the page never said it was done"], {})
             got = json.loads(_eval(page, READ))
             report("restore", changed_problems("restore", got), got)
+
+            # cloud storage: the same backup, in the browser's own (synced) settings
+            _eval(page, "document.getElementById('cloud-send').click(); 1")
+            sent = _wait_message(page, "sent to cloud storage", 60)
+            _eval(page, "window.confirm = () => true; document.getElementById('reset').click(); 1")
+            _wait_message(page, "back to its defaults", 90)
+            _eval(page, "document.getElementById('cloud-restore').click(); 1")
+            restored = _wait_message(page, "restored from cloud storage", 90)
+            got = json.loads(_eval(page, READ))
+            found = changed_problems("cloud", got)
+            if not sent or not restored:
+                found.append(f"cloud: the page never said it was {'sent' if not sent else 'restored'}")
+            report("cloud", found, got)
         finally:
             page.close()
             browser_ws.close()

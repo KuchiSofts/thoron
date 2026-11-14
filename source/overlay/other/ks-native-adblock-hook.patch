@@ -1245,6 +1245,48 @@ index a02ab7d45eba361c16e5abd2da2c9328d73e7120..1b83c16ab5589858c4c2cb4d60fb16f0
    if (web_contents && !bubble_view_) {
      std::unique_ptr<ContentSettingBubbleModel> bubble_model =
          content_setting_image_model_->CreateBubbleModel(
+diff --git a/chrome/browser/prefs/browser_prefs.cc b/chrome/browser/prefs/browser_prefs.cc
+index fdd05fad32252be538eef299e830625a6a3c96ba..12d5c695cf9ea47c4090cc3d9b7ad0d4146ea3a4 100644
+--- a/chrome/browser/prefs/browser_prefs.cc
++++ b/chrome/browser/prefs/browser_prefs.cc
+@@ -2049,6 +2049,10 @@ void RegisterLocalState(PrefRegistrySimple* registry) {
+ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry,
+                           const std::string& locale) {
+   TRACE_EVENT0("browser", "chrome::RegisterProfilePrefs");
++  // Thoron: the built-in ad blocker's cloud storage (its settings, kept in the
++  // browser's own sync, as uBlock Origin keeps them).
++  registry->RegisterStringPref("thoron_adblock.cloud_backup", std::string(),
++                               user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+   // User prefs. Please keep this list alphabetized.
+   AccessibilityLabelsService::RegisterProfilePrefs(registry);
+   registry->RegisterBooleanPref(prefs::kRendererAccessibilityEnabled, true);
+diff --git a/chrome/browser/sync/prefs/chrome_syncable_prefs_database.cc b/chrome/browser/sync/prefs/chrome_syncable_prefs_database.cc
+index 6018748f094dd3a1977e5f85c0ac1da95d590c5e..1ecc08f18b241060af0a98016721ac305752173c 100644
+--- a/chrome/browser/sync/prefs/chrome_syncable_prefs_database.cc
++++ b/chrome/browser/sync/prefs/chrome_syncable_prefs_database.cc
+@@ -451,6 +451,8 @@ enum {
+   kExtensionsPinnedByDefault = 100385,
+   kAudioFocusEnforcementEnabled = 100386,
+   kTtcAutoPinnedMigration = 100387,
++  // Thoron: the built-in ad blocker's cloud storage.
++  kThoronAdblockCloudBackup = 109001,
+   // See components/sync_preferences/README.md about adding new entries here.
+   // vvvvv IMPORTANT! vvvvv
+   // Note to the reviewer: IT IS YOUR RESPONSIBILITY to ensure that new syncable
+@@ -465,6 +467,13 @@ enum {
+ constexpr auto kChromeSyncablePrefsAllowlist = base::MakeFixedFlatMap<
+     std::string_view,
+     sync_preferences::SyncablePrefMetadata>({
++    // Thoron: the built-in ad blocker's cloud storage (sent only when the
++    // person chooses "Send to cloud storage").
++    {"thoron_adblock.cloud_backup",
++     {syncable_prefs_ids::kThoronAdblockCloudBackup, syncer::PREFERENCES,
++      sync_preferences::PrefSensitivity::kNone,
++      sync_preferences::MergeBehavior::kNone,
++      sync_preferences::WriteBehavior::kWriteToBoth}},
+ #if BUILDFLAG(IS_ANDROID)
+     {language::prefs::kAppLanguagePromptShown,
+      {syncable_prefs_ids::kAppLanguagePromptShown, syncer::PREFERENCES,
 diff --git a/chrome/browser/ui/browser_web_contents_delegate/thoron_adblock_shortcuts.cc b/chrome/browser/ui/browser_web_contents_delegate/thoron_adblock_shortcuts.cc
 new file mode 100644
 index 0000000000000000000000000000000000000000..fbf9e91b23d38b0d8c43c559f9add62d29599214
@@ -2373,10 +2415,10 @@ index 0000000000000000000000000000000000000000..775954638d4dbf1764c678318776e97d
 +#endif  // CHROME_BROWSER_UI_WEBUI_THORON_ADBLOCK_SITE_JAVASCRIPT_H_
 diff --git a/chrome/browser/ui/webui/thoron_adblock_ui.cc b/chrome/browser/ui/webui/thoron_adblock_ui.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..411b5fec184e20b2c55514248cb74609d3fe25b3
+index 0000000000000000000000000000000000000000..ba2eabefa00ce5dd17f65c0c23092754eab93908
 --- /dev/null
 +++ b/chrome/browser/ui/webui/thoron_adblock_ui.cc
-@@ -0,0 +1,736 @@
+@@ -0,0 +1,773 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -2454,6 +2496,10 @@ index 0000000000000000000000000000000000000000..411b5fec184e20b2c55514248cb74609
 +// accepts (it checks again).
 +constexpr size_t kMaxUrlLength = 2048;
 +constexpr size_t kMaxRulesLength = 1024 * 1024;
++// uBlock Origin's cloud storage: the synced preference, and the most it holds
++// (as uBlock Origin's, about 100 kB).
++constexpr char kCloudPref[] = "thoron_adblock.cloud_backup";
++constexpr size_t kMaxCloudBytes = 100 * 1024;
 +
 +// Serves the page and its script. Both are part of the engine library
 +// (components/thoron_adblock/settings_page.html and .js). The default security
@@ -2530,6 +2576,8 @@ index 0000000000000000000000000000000000000000..411b5fec184e20b2c55514248cb74609
 +    Register("addFilter", &ThoronAdblockHandler::AddFilter);
 +    Register("getMyRules", &ThoronAdblockHandler::GetMyRules);
 +    Register("getRulesForNow", &ThoronAdblockHandler::GetRulesForNow);
++    Register("sendToCloud", &ThoronAdblockHandler::SendToCloud);
++    Register("getFromCloud", &ThoronAdblockHandler::GetFromCloud);
 +    Register("setMyRules", &ThoronAdblockHandler::SetMyRules);
 +    Register("setSetting", &ThoronAdblockHandler::SetSetting);
 +  }
@@ -2667,6 +2715,35 @@ index 0000000000000000000000000000000000000000..411b5fec184e20b2c55514248cb74609
 +    if (const std::string* id = AnswerId(args, 0)) {
 +      ResolveJavascriptCallback(base::Value(*id),
 +                                base::Value(Service().my_rules()));
++    }
++  }
++
++  // uBlock Origin's cloud storage: the backup (settings_page.js makeBackup),
++  // kept in a synced preference of the profile, so the browser's own sync
++  // carries it to the person's other computers when it is on for settings.
++  // [id, text] -> "" or what went wrong.
++  void SendToCloud(const base::ListValue& args) {
++    const std::string* id = AnswerId(args, 1);
++    if (!id || !args[1].is_string()) {
++      return;
++    }
++    const std::string& text = args[1].GetString();
++    if (text.size() > kMaxCloudBytes) {
++      Answer(*id, "This is too large for cloud storage (more than 100 kB): back up to a file instead.");
++      return;
++    }
++    if (!base::IsStringUTF8(text)) {
++      return;
++    }
++    Profile::FromWebUI(web_ui())->GetPrefs()->SetString(kCloudPref, text);
++    Answer(*id, std::string());
++  }
++
++  void GetFromCloud(const base::ListValue& args) {
++    if (const std::string* id = AnswerId(args, 0)) {
++      ResolveJavascriptCallback(
++          base::Value(*id),
++          base::Value(Profile::FromWebUI(web_ui())->GetPrefs()->GetString(kCloudPref)));
 +    }
 +  }
 +
@@ -2918,7 +2995,9 @@ index 0000000000000000000000000000000000000000..411b5fec184e20b2c55514248cb74609
 +          // as uBlock Origin's logger marks them: to another site than the
 +          // tab's (by registrable domain)
 +          const bool third_party =
-+              entry.type != "cosmetic" && page.SchemeIsHTTPOrHTTPS() &&
++              entry.type != "cosmetic" && entry.type != "scriptlet" &&
++              entry.type != "replace" &&
++              page.SchemeIsHTTPOrHTTPS() &&
 +              !net::registry_controlled_domains::SameDomainOrHost(
 +                  GURL(entry.url), page,
 +                  net::registry_controlled_domains::INCLUDE_PRIVATE_REGISTRIES);

@@ -68,6 +68,9 @@ Explanations live in the design docs under `docs/design/`.
 - **Ad blocking:** a large video or sound that was stopped gets a bar: click to load it.
 - **Ad blocking:** My rules show what the menu changed for now, with Save and Revert.
 - **Ad blocking:** context menu: "Temporarily allow large media elements".
+- **Ad blocking:** the logger lists the scriptlets a page got and the procedural rules that acted.
+- **Ad blocking:** HTML filtering, `##^responseheader()` and `$replace` for every page (in uBlock Origin only in Firefox).
+- **Ad blocking:** cloud storage, as in uBlock Origin: the settings kept with the browser's own sync.
 - **Version:** Thoron has its own version, 0.1.1, on the About page, `chrome://version` and in Windows.
 - **Ad blocking:** checks worker and service worker scripts and imports, and blocks WebSockets to hosts the lists block.
 - **Ad blocking:** settings page `chrome://adblock`: lists on and off, add a list by address, your own rules.

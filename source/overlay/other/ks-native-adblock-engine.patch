@@ -2602,10 +2602,10 @@ index 0000000000000000000000000000000000000000..bc172c09dcfab5376a6cb3a397be1df8
 +#endif  // COMPONENTS_THORON_ADBLOCK_DOCUMENT_REQUEST_H_
 diff --git a/components/thoron_adblock/document_request_interceptor.cc b/components/thoron_adblock/document_request_interceptor.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..789b692ff9780afcc9ef7bf5d26c58ee45347112
+index 0000000000000000000000000000000000000000..3ca41de5400b3e461aa51ac36b675d0425bdef5c
 --- /dev/null
 +++ b/components/thoron_adblock/document_request_interceptor.cc
-@@ -0,0 +1,209 @@
+@@ -0,0 +1,210 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -2723,6 +2723,7 @@ index 0000000000000000000000000000000000000000..789b692ff9780afcc9ef7bf5d26c58ee
 +    // (an allow rule of "My rules" beats it, as in uBlock Origin)
 +    if (!decision.blocked && dynamic != 2 &&
 +        ProxyingURLLoaderFactory::IsThirdParty(url, site) &&
++        EngineService::Get().blocking_on() &&
 +        EngineService::Get().SiteSwitch(site, "3p-frame")) {
 +      decision.blocked = true;
 +      decision.stand_in.clear();
@@ -5395,10 +5396,10 @@ index 0000000000000000000000000000000000000000..bf2854f6cc4c9af58acc054451588ff4
 +}
 diff --git a/components/thoron_adblock/engine_service.cc b/components/thoron_adblock/engine_service.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..e469f4373a21ce219c445881e1eb64e40205010c
+index 0000000000000000000000000000000000000000..ac31d7406fc337920ebe7615fc91571406accb35
 --- /dev/null
 +++ b/components/thoron_adblock/engine_service.cc
-@@ -0,0 +1,1459 @@
+@@ -0,0 +1,1531 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -5558,6 +5559,8 @@ index 0000000000000000000000000000000000000000..e469f4373a21ce219c445881e1eb64e4
 +    {"advanced", true},          {"colorblind", false},
 +    // uBlock Origin's "Disable tooltips"
 +    {"no-tooltips", false},
++    // the switch for every site (P5.70): off for good when false
++    {"blocking", true},
 +};
 +// "Block media elements larger than N kB": what N is unless changed, and the
 +// most it may be.
@@ -5706,6 +5709,8 @@ index 0000000000000000000000000000000000000000..e469f4373a21ce219c445881e1eb64e4
 +  }
 +  saved_state_read_ = true;
 +  total_blocked_ += state.total;
++  // blocking may have been switched off for good: the icons show it
++  blocking_observers_.Notify();
 +}
 +
 +// static
@@ -5738,13 +5743,80 @@ index 0000000000000000000000000000000000000000..e469f4373a21ce219c445881e1eb64e4
 +  }
 +  options_[std::string(name)] = on;
 +  SaveOptions();
++  if (name == "blocking") {
++    blocking_back_.Stop();
++    off_until_ = base::Time();
++    blocking_observers_.Notify();
++  }
++}
++
++bool EngineService::blocking_on() const {
++  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
++  // a while that is over counts as over, also before its timer ran (a
++  // computer that slept)
++  return Option("blocking") &&
++         (off_until_.is_null() ||
++          (!off_until_.is_max() && base::Time::Now() >= off_until_));
++}
++
++void EngineService::SetBlocking(bool on, int minutes) {
++  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
++  blocking_back_.Stop();
++  off_until_ = base::Time();
++  // off for a while leaves the kept switch on, so it ends on its own
++  const bool kept_on = on || minutes != 0;
++  if (Option("blocking") != kept_on) {
++    options_["blocking"] = kept_on;
++    SaveOptions();
++  }
++  if (!on && minutes < 0) {
++    off_until_ = base::Time::Max();
++  } else if (!on && minutes > 0) {
++    const base::TimeDelta pause =
++        base::Minutes(std::min(minutes, kMaxOffMinutes));
++    off_until_ = base::Time::Now() + pause;
++    blocking_back_.Start(FROM_HERE, pause,
++                         base::BindOnce(&EngineService::OnBlockingBack,
++                                        weak_factory_.GetWeakPtr()));
++  }
++  blocking_observers_.Notify();
++}
++
++void EngineService::OnBlockingBack() {
++  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
++  off_until_ = base::Time();
++  blocking_observers_.Notify();
++}
++
++double EngineService::BlockingBackAt() const {
++  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
++  if (off_until_.is_null() || !Option("blocking")) {
++    return 0;
++  }
++  if (off_until_.is_max()) {
++    return -1;
++  }
++  return base::Time::Now() >= off_until_
++             ? 0
++             : off_until_.InMillisecondsFSinceUnixEpoch();
++}
++
++base::CallbackListSubscription EngineService::AddBlockingObserver(
++    base::RepeatingClosure callback) {
++  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
++  return blocking_observers_.Add(std::move(callback));
++}
++
++bool EngineService::Active() const {
++  return engine_.has_value() && blocking_on();
 +}
 +
 +// static
 +bool EngineService::KnownShortcut(std::string_view command) {
 +  return command == "picker" || command == "zapper" || command == "logger" ||
 +         command == "dashboard" || command == "power" ||
-+         command == "cosmetic" || command == "javascript";
++         command == "blocking" || command == "cosmetic" ||
++         command == "javascript";
 +}
 +
 +// static
@@ -6102,7 +6174,8 @@ index 0000000000000000000000000000000000000000..e469f4373a21ce219c445881e1eb64e4
 +    const GURL& url,
 +    network::mojom::RequestDestination destination) const {
 +  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-+  if (!my_rules_ || (*my_rules_)->rule_count() == 0 || !url.has_host()) {
++  if (!blocking_on() || !my_rules_ || (*my_rules_)->rule_count() == 0 ||
++      !url.has_host()) {
 +    return 0;
 +  }
 +  const std::string source = top_site.has_host() ? std::string(top_site.host())
@@ -6387,7 +6460,7 @@ index 0000000000000000000000000000000000000000..e469f4373a21ce219c445881e1eb64e4
 +    network::mojom::RequestDestination destination,
 +    std::string_view method) const {
 +  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-+  if (!engine_ || !IsBlockableScheme(url) || !source.is_valid() ||
++  if (!Active() || !IsBlockableScheme(url) || !source.is_valid() ||
 +      !base::IsStringASCII(method)) {
 +    return {};
 +  }
@@ -6438,7 +6511,7 @@ index 0000000000000000000000000000000000000000..e469f4373a21ce219c445881e1eb64e4
 +
 +bool EngineService::BlocksWebSocket(const GURL& url, const GURL& source) const {
 +  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-+  if (!engine_ || !url.SchemeIsWSOrWSS() || !source.is_valid()) {
++  if (!Active() || !url.SchemeIsWSOrWSS() || !source.is_valid()) {
 +    return false;
 +  }
 +  const std::string& u = url.spec();
@@ -6451,7 +6524,7 @@ index 0000000000000000000000000000000000000000..e469f4373a21ce219c445881e1eb64e4
 +
 +bool EngineService::BlocksPopup(const GURL& url, const GURL& opener) const {
 +  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-+  if (!engine_ || !url.SchemeIsHTTPOrHTTPS() || !opener.is_valid()) {
++  if (!Active() || !url.SchemeIsHTTPOrHTTPS() || !opener.is_valid()) {
 +    return false;
 +  }
 +  const std::string& u = url.spec();
@@ -6476,7 +6549,7 @@ index 0000000000000000000000000000000000000000..e469f4373a21ce219c445881e1eb64e4
 +
 +bool EngineService::LargeMediaBlocked(const GURL& site) const {
 +  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-+  return SiteSwitch(site, "media") &&
++  return blocking_on() && SiteSwitch(site, "media") &&
 +         !(site.has_host() &&
 +           large_media_for_now_.contains(std::string(site.host())));
 +}
@@ -6490,7 +6563,7 @@ index 0000000000000000000000000000000000000000..e469f4373a21ce219c445881e1eb64e4
 +
 +bool EngineService::BlocksPage(const GURL& url) const {
 +  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-+  if (!engine_ || !url.SchemeIsHTTPOrHTTPS()) {
++  if (!Active() || !url.SchemeIsHTTPOrHTTPS()) {
 +    return false;
 +  }
 +  const std::string& u = url.spec();
@@ -6501,7 +6574,7 @@ index 0000000000000000000000000000000000000000..e469f4373a21ce219c445881e1eb64e4
 +                             const GURL& source,
 +                             bool main_frame) const {
 +  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-+  if (!engine_ || !url.SchemeIsHTTPOrHTTPS() || !url.has_query() ||
++  if (!Active() || !url.SchemeIsHTTPOrHTTPS() || !url.has_query() ||
 +      !source.is_valid()) {
 +    return GURL();
 +  }
@@ -6516,7 +6589,7 @@ index 0000000000000000000000000000000000000000..e469f4373a21ce219c445881e1eb64e4
 +
 +GURL EngineService::TransformUrl(const GURL& url) const {
 +  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-+  if (!engine_ || !url.SchemeIsHTTPOrHTTPS()) {
++  if (!Active() || !url.SchemeIsHTTPOrHTTPS()) {
 +    return GURL();
 +  }
 +  const std::string& u = url.spec();
@@ -6531,7 +6604,7 @@ index 0000000000000000000000000000000000000000..e469f4373a21ce219c445881e1eb64e4
 +
 +GURL EngineService::SkipUrl(const GURL& url) const {
 +  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-+  if (!engine_ || !url.SchemeIsHTTPOrHTTPS()) {
++  if (!Active() || !url.SchemeIsHTTPOrHTTPS()) {
 +    return GURL();
 +  }
 +  const std::string& u = url.spec();
@@ -6550,7 +6623,7 @@ index 0000000000000000000000000000000000000000..e469f4373a21ce219c445881e1eb64e4
 +                                          const GURL& source,
 +                                          bool main_frame) const {
 +  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-+  if (!engine_ || !url.SchemeIsHTTPOrHTTPS() || !source.is_valid()) {
++  if (!Active() || !url.SchemeIsHTTPOrHTTPS() || !source.is_valid()) {
 +    return std::string();
 +  }
 +  const std::string& u = url.spec();
@@ -6573,7 +6646,7 @@ index 0000000000000000000000000000000000000000..e469f4373a21ce219c445881e1eb64e4
 +                                               const GURL& source,
 +                                               bool main_frame) const {
 +  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-+  if (!engine_ || !url.SchemeIsHTTPOrHTTPS() || !source.is_valid()) {
++  if (!Active() || !url.SchemeIsHTTPOrHTTPS() || !source.is_valid()) {
 +    return std::string();
 +  }
 +  const std::string& u = url.spec();
@@ -6585,7 +6658,7 @@ index 0000000000000000000000000000000000000000..e469f4373a21ce219c445881e1eb64e4
 +
 +EngineService::Document EngineService::ForDocument(const GURL& url) const {
 +  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-+  if (!engine_ || !url.SchemeIsHTTPOrHTTPS()) {
++  if (!Active() || !url.SchemeIsHTTPOrHTTPS()) {
 +    return {};
 +  }
 +  const std::string& u = url.spec();
@@ -6603,7 +6676,7 @@ index 0000000000000000000000000000000000000000..e469f4373a21ce219c445881e1eb64e4
 +std::string EngineService::HtmlRulesFor(const GURL& url) const {
 +  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 +  // HTML filtering is hiding: not where the menu's "no hiding" switch is on
-+  if (!engine_ || !url.SchemeIsHTTPOrHTTPS() || SiteSwitch(url, "cosmetic")) {
++  if (!Active() || !url.SchemeIsHTTPOrHTTPS() || SiteSwitch(url, "cosmetic")) {
 +    return std::string();
 +  }
 +  const std::string& u = url.spec();
@@ -6615,7 +6688,7 @@ index 0000000000000000000000000000000000000000..e469f4373a21ce219c445881e1eb64e4
 +    const GURL& source,
 +    network::mojom::RequestDestination destination) const {
 +  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-+  if (!engine_ || !url.SchemeIsHTTPOrHTTPS()) {
++  if (!Active() || !url.SchemeIsHTTPOrHTTPS()) {
 +    return std::string();
 +  }
 +  const std::string& u = url.spec();
@@ -6630,7 +6703,7 @@ index 0000000000000000000000000000000000000000..e469f4373a21ce219c445881e1eb64e4
 +    const GURL& url) const {
 +  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 +  std::vector<std::string> out;
-+  if (!engine_ || !url.SchemeIsHTTPOrHTTPS()) {
++  if (!Active() || !url.SchemeIsHTTPOrHTTPS()) {
 +    return out;
 +  }
 +  const std::string& u = url.spec();
@@ -6646,7 +6719,7 @@ index 0000000000000000000000000000000000000000..e469f4373a21ce219c445881e1eb64e4
 +    const std::vector<std::string>& classes,
 +    const std::vector<std::string>& ids) const {
 +  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-+  if (!engine_ || !url.SchemeIsHTTPOrHTTPS()) {
++  if (!Active() || !url.SchemeIsHTTPOrHTTPS()) {
 +    return std::string();
 +  }
 +  // rust::String needs UTF-8; a name that is not cannot match a rule anyway.
@@ -6860,10 +6933,10 @@ index 0000000000000000000000000000000000000000..e469f4373a21ce219c445881e1eb64e4
 +}  // namespace thoron_adblock
 diff --git a/components/thoron_adblock/engine_service.h b/components/thoron_adblock/engine_service.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..da3a5050272d3b992b433fa4f4f7a80a39db66e2
+index 0000000000000000000000000000000000000000..4cc2a7945768f904c0ec9cef4afc9d970d6ec642
 --- /dev/null
 +++ b/components/thoron_adblock/engine_service.h
-@@ -0,0 +1,437 @@
+@@ -0,0 +1,466 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -6878,11 +6951,13 @@ index 0000000000000000000000000000000000000000..da3a5050272d3b992b433fa4f4f7a80a
 +#include <string_view>
 +#include <vector>
 +
++#include "base/callback_list.h"
 +#include "base/files/file_path.h"
 +#include "base/functional/callback.h"
 +#include "base/memory/weak_ptr.h"
 +#include "base/no_destructor.h"
 +#include "base/sequence_checker.h"
++#include "base/time/time.h"
 +#include "base/timer/timer.h"
 +#include "base/values.h"
 +#include "components/thoron_adblock/engine.rs.h"
@@ -7167,6 +7242,25 @@ index 0000000000000000000000000000000000000000..da3a5050272d3b992b433fa4f4f7a80a
 +  static bool KnownOption(std::string_view name);
 +  bool Option(std::string_view name) const;
 +  void SetOption(std::string_view name, bool on);
++
++  // The blocker's own switch for every site at once, as switching uBlock
++  // Origin off and on (P5.70): in use at once, no restart. Off, nothing is
++  // blocked, hidden, changed or counted anywhere, in every profile; the
++  // lists are still kept current. Off for good is kept (the option
++  // "blocking"); off for a while is not: it ends by itself, and when the
++  // browser closes.
++  bool blocking_on() const;
++  // `on`; else off for `minutes` (1 to kMaxOffMinutes), until the browser
++  // closes (-1) or until it is switched on again (0).
++  static constexpr int kMaxOffMinutes = 7 * 24 * 60;
++  void SetBlocking(bool on, int minutes);
++  // When blocking that is off for a while comes back on: the time in
++  // milliseconds since 1970, -1 when the browser closes, 0 when it is not
++  // off for a while.
++  double BlockingBackAt() const;
++  // Runs each time the switch changes, also when a while is over.
++  base::CallbackListSubscription AddBlockingObserver(
++      base::RepeatingClosure callback);
 +  // "Block media elements larger than N kB": N (50 unless changed). False for
 +  // a number out of range (1 to 1,048,576).
 +  int large_media_kb() const;
@@ -7248,6 +7342,9 @@ index 0000000000000000000000000000000000000000..da3a5050272d3b992b433fa4f4f7a80a
 +                              const GURL& page,
 +                              std::string_view type) const;
 +  void SaveStats();
++  // The engine is loaded and blocking is on: the lists decide.
++  bool Active() const;
++  void OnBlockingBack();
 +  // The switch for `host` or a host it is under; `found` is false when none of
 +  // them has it set either way.
 +  bool HostSwitch(std::string_view host, std::string_view name,
@@ -7283,6 +7380,11 @@ index 0000000000000000000000000000000000000000..da3a5050272d3b992b433fa4f4f7a80a
 +  std::vector<base::OnceClosure> explainer_waiting_;
 +  base::OneShotTimer explainer_drop_;
 +  int64_t total_blocked_ = 0;
++  // Blocking off for a while: until then (base::Time::Max(): until the
++  // browser closes); null when it is not.
++  base::Time off_until_;
++  base::OneShotTimer blocking_back_;
++  base::RepeatingClosureList blocking_observers_;
 +  bool stats_save_pending_ = false;
 +
 +  bool started_ = false;
@@ -9373,10 +9475,10 @@ index 0000000000000000000000000000000000000000..3ee75daa92e17f76f0aa9cad148e94a6
 +}
 diff --git a/components/thoron_adblock/i18n.js b/components/thoron_adblock/i18n.js
 new file mode 100644
-index 0000000000000000000000000000000000000000..097df80653675a0bc62d6e7145cc06eed15f60a4
+index 0000000000000000000000000000000000000000..0e2f54b0a649221d2495b9ea491173cf5e4abdef
 --- /dev/null
 +++ b/components/thoron_adblock/i18n.js
-@@ -0,0 +1,1151 @@
+@@ -0,0 +1,1197 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -9435,18 +9537,58 @@ index 0000000000000000000000000000000000000000..097df80653675a0bc62d6e7145cc06ee
 +       `удалите список или правила, добавленные последними.`],
 +  [`On, off and allowed sites`, `Activado, desactivado y sitios permitidos`, `Activé, désactivé et sites autorisés`,
 +   `An, aus und erlaubte Websites`, `Ligado, desligado e sites permitidos`, `Включено, выключено и разрешённые сайты`],
-+  [`Blocking is switched on or off for all sites, and sites are allowed one by one, in the site settings. ` +
-+       `On a page, the icon in the address bar does the same for that site.`,
-+   `El bloqueo se activa o desactiva para todos los sitios, y los sitios se permiten uno a uno, en los ajustes ` +
-+       `de sitios. En una página, el icono de la barra de direcciones hace lo mismo para ese sitio.`,
-+   `Le blocage s'active ou se désactive pour tous les sites, et les sites s'autorisent un par un, dans les ` +
-+       `paramètres des sites. Sur une page, l'icône de la barre d'adresse fait de même pour ce site.`,
-+   `Das Blockieren wird für alle Websites ein- oder ausgeschaltet, und Websites werden einzeln erlaubt, in den ` +
-+       `Website-Einstellungen. Auf einer Seite macht das Symbol in der Adressleiste dasselbe für diese Website.`,
-+   `O bloqueio é ligado ou desligado para todos os sites, e os sites são permitidos um a um, nas configurações ` +
-+       `de sites. Em uma página, o ícone da barra de endereço faz o mesmo para esse site.`,
-+   `Блокировка включается или выключается для всех сайтов, а сайты разрешаются по одному в настройках сайтов. ` +
-+       `На странице значок в адресной строке делает то же самое для этого сайта.`],
++  [`Block ads and trackers on every site`, `Bloquear anuncios y rastreadores en todos los sitios`,
++   `Bloquer les publicités et les traqueurs sur tous les sites`, `Werbung und Tracker auf allen Websites blockieren`,
++   `Bloquear anúncios e rastreadores em todos os sites`, `Блокировать рекламу и трекеры на всех сайтах`],
++  [`Turn it off for a while:`, `Desactivarlo por un tiempo:`, `Le désactiver un moment :`,
++   `Für eine Weile ausschalten:`, `Desligar por um tempo:`, `Выключить на время:`],
++  [`Turned off for a while, blocking comes back on by itself; turned off with the box above, it stays off ` +
++       `until you turn it on again. Pages that are open change when they load again. Sites are allowed one by ` +
++       `one in the menu of the shield, or in the site settings.`,
++   `Desactivado por un tiempo, el bloqueo vuelve a activarse solo; desactivado con la casilla de arriba, sigue ` +
++       `desactivado hasta que lo actives de nuevo. Las páginas abiertas cambian cuando se vuelven a cargar. Los ` +
++       `sitios se permiten uno a uno en el menú del escudo o en los ajustes de sitios.`,
++   `Désactivé un moment, le blocage se réactive tout seul ; désactivé avec la case ci-dessus, il reste désactivé ` +
++       `jusqu'à ce que vous le réactiviez. Les pages ouvertes changent quand elles se rechargent. Les sites ` +
++       `s'autorisent un par un dans le menu du bouclier, ou dans les paramètres des sites.`,
++   `Für eine Weile ausgeschaltet, schaltet sich das Blockieren von selbst wieder ein; mit dem Kästchen oben ` +
++       `ausgeschaltet, bleibt es aus, bis du es wieder einschaltest. Offene Seiten ändern sich, wenn sie neu ` +
++       `geladen werden. Websites werden einzeln im Menü des Schilds oder in den Website-Einstellungen erlaubt.`,
++   `Desligado por um tempo, o bloqueio volta a ligar sozinho; desligado com a caixa acima, fica desligado até ` +
++       `você ligá-lo de novo. As páginas abertas mudam quando são recarregadas. Os sites são permitidos um a um ` +
++       `no menu do escudo ou nas configurações de sites.`,
++   `Выключенная на время, блокировка снова включается сама; выключенная флажком выше, она остаётся ` +
++       `выключенной, пока вы не включите её снова. Открытые страницы меняются после перезагрузки. Сайты ` +
++       `разрешаются по одному в меню щита или в настройках сайтов.`],
++  [`On`, `Activado`, `Activé`, `An`, `Ligado`, `Вкл.`],
++  [`Off`, `Desactivado`, `Désactivé`, `Aus`, `Desligado`, `Выкл.`],
++  [`Turn ad blocking off for every site`, `Desactivar el bloqueo de anuncios en todos los sitios`,
++   `Désactiver le blocage des publicités sur tous les sites`, `Werbeblocker für alle Websites ausschalten`,
++   `Desligar o bloqueio de anúncios em todos os sites`, `Выключить блокировку рекламы на всех сайтах`],
++  [`Turn ad blocking on for every site`, `Activar el bloqueo de anuncios en todos los sitios`,
++   `Activer le blocage des publicités sur tous les sites`, `Werbeblocker für alle Websites einschalten`,
++   `Ligar o bloqueio de anúncios em todos os sites`, `Включить блокировку рекламы на всех сайтах`],
++  [`5 minutes`, `5 minutos`, `5 minutes`, `5 Minuten`, `5 minutos`, `5 минут`],
++  [`1 hour`, `1 hora`, `1 heure`, `1 Stunde`, `1 hora`, `1 час`],
++  [`Until the browser closes`, `Hasta que se cierre el navegador`, `Jusqu'à la fermeture du navigateur`,
++   `Bis der Browser geschlossen wird`, `Até o navegador ser fechado`, `До закрытия браузера`],
++  [`Until I turn it on`, `Hasta que lo active`, `Jusqu'à ce que je le réactive`, `Bis ich ihn wieder einschalte`,
++   `Até eu ligar de novo`, `Пока я не включу`],
++  [`Ad blocking is on for every site.`, `El bloqueo de anuncios está activado en todos los sitios.`,
++   `Le blocage des publicités est activé sur tous les sites.`, `Der Werbeblocker ist für alle Websites an.`,
++   `O bloqueio de anúncios está ligado em todos os sites.`, `Блокировка рекламы включена на всех сайтах.`],
++  [`Ad blocking is off for every site.`, `El bloqueo de anuncios está desactivado en todos los sitios.`,
++   `Le blocage des publicités est désactivé sur tous les sites.`, `Der Werbeblocker ist für alle Websites aus.`,
++   `O bloqueio de anúncios está desligado em todos os sites.`, `Блокировка рекламы выключена на всех сайтах.`],
++  [`Ad blocking is off for every site until the browser closes.`,
++   `El bloqueo de anuncios está desactivado en todos los sitios hasta que se cierre el navegador.`,
++   `Le blocage des publicités est désactivé sur tous les sites jusqu'à la fermeture du navigateur.`,
++   `Der Werbeblocker ist für alle Websites aus, bis der Browser geschlossen wird.`,
++   `O bloqueio de anúncios está desligado em todos os sites até o navegador ser fechado.`,
++   `Блокировка рекламы выключена на всех сайтах до закрытия браузера.`],
++  [`Blocking off or on for every site`, `Desactivar o activar el bloqueo en todos los sitios`,
++   `Désactiver ou activer le blocage sur tous les sites`, `Blockieren für alle Websites aus- oder einschalten`,
++   `Desligar ou ligar o bloqueio em todos os sites`, `Выключить или включить блокировку на всех сайтах`],
 +  [`Open "Ads and trackers" in Settings`, `Abrir "Anuncios y rastreadores" en Configuración`,
 +   `Ouvrir « Publicités et traqueurs » dans les paramètres`, `"Werbung und Tracker" in den Einstellungen öffnen`,
 +   `Abrir "Anúncios e rastreadores" nas configurações`, `Открыть «Реклама и трекеры» в настройках`],
@@ -10317,6 +10459,12 @@ index 0000000000000000000000000000000000000000..097df80653675a0bc62d6e7145cc06ee
 +  [/^Storage used: ([\d,.\s]+) MB$/, {},
 +   [`Almacenamiento usado: $1 MB`, `Stockage utilisé : $1 Mo`, `Belegter Speicher: $1 MB`,
 +    `Armazenamento usado: $1 MB`, `Занято места: $1 МБ`]],
++  [/^Ad blocking is off for every site until (\d.*)\.$/, {},
++   [`El bloqueo de anuncios está desactivado en todos los sitios hasta las $1.`,
++    `Le blocage des publicités est désactivé sur tous les sites jusqu'à $1.`,
++    `Der Werbeblocker ist für alle Websites aus, bis $1.`,
++    `O bloqueio de anúncios está desligado em todos os sites até $1.`,
++    `Блокировка рекламы выключена на всех сайтах до $1.`]],
 +  [/^Storage used: ([\d,.\s]+) kB$/, {},
 +   [`Almacenamiento usado: $1 kB`, `Stockage utilisé : $1 ko`, `Belegter Speicher: $1 kB`,
 +    `Armazenamento usado: $1 kB`, `Занято места: $1 кБ`]],
@@ -12015,10 +12163,10 @@ index 0000000000000000000000000000000000000000..afc6fddd83dd1ffda301852b596e5060
 +#endif  // COMPONENTS_THORON_ADBLOCK_LIST_STORE_H_
 diff --git a/components/thoron_adblock/list_updater.cc b/components/thoron_adblock/list_updater.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..ad5b01ec37a25516a4ba5e001b5de8eba740a8fc
+index 0000000000000000000000000000000000000000..1ea2043d974b25f60b24d47c80322e6e0cbf92f4
 --- /dev/null
 +++ b/components/thoron_adblock/list_updater.cc
-@@ -0,0 +1,226 @@
+@@ -0,0 +1,271 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -12030,11 +12178,13 @@ index 0000000000000000000000000000000000000000..ad5b01ec37a25516a4ba5e001b5de8eb
 +#include "base/files/file_util.h"
 +#include "base/functional/bind.h"
 +#include "base/logging.h"
++#include "base/power_monitor/power_monitor.h"
 +#include "base/strings/strcat.h"
 +#include "base/task/task_runner.h"
 +#include "base/time/time.h"
 +#include "components/thoron_adblock/engine_service.h"
 +#include "components/thoron_adblock/list_fetch.h"
++#include "content/public/browser/network_service_instance.h"
 +#include "services/network/public/cpp/shared_url_loader_factory.h"
 +
 +namespace thoron_adblock {
@@ -12044,6 +12194,10 @@ index 0000000000000000000000000000000000000000..ad5b01ec37a25516a4ba5e001b5de8eb
 +constexpr base::TimeDelta kFirstCheckDelay = base::Minutes(2);
 +constexpr base::TimeDelta kFirstCheckDelayForTesting = base::Seconds(1);
 +constexpr base::TimeDelta kCheckEvery = base::Hours(1);
++// After the network came back, and after the computer woke up: time for
++// the connection to settle.
++constexpr base::TimeDelta kAfterReconnect = base::Seconds(20);
++constexpr base::TimeDelta kAfterResume = base::Minutes(1);
 +constexpr base::FilePath::CharType kDownloadDir[] =
 +    FILE_PATH_LITERAL("download");
 +
@@ -12081,10 +12235,27 @@ index 0000000000000000000000000000000000000000..ad5b01ec37a25516a4ba5e001b5de8eb
 +      on_new_engine_(std::move(on_new_engine)),
 +      base_url_for_testing_(std::move(base_url_for_testing)) {}
 +
-+ListUpdater::~ListUpdater() = default;
++ListUpdater::~ListUpdater() {
++  if (tracker_) {
++    tracker_->RemoveNetworkConnectionObserver(this);
++  }
++  if (power_observed_) {
++    base::PowerMonitor::GetInstance()->RemovePowerSuspendObserver(this);
++  }
++}
 +
 +void ListUpdater::Start() {
 +  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
++  if (!power_observed_) {
++    base::PowerMonitor::GetInstance()->AddPowerSuspendObserver(this);
++    power_observed_ = true;
++  }
++  if (!tracker_) {
++    tracker_ = content::GetNetworkConnectionTracker();
++    if (tracker_) {
++      tracker_->AddNetworkConnectionObserver(this);
++    }
++  }
 +  ScheduleCheck(base_url_for_testing_.is_valid() ? kFirstCheckDelayForTesting
 +                                                 : kFirstCheckDelay);
 +}
@@ -12101,6 +12272,25 @@ index 0000000000000000000000000000000000000000..ad5b01ec37a25516a4ba5e001b5de8eb
 +  waiting_.push_back(std::move(done));
 +  timer_.Stop();
 +  Check();
++}
++
++void ListUpdater::OnResume() {
++  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
++  // a list may have fallen due while the computer slept
++  if (!busy_) {
++    ScheduleCheck(kAfterResume);
++  }
++}
++
++void ListUpdater::OnConnectionChanged(
++    net::NetworkChangeNotifier::ConnectionType type) {
++  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
++  if (type == net::NetworkChangeNotifier::CONNECTION_NONE || !offline_ ||
++      busy_) {
++    return;
++  }
++  offline_ = false;
++  ScheduleCheck(kAfterReconnect);
 +}
 +
 +void ListUpdater::ScheduleCheck(base::TimeDelta delay) {
@@ -12205,10 +12395,13 @@ index 0000000000000000000000000000000000000000..ad5b01ec37a25516a4ba5e001b5de8eb
 +void ListUpdater::FinishFetching() {
 +  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 +  if (downloads_.empty()) {
-+    // Offline or every host failed: try again in an hour; nothing changes.
++    // Offline or every host failed: try again in an hour, or as soon as the
++    // network is back; nothing changes.
++    offline_ = !sources_.empty();
 +    Finished("No list could be downloaded.\n");
 +    return;
 +  }
++  offline_ = false;
 +  std::set<std::string> attempted;
 +  for (const ActiveList& source : sources_) {
 +    attempted.insert(source.id);
@@ -12247,10 +12440,10 @@ index 0000000000000000000000000000000000000000..ad5b01ec37a25516a4ba5e001b5de8eb
 +}  // namespace thoron_adblock
 diff --git a/components/thoron_adblock/list_updater.h b/components/thoron_adblock/list_updater.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..397ecb69ddb3e4d84730c1d49cb23d5797304845
+index 0000000000000000000000000000000000000000..8dbe44fc9a233565b4b6d83fddd28087625a20fc
 --- /dev/null
 +++ b/components/thoron_adblock/list_updater.h
-@@ -0,0 +1,98 @@
+@@ -0,0 +1,115 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -12265,12 +12458,15 @@ index 0000000000000000000000000000000000000000..397ecb69ddb3e4d84730c1d49cb23d57
 +
 +#include "base/files/file_path.h"
 +#include "base/functional/callback.h"
++#include "base/memory/raw_ptr.h"
 +#include "base/memory/scoped_refptr.h"
 +#include "base/memory/weak_ptr.h"
++#include "base/power_monitor/power_observer.h"
 +#include "base/sequence_checker.h"
 +#include "base/task/sequenced_task_runner.h"
 +#include "base/timer/timer.h"
 +#include "components/thoron_adblock/list_store.h"
++#include "services/network/public/cpp/network_connection_tracker.h"
 +#include "url/gurl.h"
 +
 +namespace network {
@@ -12285,9 +12481,13 @@ index 0000000000000000000000000000000000000000..397ecb69ddb3e4d84730c1d49cb23d57
 +// older than kUpdateInterval, then downloads each list that is in use (the
 +// built-in ones that are switched on and the ones a person added) over HTTPS
 +// with no cookies or other credentials, and hands the files to ApplyUpdate,
-+// which keeps the previous copy of any list that fails its checks. Lives on
-+// the UI thread.
-+class ListUpdater {
++// which keeps the previous copy of any list that fails its checks. A check
++// that found no network is made again as soon as the network is back, and
++// one is made a minute after the computer wakes up (P5.70). Lives on the UI
++// thread.
++class ListUpdater
++    : public base::PowerSuspendObserver,
++      public network::NetworkConnectionTracker::NetworkConnectionObserver {
 + public:
 +  using FactoryGetter =
 +      base::RepeatingCallback<scoped_refptr<network::SharedURLLoaderFactory>()>;
@@ -12305,13 +12505,19 @@ index 0000000000000000000000000000000000000000..397ecb69ddb3e4d84730c1d49cb23d57
 +              GURL base_url_for_testing);
 +  ListUpdater(const ListUpdater&) = delete;
 +  ListUpdater& operator=(const ListUpdater&) = delete;
-+  ~ListUpdater();
++  ~ListUpdater() override;
 +
 +  void Start();
 +
 +  // Checks for updates now, whenever the last check was ("Update now" on the
 +  // settings page). `done` runs when the check is over, with what it did.
 +  void CheckNow(base::OnceCallback<void(std::string)> done);
++
++  // base::PowerSuspendObserver:
++  void OnResume() override;
++  // network::NetworkConnectionTracker::NetworkConnectionObserver:
++  void OnConnectionChanged(
++      net::NetworkChangeNotifier::ConnectionType type) override;
 +
 + private:
 +  void ScheduleCheck(base::TimeDelta delay);
@@ -12334,6 +12540,10 @@ index 0000000000000000000000000000000000000000..397ecb69ddb3e4d84730c1d49cb23d57
 +  base::OneShotTimer timer_;
 +  bool busy_ = false;
 +  bool forced_ = false;
++  // The last check could download no list: the network was away.
++  bool offline_ = false;
++  bool power_observed_ = false;
++  raw_ptr<network::NetworkConnectionTracker> tracker_ = nullptr;
 +  // Who waits for the check that is running, and for the one after it.
 +  std::vector<base::OnceCallback<void(std::string)>> waiting_;
 +  std::vector<base::OnceCallback<void(std::string)>> waiting_next_;
@@ -12528,10 +12738,10 @@ index 0000000000000000000000000000000000000000..3318af32f2e6c94783c2ab0784cebeb1
 +#endif  // COMPONENTS_THORON_ADBLOCK_MENU_OPENER_H_
 diff --git a/components/thoron_adblock/new_window.cc b/components/thoron_adblock/new_window.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..cd3f53fd489aefbd4fabd2126ea83868e541e5fa
+index 0000000000000000000000000000000000000000..c4991f6e6e9aef029adc9258c08db3a1c459adc1
 --- /dev/null
 +++ b/components/thoron_adblock/new_window.cc
-@@ -0,0 +1,89 @@
+@@ -0,0 +1,90 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -12587,8 +12797,9 @@ index 0000000000000000000000000000000000000000..cd3f53fd489aefbd4fabd2126ea83868
 +    return false;
 +  }
 +  const EngineService& engine = EngineService::Get();
-+  const bool blocked = engine.SiteSwitch(top, "popups") ||
-+                       engine.BlocksPopup(target_url, top);
++  const bool blocked =
++      (engine.blocking_on() && engine.SiteSwitch(top, "popups")) ||
++      engine.BlocksPopup(target_url, top);
 +  if (blocked) {
 +    BlockedCount::Record(opener.GetGlobalId(), target_url, "popup");
 +  }
@@ -13875,10 +14086,10 @@ index 0000000000000000000000000000000000000000..bb5e6c8789e8a4e07c5d7069027b5132
 +}
 diff --git a/components/thoron_adblock/popup_page.html b/components/thoron_adblock/popup_page.html
 new file mode 100644
-index 0000000000000000000000000000000000000000..b9b582a7c40d6d0454ab92ce8358f54c4fdd69cc
+index 0000000000000000000000000000000000000000..5bb31efd539d8a893c529eaf2042d64af13f61c3
 --- /dev/null
 +++ b/components/thoron_adblock/popup_page.html
-@@ -0,0 +1,236 @@
+@@ -0,0 +1,260 @@
 +<!doctype html>
 +<!-- Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +     found in the LICENSE file. -->
@@ -13915,7 +14126,19 @@ index 0000000000000000000000000000000000000000..b9b582a7c40d6d0454ab92ce8358f54c
 +  header svg { flex: none; }
 +  header .name { font-weight: 600; }
 +  header .site { margin-inline-start: auto; color: var(--soft); overflow: hidden; text-overflow: ellipsis;
-+                 white-space: nowrap; max-inline-size: 190px; }
++                 white-space: nowrap; max-inline-size: 150px; }
++  /* the switch for every site (P5.70) */
++  #everywhere { flex: none; border: 1px solid var(--line); border-radius: 10px; background: transparent;
++                color: var(--on); font: inherit; font-size: 11px; font-weight: 600; padding: 2px 8px;
++                cursor: pointer; }
++  #everywhere[aria-pressed=false] { color: var(--off); }
++  #everywhere:hover { background: var(--line); }
++  #pause { padding: 8px 14px; border-block-end: 1px solid var(--line); }
++  #pause p { margin: 0 0 6px; color: var(--soft); }
++  #pause .choices { display: flex; flex-wrap: wrap; gap: 6px; }
++  #pause button { border: 1px solid var(--line); border-radius: 6px; background: transparent; color: inherit;
++                  font: inherit; font-size: 12px; padding: 3px 10px; cursor: pointer; }
++  #pause button:hover { background: var(--line); }
 +  #power-box { display: flex; flex-direction: column; align-items: center; padding: 14px 14px 6px; }
 +  #power {
 +    inline-size: 84px; block-size: 84px; border-radius: 50%; border: 2px solid var(--line);
@@ -14015,7 +14238,19 @@ index 0000000000000000000000000000000000000000..b9b582a7c40d6d0454ab92ce8358f54c
 +  </svg>
 +  <span class="name">Thoron</span>
 +  <span class="site" id="site"></span>
++  <button id="everywhere" aria-pressed="true" title="Turn ad blocking off for every site">On</button>
 +</header>
++
++<div id="pause" role="group" aria-labelledby="pause-title" hidden>
++  <p id="pause-title">Turn ad blocking off for every site</p>
++  <div class="choices">
++    <button data-minutes="5">5 minutes</button>
++    <button data-minutes="60">1 hour</button>
++    <button data-minutes="-1">Until the browser closes</button>
++    <button data-minutes="0">Until I turn it on</button>
++    <button id="pause-cancel">Cancel</button>
++  </div>
++</div>
 +
 +<div id="blocked-box" hidden>
 +  <p>Strict blocking stopped this page: your filter lists name it as a whole.</p>
@@ -14117,10 +14352,10 @@ index 0000000000000000000000000000000000000000..b9b582a7c40d6d0454ab92ce8358f54c
 +</html>
 diff --git a/components/thoron_adblock/popup_page.js b/components/thoron_adblock/popup_page.js
 new file mode 100644
-index 0000000000000000000000000000000000000000..9040774cffef5a0afca5baaa1e40105d1dc1de4e
+index 0000000000000000000000000000000000000000..44f8a63776b349ba5d53dff16ecee51c60b6c483
 --- /dev/null
 +++ b/components/thoron_adblock/popup_page.js
-@@ -0,0 +1,251 @@
+@@ -0,0 +1,304 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -14160,15 +14395,40 @@ index 0000000000000000000000000000000000000000..9040774cffef5a0afca5baaa1e40105d
 +  }
 +}).observe(document.documentElement, {subtree: true, childList: true, attributes: true, attributeFilter: ['title']});
 +
++// The switch for every site (P5.70): off, and until when.
++function offText(backAt) {
++  if (backAt === -1) {
++    return 'Ad blocking is off for every site until the browser closes.';
++  }
++  if (backAt > 0) {
++    const at = new Date(backAt).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
++    return `Ad blocking is off for every site until ${at}.`;
++  }
++  return 'Ad blocking is off for every site.';
++}
++
 +function show(next) {
 +  state = next;
 +  $('site').textContent = next.site || '';
++  const everywhere = next.everywhere !== false;
++  const pill = $('everywhere');
++  pill.textContent = everywhere ? 'On' : 'Off';
++  pill.setAttribute('aria-pressed', String(everywhere));
++  if (!tooltipsOff) {
++    pill.title = everywhere ? 'Turn ad blocking off for every site' : 'Turn ad blocking on for every site';
++  }
++  if (!everywhere) {
++    $('pause').hidden = true;
++  }
 +  const power = $('power');
-+  power.disabled = !next.applicable;
-+  power.setAttribute('aria-pressed', String(next.applicable && next.enabled));
-+  power.setAttribute('aria-label', next.enabled ? 'Turn ad blocking off for this site'
-+                                                : 'Turn ad blocking on for this site');
-+  $('state').textContent = !next.applicable ? 'Nothing is blocked on this kind of page.'
++  // off for every site, the big button turns it on again
++  power.disabled = everywhere && !next.applicable;
++  power.setAttribute('aria-pressed', String(everywhere && next.applicable && next.enabled));
++  power.setAttribute('aria-label', !everywhere ? 'Turn ad blocking on for every site'
++                                  : next.enabled ? 'Turn ad blocking off for this site'
++                                  : 'Turn ad blocking on for this site');
++  $('state').textContent = !everywhere ? offText(next.backAt)
++      : !next.applicable ? 'Nothing is blocked on this kind of page.'
 +      : next.enabled ? 'Blocking is on for this site.'
 +      : 'Ads and trackers are allowed on this site.';
 +  $('page-count').textContent = number(next.pageCount);
@@ -14184,7 +14444,7 @@ index 0000000000000000000000000000000000000000..9040774cffef5a0afca5baaa1e40105d
 +    button.setAttribute('aria-pressed', String(!!next.switches[name]));
 +  }
 +  for (const id of ['picker', 'zapper']) {
-+    $(id).disabled = !next.applicable || !next.enabled;
++    $(id).disabled = !everywhere || !next.applicable || !next.enabled;
 +  }
 +  $('logger').disabled = !next.applicable;
 +  if (next.mediaKb) {
@@ -14344,7 +14604,35 @@ index 0000000000000000000000000000000000000000..9040774cffef5a0afca5baaa1e40105d
 +  }
 +}
 +
++// the switch for every site: on at once; off asks for how long
++$('everywhere').addEventListener('click', () => {
++  if (!state) {
++    return;
++  }
++  if (state.everywhere === false) {
++    chrome.send('setBlocking', [true, 0]);
++    setTimeout(refresh, 150);
++    return;
++  }
++  $('pause').hidden = !$('pause').hidden;
++});
++for (const button of document.querySelectorAll('#pause [data-minutes]')) {
++  button.addEventListener('click', () => {
++    chrome.send('setBlocking', [false, Number(button.dataset.minutes)]);
++    $('pause').hidden = true;
++    setTimeout(refresh, 150);
++  });
++}
++$('pause-cancel').addEventListener('click', () => {
++  $('pause').hidden = true;
++});
++
 +$('power').addEventListener('click', () => {
++  if (state && state.everywhere === false) {
++    chrome.send('setBlocking', [true, 0]);
++    setTimeout(refresh, 150);
++    return;
++  }
 +  if (state && state.applicable) {
 +    chrome.send('setSiteEnabled', [!state.enabled]);
 +    setTimeout(refresh, 150);
@@ -15307,10 +15595,10 @@ index 0000000000000000000000000000000000000000..e8ba37d6d7127e3a48dab3fa94c3d34f
 +}
 diff --git a/components/thoron_adblock/proxying_url_loader_factory.cc b/components/thoron_adblock/proxying_url_loader_factory.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..5705cc25418dd08de59f52fc23701849fdf0a2f0
+index 0000000000000000000000000000000000000000..71ff2511ecf6e5028a2b3a74305e97f23844de07
 --- /dev/null
 +++ b/components/thoron_adblock/proxying_url_loader_factory.cc
-@@ -0,0 +1,328 @@
+@@ -0,0 +1,365 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -15448,6 +15736,34 @@ index 0000000000000000000000000000000000000000..5705cc25418dd08de59f52fc23701849
 +}
 +
 +// static
++bool ProxyingURLLoaderFactory::BlockingEverywhere(
++    const HostContentSettingsMap* settings) {
++  return EngineService::Get().blocking_on() &&
++         !(settings && settings->GetDefaultContentSetting(
++                           ContentSettingsType::ADS) == CONTENT_SETTING_ALLOW);
++}
++
++// static
++bool ProxyingURLLoaderFactory::SetBlockingEverywhere(
++    HostContentSettingsMap* settings,
++    bool on,
++    int minutes) {
++  if (!on && (minutes < -1 || minutes > EngineService::kMaxOffMinutes)) {
++    return false;
++  }
++  EngineService::Get().SetBlocking(on, minutes);
++  // on is on: also where the browser's own "Ads and trackers" lets every
++  // site show ads
++  if (on && settings &&
++      settings->GetDefaultContentSetting(ContentSettingsType::ADS) ==
++          CONTENT_SETTING_ALLOW) {
++    settings->SetDefaultContentSetting(ContentSettingsType::ADS,
++                                       CONTENT_SETTING_DEFAULT);
++  }
++  return true;
++}
++
++// static
 +bool ProxyingURLLoaderFactory::AdsAllowedOn(
 +    const HostContentSettingsMap* settings,
 +    const GURL& top_site) {
@@ -15531,6 +15847,15 @@ index 0000000000000000000000000000000000000000..5705cc25418dd08de59f52fc23701849
 +    const network::ResourceRequest& request,
 +    mojo::PendingRemote<network::mojom::URLLoaderClient> client,
 +    const net::MutableNetworkTrafficAnnotationTag& traffic_annotation) {
++  // Blocking off for every site (P5.70): the request goes out as it is,
++  // with nothing watched, changed or counted.
++  if (!EngineService::Get().blocking_on()) {
++    target_factory_->CreateLoaderAndStart(std::move(loader_receiver),
++                                          request_id, options, request,
++                                          std::move(client),
++                                          traffic_annotation);
++    return;
++  }
 +  const GURL source = request.request_initiator
 +                          ? request.request_initiator->GetURL()
 +                          : GURL();
@@ -15641,10 +15966,10 @@ index 0000000000000000000000000000000000000000..5705cc25418dd08de59f52fc23701849
 +}  // namespace thoron_adblock
 diff --git a/components/thoron_adblock/proxying_url_loader_factory.h b/components/thoron_adblock/proxying_url_loader_factory.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..4cf9c9c9848d152e8bd11c15821c7042f9f11c0a
+index 0000000000000000000000000000000000000000..a5d89973a6739b17f74472affd05c4e2a725bcd1
 --- /dev/null
 +++ b/components/thoron_adblock/proxying_url_loader_factory.h
-@@ -0,0 +1,116 @@
+@@ -0,0 +1,127 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -15717,6 +16042,17 @@ index 0000000000000000000000000000000000000000..4cf9c9c9848d152e8bd11c15821c7042
 +
 +  static bool AdsAllowedOn(const HostContentSettingsMap* settings,
 +                           const GURL& top_site);
++
++  // The switch for every site (P5.70), as the menu and chrome://adblock show
++  // it: blocking is on (EngineService::blocking_on) and the browser's own
++  // "Ads and trackers" does not let every site show ads.
++  static bool BlockingEverywhere(const HostContentSettingsMap* settings);
++  // Switches it (EngineService::SetBlocking); on also sets that setting back
++  // to its default where it lets every site show ads. False for `minutes`
++  // out of range.
++  static bool SetBlockingEverywhere(HostContentSettingsMap* settings,
++                                    bool on,
++                                    int minutes);
 +
 +  // Answers a blocked request with its stand-in (a data: URL from the engine:
 +  // an empty script, a 1x1 image, an empty document for a frame) as a
@@ -17198,10 +17534,10 @@ index 0000000000000000000000000000000000000000..8ca3ab6f12cffec05fc98fb17aa21f44
 +#endif  // COMPONENTS_THORON_ADBLOCK_RENDERER_DOCUMENT_AGENT_H_
 diff --git a/components/thoron_adblock/settings_page.html b/components/thoron_adblock/settings_page.html
 new file mode 100644
-index 0000000000000000000000000000000000000000..9014fa4b5576e5222b518dbf80de6e403216ddb1
+index 0000000000000000000000000000000000000000..b6d4d78968aadc0c32730b45daa09b079f89b4c0
 --- /dev/null
 +++ b/components/thoron_adblock/settings_page.html
-@@ -0,0 +1,417 @@
+@@ -0,0 +1,427 @@
 +<!doctype html>
 +<!-- Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +     found in the LICENSE file.
@@ -17371,10 +17707,20 @@ index 0000000000000000000000000000000000000000..9014fa4b5576e5222b518dbf80de6e40
 +  <p id="not-applied" hidden>Your last change is not in use: the browser stopped while it was reading it.
 +    Change the setting again, or remove the list or the rules you added last.</p>
 +
-+  <section>
++  <section id="power-section">
 +    <h2>On, off and allowed sites</h2>
-+    <p>Blocking is switched on or off for all sites, and sites are allowed one by one, in the site settings.
-+      On a page, the icon in the address bar does the same for that site.</p>
++    <label class="option"><input type="checkbox" id="blocking" checked>
++      <span>Block ads and trackers on every site</span></label>
++    <p id="blocking-state" class="note"></p>
++    <div class="row" role="group" aria-labelledby="pause-label">
++      <span id="pause-label">Turn it off for a while:</span>
++      <button type="button" data-minutes="5">5 minutes</button>
++      <button type="button" data-minutes="60">1 hour</button>
++      <button type="button" data-minutes="-1">Until the browser closes</button>
++    </div>
++    <p>Turned off for a while, blocking comes back on by itself; turned off with the box above, it stays off
++      until you turn it on again. Pages that are open change when they load again. Sites are allowed one by
++      one in the menu of the shield, or in the site settings.</p>
 +    <a class="button" id="site-settings" href="chrome://settings/content/ads">Open "Ads and trackers" in Settings</a>
 +  </section>
 +
@@ -17621,10 +17967,10 @@ index 0000000000000000000000000000000000000000..9014fa4b5576e5222b518dbf80de6e40
 +</html>
 diff --git a/components/thoron_adblock/settings_page.js b/components/thoron_adblock/settings_page.js
 new file mode 100644
-index 0000000000000000000000000000000000000000..ce9e1018ec86152bb5746d1446bf7301d63a9088
+index 0000000000000000000000000000000000000000..0fac30c62e20cc50db754f71e0d1e8ddd671247d
 --- /dev/null
 +++ b/components/thoron_adblock/settings_page.js
-@@ -0,0 +1,1366 @@
+@@ -0,0 +1,1419 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -17990,6 +18336,57 @@ index 0000000000000000000000000000000000000000..ce9e1018ec86152bb5746d1446bf7301
 +  say(error || 'The theme was changed.', !!error);
 +});
 +
++// --- the switch for every site (P5.70) ---
++function offText(backAt) {
++  if (backAt === -1) {
++    return 'Ad blocking is off for every site until the browser closes.';
++  }
++  if (backAt > 0) {
++    const at = new Date(backAt).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
++    return `Ad blocking is off for every site until ${at}.`;
++  }
++  return 'Ad blocking is off for every site.';
++}
++
++function showBlocking(settings) {
++  const on = settings.blocking !== false;
++  $('blocking').checked = on;
++  $('blocking-state').textContent = on ? 'Ad blocking is on for every site.' : offText(settings['blocking-back']);
++  return on;
++}
++
++async function setBlocking(on, minutes) {
++  const error = await sendWithPromise('setBlocking', on, minutes);
++  let settings = {};
++  try {
++    settings = await sendWithPromise('getSettings');
++  } catch {
++    return;
++  }
++  const now = showBlocking(settings);
++  say(error || (now ? 'Ad blocking is on for every site.' : offText(settings['blocking-back'])), !!error);
++}
++
++$('blocking').addEventListener('change', () => setBlocking($('blocking').checked, 0));
++for (const button of document.querySelectorAll('#power-section [data-minutes]')) {
++  button.addEventListener('click', () => setBlocking(false, Number(button.dataset.minutes)));
++}
++// a while that is over shows as over: every five seconds, and at once when the page is looked at again (a
++// tab in the background gets its timers late)
++async function refreshBlocking() {
++  try {
++    showBlocking(await sendWithPromise('getSettings'));
++  } catch {
++    // the page is closing
++  }
++}
++setInterval(refreshBlocking, 5000);
++document.addEventListener('visibilitychange', () => {
++  if (!document.hidden) {
++    refreshBlocking();
++  }
++});
++
 +async function showSettings() {
 +  let settings = {};
 +  try {
@@ -17997,6 +18394,7 @@ index 0000000000000000000000000000000000000000..ce9e1018ec86152bb5746d1446bf7301
 +  } catch {
 +    return;
 +  }
++  showBlocking(settings);
 +  for (const box of document.querySelectorAll('[data-setting]')) {
 +    box.checked = !!settings[box.dataset.setting];
 +  }
@@ -18447,7 +18845,8 @@ index 0000000000000000000000000000000000000000..ce9e1018ec86152bb5746d1446bf7301
 +// --- Keyboard shortcuts (uBlock Origin's commands) ---
 +const SHORTCUTS = [['picker', 'Block an element (the picker)'], ['zapper', 'Remove elements (the zapper)'],
 +                   ['logger', 'Open the logger'], ['dashboard', 'Open these settings'],
-+                   ['power', 'Blocking off or on for the site'], ['cosmetic', 'Hiding off or on for the site'],
++                   ['power', 'Blocking off or on for the site'],
++                   ['blocking', 'Blocking off or on for every site'], ['cosmetic', 'Hiding off or on for the site'],
 +                   ['javascript', 'JavaScript off or on for the site']];
 +
 +// The keys of a key press as the browser writes a shortcut: "Ctrl+Alt+Shift+K"; '' for one that cannot be.

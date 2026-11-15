@@ -41,6 +41,20 @@ It is **off by default** until its last correctness checks are done.
 2. Set "Built-in ad blocking" to **Enabled** and relaunch.
 3. Turn uBlock Origin off on `chrome://extensions`, or both do the same work.
 
+### Off and on
+
+Once it is enabled, you switch it off and on whenever you like, with no relaunch:
+
+- in the menu of the shield, the **On** switch at the top: it asks for how long (5 minutes, 1 hour,
+  until the browser closes, or until you turn it on). While it is off the shield is grey, and the
+  menu's big button turns it on again;
+- on `chrome://adblock`, "Block ads and trackers on every site" and "Turn it off for a while";
+- with a shortcut you set there: "Blocking off or on for every site".
+
+Off, nothing is blocked or hidden on any site. Off for a while comes back on by itself; off for good
+stays off until you turn it on. The filter lists stay up to date either way: they are looked for every
+few days, again as soon as the network is back, and after the computer wakes up.
+
 ### Use it
 
 - **The shield in the toolbar:** while the blocker is on, a shield sits next to the extensions button.

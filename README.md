@@ -46,7 +46,7 @@ Thoron is in active development. These are the headline features on the roadmap:
 | **One installer for good** | A small `ThoronSetup.exe` that always installs the newest release, so one download link stays valid. The full installer is in every release too. | [P3](ROADMAP.md#p3---updater-v1--import) |
 | **Import from your browser** | Brings over **open tabs and tab groups** (names, colours, pinned tabs), bookmarks, history, passwords, settings and extensions from Thorium, Chrome, Edge, Brave, Vivaldi, Opera and later Firefox. Your old browser is never modified. | [P3](ROADMAP.md#p3---updater-v1--import) |
 | **A first run that moves you in** | On first start Thoron offers to import from the browsers it finds and to become your default browser. Both are offers: nothing is taken over silently. | [P3](ROADMAP.md#p3---updater-v1--import) |
-| **Built-in ad blocking** | Today: the genuine, unmodified uBlock Origin, pinned and signature-verified. Being built: a blocker inside the browser itself that reads the same lists and replaces it. It already measures faster and lighter than uBlock Origin with the same blocking, and stays off by default until its last correctness checks are done. To try it, turn on "Built-in ad blocking" at `chrome://flags/#thoron-native-adblock` (and turn uBlock Origin off, or both do the same work). Its lists and your own rules are on `chrome://adblock`. It also keeps pop-up ads and pages its lists name as harmful from opening. | [P5](ROADMAP.md#p5---quality) |
+| **Built-in ad blocking** | Today: the genuine, unmodified uBlock Origin, pinned and signature-verified. Being built: a blocker inside the browser itself that reads the same lists and replaces it. It already measures faster and lighter than uBlock Origin with the same blocking, and stays off by default until its last correctness checks are done. To try it, turn on "Built-in ad blocking" at `chrome://flags/#thoron-native-adblock` (and turn uBlock Origin off, or both do the same work). Its lists and your own rules are on `chrome://adblock`, and its menu switches it off and on at any time, for every site or one site, with no relaunch. It also keeps pop-up ads and pages its lists name as harmful from opening. | [P5](ROADMAP.md#p5---quality) |
 | **Protected portable mode** | Saved passwords and cookies in the portable version are encrypted with your passphrase, so they work on any PC and stay safe if the folder is lost. | [P4](ROADMAP.md#p4---updater-v2) |
 | **Right build, automatically** | The installer picks the fastest build your CPU supports (AVX2, SSE4 or ARM64). | [P4](ROADMAP.md#p4---updater-v2) |
 | **Measured performance** | Every release is benchmarked (Speedometer, JetStream, MotionMark, startup, memory, idle CPU). A regression blocks the release. | [Q track](ROADMAP.md#quality--performance-q) |
@@ -77,7 +77,7 @@ changed in each version is in the [changelog](CHANGELOG.md), one line per change
 Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always current.
 
 <!-- roadmap:start -->
-**Overall:** `█████████░░░░░░░░░░░` 93 of 198 tasks done (47%) · roadmap updated 2026-11-12
+**Overall:** `█████████░░░░░░░░░░░` 94 of 199 tasks done (47%) · roadmap updated 2026-11-12
 
 | Area | Progress | Done | Status |
 |---|---|---|---|
@@ -87,7 +87,7 @@ Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always curre
 | [P2b - ARM64](ROADMAP.md#p2b---arm64) | `░░░░░░░░░░░░░░░░░░░░` | 0/5 | ⬜ Not started |
 | [P3 - Updater v1 + Import](ROADMAP.md#p3---updater-v1--import) | `░░░░░░░░░░░░░░░░░░░░` | 0/21 | ⬜ Not started |
 | [P4 - Updater v2](ROADMAP.md#p4---updater-v2) | `░░░░░░░░░░░░░░░░░░░░` | 0/11 | ⬜ Not started |
-| [P5 - Quality](ROADMAP.md#p5---quality) | `███████████████░░░░░` | 52/69 | 🔄 In progress |
+| [P5 - Quality](ROADMAP.md#p5---quality) | `███████████████░░░░░` | 53/70 | 🔄 In progress |
 | [Security (S)](ROADMAP.md#security-s) | `██████████░░░░░░░░░░` | 8/16 | 🔄 In progress |
 | [Quality & performance (Q)](ROADMAP.md#quality--performance-q) | `███░░░░░░░░░░░░░░░░░` | 1/7 | 🔄 In progress |
 | [Docs (D)](ROADMAP.md#docs-d) | `████████░░░░░░░░░░░░` | 4/10 | 🔄 In progress |
@@ -278,6 +278,7 @@ Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always curre
 - [x] **P5.67** Native ad blocking, uBlock Origin's cloud storage: the backup kept in a synced preference, which the browser's own sync carries to the person's other computers
 - [x] **P5.68** Native ad blocking, HTML filters on the page's structure (`:has()`, `:upward()`, combinators): the page runner takes the elements out as the parser adds them
 - [x] **P5.69** Native ad blocking, the last of uBlock Origin's settings: accent color, "Disable tooltips", "Storage used", the logger's "Reload", "Update now" as purge and update
+- [x] **P5.70** Native ad blocking, off and on at any time for every site (menu, settings page, shortcut, for good or for a while) with no relaunch; the lists looked for again when the network is back and after sleep
 - [ ] **P5.30** Native ad blocking, a page in Settings that a person can work with: one switch for the blocker; the filter lists with a checkbox each; add a list by its address and remove it again; "My filters", the person's own rules in the syntax of the lists; the sites where blocking is off
 
 **Security (S)**

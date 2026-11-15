@@ -42,6 +42,14 @@ class DefaultsTests(unittest.TestCase):
         got["settings"].update({"auto-update": False, "media-kb": 300, "theme": "dark"})
         self.assertEqual(len(bc.default_problems(got)), 3)
 
+    def test_the_switch_for_every_site_is_left_as_it_is(self):
+        # P5.70: not in a backup, and a reset does not touch it, either way
+        for on, back in ((True, 0), (False, 0), (False, -1)):
+            got = {"disabled": [], "myFilters": "", "allowed": [], "switches": {},
+                   "settings": {"badge": True, "auto-update": True, "context-menu": True, "advanced": True,
+                                "blocking": on, "blocking-back": back}}
+            self.assertEqual(bc.default_problems(got), [])
+
     def test_whatever_is_left_is_named(self):
         found = bc.default_problems(changed())
         self.assertEqual(len(found), 6)

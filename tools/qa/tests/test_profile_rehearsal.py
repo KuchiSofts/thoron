@@ -101,6 +101,12 @@ class ArgumentsTests(unittest.TestCase):
         self.assertIn("--remote-debugging-address=127.0.0.1", args)
         self.assertIn("--remote-debugging-port=0", args)
 
+    def test_the_new_build_s_own_log_only_when_asked(self):
+        self.assertFalse([a for a in pr.launch_arguments(Path("b"), Path("c")) if "log" in a])
+        args = pr.launch_arguments(Path("b"), Path("c"), log=Path("work") / "chrome.log")
+        self.assertIn("--enable-logging", args)
+        self.assertIn(f"--log-file={Path('work') / 'chrome.log'}", args)
+
     def test_a_window_unless_asked_otherwise(self):
         self.assertFalse([a for a in pr.launch_arguments(Path("b"), Path("c")) if a.startswith("--headless")])
         self.assertIn("--headless=new", pr.launch_arguments(Path("b"), Path("c"), headless=True))
@@ -424,6 +430,35 @@ class MainTests(Scratch):
         self.assertIn("2 bookmarks, 3 passwords", text)
         self.assertIn("kept everything", text)
         self.assertEqual(list(self.work.iterdir()), [])
+
+    def test_a_browser_log_outside_the_work_folder_is_refused(self):
+        code, text = self.main("--browser-log", str(self.tmp / "elsewhere.log"))
+        self.assertEqual(code, 2)
+        self.assertIn("inside the work folder", text)
+
+    def test_a_browser_log_is_deleted_when_the_rehearsal_passes(self):
+        log = self.work / "chrome.log"
+
+        def keeps_and_logs(browser, copy, seconds, headless, close_timeout, log=None):
+            log.write_text("a line", encoding="utf-8")
+            new_session(copy)
+
+        code, _ = self.main("--browser-log", str(log), runner=keeps_and_logs)
+        self.assertEqual(code, 0)
+        self.assertFalse(log.exists())
+
+    def test_a_browser_log_is_kept_when_the_rehearsal_fails(self):
+        log = self.work / "chrome.log"
+
+        def loses_and_logs(browser, copy, seconds, headless, close_timeout, log=None):
+            log.write_text("a line", encoding="utf-8")
+            new_session(copy)
+            write_bookmarks(copy, 0)
+
+        code, text = self.main("--browser-log", str(log), runner=loses_and_logs)
+        self.assertEqual(code, 1)
+        self.assertTrue(log.exists())
+        self.assertIn("kept for a look", text)
 
     def test_the_snapshot_from_before_can_be_kept(self):
         before = self.tmp / "before.json"

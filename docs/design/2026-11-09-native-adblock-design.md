@@ -1844,6 +1844,26 @@ response's body. Thoron is the browser, so it does it for every page:
 - **Checked** by `tools/qa/adblock_tools_check.py` (new step "look") and `adblock_backup_check.py` (the
   accent colour is taken back by a reset).
 
+### 12.57 Off and on at any time, for every site (P5.70, 2026-11-15)
+
+- **The blocker's own switch**, as switching uBlock Origin off and on: once "Built-in ad blocking" is on,
+  blocking is switched off and on for every site while the browser runs, with no relaunch. Off, nothing is
+  blocked, hidden, changed or counted in any profile: every decision of the lists answers "nothing"
+  (`EngineService::Active`), the loader factory passes requests through untouched, and the menu's site
+  switches, "My rules" and large media are not applied. The lists are still kept current.
+- **For good or for a while:** off for good is kept (the option `blocking`); off for 5 minutes, an hour or
+  until the browser closes is kept in memory only and ends by itself (a timer, and the time itself is
+  checked too, for a computer that slept). On also sets the browser's own "Ads and trackers" back to its
+  default where it let every site show ads, so on means on.
+- **Where:** the menu (a switch in its header asks for how long; while off, its big button turns blocking
+  on again; the tab is loaded again), `chrome://adblock` ("Block ads and trackers on every site" and the
+  "for a while" choices, with when it comes back), the shortcut "Blocking off or on for every site", and
+  the shield, which is grey and says "off for every site". A backup does not carry the switch.
+- **The lists, smarter:** a check that could download no list (no network) is made again 20 seconds after
+  the network is back instead of an hour later, and one is made a minute after the computer wakes up, so
+  a list that fell due while it slept is not late.
+- **Checked** by `tools/qa/adblock_power_check.py` (on, off, back, menu, shortcut, while, kept).
+
 ## 13. Credits
 
 The procedural operators and the rest of the filter syntax are uBlock Origin's (with forms from Adblock

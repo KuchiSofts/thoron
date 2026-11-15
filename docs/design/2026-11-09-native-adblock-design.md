@@ -1920,7 +1920,8 @@ response's body. Thoron is the browser, so it does it for every page:
   every change is in use at once, and the section says what it did and when the lists were last looked for.
 - **Checked** by `tools/qa/adblock_icon_check.py` (the shield before anything is blocked, its count, the
   menu from it, six clicks in a row with the mouse messages a click sends) and the new
-  `adblock_menulists_check.py` (shown, off, update, add).
+  `adblock_menulists_check.py` (shown, off, update, add); online, `adblock_live_update_check.py` does the
+  same in the menu with the real servers (switch, add: a list of the catalog by its address, and removed).
 
 ## 13. Credits
 

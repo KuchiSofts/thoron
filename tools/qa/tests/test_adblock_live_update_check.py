@@ -23,5 +23,17 @@ class StepTests(unittest.TestCase):
         self.assertEqual(len(lc.rules_problems(few)), 3)
 
 
+class MenuTests(unittest.TestCase):
+    def test_switch(self):
+        self.assertEqual(lc.switch_problems({"state": "EasyPrivacy is switched off."}, False, True), [])
+        self.assertEqual(len(lc.switch_problems({"state": ""}, True, False)), 3)
+
+    def test_add(self):
+        new = [{"name": "uBlock filters - LAN", "remove": True}]
+        self.assertEqual(lc.add_problems("The list was added and is in use.", new, True), [])
+        self.assertEqual(len(lc.add_problems("Not a filter list.", [], None)), 3)
+        self.assertTrue(lc.ADDED_LIST.startswith("https://"))
+
+
 if __name__ == "__main__":
     unittest.main()

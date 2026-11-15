@@ -121,7 +121,8 @@ Explanations live in the design docs under `docs/design/`.
 - **QA tools:** `profile_rehearsal.py --minimized` keeps the rehearsal copy out of the way.
 - **QA tools:** `profile_rehearsal.py --browser-log` keeps the new build's own log of a rehearsal that failed, to find out why.
 - **QA tools:** `adblock_power_check.py` switches the blocker off and on every way it can be, offline.
-- **QA tools:** `adblock_live_update_check.py` updates every filter list from its real server, online.
+- **QA tools:** `adblock_live_update_check.py` updates every filter list from its real server, online, and switches,
+  adds and removes lists in the menu with the real servers.
 - **QA tools:** `adblock_menu_check.py` drives the menu, its switches, the picker and the zapper offline.
 - **QA tools:** `fuzz_lists` feeds changed filter list lines to the engine to check that list reading survives any text.
 - **Docs:** README, `ROADMAP.md`, `SECURITY.md` and `CONTRIBUTING.md` describe Thoron; designs live in `docs/design/`.

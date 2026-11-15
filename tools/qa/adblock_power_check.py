@@ -177,8 +177,17 @@ def run(browser: Path, work: Path) -> list[str]:
             port = None
 
         def settings_now(settings: WebSocket) -> dict:
-            got = _call(settings, "getSettings") or {}
-            got["state"] = _eval(settings, "document.getElementById('blocking-state').textContent")
+            """What the browser says, and what the page shows once it is looked at (a tab in the
+            background gets its timers late; looked at again, it shows the switch at once)."""
+            settings.call("Page.bringToFront")
+            got = {}
+            for _ in range(20):
+                got = _call(settings, "getSettings") or {}
+                got["state"] = _eval(settings, "document.getElementById('blocking-state').textContent")
+                got["box"] = _eval(settings, "document.getElementById('blocking').checked")
+                if got["box"] is got.get("blocking") and                         str(got["state"]).startswith("Ad blocking is on" if got.get("blocking") else "Ad blocking is off"):
+                    break
+                time.sleep(0.5)
             return got
 
         try:
@@ -279,6 +288,8 @@ def run(browser: Path, work: Path) -> list[str]:
             page.close()
 
             # kept: off for good, then off until the browser closes
+            if settings_now(settings).get("box") is not True:
+                problems.append("kept: the page does not show blocking as on before it is switched off")
             _eval(settings, "document.getElementById('blocking').click(); 1")
             time.sleep(1.5)
             settings.close()

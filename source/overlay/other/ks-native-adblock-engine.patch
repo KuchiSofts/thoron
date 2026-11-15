@@ -17967,10 +17967,10 @@ index 0000000000000000000000000000000000000000..b6d4d78968aadc0c32730b45daa09b07
 +</html>
 diff --git a/components/thoron_adblock/settings_page.js b/components/thoron_adblock/settings_page.js
 new file mode 100644
-index 0000000000000000000000000000000000000000..571f936c6d4e33100b1df0e29fbb98882ff10126
+index 0000000000000000000000000000000000000000..0fac30c62e20cc50db754f71e0d1e8ddd671247d
 --- /dev/null
 +++ b/components/thoron_adblock/settings_page.js
-@@ -0,0 +1,1412 @@
+@@ -0,0 +1,1419 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -18371,14 +18371,21 @@ index 0000000000000000000000000000000000000000..571f936c6d4e33100b1df0e29fbb9888
 +for (const button of document.querySelectorAll('#power-section [data-minutes]')) {
 +  button.addEventListener('click', () => setBlocking(false, Number(button.dataset.minutes)));
 +}
-+// a while that is over shows as over
-+setInterval(async () => {
++// a while that is over shows as over: every five seconds, and at once when the page is looked at again (a
++// tab in the background gets its timers late)
++async function refreshBlocking() {
 +  try {
 +    showBlocking(await sendWithPromise('getSettings'));
 +  } catch {
 +    // the page is closing
 +  }
-+}, 5000);
++}
++setInterval(refreshBlocking, 5000);
++document.addEventListener('visibilitychange', () => {
++  if (!document.hidden) {
++    refreshBlocking();
++  }
++});
 +
 +async function showSettings() {
 +  let settings = {};

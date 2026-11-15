@@ -90,9 +90,10 @@ def default_problems(got: dict) -> list[str]:
     out = []
     settings = got.get("settings", {})
     for name, on in settings.items():
-        if name in ("shortcuts", "version"):
+        if name in ("shortcuts", "version", "blocking", "blocking-back"):
             # keyboard shortcuts are not settings a reset takes back (in uBlock Origin, the browser's); the
-            # browser's version (P5.54, for the troubleshooting info) is no setting
+            # browser's version (P5.54, for the troubleshooting info) is no setting; the switch for every site
+            # (P5.70) is not in a backup and a reset leaves it as it is, as switching uBlock Origin off is
             continue
         if name == "media-kb":
             if on != DEFAULT_MEDIA_KB:

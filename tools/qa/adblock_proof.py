@@ -348,10 +348,18 @@ def _launch(browser: Path, profile: Path, port: int, mode: str, extension: Path 
             "--no-default-browser-check", "--disable-default-apps", "--disable-background-networking",
             "--disable-component-update", f"--host-resolver-rules={resolver_rules(port)}",
             "--remote-debugging-address=127.0.0.1", "--remote-debugging-port=0"]
+    # the browser reads only the last --disable-features: one switch for all; the native engine is on by
+    # default (P5.24), so a configuration without it turns it off
+    disable = []
     if "ubo" in mode:
-        args += [f"--load-extension={extension}", "--disable-features=DisableLoadExtensionCommandLineSwitch"]
+        args.append(f"--load-extension={extension}")
+        disable.append("DisableLoadExtensionCommandLineSwitch")
     if "native" in mode:
         args.append("--enable-features=ThoronNativeAdblock")
+    else:
+        disable.append("ThoronNativeAdblock")
+    if disable:
+        args.append(f"--disable-features={','.join(disable)}")
     return subprocess.Popen(args + ["about:blank"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                             start_new_session=os.name != "nt")
 

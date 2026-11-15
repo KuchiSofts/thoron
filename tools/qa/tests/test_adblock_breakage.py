@@ -154,5 +154,56 @@ class ReportTests(unittest.TestCase):
             self.assertNotIn(dash, md)
 
 
+
+class InnerAndTimeTests(unittest.TestCase):
+    def test_a_list_holds_domains_or_addresses(self):
+        self.assertEqual(ab.page_url("example.com"), "https://example.com/")
+        self.assertEqual(ab.page_url("https://news.example.com/a/story-1"), "https://news.example.com/a/story-1")
+        self.assertEqual(ab.entry_host("https://news.example.com/a/story-1"), "news.example.com")
+        self.assertEqual(ab.entry_host("example.com"), "example.com")
+
+    def test_the_inner_list_names_the_sites_without_a_page(self):
+        text = ab.inner_list_text({"a.example": "https://a.example/news/one-story", "b.example": ""}, "top.txt")
+        self.assertEqual(ab.read_site_list(text), ["https://a.example/news/one-story"])
+        self.assertIn("No such link on: b.example.", text)
+
+    def test_the_inner_link_never_keeps_a_query(self):
+        self.assertIn("u.origin + p", ab.INNER_LINK_JS)
+        self.assertNotIn("u.search", ab.INNER_LINK_JS)
+
+    def test_the_public_report_names_no_page(self):
+        flag = "first-party requests blocked: www.example.com/xx-yy/ads/one.js, cdn.example.com/p.js"
+        self.assertEqual(ab.public_flag(flag), "first-party requests blocked: cdn.example.com, www.example.com")
+        self.assertEqual(ab.public_flag("more script errors (5 vs 1)"), "more script errors (5 vs 1)")
+        self.assertEqual(ab.public_name("https://news.example.com/xx-yy/story"),
+                         "news.example.com (a page beyond the home page)")
+        self.assertEqual(ab.public_name("example.com"), "example.com")
+        results = {"sites": 1, "list": "a list", "browser_version": "", "modes": ["ubo", "native"],
+                   "judged": {"native": 1},
+                   "flags": {"native": {"https://news.example.com/xx-yy/story": [flag]}},
+                   "per_site": {"https://news.example.com/xx-yy/story": {"ubo": {"blocked": 1}, "native": {"blocked": 2}}}}
+        md = ab.to_markdown(results)
+        self.assertNotIn("xx-yy", md)
+        self.assertNotIn("/story", md)
+
+    def test_median(self):
+        self.assertIsNone(ab.median([]))
+        self.assertEqual(ab.median([3, 1, 2]), 2)
+        self.assertEqual(ab.median([4, 1, 2, 3]), 2.5)
+
+    def test_timing_summary_compares_pages_both_loaded(self):
+        times = {"ubo": {"p1": [1000, 800], "p2": [2000, None], "p3": [500, 400]},
+                 "native": {"p1": [900, 820], "p2": [1800, 1700], "p3": [None, 380]}}
+        first, second = ab.timing_summary(times, 2)
+        self.assertEqual((first["pages"], first["native_faster"]), (2, 2))   # p3 failed for native in round 1
+        self.assertEqual(first["ubo_ms"], 1500)
+        self.assertAlmostEqual(first["ratio"], (0.9 + 0.9) / 2)
+        self.assertEqual((second["pages"], second["native_faster"]), (2, 1))  # p2 failed for uBlock Origin
+        md = ab.timing_markdown([first, second], "the 3 pages", "Thoron 1")
+        self.assertIn("| 1 | 2 |", md)
+        for dash in ("\u2013", "\u2014"):
+            self.assertNotIn(dash, md)
+
+
 if __name__ == "__main__":
     unittest.main()

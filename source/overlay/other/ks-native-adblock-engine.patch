@@ -78,17 +78,33 @@ index 0f7d54fe9798d8726656c6cd8f30ea2194b8c4e1..908235300b443a23bea4c2a9b39d0715
        "//sandbox:sandbox_unittests",
 diff --git a/components/thoron_adblock/BUILD.gn b/components/thoron_adblock/BUILD.gn
 new file mode 100644
-index 0000000000000000000000000000000000000000..4cd6328864549455267634c3656a5c0eabb8b648
+index 0000000000000000000000000000000000000000..d97e5ca423ad51dc284dcfc2ff3d4f9b9fdbf82f
 --- /dev/null
 +++ b/components/thoron_adblock/BUILD.gn
-@@ -0,0 +1,257 @@
+@@ -0,0 +1,281 @@
 +# Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +# found in the LICENSE file.
 +
 +import("//build/compiled_action.gni")
++import("//build/config/sanitizers/sanitizers.gni")
 +import("//build/rust/rust_executable.gni")
 +import("//build/rust/rust_static_library.gni")
 +import("//mojo/public/tools/bindings/mojom.gni")
++import("//testing/libfuzzer/fuzzer_test.gni")
++
++# In a fuzzing build (use_libfuzzer), the engine's own Rust code reports its coverage to libFuzzer, as
++# cargo-fuzz instruments it: Chromium's setup instruments C and C++ only. Nothing in any other build.
++config("engine_fuzz_coverage") {
++  if (use_libfuzzer) {
++    rustflags = [
++      "-Cpasses=sancov-module",
++      "-Cllvm-args=-sanitizer-coverage-level=4",
++      "-Cllvm-args=-sanitizer-coverage-inline-8bit-counters",
++      "-Cllvm-args=-sanitizer-coverage-pc-table",
++      "-Cllvm-args=-sanitizer-coverage-trace-compares",
++    ]
++  }
++}
 +
 +# Thoron's native ad-blocking engine: adblock-rust (MPL-2.0) behind a small cxx bridge.
 +rust_static_library("engine") {
@@ -129,6 +145,7 @@ index 0000000000000000000000000000000000000000..4cd6328864549455267634c3656a5c0e
 +    "//third_party/rust/serde_json/v1:lib",
 +  ]
 +  build_native_rust_unit_tests = true
++  configs += [ ":engine_fuzz_coverage" ]
 +}
 +
 +# The ThoronNativeAdblock feature alone, for code that only asks whether native
@@ -297,6 +314,13 @@ index 0000000000000000000000000000000000000000..4cd6328864549455267634c3656a5c0e
 +    "//third_party/rust/regex/v1:lib",
 +    "//third_party/rust/serde_json/v1:lib",
 +  ]
++}
++
++# Coverage-guided fuzzing of the engine with Chromium's libFuzzer setup (P5.17):
++# built only in a fuzzing configuration (use_libfuzzer = true). Not shipped.
++fuzzer_test("thoron_adblock_engine_fuzzer") {
++  sources = [ "engine_fuzzer.cc" ]
++  deps = [ ":engine" ]
 +}
 +
 +# Build-machine tool: feeds changed copies of real filter list lines to the
@@ -5394,12 +5418,178 @@ index 0000000000000000000000000000000000000000..bf2854f6cc4c9af58acc054451588ff4
 +        crate::html::ReplaceRules::from_trusted_text(trusted),
 +    ))
 +}
+diff --git a/components/thoron_adblock/engine_fuzzer.cc b/components/thoron_adblock/engine_fuzzer.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..f48ae9a58c33eb08b4e5ec7ec657261c53f0f94c
+--- /dev/null
++++ b/components/thoron_adblock/engine_fuzzer.cc
+@@ -0,0 +1,160 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++// Coverage-guided fuzzing of the engine (ROADMAP P5.17), with Chromium's libFuzzer setup: the input is
++// filter list text and a request. The engine is built from the text, saved and read back as the store
++// keeps it, and asked about the request every way the browser asks; the list is also read the ways the
++// settings page and the updater read it. A panic of the engine is a crash the fuzzer reports.
++//
++//   input: <type byte> <rules> "\n\n" <url> "\n" <source url> "\n" <body>
++
++#include <stddef.h>
++#include <stdint.h>
++
++#include <array>
++#include <string_view>
++
++#include "components/thoron_adblock/engine.rs.h"
++#include "third_party/rust/cxx/v1/cxx.h"
++
++namespace {
++
++constexpr std::array<std::string_view, 11> kTypes = {
++    "document", "subdocument",    "script",    "image", "stylesheet", "font",
++    "media",    "xmlhttprequest", "websocket", "ping",  "other"};
++constexpr size_t kMaxInput = 64 * 1024;
++
++// rust::Str takes UTF-8 only.
++bool IsUtf8(std::string_view s) {
++  for (size_t i = 0; i < s.size();) {
++    const unsigned char c = static_cast<unsigned char>(s[i]);
++    if (c < 0x80) {
++      ++i;
++      continue;
++    }
++    size_t extra;
++    uint32_t point;
++    if ((c & 0xE0) == 0xC0) {
++      extra = 1;
++      point = c & 0x1F;
++    } else if ((c & 0xF0) == 0xE0) {
++      extra = 2;
++      point = c & 0x0F;
++    } else if ((c & 0xF8) == 0xF0) {
++      extra = 3;
++      point = c & 0x07;
++    } else {
++      return false;
++    }
++    if (i + extra >= s.size()) {
++      return false;
++    }
++    for (size_t k = 1; k <= extra; ++k) {
++      const unsigned char d = static_cast<unsigned char>(s[i + k]);
++      if ((d & 0xC0) != 0x80) {
++        return false;
++      }
++      point = (point << 6) | (d & 0x3F);
++    }
++    if ((extra == 1 && point < 0x80) || (extra == 2 && point < 0x800) ||
++        (extra == 3 && (point < 0x10000 || point > 0x10FFFF)) ||
++        (point >= 0xD800 && point <= 0xDFFF)) {
++      return false;
++    }
++    i += extra + 1;
++  }
++  return true;
++}
++
++rust::Str Str(std::string_view s) {
++  return rust::Str(s.data(), s.size());
++}
++
++rust::Slice<const uint8_t> Bytes(std::string_view s) {
++  return rust::Slice<const uint8_t>(reinterpret_cast<const uint8_t*>(s.data()),
++                                    s.size());
++}
++
++// The next line of `rest`, which is left with what comes after it.
++std::string_view NextLine(std::string_view& rest) {
++  const size_t end = rest.find('\n');
++  const std::string_view line = rest.substr(0, end);
++  rest = end == std::string_view::npos ? std::string_view() : rest.substr(end + 1);
++  return line;
++}
++
++void Ask(const thoron_adblock::Engine& engine,
++         std::string_view url,
++         std::string_view source,
++         std::string_view type,
++         std::string_view body) {
++  engine.check_request(Str(url), Str(source), Str(type), Str("GET"));
++  engine.should_block(Str(url), Str(source), Str(type));
++  engine.blocks_popup(Str(url), Str(source));
++  engine.blocks_page(Str(url));
++  engine.clean_url(Str(url), Str(source), Str(type));
++  engine.transform_url(Str(url), Str(source), Str(type));
++  engine.skip_url(Str(url), Str(source));
++  engine.document_policy(Str(url), Str(source), /*main_frame=*/true);
++  engine.document_permissions(Str(url), Str(source), /*main_frame=*/false);
++  engine.document_resources(Str(url));
++  rust::Vec<rust::String> classes;
++  rust::Vec<rust::String> ids;
++  classes.push_back(rust::String("ad"));
++  ids.push_back(rust::String(source.data(), source.size()));
++  engine.generic_stylesheet(Str(url), classes, ids);
++  const rust::String html = engine.html_rules_for(Str(url));
++  const rust::String replace =
++      engine.replace_rules_for(Str(url), Str(source), Str(type));
++  engine.response_headers_for(Str(url));
++  thoron_adblock::rewrite_body(Str(std::string_view(html.data(), html.size())),
++                               Str(std::string_view(replace.data(), replace.size())),
++                               Bytes(body));
++}
++
++}  // namespace
++
++extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
++  if (size < 1 || size > kMaxInput) {
++    return 0;
++  }
++  const std::string_view all(reinterpret_cast<const char*>(data), size);
++  const std::string_view type =
++      kTypes[static_cast<unsigned char>(all.front()) % kTypes.size()];
++  const std::string_view input = all.substr(1);
++  if (!IsUtf8(input)) {
++    return 0;
++  }
++  const size_t split = input.find("\n\n");
++  const std::string_view rules = input.substr(0, split);
++  std::string_view rest =
++      split == std::string_view::npos ? std::string_view() : input.substr(split + 2);
++  const std::string_view url = NextLine(rest);
++  const std::string_view source = NextLine(rest);
++  const std::string_view body = rest;
++
++  // the reading of a list by the settings page and the updater
++  thoron_adblock::count_rules(Str(rules));
++  thoron_adblock::list_update_hours(Str(rules));
++  thoron_adblock::has_allow_all_rule(Str(rules));
++  thoron_adblock::filter_problems(Str(rules));
++  thoron_adblock::header_tests_block(Str(source), Bytes(body));
++
++  // the engine, and the same engine saved and read back
++  const rust::Box<thoron_adblock::Engine> engine =
++      thoron_adblock::engine_from_rules(Str(rules));
++  const rust::Vec<uint8_t> saved = engine->serialize();
++  const rust::Box<thoron_adblock::Engine> again =
++      thoron_adblock::engine_from_serialized(
++          rust::Slice<const uint8_t>(saved.data(), saved.size()));
++  Ask(*engine, url, source, type, body);
++  Ask(*again, url, source, type, body);
++
++  // "My rules"
++  const rust::Box<thoron_adblock::DynamicRules> mine =
++      thoron_adblock::dynamic_rules_from_text(Str(rules));
++  mine->verdict(Str(source), Str(url), Str(type), Str(type), /*third_party=*/true);
++  mine->inline_scripts_blocked(Str(source));
++  thoron_adblock::dynamic_rules_problems(Str(rules));
++  return 0;
++}
 diff --git a/components/thoron_adblock/engine_service.cc b/components/thoron_adblock/engine_service.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..ac31d7406fc337920ebe7615fc91571406accb35
+index 0000000000000000000000000000000000000000..3b0758cd93fbac332d42fef6f0bd145c67945b6f
 --- /dev/null
 +++ b/components/thoron_adblock/engine_service.cc
-@@ -0,0 +1,1531 @@
+@@ -0,0 +1,1534 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -5561,6 +5751,8 @@ index 0000000000000000000000000000000000000000..ac31d7406fc337920ebe7615fc915714
 +    {"no-tooltips", false},
 +    // the switch for every site (P5.70): off for good when false
 +    {"blocking", true},
++    // the shield in the toolbar as well as in the address bar (P5.71)
++    {"toolbar-shield", true},
 +};
 +// "Block media elements larger than N kB": what N is unless changed, and the
 +// most it may be.
@@ -5746,8 +5938,9 @@ index 0000000000000000000000000000000000000000..ac31d7406fc337920ebe7615fc915714
 +  if (name == "blocking") {
 +    blocking_back_.Stop();
 +    off_until_ = base::Time();
-+    blocking_observers_.Notify();
 +  }
++  // the shields show an option at once (the badge, the toolbar shield)
++  blocking_observers_.Notify();
 +}
 +
 +bool EngineService::blocking_on() const {
@@ -6933,10 +7126,10 @@ index 0000000000000000000000000000000000000000..ac31d7406fc337920ebe7615fc915714
 +}  // namespace thoron_adblock
 diff --git a/components/thoron_adblock/engine_service.h b/components/thoron_adblock/engine_service.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..4cc2a7945768f904c0ec9cef4afc9d970d6ec642
+index 0000000000000000000000000000000000000000..3e5319ccb9df4b1fbba86a0a2234e2275d74eb52
 --- /dev/null
 +++ b/components/thoron_adblock/engine_service.h
-@@ -0,0 +1,466 @@
+@@ -0,0 +1,467 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -7258,7 +7451,8 @@ index 0000000000000000000000000000000000000000..4cc2a7945768f904c0ec9cef4afc9d97
 +  // milliseconds since 1970, -1 when the browser closes, 0 when it is not
 +  // off for a while.
 +  double BlockingBackAt() const;
-+  // Runs each time the switch changes, also when a while is over.
++  // Runs each time the switch changes, also when a while is over, and each
++  // time an option changes.
 +  base::CallbackListSubscription AddBlockingObserver(
 +      base::RepeatingClosure callback);
 +  // "Block media elements larger than N kB": N (50 unless changed). False for
@@ -7572,10 +7766,10 @@ index 0000000000000000000000000000000000000000..e43f64705886c70364ba42faa0bde823
 +    sys.exit(main(sys.argv[1:]))
 diff --git a/components/thoron_adblock/features.cc b/components/thoron_adblock/features.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..936b5667db6551e305c1a27f094905c3213421cf
+index 0000000000000000000000000000000000000000..386d365435ea6b6cb848e9e57304b5e5700e854c
 --- /dev/null
 +++ b/components/thoron_adblock/features.cc
-@@ -0,0 +1,10 @@
+@@ -0,0 +1,13 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -7583,7 +7777,10 @@ index 0000000000000000000000000000000000000000..936b5667db6551e305c1a27f094905c3
 +
 +namespace thoron_adblock {
 +
-+BASE_FEATURE(kThoronNativeAdblock, base::FEATURE_DISABLED_BY_DEFAULT);
++// On by default (P5.17, 2026-11-15): it replaces uBlock Origin. "Disabled" on
++// chrome://flags takes it out of the browser entirely; its own switch turns
++// blocking off and on while the browser runs (EngineService::SetBlocking).
++BASE_FEATURE(kThoronNativeAdblock, base::FEATURE_ENABLED_BY_DEFAULT);
 +
 +}  // namespace thoron_adblock
 diff --git a/components/thoron_adblock/features.h b/components/thoron_adblock/features.h
@@ -8599,10 +8796,10 @@ index 0000000000000000000000000000000000000000..14d8a42b54fdbb2d0b66c56140e37796
 +}
 diff --git a/components/thoron_adblock/html.rs b/components/thoron_adblock/html.rs
 new file mode 100644
-index 0000000000000000000000000000000000000000..3ee75daa92e17f76f0aa9cad148e94a69b105d88
+index 0000000000000000000000000000000000000000..d95a04c967cb90b8b678d3c68d76da87c12a816a
 --- /dev/null
 +++ b/components/thoron_adblock/html.rs
-@@ -0,0 +1,870 @@
+@@ -0,0 +1,888 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -8873,9 +9070,13 @@ index 0000000000000000000000000000000000000000..3ee75daa92e17f76f0aa9cad148e94a6
 +
 +fn host_matches(host: &str, entry: &str) -> bool {
 +    match entry.strip_suffix(".*") {
++        // ".*" alone names no site; searching for an empty name would find it everywhere and look past
++        // the end of the host (a panic, found by the fuzzer)
++        Some("") => false,
 +        Some(name) => {
 +            let mut from = 0;
-+            while let Some(found) = host[from..].find(name) {
++            // `get`: a position inside a character (never in a host, which is ASCII) ends the search
++            while let Some(found) = host.get(from..).and_then(|rest| rest.find(name)) {
 +                let start = from + found;
 +                let end = start + name.len();
 +                if (start == 0 || host.as_bytes()[start - 1] == b'.')
@@ -9393,6 +9594,20 @@ index 0000000000000000000000000000000000000000..3ee75daa92e17f76f0aa9cad148e94a6
 +    }
 +
 +    #[test]
++    fn a_site_named_only_by_its_ending_is_no_site() {
++        // found by the fuzzer: ".*" made the search look past the end of the host and panic
++        assert!(!host_matches("example.com", ".*"));
++        assert!(!host_matches("", ".*"));
++        assert!(host_matches("www.example.com", "example.*"));
++        assert!(!host_matches("example", "example.*"));
++        let rules = HtmlRules::from_rules(".*##^script:has-text(x)\n.*,~a.*##^meta\n~.*##^script[src*=\"ads\"]\n");
++        for host in ["example.com", "a", "", "www.a.b.c"] {
++            let _ = rules.for_page(host);
++            let _ = rules.structural_for_page(host);
++        }
++    }
++
++    #[test]
 +    fn only_on_their_sites_with_exceptions_and_entities() {
 +        let html = "<meta http-equiv=\"refresh\" content=\"1\"><script>AADETECTOR()</script>";
 +        assert_eq!(page("other.example", html).0, html);
@@ -9475,10 +9690,10 @@ index 0000000000000000000000000000000000000000..3ee75daa92e17f76f0aa9cad148e94a6
 +}
 diff --git a/components/thoron_adblock/i18n.js b/components/thoron_adblock/i18n.js
 new file mode 100644
-index 0000000000000000000000000000000000000000..0e2f54b0a649221d2495b9ea491173cf5e4abdef
+index 0000000000000000000000000000000000000000..6775a953df1c217882561fcfb419be73fc13e75b
 --- /dev/null
 +++ b/components/thoron_adblock/i18n.js
-@@ -0,0 +1,1197 @@
+@@ -0,0 +1,1241 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -9586,6 +9801,44 @@ index 0000000000000000000000000000000000000000..0e2f54b0a649221d2495b9ea491173cf
 +   `Der Werbeblocker ist für alle Websites aus, bis der Browser geschlossen wird.`,
 +   `O bloqueio de anúncios está desligado em todos os sites até o navegador ser fechado.`,
 +   `Блокировка рекламы выключена на всех сайтах до закрытия браузера.`],
++  [`uBlock Origin is on as well: both block the same things, and pages load slower. Turn one of them off.`,
++   `uBlock Origin también está activado: los dos bloquean lo mismo y las páginas cargan más despacio. ` +
++       `Desactiva uno de ellos.`,
++   `uBlock Origin est aussi activé : les deux bloquent la même chose et les pages se chargent plus ` +
++       `lentement. Désactivez l'un des deux.`,
++   `uBlock Origin ist auch an: beide blockieren dasselbe, und Seiten laden langsamer. Schalte einen davon ` +
++       `aus.`,
++   `O uBlock Origin também está ligado: os dois bloqueiam o mesmo e as páginas carregam mais devagar. ` +
++       `Desligue um deles.`,
++   `uBlock Origin тоже включён: оба блокируют одно и то же, и страницы загружаются медленнее. Выключите ` +
++       `один из них.`],
++  [`Open extensions`, `Abrir extensiones`, `Ouvrir les extensions`, `Erweiterungen öffnen`,
++   `Abrir extensões`, `Открыть расширения`],
++  [`Keep both`, `Mantener los dos`, `Garder les deux`, `Beide behalten`, `Manter os dois`, `Оставить оба`],
++  [`Open the extensions page at uBlock Origin`, `Abrir la página de extensiones en uBlock Origin`,
++   `Ouvrir la page des extensions sur uBlock Origin`, `Die Erweiterungsseite bei uBlock Origin öffnen`,
++   `Abrir a página de extensões no uBlock Origin`, `Открыть страницу расширений на uBlock Origin`],
++  [`Do not show this again`, `No volver a mostrar`, `Ne plus afficher`, `Nicht mehr anzeigen`,
++   `Não mostrar de novo`, `Больше не показывать`],
++  [`Download every list again now`, `Volver a descargar todas las listas ahora`,
++   `Télécharger à nouveau toutes les listes maintenant`, `Alle Listen jetzt neu herunterladen`,
++   `Baixar todas as listas de novo agora`, `Скачать все списки заново сейчас`],
++  [`Add a list by its https:// address`, `Añadir una lista por su dirección https://`,
++   `Ajouter une liste par son adresse https://`, `Eine Liste über ihre https://-Adresse hinzufügen`,
++   `Adicionar uma lista pelo endereço https://`, `Добавить список по его адресу https://`],
++  [`Updating the lists...`, `Actualizando las listas...`, `Mise à jour des listes...`,
++   `Die Listen werden aktualisiert...`, `Atualizando as listas...`, `Списки обновляются...`],
++  [`Not looked for updates yet`, `Aún no se han buscado actualizaciones`,
++   `Aucune recherche de mises à jour pour l'instant`, `Noch nicht nach Updates gesucht`,
++   `Ainda não houve busca por atualizações`, `Обновления ещё не проверялись`],
++  [`Remove this list`, `Quitar esta lista`, `Retirer cette liste`, `Diese Liste entfernen`,
++   `Remover esta lista`, `Удалить этот список`],
++  [`Show the shield in the toolbar too (it is always in the address bar)`,
++   `Mostrar el escudo también en la barra de herramientas (siempre está en la barra de direcciones)`,
++   `Afficher aussi le bouclier dans la barre d'outils (il est toujours dans la barre d'adresse)`,
++   `Das Schild auch in der Symbolleiste zeigen (in der Adressleiste ist es immer)`,
++   `Mostrar o escudo também na barra de ferramentas (ele está sempre na barra de endereço)`,
++   `Показывать щит и на панели инструментов (в адресной строке он есть всегда)`],
 +  [`Blocking off or on for every site`, `Desactivar o activar el bloqueo en todos los sitios`,
 +   `Désactiver ou activer le blocage sur tous les sites`, `Blockieren für alle Websites aus- oder einschalten`,
 +   `Desligar ou ligar o bloqueio em todos os sites`, `Выключить или включить блокировку на всех сайтах`],
@@ -10459,6 +10712,12 @@ index 0000000000000000000000000000000000000000..0e2f54b0a649221d2495b9ea491173cf
 +  [/^Storage used: ([\d,.\s]+) MB$/, {},
 +   [`Almacenamiento usado: $1 MB`, `Stockage utilisé : $1 Mo`, `Belegter Speicher: $1 MB`,
 +    `Armazenamento usado: $1 MB`, `Занято места: $1 МБ`]],
++  [/^\((\d[\d,.\s]*) of (\d[\d,.\s]*) on\)$/, {},
++   [`($1 de $2 activadas)`, `($1 sur $2 activées)`, `($1 von $2 an)`, `($1 de $2 ligadas)`,
++    `(включено $1 из $2)`]],
++  [/^Looked for updates: (\d.*)$/, {},
++   [`Última búsqueda de actualizaciones: $1`, `Dernière recherche de mises à jour : $1`,
++    `Zuletzt nach Updates gesucht: $1`, `Última busca por atualizações: $1`, `Последняя проверка обновлений: $1`]],
 +  [/^Ad blocking is off for every site until (\d.*)\.$/, {},
 +   [`El bloqueo de anuncios está desactivado en todos los sitios hasta las $1.`,
 +    `Le blocage des publicités est désactivé sur tous les sites jusqu'à $1.`,
@@ -12650,10 +12909,10 @@ index 0000000000000000000000000000000000000000..691e603084386483ce30ca66e717a75d
 +})();
 diff --git a/components/thoron_adblock/menu_opener.cc b/components/thoron_adblock/menu_opener.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..ee030e7821435e992c6d55886cf53580223d28dc
+index 0000000000000000000000000000000000000000..61ddc5158ec97354a9e25b92c79f13640219d746
 --- /dev/null
 +++ b/components/thoron_adblock/menu_opener.cc
-@@ -0,0 +1,41 @@
+@@ -0,0 +1,43 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -12684,23 +12943,25 @@ index 0000000000000000000000000000000000000000..ee030e7821435e992c6d55886cf53580
 +  std::erase(Openers(), opener);
 +}
 +
-+bool OpenMenuFor(content::WebContents* tab) {
++bool OpenMenuFor(content::WebContents* tab, views::View* anchor) {
 +  if (!tab) {
 +    return false;
 +  }
 +  // a copy: opening a menu must not change the list being walked
 +  const std::vector<raw_ptr<MenuOpener>> openers = Openers();
 +  return std::any_of(openers.begin(), openers.end(),
-+                     [tab](MenuOpener* opener) { return opener->OpenMenuFor(tab); });
++                     [tab, anchor](MenuOpener* opener) {
++                       return opener->OpenMenuFor(tab, anchor);
++                     });
 +}
 +
 +}  // namespace thoron_adblock
 diff --git a/components/thoron_adblock/menu_opener.h b/components/thoron_adblock/menu_opener.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..3318af32f2e6c94783c2ab0784cebeb102bee31a
+index 0000000000000000000000000000000000000000..de5c2f1bda4a82f189e81e615c4d0748f51b5f83
 --- /dev/null
 +++ b/components/thoron_adblock/menu_opener.h
-@@ -0,0 +1,35 @@
+@@ -0,0 +1,41 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -12710,6 +12971,10 @@ index 0000000000000000000000000000000000000000..3318af32f2e6c94783c2ab0784cebeb1
 +namespace content {
 +class WebContents;
 +}  // namespace content
++
++namespace views {
++class View;
++}  // namespace views
 +
 +namespace thoron_adblock {
 +
@@ -12721,7 +12986,9 @@ index 0000000000000000000000000000000000000000..3318af32f2e6c94783c2ab0784cebeb1
 + public:
 +  // True when `tab` is in this opener's window and its menu was opened (or
 +  // closed, when it was open: a second click closes it, as the shield's does).
-+  virtual bool OpenMenuFor(content::WebContents* tab) = 0;
++  // `anchor`: what the menu opens from (the address bar's shield), or null
++  // for the opener's own place.
++  virtual bool OpenMenuFor(content::WebContents* tab, views::View* anchor) = 0;
 +
 + protected:
 +  virtual ~MenuOpener() = default;
@@ -12731,7 +12998,7 @@ index 0000000000000000000000000000000000000000..3318af32f2e6c94783c2ab0784cebeb1
 +void RemoveMenuOpener(MenuOpener* opener);
 +
 +// Asks every opener; true when one opened the menu for `tab`.
-+bool OpenMenuFor(content::WebContents* tab);
++bool OpenMenuFor(content::WebContents* tab, views::View* anchor = nullptr);
 +
 +}  // namespace thoron_adblock
 +
@@ -14086,10 +14353,10 @@ index 0000000000000000000000000000000000000000..bb5e6c8789e8a4e07c5d7069027b5132
 +}
 diff --git a/components/thoron_adblock/popup_page.html b/components/thoron_adblock/popup_page.html
 new file mode 100644
-index 0000000000000000000000000000000000000000..5bb31efd539d8a893c529eaf2042d64af13f61c3
+index 0000000000000000000000000000000000000000..2096e6fec8dc1b758084fd5189418f6c65881945
 --- /dev/null
 +++ b/components/thoron_adblock/popup_page.html
-@@ -0,0 +1,260 @@
+@@ -0,0 +1,308 @@
 +<!doctype html>
 +<!-- Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +     found in the LICENSE file. -->
@@ -14139,6 +14406,25 @@ index 0000000000000000000000000000000000000000..5bb31efd539d8a893c529eaf2042d64a
 +  #pause button { border: 1px solid var(--line); border-radius: 6px; background: transparent; color: inherit;
 +                  font: inherit; font-size: 12px; padding: 3px 10px; cursor: pointer; }
 +  #pause button:hover { background: var(--line); }
++  /* the filter lists (P5.71) */
++  #lists { margin: 6px 0 0; max-block-size: 200px; overflow-y: auto; }
++  #lists .list { display: flex; align-items: center; gap: 6px; padding: 3px 0; }
++  #lists label { flex: 1; min-inline-size: 0; display: flex; align-items: center; gap: 6px; cursor: pointer; }
++  #lists label span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
++  #lists input { margin: 0; accent-color: var(--accent); }
++  #lists .n { color: var(--soft); font-variant-numeric: tabular-nums; font-size: 11px; }
++  #lists .remove { border: 0; background: transparent; color: var(--soft); cursor: pointer; padding: 0 4px; }
++  #lists .remove:hover { color: inherit; }
++  .list-actions { display: flex; align-items: center; gap: 8px; padding-block-start: 8px; }
++  .list-actions button, #list-add button { border: 1px solid var(--line); border-radius: 6px;
++      background: transparent; color: inherit; font: inherit; font-size: 12px; padding: 3px 10px; cursor: pointer; }
++  .list-actions button:hover, #list-add button:hover { background: var(--line); }
++  .list-actions button:disabled { opacity: .4; cursor: default; }
++  #lists-state { color: var(--soft); font-size: 11px; }
++  #list-add { display: flex; gap: 6px; padding-block-start: 8px; margin: 0; }
++  #list-url { flex: 1; min-inline-size: 0; font: inherit; font-size: 12px; padding: 3px 6px; border-radius: 6px;
++             border: 1px solid var(--line); background: transparent; color: inherit; }
++  body.lists-busy #lists-box input, body.lists-busy #lists-box button { pointer-events: none; opacity: .6; }
 +  #power-box { display: flex; flex-direction: column; align-items: center; padding: 14px 14px 6px; }
 +  #power {
 +    inline-size: 84px; block-size: 84px; border-radius: 50%; border: 2px solid var(--line);
@@ -14218,6 +14504,12 @@ index 0000000000000000000000000000000000000000..5bb31efd539d8a893c529eaf2042d64a
 +                 border: 1px solid color-mix(in srgb, var(--block) 45%, transparent);
 +                 background: color-mix(in srgb, var(--block) 10%, transparent); }
 +  #blocked-box[hidden] { display: none; }
++  /* uBlock Origin on as well (P5.24) */
++  #both-box { margin: 10px 14px 0; padding: 10px 12px; border-radius: 10px;
++              border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
++              background: color-mix(in srgb, var(--accent) 10%, transparent); }
++  #both-box[hidden] { display: none; }
++  #both-box p { margin: 0 0 8px; }
 +  #blocked-box p { margin: 0 0 8px; }
 +  .blocked-actions { display: flex; gap: 6px; }
 +  .blocked-actions button { border: 1px solid var(--line); border-radius: 6px; background: transparent;
@@ -14257,6 +14549,15 @@ index 0000000000000000000000000000000000000000..5bb31efd539d8a893c529eaf2042d64a
 +  <div class="blocked-actions">
 +    <button id="open-once" title="Open this site until you close the browser">Open it now</button>
 +    <button id="open-always" title="Never stop pages of this site again (strict blocking off for it)">Always on this site</button>
++  </div>
++</div>
++
++<div id="both-box" hidden>
++  <p>uBlock Origin is on as well: both block the same things, and pages load slower. Turn one of them
++    off.</p>
++  <div class="blocked-actions">
++    <button id="both-open" title="Open the extensions page at uBlock Origin">Open extensions</button>
++    <button id="both-keep" title="Do not show this again">Keep both</button>
 +  </div>
 +</div>
 +
@@ -14341,6 +14642,20 @@ index 0000000000000000000000000000000000000000..5bb31efd539d8a893c529eaf2042d64a
 +  </div>
 +</details>
 +
++<details id="lists-box">
++  <summary>Filter lists <span id="lists-count"></span></summary>
++  <div id="lists" role="list"></div>
++  <div class="list-actions">
++    <button id="lists-update" title="Download every list again now">Update now</button>
++    <span id="lists-state" aria-live="polite"></span>
++  </div>
++  <form id="list-add">
++    <input id="list-url" type="url" required placeholder="Add a list by its https:// address"
++           aria-label="Add a list by its https:// address">
++    <button type="submit">Add</button>
++  </form>
++</details>
++
 +<details id="sites-box">
 +  <summary id="sites-title">Blocked on this page</summary>
 +  <ol id="sites"></ol>
@@ -14352,10 +14667,10 @@ index 0000000000000000000000000000000000000000..5bb31efd539d8a893c529eaf2042d64a
 +</html>
 diff --git a/components/thoron_adblock/popup_page.js b/components/thoron_adblock/popup_page.js
 new file mode 100644
-index 0000000000000000000000000000000000000000..44f8a63776b349ba5d53dff16ecee51c60b6c483
+index 0000000000000000000000000000000000000000..2f65b713f51d0618d4033ec00ebcfd6356b16fce
 --- /dev/null
 +++ b/components/thoron_adblock/popup_page.js
-@@ -0,0 +1,304 @@
+@@ -0,0 +1,432 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -14454,6 +14769,8 @@ index 0000000000000000000000000000000000000000..44f8a63776b349ba5d53dff16ecee51c
 +  showSites(next.sites);
 +  showGrid(next.grid);
 +  $('blocked-box').hidden = !next.blockedPage;
++  // uBlock Origin on as well (P5.24), until it is off or the person chose to keep both
++  $('both-box').hidden = !next.ubo || keepBoth();
 +  document.body.classList.toggle('colorblind', !!next.colorblind);
 +  if (next.theme) {
 +    document.documentElement.dataset.theme = next.theme;
@@ -14550,6 +14867,24 @@ index 0000000000000000000000000000000000000000..44f8a63776b349ba5d53dff16ecee51c
 +  }
 +}
 +
++// uBlock Origin on as well: say it once, until the person chooses to keep both
++function keepBoth() {
++  try {
++    return localStorage.getItem('thoron-keep-both') === '1';
++  } catch (e) {
++    return false;
++  }
++}
++$('both-open').addEventListener('click', () => chrome.send('openExtensions'));
++$('both-keep').addEventListener('click', () => {
++  try {
++    localStorage.setItem('thoron-keep-both', '1');
++  } catch (e) {
++    // no storage: it shows again next time
++  }
++  $('both-box').hidden = true;
++});
++
 +// uBlock Origin's "Proceed" on a page strict blocking stopped: now (until the browser closes) or always
 +for (const [id, always] of [['open-once', false], ['open-always', true]]) {
 +  $(id).addEventListener('click', () => {
@@ -14577,6 +14912,104 @@ index 0000000000000000000000000000000000000000..44f8a63776b349ba5d53dff16ecee51c
 +    // no storage
 +  }
 +});
++
++// --- the filter lists (P5.71): on or off, updated now, added by their address, removed; as on chrome://adblock,
++// and in use at once. Read when the section is opened, and again after a change.
++let listsMessage = '';
++function listRow(list) {
++  const row = document.createElement('div');
++  row.className = 'list';
++  row.setAttribute('role', 'listitem');
++  const name = list.title || list.url;
++  const label = document.createElement('label');
++  const text = document.createElement('span');
++  // a list's own name: never translated
++  text.className = 'title';
++  text.textContent = name;
++  text.title = list.url || name;
++  if (list.builtin) {
++    const box = document.createElement('input');
++    box.type = 'checkbox';
++    box.checked = list.enabled !== false;
++    box.addEventListener('change', () => changeLists('setListEnabled', [list.id, box.checked],
++        box.checked ? `${name} is in use.` : `${name} is switched off.`));
++    label.append(box);
++  }
++  label.append(text);
++  const n = document.createElement('span');
++  n.className = 'n';
++  n.textContent = number(list.rules);
++  row.append(label, n);
++  if (!list.builtin) {
++    const remove = document.createElement('button');
++    remove.className = 'remove';
++    remove.type = 'button';
++    remove.textContent = '\u2715';
++    remove.title = 'Remove this list';
++    remove.setAttribute('aria-label', 'Remove this list');
++    remove.addEventListener('click', () => changeLists('removeList', [list.id], 'The list was removed.'));
++    row.append(remove);
++  }
++  return row;
++}
++
++async function showLists() {
++  let state;
++  try {
++    state = await sendWithPromise('getLists');
++  } catch (e) {
++    return;
++  }
++  const lists = state.lists || [];
++  const on = lists.filter((l) => l.enabled !== false).length;
++  $('lists-count').textContent = `(${on} of ${lists.length} on)`;
++  $('lists').replaceChildren(...lists.map(listRow));
++  $('lists-state').textContent = listsMessage || (state.lastCheck > 0 ?
++      `Looked for updates: ${new Date(state.lastCheck * 1000).toLocaleString([], {dateStyle: 'short', timeStyle: 'short'})}` :
++      'Not looked for updates yet');
++}
++
++async function changeLists(message, args, done) {
++  document.body.classList.add('lists-busy');
++  listsMessage = message === 'updateLists' ? 'Updating the lists...' : '';
++  $('lists-state').textContent = listsMessage;
++  let error = '';
++  try {
++    error = await sendWithPromise(message, ...args);
++  } catch (e) {
++    error = 'The browser did not answer.';
++  }
++  listsMessage = error || done;
++  document.body.classList.remove('lists-busy');
++  await showLists();
++  // the message stays until the next change, or the next time the section opens
++  listsMessage = '';
++  return !error;
++}
++
++$('lists-update').addEventListener('click', () => changeLists('updateLists', [], 'Looked for newer lists.'));
++$('list-add').addEventListener('submit', async (event) => {
++  event.preventDefault();
++  const url = $('list-url').value.trim();
++  if (url && await changeLists('addList', [url], 'The list was added and is in use.')) {
++    $('list-url').value = '';
++  }
++});
++$('lists-box').addEventListener('toggle', () => {
++  if ($('lists-box').open) {
++    showLists();
++  }
++  try {
++    localStorage.setItem('thoron-lists-open', $('lists-box').open ? '1' : '0');
++  } catch (e) {
++    // no storage
++  }
++});
++try {
++  $('lists-box').open = localStorage.getItem('thoron-lists-open') === '1';
++} catch (e) {
++  // no storage: closed
++}
 +
 +function showSites(sites) {
 +  $('sites-title').textContent = sites.length ? `Blocked on this page (${sites.length})` : 'Nothing blocked yet';
@@ -14660,6 +15093,16 @@ index 0000000000000000000000000000000000000000..44f8a63776b349ba5d53dff16ecee51c
 +
 +refresh().then(() => chrome.send('menuReady'));
 +setInterval(refresh, 1000);
++// The menu's page is kept between openings (it opens at once): shown again, it is brought up to date at
++// once, not a second later.
++document.addEventListener('visibilitychange', () => {
++  if (!document.hidden) {
++    refresh();
++    if ($('lists-box').open) {
++      showLists();
++    }
++  }
++});
 diff --git a/components/thoron_adblock/procedural.js b/components/thoron_adblock/procedural.js
 new file mode 100644
 index 0000000000000000000000000000000000000000..c90d28eb43b9f193fb2eb74bae78c933b6a8454a
@@ -17534,10 +17977,10 @@ index 0000000000000000000000000000000000000000..8ca3ab6f12cffec05fc98fb17aa21f44
 +#endif  // COMPONENTS_THORON_ADBLOCK_RENDERER_DOCUMENT_AGENT_H_
 diff --git a/components/thoron_adblock/settings_page.html b/components/thoron_adblock/settings_page.html
 new file mode 100644
-index 0000000000000000000000000000000000000000..b6d4d78968aadc0c32730b45daa09b079f89b4c0
+index 0000000000000000000000000000000000000000..11c37231995575dab46e4a7fe290491280da58fb
 --- /dev/null
 +++ b/components/thoron_adblock/settings_page.html
-@@ -0,0 +1,427 @@
+@@ -0,0 +1,429 @@
 +<!doctype html>
 +<!-- Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +     found in the LICENSE file.
@@ -17730,6 +18173,8 @@ index 0000000000000000000000000000000000000000..b6d4d78968aadc0c32730b45daa09b07
 +    <h3>Appearance</h3>
 +    <label class="option"><input type="checkbox" data-setting="badge">
 +      <span>Show the number of blocked requests on the shield</span></label>
++    <label class="option"><input type="checkbox" data-setting="toolbar-shield">
++      <span>Show the shield in the toolbar too (it is always in the address bar)</span></label>
 +    <div class="option"><label for="theme">Theme</label>
 +      <select id="theme">
 +        <option value="auto">As the system</option>
@@ -17967,7 +18412,7 @@ index 0000000000000000000000000000000000000000..b6d4d78968aadc0c32730b45daa09b07
 +</html>
 diff --git a/components/thoron_adblock/settings_page.js b/components/thoron_adblock/settings_page.js
 new file mode 100644
-index 0000000000000000000000000000000000000000..0fac30c62e20cc50db754f71e0d1e8ddd671247d
+index 0000000000000000000000000000000000000000..70a1162493d827ce26ebadef216c107e93004425
 --- /dev/null
 +++ b/components/thoron_adblock/settings_page.js
 @@ -0,0 +1,1419 @@
@@ -18648,7 +19093,7 @@ index 0000000000000000000000000000000000000000..0fac30c62e20cc50db754f71e0d1e8dd
 +                          'default-fonts': false, javascript: false, 'ignore-generic': false,
 +                          'default-3p-script': false, 'default-3p-frame': false, 'auto-update': true,
 +                          'context-menu': true, advanced: true, 'media-kb': 50, colorblind: false,
-+                          theme: 'auto', accent: '', 'no-tooltips': false};
++                          theme: 'auto', accent: '', 'no-tooltips': false, 'toolbar-shield': true};
 +// a setting as the backup keeps it: a number for the one that is a number, else on or off
 +const asSetting = (name, value) => (typeof SETTING_DEFAULTS[name] === 'number' ? Number(value) :
 +                                    typeof SETTING_DEFAULTS[name] === 'string' ? String(value) : !!value);
@@ -19718,10 +20163,10 @@ index 0000000000000000000000000000000000000000..9f4721c61db03ca150952b98ed125251
 +#endif  // COMPONENTS_THORON_ADBLOCK_SUBSCRIBE_H_
 diff --git a/components/thoron_adblock/uritransform.rs b/components/thoron_adblock/uritransform.rs
 new file mode 100644
-index 0000000000000000000000000000000000000000..4f326f1763efc75d7c771facbe8aeaae9ff03fd7
+index 0000000000000000000000000000000000000000..a17ef613f64bdb1e9616688cec40411d2975b827
 --- /dev/null
 +++ b/components/thoron_adblock/uritransform.rs
-@@ -0,0 +1,482 @@
+@@ -0,0 +1,486 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -19879,9 +20324,13 @@ index 0000000000000000000000000000000000000000..4f326f1763efc75d7c771facbe8aeaae
 +/// "www.amazon.*" (that name under any ending, as uBlock Origin's entities).
 +fn host_matches(host: &str, entry: &str) -> bool {
 +    match entry.strip_suffix(".*") {
++        // ".*" alone names no site; searching for an empty name would find it everywhere and look past
++        // the end of the host (a panic, found by the fuzzer)
++        Some("") => false,
 +        Some(name) => {
 +            let mut from = 0;
-+            while let Some(found) = host[from..].find(name) {
++            // `get`: a position inside a character (never in a host, which is ASCII) ends the search
++            while let Some(found) = host.get(from..).and_then(|rest| rest.find(name)) {
 +                let start = from + found;
 +                let end = start + name.len();
 +                if (start == 0 || host.as_bytes()[start - 1] == b'.')

@@ -6,7 +6,7 @@
 
 **A fast, secure and private browser for Windows, based on Thorium and Chromium.**
 
-[![Status](https://img.shields.io/badge/status-pre--release-F72F8E?style=flat-square)](#roadmap) <!-- progress-badge:start -->[![Roadmap progress](https://img.shields.io/badge/roadmap-47%25-7B2FF7?style=flat-square)](#roadmap)<!-- progress-badge:end --> [![Platforms](https://img.shields.io/badge/platforms-Windows%20first-24292f?style=flat-square)](#platforms) [![CPU](https://img.shields.io/badge/cpu-x64%20%7C%20ARM64-24292f?style=flat-square)](#platforms) [![License](https://img.shields.io/badge/license-BSD--3--Clause-24292f?style=flat-square)](LICENSE.md)
+[![Status](https://img.shields.io/badge/status-pre--release-F72F8E?style=flat-square)](#roadmap) <!-- progress-badge:start -->[![Roadmap progress](https://img.shields.io/badge/roadmap-48%25-7B2FF7?style=flat-square)](#roadmap)<!-- progress-badge:end --> [![Platforms](https://img.shields.io/badge/platforms-Windows%20first-24292f?style=flat-square)](#platforms) [![CPU](https://img.shields.io/badge/cpu-x64%20%7C%20ARM64-24292f?style=flat-square)](#platforms) [![License](https://img.shields.io/badge/license-BSD--3--Clause-24292f?style=flat-square)](LICENSE.md)
 
 [Why Thoron](#why-thoron) · [Features](#features) · [Install and update](#install-and-update) · [Versions](#versions) · [Roadmap](#roadmap) · [Platforms](#platforms) · [Verify](#verifying-downloads) · [Security](#security) · [Contributing](#contributing) · [Credits](#credits) · [Wiki](https://github.com/KuchiSofts/thoron/wiki)
 
@@ -46,7 +46,7 @@ Thoron is in active development. These are the headline features on the roadmap:
 | **One installer for good** | A small `ThoronSetup.exe` that always installs the newest release, so one download link stays valid. The full installer is in every release too. | [P3](ROADMAP.md#p3---updater-v1--import) |
 | **Import from your browser** | Brings over **open tabs and tab groups** (names, colours, pinned tabs), bookmarks, history, passwords, settings and extensions from Thorium, Chrome, Edge, Brave, Vivaldi, Opera and later Firefox. Your old browser is never modified. | [P3](ROADMAP.md#p3---updater-v1--import) |
 | **A first run that moves you in** | On first start Thoron offers to import from the browsers it finds and to become your default browser. Both are offers: nothing is taken over silently. | [P3](ROADMAP.md#p3---updater-v1--import) |
-| **Built-in ad blocking** | Today: the genuine, unmodified uBlock Origin, pinned and signature-verified. Being built: a blocker inside the browser itself that reads the same lists and replaces it. It already measures faster and lighter than uBlock Origin with the same blocking, and stays off by default until its last correctness checks are done. To try it, turn on "Built-in ad blocking" at `chrome://flags/#thoron-native-adblock` (and turn uBlock Origin off, or both do the same work). Its lists and your own rules are on `chrome://adblock`, and its menu switches it off and on at any time, for every site or one site, with no relaunch. It also keeps pop-up ads and pages its lists name as harmful from opening. | [P5](ROADMAP.md#p5---quality) |
+| **Built-in ad blocking** | On by default: a blocker inside the browser itself that reads the same lists as uBlock Origin and does everything it does, faster and lighter (about 5 % faster per page on real sites, with the same blocking). A new profile no longer gets uBlock Origin; a profile that has it keeps it, and the menu says when both run. Its lists and your own rules are on `chrome://adblock`, and its menu switches it off and on at any time, for every site or one site, with no relaunch. It also keeps pop-up ads and pages its lists name as harmful from opening. | [P5](ROADMAP.md#p5---quality) |
 | **Protected portable mode** | Saved passwords and cookies in the portable version are encrypted with your passphrase, so they work on any PC and stay safe if the folder is lost. | [P4](ROADMAP.md#p4---updater-v2) |
 | **Right build, automatically** | The installer picks the fastest build your CPU supports (AVX2, SSE4 or ARM64). | [P4](ROADMAP.md#p4---updater-v2) |
 | **Measured performance** | Every release is benchmarked (Speedometer, JetStream, MotionMark, startup, memory, idle CPU). A regression blocks the release. | [Q track](ROADMAP.md#quality--performance-q) |
@@ -77,7 +77,7 @@ changed in each version is in the [changelog](CHANGELOG.md), one line per change
 Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always current.
 
 <!-- roadmap:start -->
-**Overall:** `█████████░░░░░░░░░░░` 94 of 199 tasks done (47%) · roadmap updated 2026-11-12
+**Overall:** `██████████░░░░░░░░░░` 97 of 200 tasks done (48%) · roadmap updated 2026-11-12
 
 | Area | Progress | Done | Status |
 |---|---|---|---|
@@ -87,7 +87,7 @@ Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always curre
 | [P2b - ARM64](ROADMAP.md#p2b---arm64) | `░░░░░░░░░░░░░░░░░░░░` | 0/5 | ⬜ Not started |
 | [P3 - Updater v1 + Import](ROADMAP.md#p3---updater-v1--import) | `░░░░░░░░░░░░░░░░░░░░` | 0/21 | ⬜ Not started |
 | [P4 - Updater v2](ROADMAP.md#p4---updater-v2) | `░░░░░░░░░░░░░░░░░░░░` | 0/11 | ⬜ Not started |
-| [P5 - Quality](ROADMAP.md#p5---quality) | `███████████████░░░░░` | 53/70 | 🔄 In progress |
+| [P5 - Quality](ROADMAP.md#p5---quality) | `████████████████░░░░` | 56/71 | 🔄 In progress |
 | [Security (S)](ROADMAP.md#security-s) | `██████████░░░░░░░░░░` | 8/16 | 🔄 In progress |
 | [Quality & performance (Q)](ROADMAP.md#quality--performance-q) | `███░░░░░░░░░░░░░░░░░` | 1/7 | 🔄 In progress |
 | [Docs (D)](ROADMAP.md#docs-d) | `████████░░░░░░░░░░░░` | 4/10 | 🔄 In progress |
@@ -226,14 +226,14 @@ Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always curre
 - [x] **P5.14** Native ad blocking, engine: vendored crates (licence-checked, credited), C++ bridge, request throttle, `ERR_BLOCKED_BY_CLIENT`, redirect resources, tests
 - [x] **P5.15** Native ad blocking, lists: compiled lists bundled in each release, safe background updates, validation that never falls back to "allow everything"
 - [ ] **P5.16** Native ad blocking, UI: per-site switch in page info and Settings; local blocked-count badge
-- [ ] **P5.17** Native ad blocking, proof: the measurements in the design's section 9 (blocking, speed, CPU, memory, breakage) and fuzzing; on by default only when all pass
+- [x] **P5.17** Native ad blocking, proof: the measurements in the design's section 9 (blocking, speed, CPU, memory, breakage) and fuzzing; on by default only when all pass
 - [ ] **P5.18** Native ad blocking, later: CNAME uncloaking
 - [x] **P5.19** Native ad blocking, resources and stand-ins: uBlock Origin's scriptlets and redirect resources taken from the pinned package at build time; a blocked request with a `$redirect` or `redirect-rule` filter is answered with the harmless stand-in instead of an error
 - [x] **P5.20** Native ad blocking, scriptlets and site-specific cosmetic filtering: sent to the renderer with the document and applied at document start; trusted scriptlets only from uBlock Origin's own lists
 - [x] **P5.21** Native ad blocking, generic cosmetic filtering: the page reports its classes and ids, the engine answers with the selectors to hide
 - [x] **P5.22** Native ad blocking, the rest of the syntax: procedural cosmetic filters, `$removeparam`, `$csp`
 - [ ] **P5.23** Native ad blocking, signed updates of scriptlets and resources between releases
-- [ ] **P5.24** Native ad blocking, hand-over from uBlock Origin: new profiles no longer get the built-in uBlock Origin once native blocking is on by default; a one-time notice when both run; existing profiles untouched
+- [x] **P5.24** Native ad blocking, hand-over from uBlock Origin: new profiles no longer get the built-in uBlock Origin once native blocking is on by default; a one-time notice when both run; existing profiles untouched
 - [x] **P5.25** Native ad blocking, redirect hops: a request that a server redirects is checked again at each hop, so a redirect to a blocked host is blocked and a redirect to an address with a `$removeparam` parameter is cleaned (uBlock Origin does both; found while building P5.22)
 - [x] **P5.26** Native ad blocking, the filter syntax still missing: `$urlskip` (238 rules in the bundled lists), `$replace` (76, trusted lists only), `$header` (39), `$uritransform` (14), `$permissions` (11), `:shadow()` (2), HTML filtering
 - [x] **P5.27** Native ad blocking, the requests that do not pass the request proxy: the main script of a worker and of a service worker, prefetches, preloads announced by early hints, downloads (found while building P5.25)
@@ -279,6 +279,7 @@ Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always curre
 - [x] **P5.68** Native ad blocking, HTML filters on the page's structure (`:has()`, `:upward()`, combinators): the page runner takes the elements out as the parser adds them
 - [x] **P5.69** Native ad blocking, the last of uBlock Origin's settings: accent color, "Disable tooltips", "Storage used", the logger's "Reload", "Update now" as purge and update
 - [x] **P5.70** Native ad blocking, off and on at any time for every site (menu, settings page, shortcut, for good or for a while) with no relaunch; the lists looked for again when the network is back and after sleep
+- [x] **P5.71** Native ad blocking, the blocker's shield in the address bar (count, state, the menu from it, open and closed reliably), the filter lists in the menu (switch, update now, add, remove), the toolbar shield optional
 - [ ] **P5.30** Native ad blocking, a page in Settings that a person can work with: one switch for the blocker; the filter lists with a checkbox each; add a list by its address and remove it again; "My filters", the person's own rules in the syntax of the lists; the sites where blocking is off
 
 **Security (S)**

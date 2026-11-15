@@ -73,6 +73,8 @@ Explanations live in the design docs under `docs/design/`.
 - **Ad blocking:** cloud storage, as in uBlock Origin: the settings kept with the browser's own sync.
 - **Ad blocking:** every HTML filter of the lists works, also those that depend on the page's structure.
 - **Ad blocking:** an accent color, "Disable tooltips", "Storage used" and the logger's "Reload", as in uBlock Origin.
+- **Ad blocking:** switch it off and on for every site at any time, with no relaunch: from its menu, its settings page or a shortcut, for good or for a while (5 minutes, an hour, until the browser closes).
+- **Ad blocking:** the filter lists are looked for again as soon as the network is back, and after the computer wakes up.
 - **Version:** Thoron has its own version, 0.1.1, on the About page, `chrome://version` and in Windows.
 - **Ad blocking:** checks worker and service worker scripts and imports, and blocks WebSockets to hosts the lists block.
 - **Ad blocking:** settings page `chrome://adblock`: lists on and off, add a list by address, your own rules.
@@ -113,6 +115,8 @@ Explanations live in the design docs under `docs/design/`.
 - **QA tools:** `adblock_header_check.py` checks `$header` offline with real rules of the lists.
 - **QA tools:** `adblock_uritransform_check.py` and `adblock_earlyhints_check.py` check those offline.
 - **QA tools:** `profile_rehearsal.py --minimized` keeps the rehearsal copy out of the way.
+- **QA tools:** `profile_rehearsal.py --browser-log` keeps the new build's own log of a rehearsal that failed, to find out why.
+- **QA tools:** `adblock_power_check.py` switches the blocker off and on every way it can be, offline.
 - **QA tools:** `adblock_menu_check.py` drives the menu, its switches, the picker and the zapper offline.
 - **QA tools:** `fuzz_lists` feeds changed filter list lines to the engine to check that list reading survives any text.
 - **Docs:** README, `ROADMAP.md`, `SECURITY.md` and `CONTRIBUTING.md` describe Thoron; designs live in `docs/design/`.

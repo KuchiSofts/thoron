@@ -284,6 +284,9 @@ one, so going back means restoring a backup. Never skip these steps (ROADMAP **Q
    again and compares. A window with your tabs opens and closes by itself: do not use it. The last
    line must say that the new build kept everything. The copy is deleted whatever happened, and your
    real `User Data` is only read. A build that does not close when asked does not count as a pass.
+   With `--browser-log <private local folder>ehearsal.log` the new build also writes its own log
+   there: kept when the rehearsal fails, to find out why (it names your pages, so it stays on your
+   PC), and deleted when it passes.
 4. Only then install over the real Thorium. The installer first asks "Do you want to install
    Thorium?".
 5. When you have used the new version and closed it again, compare the real profile with the

@@ -25,7 +25,9 @@ continue where it left off: any other profile opens a new tab page at a start, s
 not expected back. With --headless they are not checked either. In both cases the tool says so. With
 --minimized the copy's windows are minimized as soon as they appear: the copy looks just like the
 person's own browser, and one closed by mistake fails the rehearsal. A build
-that does not close when asked is stopped by force and does not count as a pass.
+that does not close when asked is stopped by force and does not count as a pass. With
+--browser-log FILE (inside --work) the new build writes its own log there, to find out why a rehearsal
+failed: it names the pages of the copy, so it stays on this PC, and it is deleted when the rehearsal passes.
 
 It refuses to start while the browser of that profile is running or when the profile was written a
 moment ago (a browser can still be writing for some seconds after its windows closed), when --work is
@@ -78,9 +80,11 @@ class Result:
     after: dict | None = None
 
 
-def launch_arguments(browser: Path, copy: Path, headless: bool = False) -> list[str]:
+def launch_arguments(browser: Path, copy: Path, headless: bool = False, log: Path | None = None) -> list[str]:
     args = [str(browser), f"--user-data-dir={copy}", *OFFLINE,
             "--remote-debugging-address=127.0.0.1", "--remote-debugging-port=0"]
+    if log is not None:
+        args += ["--enable-logging", "--v=0", f"--log-file={log}"]
     return args + ["--headless=new"] if headless else args
 
 
@@ -212,11 +216,11 @@ def stop_tree(proc) -> None:
 
 def run(browser: Path, copy: Path, seconds: int, headless: bool = False, close_timeout: int = CLOSE_TIMEOUT, *,
         start=None, port_of=devtools_port, ask_to_close=ask_to_close, sleep=time.sleep, stop=stop_tree,
-        hide=None) -> str | None:
+        hide=None, log: Path | None = None) -> str | None:
     """Open the copy with the new build, let it work, ask it to close. Returns what went wrong, or None."""
     (copy / "DevToolsActivePort").unlink(missing_ok=True)       # left by the browser the copy came from
     start = start or (lambda args: subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
-    proc = start(launch_arguments(browser, copy, headless))
+    proc = start(launch_arguments(browser, copy, headless, log))
     try:
         port = port_of(copy, proc, START_TIMEOUT)
     except RuntimeError as exc:
@@ -307,7 +311,8 @@ def _delete(root: Path) -> str | None:
 
 
 def rehearse(browser: Path, user_data: Path, work: Path, seconds: int = 60, headless: bool = False,
-             close_timeout: int = CLOSE_TIMEOUT, runner=None, say=lambda text: None, minimized: bool = False) -> Result:
+             close_timeout: int = CLOSE_TIMEOUT, runner=None, say=lambda text: None, minimized: bool = False,
+             browser_log: Path | None = None) -> Result:
     """Steps 1 to 5 of the module text. Raises Refused before anything is copied or started."""
     why = refusal(browser, user_data, work)
     if why:
@@ -322,7 +327,10 @@ def rehearse(browser: Path, user_data: Path, work: Path, seconds: int = 60, head
         except OSError as exc:              # shutil.Error too: some files could not be copied
             result = Result([_not_copied(exc)], [], {})
         else:
-            default = functools.partial(run, hide=minimize_windows) if minimized else run
+            more = {"hide": minimize_windows} if minimized else {}
+            if browser_log is not None:
+                more["log"] = browser_log
+            default = functools.partial(run, **more) if more else run
             result = _on_copy(Path(browser), copy, seconds, headless, close_timeout, runner or default, say)
     finally:
         left = _delete(root)
@@ -343,11 +351,17 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--headless", action="store_true", help="no window; tabs and tab groups are not checked")
     parser.add_argument("--minimized", action="store_true", help="the copy's windows are minimized as they appear")
     parser.add_argument("--before-out", type=Path, help="keep the snapshot from before (counts only) in this file")
+    parser.add_argument("--browser-log", type=Path,
+                        help="the new build's own log, a file inside --work; deleted when the rehearsal passes")
     a = parser.parse_args(argv)
     say = lambda text: print(f"profile rehearsal: {text}", flush=True)
+    log = a.browser_log.resolve() if a.browser_log else None
+    if log is not None and not log.is_relative_to(a.work.resolve()):
+        say("refused: the browser log must be inside the work folder (it names the pages of the copy)")
+        return 2
     try:
         result = rehearse(a.browser, a.user_data, a.work, a.seconds, a.headless, a.close_timeout, say=say,
-                          minimized=a.minimized)
+                          minimized=a.minimized, browser_log=log)
     except Refused as exc:
         say(f"refused: {exc}")
         return 2
@@ -357,7 +371,11 @@ def main(argv: list[str]) -> int:
         print(line)
     if result.problems:
         say(f"{len(result.problems)} problem(s). Do not install this build over that profile.")
+        if log is not None and log.exists():
+            say(f"the new build's own log is kept for a look: {log}")
         return 1
+    if log is not None:
+        log.unlink(missing_ok=True)
     say("the new build kept everything (1:1 on every checked item); the copy is deleted")
     return 0
 

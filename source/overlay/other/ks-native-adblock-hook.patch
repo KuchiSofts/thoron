@@ -1592,10 +1592,10 @@ index 0000000000000000000000000000000000000000..5ace492dd1a60c29b3c3dd04efae2228
 +#endif  // CHROME_BROWSER_UI_BROWSER_WEB_CONTENTS_DELEGATE_THORON_ADBLOCK_SHORTCUTS_H_
 diff --git a/chrome/browser/ui/views/toolbar/thoron_adblock_button.cc b/chrome/browser/ui/views/toolbar/thoron_adblock_button.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..1d1bd4b4a284aad08e9f9e73753f333c3652a428
+index 0000000000000000000000000000000000000000..2095e716314642d7b2553290030fbbbbd01d28b3
 --- /dev/null
 +++ b/chrome/browser/ui/views/toolbar/thoron_adblock_button.cc
-@@ -0,0 +1,454 @@
+@@ -0,0 +1,463 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -1767,7 +1767,7 @@ index 0000000000000000000000000000000000000000..1d1bd4b4a284aad08e9f9e73753f333c
 +    if (GetBubbleWidget() || cached_contents_wrapper()) {
 +      return;
 +    }
-+    set_cached_contents_wrapper(MakeContents());
++    set_cached_contents_wrapper(MakeContents(/*warm=*/true));
 +    // the tab the page is about, before it is shown
 +    webui::SetBrowserWindowInterface(cached_contents_wrapper()->web_contents(),
 +                                     browser_.get());
@@ -1790,10 +1790,13 @@ index 0000000000000000000000000000000000000000..1d1bd4b4a284aad08e9f9e73753f333c
 +  }
 +
 + private:
-+  std::unique_ptr<WebUIContentsWrapper> MakeContents() {
++  // The page is told where it is: in a bubble, loaded ahead (`warm`, it waits
++  // without asking for its state) or for a click (popup_page.js).
++  std::unique_ptr<WebUIContentsWrapper> MakeContents(bool warm) {
 +    return std::make_unique<WebUIContentsWrapperT<ThoronAdblockMenuUI>>(
-+        GURL(kThoronAdblockMenuUrl), browser_->GetProfile(),
-+        IDS_THORON_ADBLOCK_MENU);
++        GURL(std::string(kThoronAdblockMenuUrl) +
++             (warm ? "?bubble=warm" : "?bubble=open")),
++        browser_->GetProfile(), IDS_THORON_ADBLOCK_MENU);
 +  }
 +
 +  // As WebUIBubbleManagerImpl's.
@@ -1802,7 +1805,7 @@ index 0000000000000000000000000000000000000000..1d1bd4b4a284aad08e9f9e73753f333c
 +      views::BubbleBorder::Arrow arrow) override {
 +    set_bubble_using_cached_web_contents(!!cached_contents_wrapper());
 +    if (!cached_contents_wrapper()) {
-+      set_cached_contents_wrapper(MakeContents());
++      set_cached_contents_wrapper(MakeContents(/*warm=*/false));
 +    }
 +    WebUIContentsWrapper* contents_wrapper = cached_contents_wrapper();
 +    webui::SetBrowserWindowInterface(contents_wrapper->web_contents(),
@@ -2046,6 +2049,12 @@ index 0000000000000000000000000000000000000000..1d1bd4b4a284aad08e9f9e73753f333c
 +  menu_closed_at_ = base::TimeTicks::Now();
 +  menu_observation_.Reset();
 +  show_anyway_.Stop();
++  // the kept page waits quietly until it is shown again
++  if (menu_) {
++    if (ThoronAdblockMenuUI* ui = menu_->MenuUI()) {
++      ui->TellHidden();
++    }
++  }
 +}
 +
 +BEGIN_METADATA(ThoronAdblockButton)
@@ -2182,10 +2191,10 @@ index 0000000000000000000000000000000000000000..dd113ac35297b012d9bc94069247b8ad
 +#endif  // CHROME_BROWSER_UI_VIEWS_TOOLBAR_THORON_ADBLOCK_BUTTON_H_
 diff --git a/chrome/browser/ui/webui/thoron_adblock_popup_ui.cc b/chrome/browser/ui/webui/thoron_adblock_popup_ui.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..ba733ba729e044732124e9fa11e2dbd9546e15fa
+index 0000000000000000000000000000000000000000..03563def7a66dc6c61c525fd671849a3389c3575
 --- /dev/null
 +++ b/chrome/browser/ui/webui/thoron_adblock_popup_ui.cc
-@@ -0,0 +1,672 @@
+@@ -0,0 +1,680 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -2857,13 +2866,21 @@ index 0000000000000000000000000000000000000000..ba733ba729e044732124e9fa11e2dbd9
 +  return true;
 +}
 +
++void ThoronAdblockMenuUI::TellHidden() {
++  if (!ready_) {
++    return;
++  }
++  const base::Value event("menu-hidden");
++  web_ui()->CallJavascriptFunctionUnsafe("cr.webUIListenerCallback", event);
++}
++
 +WEB_UI_CONTROLLER_TYPE_IMPL(ThoronAdblockMenuUI)
 diff --git a/chrome/browser/ui/webui/thoron_adblock_popup_ui.h b/chrome/browser/ui/webui/thoron_adblock_popup_ui.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..1aab475cbf411a46a2f31587adb837dbd6b700d1
+index 0000000000000000000000000000000000000000..7da04a98d9c1da72044c15930868f7b69538595a
 --- /dev/null
 +++ b/chrome/browser/ui/webui/thoron_adblock_popup_ui.h
-@@ -0,0 +1,62 @@
+@@ -0,0 +1,64 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -2918,6 +2935,8 @@ index 0000000000000000000000000000000000000000..1aab475cbf411a46a2f31587adb837db
 +  // or loaded ahead): the page brings itself up to date, then asks to be
 +  // shown. False when the page has not loaded yet (it asks once it has).
 +  bool TellShown();
++  // The menu closed: the kept page asks nothing until it is shown again.
++  void TellHidden();
 +
 + private:
 +  bool ready_ = false;

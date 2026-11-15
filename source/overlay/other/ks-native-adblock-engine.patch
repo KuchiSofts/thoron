@@ -15144,10 +15144,10 @@ index 0000000000000000000000000000000000000000..fea166317a749a2ce47ac811c9cb436c
 +</html>
 diff --git a/components/thoron_adblock/popup_page.js b/components/thoron_adblock/popup_page.js
 new file mode 100644
-index 0000000000000000000000000000000000000000..732378f6e07c62d372848312e3289adbf2b6ba11
+index 0000000000000000000000000000000000000000..03195f17c094e00b99d3dce62daf0f0bc8cc68cd
 --- /dev/null
 +++ b/components/thoron_adblock/popup_page.js
-@@ -0,0 +1,446 @@
+@@ -0,0 +1,454 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -15568,21 +15568,29 @@ index 0000000000000000000000000000000000000000..732378f6e07c62d372848312e3289adb
 +  }
 +});
 +
++// Where this page is (P5.72): in a tab, or in the menu's bubble, loaded for a click ("open") or ahead of one
++// ("warm", not shown yet). Shown, it is brought up to date every second; a bubble's page is told when it is
++// shown and when it closes, and asks nothing while it waits.
++const bubble = new URLSearchParams(location.search).get('bubble');
++let polling = bubble !== 'warm';
 +refresh().then(() => chrome.send('menuReady'));
-+// up to date while it is open; a kept page is not asked
 +setInterval(() => {
-+  if (!document.hidden) {
++  if (polling) {
 +    refresh();
 +  }
 +}, 1000);
 +// Shown with a page loaded before (kept since the menu closed, or loaded ahead when the pointer came over the
-+// shield, P5.72): up to date first, for the tab now in front, then it asks to be shown.
++// shield): up to date first, for the tab now in front, then it asks to be shown.
 +addWebUiListener('menu-shown', async () => {
++  polling = true;
 +  await refresh();
 +  chrome.send('menuReady');
 +  if ($('lists-box').open) {
 +    showLists();
 +  }
++});
++addWebUiListener('menu-hidden', () => {
++  polling = false;
 +});
 +// The menu's page is kept between openings (it opens at once): shown again, it is brought up to date at
 +// once, not a second later.

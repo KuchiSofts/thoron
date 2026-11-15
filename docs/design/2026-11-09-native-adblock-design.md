@@ -1952,7 +1952,10 @@ response's body. Thoron is the browser, so it does it for every page:
   `/logImpressions` calls, and uBlock Origin's own list answers them inside the page instead
   (`docs.google.com##+js(no-xhr-if, method:POST url:/logImpressions)`): the page gets an empty success and
   never learns they were blocked. A page that meets the network's refusal takes it for being offline and
-  shows "Trying to connect". Thoron adblock gave Docs that scriptlet, and it worked on a page that loaded
+  shows "Trying to connect", and in the end "You have been signed out. You must sign in again to save
+  changes to this file", although the account is still signed in (the sign-in traffic itself, cookie
+  rotation, account lists and OAuth frames included, is blocked by no list: checked against the bundled
+  lists). Thoron adblock gave Docs that scriptlet, and it worked on a page that loaded
   normally (checked on a public document: the call was answered in the page and never sent), but a page
   that starts without its scriptlets met the refusal: the tabs the browser opens again at start (the engine
   started loading only when the first page arrived, after that page had asked for its scriptlets), and
@@ -1984,8 +1987,9 @@ response's body. Thoron is the browser, so it does it for every page:
   and when the pointer comes over the toolbar's (`ThoronMenuBubbleManager`, the bubble manager Chromium
   uses with a `WarmUp`). Shown with such a page, or with one kept since the menu closed, the page is told
   so: it brings itself up to date for the tab in front, then asks to be shown, a moment later (shown as it
-  is after 250 ms if it does not). A kept page no longer asks the browser for its state every second while
-  it is hidden.
+  is after 250 ms if it does not). The bubble's page is told where it is (`?bubble=warm` or `open`) and when
+  the menu closes: loaded ahead, or kept after the menu closed, it asks the browser nothing until it is shown
+  again; open, and as a tab, it is brought up to date every second as before.
 - **Checked** by `tools/qa/adblock_fakes_check.py` (page, worker, plain), by the icon check's new steps (where
   the shield is; how long each opening of the menu took, more than a second fails) and an engine test.
 

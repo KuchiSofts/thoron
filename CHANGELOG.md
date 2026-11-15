@@ -84,7 +84,7 @@ Explanations live in the design docs under `docs/design/`.
 - **Ad blocking:** `chrome://adblock` sets where the shield is: the address bar, the toolbar next to it, or both.
 - **Ad blocking:** the menu opens at once: its page is loaded ahead, and brought up to date before it shows.
 - **Ad blocking:** pages that start while Thoron adblock loads (tabs opened again at start) wait for it, 4 s at most.
-- **Ad blocking:** fixed: Google Docs kept disconnecting and reconnecting; a blocked request the page's own scriptlet answers now gets that answer from the network too.
+- **Ad blocking:** fixed: Google Docs kept disconnecting and reconnecting, and said "You have been signed out"; a blocked request the page's own scriptlet answers now gets that answer from the network too.
 - **QA tools:** `adblock_fakes_check.py` checks that answer offline; the icon check checks where the shield is and how fast the menu opens.
 - **QA tools:** `thoron_adblock_engine_fuzzer`, coverage-guided fuzzing of the ad blocking engine with libFuzzer; `adblock_breakage.py` measures pages beyond the home page and load times on the real network; `adblock_handover_check.py` checks the built-in blocker on by default and the hand-over from uBlock Origin.
 - **Version:** Thoron has its own version, 0.1.1, on the About page, `chrome://version` and in Windows.

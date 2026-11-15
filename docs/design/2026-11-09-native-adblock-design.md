@@ -1993,6 +1993,32 @@ response's body. Thoron is the browser, so it does it for every page:
 - **Checked** by `tools/qa/adblock_fakes_check.py` (page, worker, plain), by the icon check's new steps (where
   the shield is; how long each opening of the menu took, more than a second fails) and an engine test.
 
+### 12.62 The shield's size and position, flags, finding a list or a setting (P5.73, 2026-11-15)
+
+- **The shield was off its place (reported by the owner: "not the right size like all the other icons").**
+  Measured on a picture of the window: the shields were drawn 2 px right of and below the icons next to them.
+  The count's badge is drawn by the image extensions use (`IconWithBadgeImageSource`), which places an icon as
+  if it were an extension's (16 px); the shield is as large as the icons next to it (20 px). Now the shield is
+  drawn on its own, in the middle of its place, and the badge is laid over it (`DrawShield`). Measured again:
+  14 x 16 px, as the bookmark star beside it, on their line.
+- **Where it sits:** `chrome://adblock` sets, besides the place (P5.72), the position: in the toolbar right
+  after the address bar, after the extensions (the default) or next to the menu (`toolbar-position`; the
+  toolbar's buttons are reordered, `ThoronAdblockButton::ApplyPosition`), and in the address bar with the
+  other icons (the default), before them or at the far end (`address-position`; `LocationBarView::Layout`
+  lays the shield out first or last of the right-hand icons). A preview of the toolbar on the page shows the
+  choice. Both are named choices kept with the options (`EngineService::Choice`), in backups, and in use at once.
+- **Flags for the regional lists:** uBlock Origin's catalog names the countries by flag emoji, which Windows has
+  no pictures for, so they showed as letters. The page draws the 59 flags itself, simplified to the size of a
+  line of text (shapes on a 30 x 20 field, built with DOM calls; Thoron's own drawings), names the countries
+  in the page's language (`Intl.DisplayNames`) and sorts the lists by them.
+- **Smarter:** "Suggested for your languages" lists the regional lists for the countries of the browser's
+  languages (`Intl.Locale(...).maximize()`; nothing is added by itself, nothing leaves the browser). "Find a
+  list, a country or a language" and "Find a setting" keep only what holds the words typed, under their
+  headings, in the page's language.
+- **Checked** by `tools/qa/adblock_catalog_check.py` (flags, suggest, find, setting, preview; the browser in
+  German) and the icon check's new steps (size: each shield on the line of its neighbours within 1 px and as
+  tall within 2 px, measured on a picture; position: each of the six positions by the order of the buttons).
+
 ## 13. Credits
 
 The procedural operators and the rest of the filter syntax are uBlock Origin's (with forms from Adblock

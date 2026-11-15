@@ -55,6 +55,72 @@ class StepTests(unittest.TestCase):
         self.assertEqual(ic.PLACES[-1], "both")
         self.assertIn("'toolbar'", ic.SET_PLACE % "toolbar")
 
+    # the buttons of a test browser's window as seen with the defaults (P5.73)
+    ROW = [{"name": "Not secure", "x": -3838, "y": -3949, "w": 91, "h": 24},
+           {"name": "Thoron adblock: 0 blocked on this page", "x": -3395, "y": -3949, "w": 24, "h": 24},
+           {"name": "Share", "x": -3363, "y": -3949, "w": 24, "h": 24},
+           {"name": "Bookmark this tab", "x": -3331, "y": -3949, "w": 24, "h": 24},
+           {"name": "Thoron adblock: 0 blocked on this page", "x": -3286, "y": -3954, "w": 34, "h": 34},
+           {"name": "Thoron Labs - pinned", "x": -3250, "y": -3954, "w": 34, "h": 34},
+           {"name": "Sign in to Thoron?", "x": -3193, "y": -3954, "w": 146, "h": 34},
+           {"name": "Thoron", "x": -3042, "y": -3955, "w": 36, "h": 36},
+           {"name": "Minimize", "x": -3137, "y": -3999, "w": 45, "h": 39}]
+
+    def moved(self, index, x):
+        row = [dict(b) for b in self.ROW]
+        row[index]["x"] = x
+        return row
+
+    def test_where_in_the_toolbar(self):
+        self.assertEqual(ic.position_problems("toolbar-position", "address", self.ROW), [])
+        self.assertEqual(ic.position_problems("toolbar-position", "extensions", self.ROW), [])
+        self.assertIn("next to the menu", ic.position_problems("toolbar-position", "menu", self.ROW)[0])
+        # moved next to the menu: last but one
+        self.assertEqual(ic.position_problems("toolbar-position", "menu", self.moved(4, -3080)), [])
+        self.assertIn("button 2", ic.position_problems("toolbar-position", "address", self.moved(4, -3220))[0])
+
+    def test_where_in_the_address_bar(self):
+        self.assertEqual(ic.position_problems("address-position", "start", self.ROW), [])
+        self.assertEqual(ic.position_problems("address-position", "icons", self.ROW), [])
+        self.assertIn("far end", ic.position_problems("address-position", "end", self.ROW)[0])
+        at_end = self.moved(1, -3300)
+        self.assertEqual(ic.position_problems("address-position", "end", at_end), [])
+        self.assertIn("far end", ic.position_problems("address-position", "icons", at_end)[0])
+        self.assertIn("no shield", ic.position_problems("address-position", "end", self.ROW[2:4])[0])
+
+    @staticmethod
+    def capture(boxes, width=150, height=40):
+        """A picture of `width` x `height` px, grey, with white boxes (x, y, w, h) drawn on it."""
+        data = bytearray(bytes((60, 60, 60, 255)) * width * height)
+        for x0, y0, w, h in boxes:
+            for y in range(y0, y0 + h):
+                for x in range(x0, x0 + w):
+                    data[(y * width + x) * 4:(y * width + x) * 4 + 3] = b"\xff\xff\xff"
+        return {"left": 0, "top": 0, "w": width, "h": height, "data": bytes(data)}
+
+    def test_the_size_and_the_line(self):
+        shield = {"name": "Thoron adblock: 2 blocked on this page", "x": 4, "y": 8, "w": 24, "h": 24}
+        star = {"name": "Bookmark this tab", "x": 36, "y": 8, "w": 24, "h": 24}
+        tool = {"name": "Thoron adblock: 2 blocked on this page", "x": 66, "y": 3, "w": 34, "h": 34}
+        pin = {"name": "Thoron Labs - pinned", "x": 104, "y": 3, "w": 34, "h": 34}
+        row = [shield, star, tool, pin]
+        toolbar_ink = [(76, 12, 14, 16), (113, 12, 16, 16)]
+        # all of them about 16 px tall, in the middle of their place
+        good = self.capture([(9, 12, 14, 16), (42, 12, 12, 16), *toolbar_ink])
+        self.assertEqual(ic.size_problems(row, good), [])
+        # what Thoron did before P5.73: 2 px right of and below its place
+        low = self.capture([(11, 14, 14, 16), (42, 12, 12, 16), *toolbar_ink])
+        found = ic.size_problems(row, low)
+        self.assertTrue(any("address bar's shield is drawn +2.0 px off the line" in f for f in found), found)
+        self.assertTrue(any("sideways" in f for f in found), found)
+        self.assertFalse(any("toolbar" in f for f in found), found)
+        # smaller than the icon next to it
+        small = self.capture([(11, 15, 10, 10), (42, 12, 12, 16), *toolbar_ink])
+        self.assertTrue(any("10 px tall" in f for f in ic.size_problems(row, small)))
+        self.assertEqual(ic.ink(good, shield)[2:], (14, 16))
+        self.assertIn("address bar 14x16 px", ic.size_summary(row, good))
+        self.assertIn("no shield in the toolbar", ic.size_problems([shield, star], good)[0])
+
     def test_a_slow_menu(self):
         self.assertEqual(ic.slow_problems([40, 120, 900]), [])
         self.assertIn("[1400]", ic.slow_problems([40, 1400])[0])

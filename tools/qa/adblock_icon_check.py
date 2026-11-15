@@ -22,6 +22,11 @@ rules; every other name fails, so nothing leaves the PC). Steps:
             How long each opening took is shown; one that takes more than a second fails.
     place   chrome://adblock says where the shield is: in the toolbar only (the address bar has none, and a
             click on the toolbar's opens the menu), in the address bar only, and in both again.
+    size    each shield is drawn on the line of the icons next to it (1 px) and in the middle of its place
+            sideways, and as tall as those icons (2 px): measured on a picture of the window (P5.73)
+    position chrome://adblock sets where in the toolbar (right after the address bar, next to the menu, after the
+            extensions) and where in the address bar (at the far end, before the other icons, with them); the
+            order of the buttons shows it (P5.73)
 
     py -3 -I tools/qa/adblock_icon_check.py --browser <out>\\thoron.exe --work <scratch dir>
 Exit status 0 when every step passes (or the check does not apply, on another system).
@@ -201,6 +206,184 @@ def _click(hwnd: int, x: int, y: int) -> None:
         time.sleep(0.06)
 
 
+# P5.73: where in the toolbar and the address bar the shield sits, in the order the check sets it; the last of
+# each setting is its default.
+POSITIONS = (("toolbar-position", "address"), ("toolbar-position", "menu"), ("toolbar-position", "extensions"),
+             ("address-position", "end"), ("address-position", "start"), ("address-position", "icons"))
+SET_CHOICE = ("(() => { const s = document.getElementById('%s'); s.value = '%s'; "
+              "s.dispatchEvent(new Event('change')); return s.value; })()")
+# Every button of the test browser's windows: name, left, top, width, height on the screen.
+UIA_ALL = """
+[Console]::OutputEncoding = [Text.Encoding]::UTF8
+Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
+$root = [System.Windows.Automation.AutomationElement]::RootElement
+$mine = New-Object System.Windows.Automation.PropertyCondition(
+    [System.Windows.Automation.AutomationElement]::ProcessIdProperty, [int]$env:THORON_PID)
+ConvertTo-Json -Compress -InputObject @($root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $mine) |
+  Where-Object { $_.Current.ControlType.ProgrammaticName -eq 'ControlType.Button' -and
+                 $_.Current.BoundingRectangle.Height -lt 50 -and $_.Current.BoundingRectangle.Width -gt 0 } |
+  ForEach-Object { $r = $_.Current.BoundingRectangle
+    @{ name = $_.Current.Name; x = [int]$r.X; y = [int]$r.Y; w = [int]$r.Width; h = [int]$r.Height } })
+"""
+
+
+def toolbar_buttons(pid: int) -> list[dict]:
+    out = subprocess.run(["powershell.exe", "-NoProfile", "-Command", UIA_ALL], capture_output=True, text=True,
+                         encoding="utf-8", errors="replace", timeout=60,
+                         env=dict(os.environ, THORON_PID=str(pid))).stdout.strip()
+    found = json.loads(out or "[]")
+    return sorted(found if isinstance(found, list) else [found], key=lambda b: (b["y"], b["x"]))
+
+
+def split_shields(buttons: list[dict]) -> tuple[dict | None, dict | None]:
+    """The address bar's shield (as tall as the address bar's icons) and the toolbar's (as tall as its buttons)."""
+    shields = [b for b in buttons if b["name"].startswith(ICON)]
+    return (next((b for b in shields if b["h"] < 30), None), next((b for b in shields if b["h"] >= 30), None))
+
+
+def _row(buttons: list[dict], ref: dict) -> list[dict]:
+    """The buttons on the same line as `ref`, left to right."""
+    middle = ref["y"] + ref["h"] / 2
+    return sorted((b for b in buttons if abs(b["y"] + b["h"] / 2 - middle) <= 6), key=lambda b: b["x"])
+
+
+def position_problems(setting: str, value: str, buttons: list[dict]) -> list[str]:
+    address, toolbar = split_shields(buttons)
+    if setting == "toolbar-position":
+        if not toolbar:
+            return [f"position: no shield in the toolbar with {setting} {value!r}"]
+        # the toolbar's buttons right of the address bar (the window's own buttons are on another line)
+        right = [b for b in _row(buttons, toolbar) if b["h"] >= 30 and (not address or b["x"] > address["x"])]
+        names = [b["name"][:22] for b in right]
+        at = right.index(toolbar)
+        if value == "address" and at != 0:
+            return [f"position: 'right after the address bar', but the shield is button {at + 1} there ({names})"]
+        if value == "menu" and at != len(right) - 2:
+            return [f"position: 'next to the menu', but the shield is not right before it ({names})"]
+        if value == "extensions" and at == len(right) - 1:
+            return [f"position: 'after the extensions', but the shield is last ({names})"]
+        return []
+    if not address:
+        return [f"position: no shield in the address bar with {setting} {value!r}"]
+    # the address bar's icons (its security chip, wider, is not one)
+    icons = [b for b in _row(buttons, address) if b["h"] < 30 and b["w"] <= 40]
+    names = [b["name"][:22] for b in icons]
+    at = icons.index(address)
+    if value == "end" and at != len(icons) - 1:
+        return [f"position: 'at the far end', but the shield is icon {at + 1} of {len(icons)} ({names})"]
+    if value == "start" and at != 0:
+        return [f"position: 'before the other icons', but the shield is icon {at + 1} ({names})"]
+    if value == "icons" and len(icons) > 1 and at == len(icons) - 1:
+        return [f"position: 'with the other icons', but the shield is at the far end ({names})"]
+    return []
+
+
+def _park_pointer(hwnd: int) -> None:
+    """The pointer over the page, so that no button is drawn as hovered (the real mouse is not moved)."""
+    import ctypes
+    user32 = ctypes.WinDLL("user32", use_last_error=True)
+    user32.PostMessageW(hwnd, 0x0200, 0, (400 << 16) | 400)
+
+
+def _capture(hwnd: int) -> dict:
+    """The window as it is drawn (also off the screen): where it is, and its pixels (BGRA, top row first)."""
+    import ctypes
+    import ctypes.wintypes as wt
+    user32, gdi32 = ctypes.WinDLL("user32"), ctypes.WinDLL("gdi32")
+    r = wt.RECT()
+    user32.GetWindowRect(hwnd, ctypes.byref(r))
+    w, h = r.right - r.left, r.bottom - r.top
+    hdc = user32.GetWindowDC(hwnd)
+    mem = gdi32.CreateCompatibleDC(hdc)
+    bmp = gdi32.CreateCompatibleBitmap(hdc, w, h)
+    gdi32.SelectObject(mem, bmp)
+    user32.PrintWindow(hwnd, mem, 2)  # PW_RENDERFULLCONTENT
+
+    class Header(ctypes.Structure):
+        _fields_ = [("size", wt.DWORD), ("width", wt.LONG), ("height", wt.LONG), ("planes", wt.WORD),
+                    ("bits", wt.WORD), ("compression", wt.DWORD), ("image", wt.DWORD), ("xppm", wt.LONG),
+                    ("yppm", wt.LONG), ("used", wt.DWORD), ("important", wt.DWORD)]
+    header = Header(ctypes.sizeof(Header), w, -h, 1, 32, 0, 0, 0, 0, 0, 0)
+    buf = ctypes.create_string_buffer(w * h * 4)
+    gdi32.GetDIBits(mem, bmp, 0, h, buf, ctypes.byref(header), 0)
+    gdi32.DeleteObject(bmp)
+    gdi32.DeleteDC(mem)
+    user32.ReleaseDC(hwnd, hdc)
+    return {"left": r.left, "top": r.top, "w": w, "h": h, "data": buf.raw}
+
+
+def ink(capture: dict, button: dict) -> tuple[float, float, int, int] | None:
+    """The middle (x, y, on the screen) and the size (width, height) of what is drawn inside `button`: the pixels
+    clearly unlike the button's own background."""
+    data, width = capture["data"], capture["w"]
+    x0, y0 = button["x"] - capture["left"], button["y"] - capture["top"]
+
+    def pixel(x: int, y: int) -> tuple[int, int, int]:
+        i = (y * width + x) * 4
+        return data[i], data[i + 1], data[i + 2]
+    if x0 < 0 or y0 < 0 or x0 + button["w"] > width or y0 + button["h"] > capture["h"]:
+        return None
+    background = pixel(x0 + 1, y0 + 1)
+    xs, ys = [], []
+    for y in range(y0 + 1, y0 + button["h"] - 1):
+        for x in range(x0 + 1, x0 + button["w"] - 1):
+            if sum(abs(a - b) for a, b in zip(pixel(x, y), background)) > 120:
+                xs.append(x)
+                ys.append(y)
+    if not xs:
+        return None
+    return ((min(xs) + max(xs)) / 2 + capture["left"], (min(ys) + max(ys)) / 2 + capture["top"],
+            max(xs) - min(xs) + 1, max(ys) - min(ys) + 1)
+
+
+def _neighbours(buttons: list[dict], shield: dict) -> list[dict]:
+    """The icons next to a shield: the same height, on its line, not a shield, not a wide chip."""
+    return [b for b in _row(buttons, shield) if b is not shield and not b["name"].startswith(ICON)
+            and abs(b["h"] - shield["h"]) <= 2 and b["w"] <= 40]
+
+
+def size_problems(buttons: list[dict], capture: dict) -> list[str]:
+    """Each shield's drawing in the middle of its place as the icons next to it are (1 px), and as tall (2 px)."""
+    out = []
+    address, toolbar = split_shields(buttons)
+    for shield, where in ((address, "address bar"), (toolbar, "toolbar")):
+        if not shield:
+            out.append(f"size: no shield in the {where}")
+            continue
+        mine = ink(capture, shield)
+        if not mine:
+            out.append(f"size: the {where}'s shield draws nothing")
+            continue
+        drawn = [(b, ink(capture, b)) for b in _neighbours(buttons, shield)]
+        drawn = [(b, d) for b, d in drawn if d]
+        if not drawn:
+            continue
+        # how far each drawing is from the middle of its own place, down; the shield's against its neighbours'
+        offsets = sorted(d[1] - (b["y"] + b["h"] / 2) for b, d in drawn)
+        theirs = offsets[len(offsets) // 2]
+        own = mine[1] - (shield["y"] + shield["h"] / 2)
+        if abs(own - theirs) > 1.0:
+            out.append(f"size: the {where}'s shield is drawn {own - theirs:+.1f} px off the line of the icons "
+                       f"next to it")
+        if abs(mine[0] - (shield["x"] + shield["w"] / 2)) > 1.0:
+            out.append(f"size: the {where}'s shield is drawn {mine[0] - (shield['x'] + shield['w'] / 2):+.1f} px "
+                       f"off the middle of its place, sideways")
+        heights = [d[3] for _, d in drawn]
+        if mine[3] < min(heights) - 2 or mine[3] > max(heights) + 2:
+            out.append(f"size: the {where}'s shield is {mine[3]} px tall, the icons next to it {heights}")
+    return out
+
+
+def size_summary(buttons: list[dict], capture: dict) -> str:
+    address, toolbar = split_shields(buttons)
+    parts = []
+    for shield, where in ((address, "address bar"), (toolbar, "toolbar")):
+        if shield and (d := ink(capture, shield)):
+            near = [ink(capture, b) for b in _neighbours(buttons, shield)]
+            parts.append(f"{where} {d[2]}x{d[3]} px (next to it: {[f'{n[2]}x{n[3]}' for n in near if n]})")
+    return "; ".join(parts) or "no shield drawn"
+
+
 def run(browser: Path, work: Path, host: str) -> list[str]:
     profile = Path(tempfile.mkdtemp(prefix="icon-", dir=work))
     problems: list[str] = []
@@ -314,6 +497,32 @@ def run(browser: Path, work: Path, host: str) -> list[str]:
                         print(f"{'PASS' if not found else 'FAIL'}  place {place}: shield in the address bar "
                               f"{address}, in the toolbar {toolbar}"
                               + (f", menu from the toolbar in {opened} ms" if opened is not None else ""))
+                        problems += found
+
+                    # P5.73: each shield drawn in the middle of its place, as tall as the icons next to it
+                    if main:
+                        # the shield alone: its count's badge is switched off while it is measured
+                        badge = ("(() => { const b = document.querySelector('[data-setting=badge]'); "
+                                 "if (b.checked === %s) b.click(); return b.checked; })()")
+                        sws.call("Runtime.evaluate", expression=badge % "true", returnByValue=True)
+                        _park_pointer(main[0])
+                        time.sleep(1.5)
+                        row = toolbar_buttons(proc.pid)
+                        picture = _capture(main[0])
+                        found = size_problems(row, picture)
+                        print(f"{'PASS' if not found else 'FAIL'}  size: {size_summary(row, picture)}")
+                        problems += found
+                        sws.call("Runtime.evaluate", expression=badge % "false", returnByValue=True)
+                        time.sleep(1.0)
+
+                    # P5.73: where in the toolbar and in the address bar, as chrome://adblock sets it
+                    for setting, value in POSITIONS:
+                        sws.call("Runtime.evaluate", expression=SET_CHOICE % (setting, value), returnByValue=True)
+                        time.sleep(2.0)
+                        row = toolbar_buttons(proc.pid)
+                        found = position_problems(setting, value, row)
+                        print(f"{'PASS' if not found else 'FAIL'}  position {setting} {value}: "
+                              f"{[b['name'][:22] for b in row if b['y'] > row[0]['y'] - 99]}")
                         problems += found
                 finally:
                     sws.close()

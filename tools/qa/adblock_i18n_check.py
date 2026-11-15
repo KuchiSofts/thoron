@@ -54,7 +54,10 @@ CODE_LIKE = re.compile(r"\S*[.|^#$@/:=*+]\S*")
 # types, host names, the titles of lists or what a person typed.
 READ = r"""(() => {
   const keep = 'code, pre, textarea, script, style, .url, td.url, td.type, option.type, .host, .site, .title,' +
-               ' #log-tab, #my-filters, .grid-row.host .name, .grid-row.domain .name, #lists input, #catalog input';
+               ' #log-tab, #my-filters, .grid-row.host .name, .grid-row.domain .name, #lists input, #catalog input,' +
+               // the countries of a regional list and their flags: the browser names them in the page's
+               // language (P5.73)
+               ' #catalog .countries, svg.flag';
   const out = [];
   const walk = (node) => {
     if (node.nodeType === Node.TEXT_NODE) {

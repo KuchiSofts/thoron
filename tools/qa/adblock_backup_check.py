@@ -43,7 +43,9 @@ LIST_OFF = "easyprivacy"
 TURNED_ON = ("block-csp-reports", "default-fonts")
 # the settings that are on unless changed (P5.46: auto-update, the context menu, the menu's grid), and the
 # largest media size unless changed
-DEFAULT_ON = ("badge", "auto-update", "context-menu", "advanced", "toolbar-shield", "address-shield")  # P5.71: the toolbar shield
+DEFAULT_ON = ("badge", "auto-update", "context-menu", "advanced", "toolbar-shield", "address-shield")
+# P5.73: the settings with a few named values, and what each is unless chosen
+CHOICE_DEFAULTS = {"toolbar-position": "extensions", "address-position": "icons"}  # P5.71: the toolbar shield
 DEFAULT_MEDIA_KB = 50
 
 CHANGE = f"""(async () => {{
@@ -104,6 +106,9 @@ def default_problems(got: dict) -> list[str]:
         elif name == "accent":
             if on != "":  # P5.69: the pages' own unless chosen
                 out.append(f"reset: the accent colour is {on!r}")
+        elif name in CHOICE_DEFAULTS:
+            if on != CHOICE_DEFAULTS[name]:
+                out.append(f"reset: {name} is {on!r}, not {CHOICE_DEFAULTS[name]!r}")
         elif on != (name in DEFAULT_ON):
             out.append(f"reset: the setting {name} is {'on' if on else 'off'}")
     if got.get("myFilters"):

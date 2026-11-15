@@ -228,11 +228,18 @@ ConvertTo-Json -Compress -InputObject @($root.FindAll([System.Windows.Automation
 
 
 def toolbar_buttons(pid: int) -> list[dict]:
-    out = subprocess.run(["powershell.exe", "-NoProfile", "-Command", UIA_ALL], capture_output=True, text=True,
-                         encoding="utf-8", errors="replace", timeout=60,
-                         env=dict(os.environ, THORON_PID=str(pid))).stdout.strip()
-    found = json.loads(out or "[]")
-    return sorted(found if isinstance(found, list) else [found], key=lambda b: (b["y"], b["x"]))
+    # UI Automation now and then answers with nothing while the window lays itself out: asked again
+    found: list = []
+    for _ in range(3):
+        out = subprocess.run(["powershell.exe", "-NoProfile", "-Command", UIA_ALL], capture_output=True, text=True,
+                             encoding="utf-8", errors="replace", timeout=60,
+                             env=dict(os.environ, THORON_PID=str(pid))).stdout.strip()
+        found = json.loads(out or "[]")
+        found = found if isinstance(found, list) else [found]
+        if any(b["name"].startswith(ICON) for b in found):
+            break
+        time.sleep(1.0)
+    return sorted(found, key=lambda b: (b["y"], b["x"]))
 
 
 def split_shields(buttons: list[dict]) -> tuple[dict | None, dict | None]:

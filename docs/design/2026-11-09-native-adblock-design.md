@@ -1862,7 +1862,10 @@ response's body. Thoron is the browser, so it does it for every page:
 - **The lists, smarter:** a check that could download no list (no network) is made again 20 seconds after
   the network is back instead of an hour later, and one is made a minute after the computer wakes up, so
   a list that fell due while it slept is not late.
-- **Checked** by `tools/qa/adblock_power_check.py` (on, off, back, menu, shortcut, while, kept).
+- **Checked** by `tools/qa/adblock_power_check.py` (on, off, back, menu, shortcut, while, kept), and the
+  updates by `tools/qa/adblock_live_update_check.py`: online, unlike the other checks, it has a
+  throwaway profile ask for "Update now" from the lists' real servers (the requests the browser makes by
+  itself every few days) and wants every list in use downloaded, checked and taken in.
 
 ## 13. Credits
 

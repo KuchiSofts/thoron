@@ -2041,6 +2041,33 @@ response's body. Thoron is the browser, so it does it for every page:
   off-screen test browser and an ordinary window the same way: the first is brought in front, the second stays.
   No real prompt is opened. The icon check measures the new shield on a picture of the window.
 
+### 12.64 Thoron's mail notifier, Gmail first (P5.75, 2026-11-16)
+
+- **Why (the owner):** "add our own X-notifier, super smart, that we can add all our emails"; the X-notifier
+  extension the owner runs signs in to the accounts itself, with stored passwords, in the same browser, and is
+  the strongest suspect for the Google sign-outs the owner sees. Thoron's own needs no password at all.
+- **How it reads mail:** Gmail's feed of unread mail (`mail.google.com/mail/u/N/feed/atom`, Atom 0.3) of each
+  Google account the profile is signed in to, with the profile's own sign-in, as Gmail's page is sent it
+  (`thoron_mail::MailService`, a browser-process loader with the profile's cookies for mail.google.com). Accounts
+  are found by asking u/0, u/1, ... until one is not there (401, a page to sign in, or the first account again),
+  ten at most. The feed is parsed in the data decoder's sandboxed process (`ParseXmlIsolated`), never in the
+  browser; texts are cut at 400 characters; a message's link is kept only if it leads to mail.google.com (made
+  https). It looks 15 s after the browser starts, then every 2 minutes (1, 2, 5, 10, 15 or 30), and when its menu
+  opens; a failed look keeps what the last one found.
+- **New mail:** a message not seen at the last look (Gmail's id) is new; the first look only learns what is
+  there. Up to three new messages make a notice each (sender, subject, the account), more make one notice that
+  counts them (`ThoronMailCenter::OnNewMail`, the browser's own notifications). A click opens the message in the
+  Gmail tab of that account when one is open, else in a new tab.
+- **The toolbar:** an envelope next to the shield (`ThoronMailButton`): teal with the count as a badge while there
+  is unread mail; not in an off-the-record window. Its menu (`chrome://mail-notifier.top-chrome`) lists each
+  account with its count and newest five messages, "Open inbox", "Check now", "Add an account" (Google's own
+  page), "Tell me of new mail" and "Look every"; in es/fr/de/pt/ru as well, times in the browser's language.
+- **Settings:** `thoron_mail.notify` and `thoron_mail.interval_minutes`, the profile's. The flag
+  `thoron-mail-notifier` turns it off.
+- **Checked** by `tools/qa/mail_check.py`: a local server stands in for Gmail (a switch only a local server is
+  accepted for) with made-up accounts: two accounts found, a new message, a link off Gmail dropped, no sign-in,
+  and a feed that is not XML. Outlook/Hotmail, Yahoo and Proton Mail come next.
+
 ## 13. Credits
 
 The procedural operators and the rest of the filter syntax are uBlock Origin's (with forms from Adblock

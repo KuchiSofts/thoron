@@ -2,7 +2,7 @@
   "repository": "https://github.com/gz83/thorium",
   "commit": "efc0fffc256e7402ad4c3dc38ae1e5754221c03d",
   "chromium": "158.0.8127.30",
-  "tree": "dc3187b6debb954976070de84bcf9651bee5fddd",
+  "tree": "0ebd1020231f2056f1e9f1518cd69f3260d4a30d",
   "executable": [],
   "withheld": {
     "other/disable-encryption.patch": "ad9afe0a55bf563f906291ac0f277c71f69a61d3",

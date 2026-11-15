@@ -4,6 +4,7 @@
 - [Updates](Updates)
 - [Import and default browser](Import-and-default-browser)
 - [Ad blocking](Ad-blocking)
+- [Mail notifier](Mail-notifier)
 - [Privacy and security](Privacy-and-security)
 - [Versions](Versions)
 - [Building from source](Building-from-source)

@@ -94,6 +94,8 @@ Explanations live in the design docs under `docs/design/`.
 - **Ad blocking:** Thoron adblock has its own shield: Thoron's T, filled teal while it blocks, with a slash or a pause where it does not.
 - **Windows:** a Windows Security prompt (Windows Hello, the PIN) that opens behind the browser is brought to the front.
 - **QA tools:** `windows_security_check.py` checks that with a stand-in window, off the screen.
+- **Mail:** Thoron's own mail notifier: unread Gmail of every signed-in Google account in the toolbar, with notices of new mail and no password.
+- **QA tools:** `mail_check.py` checks the notifier against a local stand-in for Gmail.
 - **QA tools:** `thoron_adblock_engine_fuzzer`, coverage-guided fuzzing of the ad blocking engine with libFuzzer; `adblock_breakage.py` measures pages beyond the home page and load times on the real network; `adblock_handover_check.py` checks the built-in blocker on by default and the hand-over from uBlock Origin.
 - **Version:** Thoron has its own version, 0.1.1, on the About page, `chrome://version` and in Windows.
 - **Ad blocking:** checks worker and service worker scripts and imports, and blocks WebSockets to hosts the lists block.

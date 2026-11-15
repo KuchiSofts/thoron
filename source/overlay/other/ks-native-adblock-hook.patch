@@ -45,30 +45,32 @@ Author: KuchiSofts
 License: BSD-3-Clause
 
 diff --git a/chrome/browser/BUILD.gn b/chrome/browser/BUILD.gn
-index 24f8cbe6bd907ca32b08e8e904d0cfc21ea61b96..dafe1ec125f1b19f03f98c84224221c3417c70d6 100644
+index 24f8cbe6bd907ca32b08e8e904d0cfc21ea61b96..c4e32f02e63de7be57ba1b85d29c45a9343a5e07 100644
 --- a/chrome/browser/BUILD.gn
 +++ b/chrome/browser/BUILD.gn
-@@ -2751,6 +2751,7 @@ source_set("browser") {
+@@ -2751,6 +2751,8 @@ source_set("browser") {
      "//components/sync",
      "//components/sync_preferences",
      "//components/tab_groups",
 +    "//components/thoron_adblock",
++    "//components/thoron_mail",
      "//components/tracing:background_tracing_utils",
      "//components/tracing:tracing_config",
      "//components/tracing:tracing_metrics",
 diff --git a/chrome/browser/about_flags.cc b/chrome/browser/about_flags.cc
-index cf314780497655d91f67ab18ba0eb2d6f487284e..f29dc2638423824c65af44569301e9d2767b09b8 100644
+index cf314780497655d91f67ab18ba0eb2d6f487284e..cc27545fcd8753af7e3be6a0e51dd6dc80a4d761 100644
 --- a/chrome/browser/about_flags.cc
 +++ b/chrome/browser/about_flags.cc
-@@ -195,6 +195,7 @@
+@@ -195,6 +195,8 @@
  #include "components/sync/base/features.h"
  #include "components/sync_preferences/features.h"
  #include "components/tab_groups/features.h"
 +#include "components/thoron_adblock/features.h"
++#include "components/thoron_mail/features.h"
  #include "components/themes/cross_device/features.h"
  #include "components/thin_webview/features.h"
  #include "components/touch_to_search/core/browser/contextual_search_field_trial.h"
-@@ -5400,6 +5401,16 @@ const FeatureEntry kFeatureEntries[] = {
+@@ -5400,6 +5402,23 @@ const FeatureEntry kFeatureEntries[] = {
  #include "build/chromeos_buildflags.h"
  #include "chrome/browser/unexpire_flags_gen.inc"
  #include "chrome/browser/thorium_flag_entries.h"
@@ -82,6 +84,13 @@ index cf314780497655d91f67ab18ba0eb2d6f487284e..f29dc2638423824c65af44569301e9d2
 +     "off. Its lists and your own rules are on chrome://adblock.",
 +     kOsDesktop,
 +     FEATURE_VALUE_TYPE(thoron_adblock::kThoronNativeAdblock)},
++    // Thoron: its mail notifier (on unless turned off here).
++    {"thoron-mail-notifier", "Thoron mail notifier",
++     "Shows the unread mail of every Google account you are signed in to in "
++     "the toolbar, and tells you of new mail. It reads Gmail's own feed with "
++     "your sign-in; no password is asked for or kept.",
++     kOsDesktop,
++     FEATURE_VALUE_TYPE(thoron_mail::kThoronMailNotifier)},
      {switches::kEnableBenchmarking, flag_descriptions::kEnableBenchmarkingName,
       flag_descriptions::kEnableBenchmarkingDescription, kOsAll,
       MULTI_VALUE_TYPE(kEnableBenchmarkingChoices)},
@@ -447,10 +456,10 @@ index a4c1c51327f52619864f9b13f7fd78162d131cd2..86ab7c825de3fe7010699c6892f58ba5
      if (info.type == type)
        return l10n_util::GetStringUTF16(info.string_id_mid_sentence);
 diff --git a/components/site_settings_strings.grdp b/components/site_settings_strings.grdp
-index ab3c100b747f5ec6244fa719272e29427f723280..93d993ec69dc94cc9a4efac2737b798716010b94 100644
+index ab3c100b747f5ec6244fa719272e29427f723280..49a78f8c56a370ba2f0d99df934a5ec5b017a8fb 100644
 --- a/components/site_settings_strings.grdp
 +++ b/components/site_settings_strings.grdp
-@@ -325,4 +325,66 @@
+@@ -325,4 +325,69 @@
      Offer writing help
    </message>
    </if>
@@ -500,6 +509,9 @@ index ab3c100b747f5ec6244fa719272e29427f723280..93d993ec69dc94cc9a4efac2737b7987
 +  </message>
 +  <message name="IDS_THORON_ADBLOCK_MENU" desc="Name of the menu of Thoron's built-in ad blocking (opened from its shield in the toolbar), as the task manager lists it.">
 +    Thoron adblock menu
++  </message>
++  <message name="IDS_THORON_MAIL_MENU" desc="Name of the menu of Thoron's mail notifier (opened from its envelope in the toolbar), as the task manager lists it.">
++    Thoron mail menu
 +  </message>
 +  <message name="IDS_THORON_ADBLOCK_BLOCK_ELEMENT" desc="Item of the page's context menu that starts Thoron's element picker on what was clicked, as uBlock Origin's item of that name.">
 +    Block element...
@@ -879,10 +891,10 @@ index 792412915da65daf1ba2ab756c0292cc42eb865f..812d74d47da946c8783d8b1888d03e69
  
  void ChromeContentRendererClient::RunScriptsAtDocumentEnd(
 diff --git a/chrome/browser/ui/webui/BUILD.gn b/chrome/browser/ui/webui/BUILD.gn
-index 2e86cbe5385850937a25695dbee994c8fe846f4d..af3a188e7dbca72010b926e49bff882a852f2dda 100644
+index 2e86cbe5385850937a25695dbee994c8fe846f4d..462340b8a3f6cf9700aa04b8afffb7d85169eab6 100644
 --- a/chrome/browser/ui/webui/BUILD.gn
 +++ b/chrome/browser/ui/webui/BUILD.gn
-@@ -39,10 +39,17 @@ source_set("configs") {
+@@ -39,10 +39,20 @@ source_set("configs") {
      "chrome_untrusted_web_ui_configs.cc",
      "chrome_web_ui_configs.cc",
      "thorium_easter_eggs.h",
@@ -892,81 +904,91 @@ index 2e86cbe5385850937a25695dbee994c8fe846f4d..af3a188e7dbca72010b926e49bff882a
 +    "thoron_adblock_site_javascript.h",
 +    "thoron_adblock_ui.cc",
 +    "thoron_adblock_ui.h",
++    "thoron_mail_ui.cc",
++    "thoron_mail_ui.h",
    ]
  
    deps = [
      ":gcm_internals_ui",
 +    "//components/thoron_adblock",
++    "//components/thoron_mail",
      ":net_export_ui",
      ":ntp_tiles_internals_ui",
      ":signin_internals_ui",
 diff --git a/chrome/browser/ui/webui/chrome_web_ui_configs.cc b/chrome/browser/ui/webui/chrome_web_ui_configs.cc
-index aee2aaf3e11b078a7bf6cce51a44e22942a8246c..57919d82f51ba1119daa24b9a910346acb5f3e03 100644
+index aee2aaf3e11b078a7bf6cce51a44e22942a8246c..f270a8cb160745c6260354feae416765e342a7d5 100644
 --- a/chrome/browser/ui/webui/chrome_web_ui_configs.cc
 +++ b/chrome/browser/ui/webui/chrome_web_ui_configs.cc
-@@ -57,6 +57,8 @@
+@@ -57,6 +57,9 @@
  #include "chrome/browser/ui/webui/suggest_internals/suggest_internals_ui.h"
  #include "chrome/browser/ui/webui/sync_internals/sync_internals_ui.h"
  #include "chrome/browser/ui/webui/thorium_easter_eggs.h"
 +#include "chrome/browser/ui/webui/thoron_adblock_popup_ui.h"
 +#include "chrome/browser/ui/webui/thoron_adblock_ui.h"
++#include "chrome/browser/ui/webui/thoron_mail_ui.h"
  #include "chrome/browser/ui/webui/translate_internals/translate_internals_ui.h"
  #include "chrome/browser/ui/webui/usb_internals/usb_internals_ui.h"
  #include "chrome/browser/ui/webui/version/version_ui.h"
-@@ -332,6 +334,8 @@ void RegisterChromeWebUIConfigs() {
+@@ -332,6 +335,9 @@ void RegisterChromeWebUIConfigs() {
    map.AddWebUIConfig(std::make_unique<SuggestInternalsUIConfig>());
    map.AddWebUIConfig(std::make_unique<SyncInternalsUIConfig>());
    map.AddWebUIConfig(std::make_unique<ThoriumAuthorsUIConfig>());
 +  map.AddWebUIConfig(std::make_unique<ThoronAdblockUIConfig>());
 +  map.AddWebUIConfig(std::make_unique<ThoronAdblockMenuUIConfig>());
++  map.AddWebUIConfig(std::make_unique<ThoronMailMenuUIConfig>());
    map.AddWebUIConfig(std::make_unique<TranslateInternalsUIConfig>());
    map.AddWebUIConfig(std::make_unique<UsbInternalsUIConfig>());
    map.AddWebUIConfig(std::make_unique<user_actions_ui::UserActionsUIConfig>());
 diff --git a/chrome/browser/ui/views/toolbar/BUILD.gn b/chrome/browser/ui/views/toolbar/BUILD.gn
-index e4696aab4ad81244e702e205901840ca5dd9e338..6874d486aa58524d19ad15281ea030bf35af1a11 100644
+index e4696aab4ad81244e702e205901840ca5dd9e338..9284e816cf4f6d026e468e318c5d891f6d1ff78d 100644
 --- a/chrome/browser/ui/views/toolbar/BUILD.gn
 +++ b/chrome/browser/ui/views/toolbar/BUILD.gn
-@@ -32,6 +32,8 @@ source_set("toolbar") {
+@@ -32,6 +32,9 @@ source_set("toolbar") {
      "restore_tab_button.h",
      "reload_control.h",
      "split_tabs_button.h",
 +    "thoron_adblock_button.h",
++    "thoron_mail_button.h",
 +    "thoron_windows_security.h",
      "toolbar_action_hover_card_bubble_view.h",
      "toolbar_action_hover_card_controller.h",
      "toolbar_action_view.h",
-@@ -190,6 +192,8 @@ source_set("impl") {
+@@ -190,6 +193,9 @@ source_set("impl") {
      "reload_button.cc",
      "restore_tab_button.cc",
      "split_tabs_button.cc",
 +    "thoron_adblock_button.cc",
++    "thoron_mail_button.cc",
 +    "thoron_windows_security.cc",
      "toolbar_action_hover_card_bubble_view.cc",
      "toolbar_action_hover_card_controller.cc",
      "toolbar_action_view.cc",
-@@ -291,6 +295,7 @@ source_set("impl") {
+@@ -291,6 +297,8 @@ source_set("impl") {
      "//chrome/browser/ui/customize_chrome",
      "//chrome/browser/ui/extensions",
      "//chrome/browser/ui/hats",
 +    "//components/thoron_adblock",
++    "//components/thoron_mail",
      "//chrome/browser/ui/omnibox",
      "//chrome/browser/ui/profiles",
      "//chrome/browser/ui/safety_hub",
 diff --git a/chrome/browser/ui/views/toolbar/toolbar_view.cc b/chrome/browser/ui/views/toolbar/toolbar_view.cc
-index bcf60bdb07a289ef9bc050bd709fee7249a2fc62..9eccd15c132930c7ad7c5aa5ce62fcb1407fb74e 100644
+index bcf60bdb07a289ef9bc050bd709fee7249a2fc62..1a92bfef0ba04c6536376c0769285bcb9c4b0aae 100644
 --- a/chrome/browser/ui/views/toolbar/toolbar_view.cc
 +++ b/chrome/browser/ui/views/toolbar/toolbar_view.cc
-@@ -111,6 +111,9 @@
+@@ -111,6 +111,11 @@
  #include "chrome/browser/ui/views/toolbar/reload_button.h"
  #include "chrome/browser/ui/views/toolbar/restore_tab_button.h"
  #include "chrome/browser/ui/views/toolbar/split_tabs_button.h"
 +#include "chrome/browser/ui/views/toolbar/thoron_adblock_button.h"
++#include "chrome/browser/ui/views/toolbar/thoron_mail_button.h"
 +#include "chrome/browser/ui/views/toolbar/thoron_windows_security.h"
 +#include "components/thoron_adblock/features.h"
++#include "components/thoron_mail/features.h"
  #include "chrome/browser/ui/views/toolbar/toolbar_button.h"
  #include "chrome/browser/ui/views/toolbar/toolbar_controller.h"
  #include "chrome/browser/ui/views/toolbar/toolbar_divider.h"
-@@ -523,6 +526,15 @@ void ToolbarView::Init() {
+@@ -523,6 +528,19 @@ void ToolbarView::Init() {
          std::make_unique<ExtensionsToolbarCoordinator>(extensions_container_);
    }
  
@@ -974,6 +996,10 @@ index bcf60bdb07a289ef9bc050bd709fee7249a2fc62..9eccd15c132930c7ad7c5aa5ce62fcb1
 +  // icon sits, while the blocker is on.
 +  if (base::FeatureList::IsEnabled(thoron_adblock::kThoronNativeAdblock)) {
 +    AddChildView(std::make_unique<ThoronAdblockButton>(browser_));
++  }
++  // Thoron: its mail notifier, next to the shield (P5.75).
++  if (base::FeatureList::IsEnabled(thoron_mail::kThoronMailNotifier)) {
++    AddChildView(std::make_unique<ThoronMailButton>(browser_));
 +  }
 +  // Thoron: a Windows Security prompt (Windows Hello, the PIN) that opens
 +  // behind the browser is brought to the front (Windows only; once).
@@ -983,14 +1009,15 @@ index bcf60bdb07a289ef9bc050bd709fee7249a2fc62..9eccd15c132930c7ad7c5aa5ce62fcb1
      toolbar_divider_ = AddChildView(std::move(toolbar_divider));
    }
 diff --git a/tools/metrics/histograms/metadata/page/histograms.xml b/tools/metrics/histograms/metadata/page/histograms.xml
-index 12d987aaf932d6c64ce04675601a2015a59c82b0..1184798873d70b81383375ac6101e5f44cbe0dbf 100644
+index 12d987aaf932d6c64ce04675601a2015a59c82b0..ae86ea184f1694b77eb049d612f2f2ce4f816456 100644
 --- a/tools/metrics/histograms/metadata/page/histograms.xml
 +++ b/tools/metrics/histograms/metadata/page/histograms.xml
-@@ -1103,6 +1103,7 @@ chromium-metrics-reviews@google.com.
+@@ -1103,6 +1103,8 @@ chromium-metrics-reviews@google.com.
    <variant name=".ShoppingInsightsSidePanel"/>
    <variant name=".TabSearch"/>
    <variant name=".TabsFromOtherDevicesSidePanel"/>
 +  <variant name=".ThoronAdblockMenu"/>
++  <variant name=".ThoronMailMenu"/>
    <variant name=".UserEducation"/>
  </variants>
  
@@ -1424,10 +1451,10 @@ index af9b6f1dc58174281ec64b74c578a3639888ce86..295412fd6cb75627a488278b42b466ff
                            /*edge_padding=*/trailing_decorations_edge_padding);
  
 diff --git a/chrome/browser/prefs/browser_prefs.cc b/chrome/browser/prefs/browser_prefs.cc
-index fdd05fad32252be538eef299e830625a6a3c96ba..12d5c695cf9ea47c4090cc3d9b7ad0d4146ea3a4 100644
+index fdd05fad32252be538eef299e830625a6a3c96ba..e3c53ec38aab9092897034c6b81fd294fc00fa68 100644
 --- a/chrome/browser/prefs/browser_prefs.cc
 +++ b/chrome/browser/prefs/browser_prefs.cc
-@@ -2049,6 +2049,10 @@ void RegisterLocalState(PrefRegistrySimple* registry) {
+@@ -2049,6 +2049,14 @@ void RegisterLocalState(PrefRegistrySimple* registry) {
  void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry,
                            const std::string& locale) {
    TRACE_EVENT0("browser", "chrome::RegisterProfilePrefs");
@@ -1435,6 +1462,10 @@ index fdd05fad32252be538eef299e830625a6a3c96ba..12d5c695cf9ea47c4090cc3d9b7ad0d4
 +  // browser's own sync, as uBlock Origin keeps them).
 +  registry->RegisterStringPref("thoron_adblock.cloud_backup", std::string(),
 +                               user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
++  // Thoron: its mail notifier's settings (components/thoron_mail): notices of
++  // new mail, and how often it looks (minutes).
++  registry->RegisterBooleanPref("thoron_mail.notify", true);
++  registry->RegisterIntegerPref("thoron_mail.interval_minutes", 2);
    // User prefs. Please keep this list alphabetized.
    AccessibilityLabelsService::RegisterProfilePrefs(registry);
    registry->RegisterBooleanPref(prefs::kRendererAccessibilityEnabled, true);
@@ -2433,6 +2464,275 @@ index 0000000000000000000000000000000000000000..5223aea01a4d55eb4f860673adad0aeb
 +};
 +
 +#endif  // CHROME_BROWSER_UI_VIEWS_TOOLBAR_THORON_ADBLOCK_BUTTON_H_
+diff --git a/chrome/browser/ui/views/toolbar/thoron_mail_button.cc b/chrome/browser/ui/views/toolbar/thoron_mail_button.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..8ee4b93dcd62aaba6ebb738f4ffef848b5f7ca04
+--- /dev/null
++++ b/chrome/browser/ui/views/toolbar/thoron_mail_button.cc
+@@ -0,0 +1,194 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "chrome/browser/ui/views/toolbar/thoron_mail_button.h"
++
++#include <string>
++#include <utility>
++
++#include "base/functional/bind.h"
++#include "base/strings/string_number_conversions.h"
++#include "base/strings/utf_string_conversions.h"
++#include "chrome/browser/profiles/profile.h"
++#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
++#include "chrome/browser/ui/extensions/icon_with_badge_image_source.h"
++#include "chrome/browser/ui/views/bubble/webui_bubble_manager.h"
++#include "chrome/browser/ui/webui/thoron_mail_ui.h"
++#include "chrome/browser/ui/webui/top_chrome/webui_contents_wrapper.h"
++#include "components/strings/grit/components_strings.h"
++#include "components/vector_icons/vector_icons.h"
++#include "content/public/browser/web_contents.h"
++#include "content/public/browser/web_ui.h"
++#include "content/public/browser/web_ui_controller.h"
++#include "third_party/skia/include/core/SkBitmap.h"
++#include "ui/base/metadata/metadata_impl_macros.h"
++#include "ui/color/color_provider.h"
++#include "ui/gfx/image/image.h"
++#include "ui/gfx/image/image_skia.h"
++#include "ui/gfx/image/image_skia_operations.h"
++#include "ui/gfx/paint_vector_icon.h"
++#include "ui/views/accessibility/view_accessibility.h"
++#include "ui/views/bubble/bubble_border.h"
++
++namespace {
++
++// The badge as on the ad blocker's shield: red, white text, at most 4
++// characters ("99", "1k").
++constexpr SkColor kBadgeBackground = SkColorSetRGB(0xD9, 0x30, 0x25);
++constexpr SkColor kBadgeText = SK_ColorWHITE;
++// Thoron's teal: the envelope while there is unread mail.
++constexpr SkColor kMailOn = SkColorSetRGB(0x0D, 0x94, 0x88);
++constexpr base::TimeDelta kReopenGuard = base::Milliseconds(300);
++constexpr base::TimeDelta kShowAnyway = base::Milliseconds(250);
++
++std::string BadgeText(int count) {
++  if (count <= 0) {
++    return std::string();
++  }
++  return count < 1000 ? base::NumberToString(count)
++                      : base::NumberToString(count / 1000) + "k";
++}
++
++std::u16string Tooltip(const thoron_mail::MailService& service) {
++  if (service.accounts().empty()) {
++    return service.last_check().is_null() ? std::u16string(u"Mail")
++                                          : u"Mail: sign in to Gmail to see your mail here";
++  }
++  const int unread = service.total_unread();
++  const size_t accounts = service.accounts().size();
++  std::u16string text =
++      unread == 0 ? std::u16string(u"Mail: no unread mail")
++                  : u"Mail: " + base::NumberToString16(unread) + u" unread";
++  if (accounts > 1) {
++    text += u" in " + base::NumberToString16(accounts) + u" accounts";
++  }
++  return text;
++}
++
++ThoronMailMenuUI* MenuUI(WebUIBubbleManager* menu) {
++  WebUIContentsWrapper* contents = menu ? menu->GetContentsWrapper() : nullptr;
++  content::WebUI* web_ui = contents && contents->web_contents()
++                               ? contents->web_contents()->GetWebUI()
++                               : nullptr;
++  return web_ui && web_ui->GetController()
++             ? web_ui->GetController()->GetAs<ThoronMailMenuUI>()
++             : nullptr;
++}
++
++}  // namespace
++
++ThoronMailButton::ThoronMailButton(BrowserWindowInterface* browser)
++    : ToolbarButton(base::BindRepeating(&ThoronMailButton::ButtonPressed,
++                                        base::Unretained(this))),
++      browser_(browser) {
++  SetTooltipText(u"Mail");
++  GetViewAccessibility().SetName(u"Mail");
++  Profile* profile = browser_->GetProfile();
++  // the profile's own sign-in only: never in an off-the-record window
++  if (profile->IsOffTheRecord()) {
++    SetVisible(false);
++    return;
++  }
++  mail_observation_.Observe(&ThoronMailCenter::For(profile).service());
++}
++
++ThoronMailButton::~ThoronMailButton() = default;
++
++void ThoronMailButton::UpdateIcon() {
++  if (!GetWidget() || !GetColorProvider() || !mail_observation_.IsObserving()) {
++    return;
++  }
++  const thoron_mail::MailService& service =
++      ThoronMailCenter::For(browser_->GetProfile()).service();
++  const int size = GetIconSize();
++  const int unread = service.total_unread();
++  const gfx::ImageSkia icon = gfx::CreateVectorIcon(
++      vector_icons::kMailIcon, size,
++      unread > 0 ? kMailOn : GetForegroundColor(ButtonState::STATE_NORMAL));
++  gfx::ImageSkia image = icon;
++  if (const std::string text = BadgeText(unread); !text.empty()) {
++    // the count laid over the envelope, as on the shield (an empty 16 px icon:
++    // the badge's image places an icon as if it were an extension's)
++    SkBitmap empty;
++    empty.allocN32Pixels(16, 16);
++    empty.eraseColor(SK_ColorTRANSPARENT);
++    auto source = std::make_unique<IconWithBadgeImageSource>(
++        gfx::Size(size, size),
++        base::BindRepeating(
++            [](const views::View* view) -> const ui::ColorProvider* {
++              return view->GetColorProvider();
++            },
++            base::Unretained(this)));
++    source->SetIcon(gfx::Image(gfx::ImageSkia::CreateFrom1xBitmap(empty)));
++    source->SetBadge(std::make_unique<IconWithBadgeImageSource::Badge>(
++        text, kBadgeText, kBadgeBackground));
++    image = gfx::ImageSkiaOperations::CreateSuperimposedImage(
++        icon, gfx::ImageSkia(std::move(source), gfx::Size(size, size)));
++  }
++  const ui::ImageModel model = ui::ImageModel::FromImageSkia(image);
++  for (auto state : kButtonStates) {
++    SetImageModel(state, model);
++  }
++  const std::u16string tooltip = Tooltip(service);
++  SetTooltipText(tooltip);
++  GetViewAccessibility().SetName(tooltip);
++}
++
++void ThoronMailButton::OnMailChanged() {
++  UpdateIcon();
++}
++
++void ThoronMailButton::ButtonPressed() {
++  if (!menu_) {
++    menu_ = WebUIBubbleManager::Create<ThoronMailMenuUI>(
++        browser_, GURL(kThoronMailMenuUrl), IDS_THORON_MAIL_MENU);
++  }
++  // open: this press closes it
++  if (menu_->GetBubbleWidget()) {
++    menu_->CloseBubble();
++    return;
++  }
++  if (!menu_closed_at_.is_null() &&
++      base::TimeTicks::Now() - menu_closed_at_ < kReopenGuard) {
++    return;
++  }
++  if (!menu_->ShowBubble(this, views::BubbleBorder::TOP_RIGHT)) {
++    return;
++  }
++  // A kept page told the bubble it was ready when there was no bubble to hear
++  // it (as the ad blocker's menu, P5.71/P5.72): it is told it is shown, brings
++  // itself up to date and asks to be shown; if it does not, it is shown as it
++  // is.
++  if (menu_->bubble_using_cached_web_contents()) {
++    if (ThoronMailMenuUI* ui = MenuUI(menu_.get())) {
++      ui->TellShown();
++    }
++    show_anyway_.Start(FROM_HERE, kShowAnyway,
++                       base::BindOnce(&ThoronMailButton::ShowMenuNow,
++                                      base::Unretained(this)));
++  }
++  if (views::Widget* widget = menu_->GetBubbleWidget()) {
++    menu_observation_.Reset();
++    menu_observation_.Observe(widget);
++  }
++  // what is shown is as new as can be
++  ThoronMailCenter::For(browser_->GetProfile()).service().CheckNow();
++}
++
++void ThoronMailButton::ShowMenuNow() {
++  views::Widget* widget = menu_ ? menu_->GetBubbleWidget() : nullptr;
++  if (widget && !widget->IsVisible()) {
++    if (WebUIContentsWrapper* contents = menu_->GetContentsWrapper()) {
++      contents->ShowUI();
++    }
++  }
++}
++
++void ThoronMailButton::OnWidgetDestroying(views::Widget* widget) {
++  menu_closed_at_ = base::TimeTicks::Now();
++  menu_observation_.Reset();
++  show_anyway_.Stop();
++}
++
++BEGIN_METADATA(ThoronMailButton)
++END_METADATA
+diff --git a/chrome/browser/ui/views/toolbar/thoron_mail_button.h b/chrome/browser/ui/views/toolbar/thoron_mail_button.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..069d0fd2e614da2b761a4a9989ac7b232f1da14c
+--- /dev/null
++++ b/chrome/browser/ui/views/toolbar/thoron_mail_button.h
+@@ -0,0 +1,63 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef CHROME_BROWSER_UI_VIEWS_TOOLBAR_THORON_MAIL_BUTTON_H_
++#define CHROME_BROWSER_UI_VIEWS_TOOLBAR_THORON_MAIL_BUTTON_H_
++
++#include <memory>
++
++#include "base/memory/raw_ptr.h"
++#include "base/scoped_observation.h"
++#include "base/time/time.h"
++#include "base/timer/timer.h"
++#include "chrome/browser/ui/views/toolbar/toolbar_button.h"
++#include "components/thoron_mail/mail_service.h"
++#include "ui/base/metadata/metadata_header_macros.h"
++#include "ui/views/widget/widget.h"
++#include "ui/views/widget/widget_observer.h"
++
++class BrowserWindowInterface;
++class WebUIBubbleManager;
++
++// Thoron's mail notifier in the toolbar (P5.75): an envelope with the number of
++// unread messages of every Google account the profile is signed in to. Pressed,
++// it opens the notifier's menu (thoron_mail_ui.h): each account, its newest
++// unread messages, and the settings. Not in an off-the-record window.
++class ThoronMailButton : public ToolbarButton,
++                         public thoron_mail::MailService::Observer,
++                         public views::WidgetObserver {
++  METADATA_HEADER(ThoronMailButton, ToolbarButton)
++
++ public:
++  explicit ThoronMailButton(BrowserWindowInterface* browser);
++  ThoronMailButton(const ThoronMailButton&) = delete;
++  ThoronMailButton& operator=(const ThoronMailButton&) = delete;
++  ~ThoronMailButton() override;
++
++  // ToolbarButton:
++  void UpdateIcon() override;
++
++  // thoron_mail::MailService::Observer:
++  void OnMailChanged() override;
++
++  // views::WidgetObserver: the menu closed.
++  void OnWidgetDestroying(views::Widget* widget) override;
++
++ private:
++  void ButtonPressed();
++  // A kept page did not ask to be shown in time: the menu is shown anyway.
++  void ShowMenuNow();
++
++  const raw_ptr<BrowserWindowInterface> browser_;
++  std::unique_ptr<WebUIBubbleManager> menu_;
++  base::ScopedObservation<thoron_mail::MailService,
++                          thoron_mail::MailService::Observer>
++      mail_observation_{this};
++  base::ScopedObservation<views::Widget, views::WidgetObserver>
++      menu_observation_{this};
++  // When the menu last closed: a press that closed it does not open it again.
++  base::TimeTicks menu_closed_at_;
++  base::OneShotTimer show_anyway_;
++};
++
++#endif  // CHROME_BROWSER_UI_VIEWS_TOOLBAR_THORON_MAIL_BUTTON_H_
 diff --git a/chrome/browser/ui/views/toolbar/thoron_windows_security.cc b/chrome/browser/ui/views/toolbar/thoron_windows_security.cc
 new file mode 100644
 index 0000000000000000000000000000000000000000..97dfc3f6866ed7ab120bee39f31f6d56acdad4b0
@@ -4333,3 +4633,1527 @@ index 0000000000000000000000000000000000000000..d0fafbafa75adc4e08b11c75f203035c
 +};
 +
 +#endif  // CHROME_BROWSER_UI_WEBUI_THORON_ADBLOCK_UI_H_
+diff --git a/chrome/browser/ui/webui/thoron_mail_ui.cc b/chrome/browser/ui/webui/thoron_mail_ui.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..5253d8ce88f59343eb11d42fd78a77ea50313c32
+--- /dev/null
++++ b/chrome/browser/ui/webui/thoron_mail_ui.cc
+@@ -0,0 +1,411 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "chrome/browser/ui/webui/thoron_mail_ui.h"
++
++#include <string>
++#include <utility>
++
++#include "base/feature_list.h"
++#include "base/functional/bind.h"
++#include "base/memory/ref_counted_memory.h"
++#include "base/scoped_observation.h"
++#include "base/strings/string_number_conversions.h"
++#include "base/strings/string_util.h"
++#include "base/strings/utf_string_conversions.h"
++#include "base/values.h"
++#include "chrome/browser/notifications/notification_display_service.h"
++#include "chrome/browser/notifications/notification_display_service_factory.h"
++#include "chrome/browser/notifications/notification_handler.h"
++#include "chrome/browser/profiles/profile.h"
++#include "chrome/browser/ui/navigator/browser_navigator.h"
++#include "chrome/browser/ui/navigator/browser_navigator_params.h"
++#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
++#include "chrome/browser/ui/browser_window/public/browser_window_interface_iterator.h"
++#include "chrome/browser/ui/tabs/tab_strip_model.h"
++#include "components/thoron_mail/features.h"
++#include "components/thoron_mail/mail_page.h"
++#include "content/public/browser/navigation_controller.h"
++#include "content/public/browser/storage_partition.h"
++#include "content/public/browser/url_data_source.h"
++#include "content/public/browser/web_contents.h"
++#include "content/public/browser/web_ui.h"
++#include "content/public/browser/web_ui_message_handler.h"
++#include "content/public/common/url_constants.h"
++#include "services/network/public/cpp/shared_url_loader_factory.h"
++#include "ui/base/base_window.h"
++#include "ui/base/models/image_model.h"
++#include "ui/base/page_transition_types.h"
++#include "ui/base/window_open_disposition.h"
++#include "ui/message_center/public/cpp/notification.h"
++#include "ui/message_center/public/cpp/notification_delegate.h"
++#include "ui/message_center/public/cpp/notification_types.h"
++#include "ui/message_center/public/cpp/notifier_id.h"
++#include "url/gurl.h"
++#if BUILDFLAG(IS_CHROMEOS)
++#include "ash/constants/notifier_catalogs.h"
++#endif
++
++namespace {
++
++constexpr char kCenterKey[] = "thoron_mail_center";
++constexpr char kNotifierId[] = "thoron.mail";
++constexpr char kScriptPath[] = "/mail.js";
++// More new messages than this at once make one notice that counts them.
++constexpr size_t kMostNotices = 3;
++
++class MailDataSource : public content::URLDataSource {
++ public:
++  MailDataSource() = default;
++  MailDataSource(const MailDataSource&) = delete;
++  MailDataSource& operator=(const MailDataSource&) = delete;
++
++  // content::URLDataSource:
++  std::string GetSource() override { return kThoronMailMenuHost; }
++  std::string GetMimeType(const GURL& url) override {
++    return url.path() == kScriptPath ? "text/javascript" : "text/html";
++  }
++  bool ShouldServeMimeTypeAsContentTypeHeader() override { return true; }
++  void StartDataRequest(const GURL& url,
++                        const content::WebContents::Getter& wc_getter,
++                        GotDataCallback callback) override {
++    const std::string path(url.path());
++    if (path == kScriptPath) {
++      std::move(callback).Run(base::MakeRefCounted<base::RefCountedString>(
++          std::string(thoron_mail::MailPageJs())));
++    } else if (path.empty() || path == "/") {
++      std::move(callback).Run(base::MakeRefCounted<base::RefCountedString>(
++          std::string(thoron_mail::MailPageHtml())));
++    } else {
++      std::move(callback).Run(nullptr);
++    }
++  }
++};
++
++double JsTime(base::Time time) {
++  return time.is_null() ? 0 : time.InMillisecondsFSinceUnixEpoch();
++}
++
++class MailHandler : public content::WebUIMessageHandler,
++                    public thoron_mail::MailService::Observer {
++ public:
++  explicit MailHandler(ThoronMailMenuUI* controller)
++      : controller_(controller) {}
++  MailHandler(const MailHandler&) = delete;
++  MailHandler& operator=(const MailHandler&) = delete;
++  ~MailHandler() override = default;
++
++  // content::WebUIMessageHandler:
++  void RegisterMessages() override {
++    Register("getMailState", &MailHandler::GetState);
++    Register("checkNow", &MailHandler::CheckNow);
++    Register("openInbox", &MailHandler::OpenInbox);
++    Register("openLink", &MailHandler::OpenLink);
++    Register("signIn", &MailHandler::SignIn);
++    Register("addAccount", &MailHandler::AddAccount);
++    Register("setNotify", &MailHandler::SetNotify);
++    Register("setInterval", &MailHandler::SetInterval);
++    Register("menuReady", &MailHandler::MenuReady);
++    Register("closeMenu", &MailHandler::CloseMenu);
++  }
++  void OnJavascriptAllowed() override {
++    if (!observation_.IsObserving()) {
++      observation_.Observe(&Center().service());
++    }
++  }
++  void OnJavascriptDisallowed() override { observation_.Reset(); }
++
++  // thoron_mail::MailService::Observer:
++  void OnMailChanged() override {
++    if (IsJavascriptAllowed()) {
++      FireWebUIListener("mail-changed");
++    }
++  }
++
++ private:
++  using Method = void (MailHandler::*)(const base::ListValue&);
++  void Register(std::string_view message, Method method) {
++    web_ui()->RegisterMessageCallback(
++        message, base::BindRepeating(method, base::Unretained(this)));
++  }
++
++  ThoronMailCenter& Center() {
++    return ThoronMailCenter::For(Profile::FromWebUI(web_ui()));
++  }
++
++  void GetState(const base::ListValue& args) {
++    AllowJavascript();
++    if (args.empty()) {
++      return;
++    }
++    const thoron_mail::MailService& service = Center().service();
++    base::ListValue accounts;
++    for (const thoron_mail::MailAccount& account : service.accounts()) {
++      base::ListValue latest;
++      for (const thoron_mail::MailMessage& message : account.latest) {
++        latest.Append(base::DictValue()
++                          .Set("subject", message.subject)
++                          .Set("from", message.from_name)
++                          .Set("fromEmail", message.from_email)
++                          .Set("snippet", message.snippet)
++                          .Set("link", message.link)
++                          .Set("issued", JsTime(message.issued)));
++      }
++      accounts.Append(base::DictValue()
++                          .Set("index", account.index)
++                          .Set("email", account.email)
++                          .Set("unread", account.unread)
++                          .Set("latest", std::move(latest)));
++    }
++    base::ListValue intervals;
++    for (int minutes : thoron_mail::MailService::kIntervals) {
++      intervals.Append(minutes);
++    }
++    ResolveJavascriptCallback(
++        args[0], base::DictValue()
++                     .Set("accounts", std::move(accounts))
++                     .Set("total", service.total_unread())
++                     .Set("checking", service.checking())
++                     .Set("lastCheck", JsTime(service.last_check()))
++                     .Set("problem", service.problem())
++                     .Set("notify", service.notify())
++                     .Set("interval", service.interval_minutes())
++                     .Set("intervals", std::move(intervals)));
++  }
++
++  void CheckNow(const base::ListValue& args) { Center().service().CheckNow(); }
++
++  void OpenInbox(const base::ListValue& args) {
++    if (!args.empty() && args[0].is_int()) {
++      Center().OpenGmail(thoron_mail::MailService::InboxUrl(args[0].GetInt()),
++                         args[0].GetInt());
++      CloseMenu(args);
++    }
++  }
++
++  // a message: its link (Gmail's only), and the account it is in
++  void OpenLink(const base::ListValue& args) {
++    if (args.size() < 2 || !args[0].is_string() || !args[1].is_int()) {
++      return;
++    }
++    const std::string link = thoron_mail::GmailLink(args[0].GetString());
++    Center().OpenGmail(
++        link.empty() ? thoron_mail::MailService::InboxUrl(args[1].GetInt())
++                     : GURL(link),
++        args[1].GetInt());
++    CloseMenu(args);
++  }
++
++  void SignIn(const base::ListValue& args) {
++    Center().OpenSignIn(/*add=*/false);
++    CloseMenu(args);
++  }
++
++  void AddAccount(const base::ListValue& args) {
++    Center().OpenSignIn(/*add=*/true);
++    CloseMenu(args);
++  }
++
++  void SetNotify(const base::ListValue& args) {
++    if (!args.empty() && args[0].is_bool()) {
++      Center().service().SetNotify(args[0].GetBool());
++    }
++  }
++
++  void SetInterval(const base::ListValue& args) {
++    if (!args.empty() && args[0].is_int()) {
++      Center().service().SetInterval(args[0].GetInt());
++    }
++  }
++
++  void MenuReady(const base::ListValue& args) {
++    controller_->set_ready();
++    if (auto embedder = controller_->embedder()) {
++      embedder->ShowUI();
++    }
++  }
++
++  void CloseMenu(const base::ListValue& args) {
++    if (auto embedder = controller_->embedder()) {
++      embedder->CloseUI();
++    }
++  }
++
++  const raw_ptr<ThoronMailMenuUI> controller_;
++  base::ScopedObservation<thoron_mail::MailService,
++                          thoron_mail::MailService::Observer>
++      observation_{this};
++};
++
++}  // namespace
++
++// static
++ThoronMailCenter& ThoronMailCenter::For(Profile* profile) {
++  auto* center = static_cast<ThoronMailCenter*>(profile->GetUserData(kCenterKey));
++  if (!center) {
++    auto made = std::make_unique<ThoronMailCenter>(profile);
++    center = made.get();
++    profile->SetUserData(kCenterKey, std::move(made));
++    center->service().Start();
++  }
++  return *center;
++}
++
++ThoronMailCenter::ThoronMailCenter(Profile* profile)
++    : profile_(profile),
++      service_(std::make_unique<thoron_mail::MailService>(
++          profile->GetPrefs(),
++          base::BindRepeating(
++              [](Profile* profile)
++                  -> scoped_refptr<network::SharedURLLoaderFactory> {
++                return profile->GetDefaultStoragePartition()
++                    ->GetURLLoaderFactoryForBrowserProcess();
++              },
++              // Unretained: the service is owned by this, which is the
++              // profile's own (user data): it ends before the profile.
++              base::Unretained(profile)))) {
++  service_->AddObserver(this);
++}
++
++ThoronMailCenter::~ThoronMailCenter() {
++  service_->RemoveObserver(this);
++}
++
++void ThoronMailCenter::OpenGmail(const GURL& url, int index) {
++  if (!url.is_valid() || url.host() != "mail.google.com" ||
++      !url.SchemeIs(url::kHttpsScheme)) {
++    return;
++  }
++  const std::string inbox = "/mail/u/" + base::NumberToString(index);
++  BrowserWindowInterface* found = nullptr;
++  int tab = -1;
++  ForEachCurrentBrowserWindowInterfaceOrderedByActivation(
++      [&](BrowserWindowInterface* browser) {
++        if (browser->GetProfile() != profile_) {
++          return true;
++        }
++        TabStripModel* tabs = browser->GetTabStripModel();
++        for (int i = 0; i < tabs->count(); ++i) {
++          const GURL& at = tabs->GetWebContentsAt(i)->GetLastCommittedURL();
++          if (at.host() == "mail.google.com" &&
++              (at.path() == inbox || base::StartsWith(at.path(), inbox + "/"))) {
++            found = browser;
++            tab = i;
++            return false;
++          }
++        }
++        return true;
++      });
++  if (found) {
++    // a message is opened in that tab; the inbox is only brought forward
++    if (url != thoron_mail::MailService::InboxUrl(index)) {
++      found->GetTabStripModel()->GetWebContentsAt(tab)->GetController().LoadURL(
++          url, content::Referrer(), ui::PAGE_TRANSITION_LINK, std::string());
++    }
++    found->GetTabStripModel()->ActivateTabAt(tab);
++    found->GetWindow()->Activate();
++    return;
++  }
++  NavigateParams params(profile_, url, ui::PAGE_TRANSITION_LINK);
++  params.disposition = WindowOpenDisposition::kNewForegroundTab;
++  params.window_action = NavigateParams::WindowAction::kShowWindow;
++  Navigate(&params);
++}
++
++void ThoronMailCenter::OpenSignIn(bool add) {
++  const GURL url(
++      add ? "https://accounts.google.com/AddSession?service=mail&continue="
++            "https%3A%2F%2Fmail.google.com%2Fmail%2F"
++          : "https://accounts.google.com/ServiceLogin?service=mail&continue="
++            "https%3A%2F%2Fmail.google.com%2Fmail%2F");
++  NavigateParams params(profile_, url, ui::PAGE_TRANSITION_LINK);
++  params.disposition = WindowOpenDisposition::kNewForegroundTab;
++  params.window_action = NavigateParams::WindowAction::kShowWindow;
++  Navigate(&params);
++}
++
++void ThoronMailCenter::OnNewMail(
++    const thoron_mail::MailAccount& account,
++    const std::vector<thoron_mail::MailMessage>& messages) {
++  NotificationDisplayService* display =
++      NotificationDisplayServiceFactory::GetForProfile(profile_);
++  if (!service_->notify() || messages.empty() || !display) {
++    return;
++  }
++  auto notice = [&](const std::string& id, const std::u16string& title,
++                    const std::u16string& text, const GURL& open) {
++    // Unretained: a notice that outlives the profile is never clicked.
++    auto delegate =
++        base::MakeRefCounted<message_center::HandleNotificationClickDelegate>(
++            base::BindRepeating(
++                [](ThoronMailCenter* center, GURL url, int index,
++                   std::optional<int> button) {
++                  center->OpenGmail(url, index);
++                },
++                base::Unretained(this), open, account.index));
++    message_center::Notification notification(
++        message_center::NOTIFICATION_TYPE_SIMPLE, id, title, text,
++        ui::ImageModel(), base::UTF8ToUTF16(account.email),
++        GURL("https://mail.google.com/"),
++#if BUILDFLAG(IS_CHROMEOS)
++        message_center::NotifierId(
++            message_center::NotifierType::SYSTEM_COMPONENT, kNotifierId,
++            ash::NotificationCatalogName::kNone),
++#else
++        message_center::NotifierId(
++            message_center::NotifierType::SYSTEM_COMPONENT, kNotifierId),
++#endif
++        {}, delegate);
++    display->Display(NotificationHandler::Type::TRANSIENT, notification,
++                     /*metadata=*/nullptr);
++  };
++  if (messages.size() > kMostNotices) {
++    notice("thoron.mail." + account.email,
++           base::NumberToString16(messages.size()) + u" new messages",
++           base::UTF8ToUTF16(account.email),
++           thoron_mail::MailService::InboxUrl(account.index));
++    return;
++  }
++  for (const thoron_mail::MailMessage& message : messages) {
++    const std::string link = thoron_mail::GmailLink(message.link);
++    notice("thoron.mail." + account.email + "." + message.id,
++           base::UTF8ToUTF16(message.from_name.empty() ? message.from_email
++                                                       : message.from_name),
++           base::UTF8ToUTF16(message.subject),
++           link.empty() ? thoron_mail::MailService::InboxUrl(account.index)
++                        : GURL(link));
++  }
++}
++
++ThoronMailMenuUIConfig::ThoronMailMenuUIConfig()
++    : DefaultTopChromeWebUIConfig(content::kChromeUIScheme,
++                                  kThoronMailMenuHost) {}
++
++bool ThoronMailMenuUIConfig::IsWebUIEnabled(
++    content::BrowserContext* browser_context) {
++  return base::FeatureList::IsEnabled(thoron_mail::kThoronMailNotifier);
++}
++
++bool ThoronMailMenuUIConfig::ShouldAutoResizeHost() {
++  return true;
++}
++
++ThoronMailMenuUI::ThoronMailMenuUI(content::WebUI* web_ui)
++    : TopChromeWebUIController(web_ui, /*enable_chrome_send=*/true) {
++  content::URLDataSource::Add(Profile::FromWebUI(web_ui),
++                              std::make_unique<MailDataSource>());
++  web_ui->AddMessageHandler(std::make_unique<MailHandler>(this));
++}
++
++ThoronMailMenuUI::~ThoronMailMenuUI() = default;
++
++bool ThoronMailMenuUI::TellShown() {
++  if (!ready_) {
++    return false;
++  }
++  const base::Value event("menu-shown");
++  web_ui()->CallJavascriptFunctionUnsafe("cr.webUIListenerCallback", event);
++  return true;
++}
++
++WEB_UI_CONTROLLER_TYPE_IMPL(ThoronMailMenuUI)
+diff --git a/chrome/browser/ui/webui/thoron_mail_ui.h b/chrome/browser/ui/webui/thoron_mail_ui.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..4d7b6faa0b086ca0e9df9c1efd5fc94ae66cbdf9
+--- /dev/null
++++ b/chrome/browser/ui/webui/thoron_mail_ui.h
+@@ -0,0 +1,90 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef CHROME_BROWSER_UI_WEBUI_THORON_MAIL_UI_H_
++#define CHROME_BROWSER_UI_WEBUI_THORON_MAIL_UI_H_
++
++#include <memory>
++#include <string_view>
++#include <vector>
++
++#include "base/memory/raw_ptr.h"
++#include "base/supports_user_data.h"
++#include "chrome/browser/ui/webui/top_chrome/top_chrome_web_ui_controller.h"
++#include "chrome/browser/ui/webui/top_chrome/top_chrome_webui_config.h"
++#include "components/thoron_mail/mail_service.h"
++
++class GURL;
++class Profile;
++
++// The menu of Thoron's mail notifier, opened from its envelope in the toolbar.
++inline constexpr char kThoronMailMenuHost[] = "mail-notifier.top-chrome";
++inline constexpr char kThoronMailMenuUrl[] = "chrome://mail-notifier.top-chrome/";
++
++// One per profile (P5.75): its mail service (thoron_mail::MailService), the
++// notices of new mail, and opening Gmail where it is already open.
++class ThoronMailCenter : public base::SupportsUserData::Data,
++                         public thoron_mail::MailService::Observer {
++ public:
++  // Made the first time it is asked for, and started.
++  static ThoronMailCenter& For(Profile* profile);
++
++  explicit ThoronMailCenter(Profile* profile);
++  ThoronMailCenter(const ThoronMailCenter&) = delete;
++  ThoronMailCenter& operator=(const ThoronMailCenter&) = delete;
++  ~ThoronMailCenter() override;
++
++  thoron_mail::MailService& service() { return *service_; }
++
++  // Opens `url` (Gmail's own, else nothing) in a window of the profile: in
++  // the tab that shows account `index` when there is one, else a new tab.
++  void OpenGmail(const GURL& url, int index);
++  // Opens Google's page to sign in, or to add an account, in a new tab.
++  void OpenSignIn(bool add);
++
++  // thoron_mail::MailService::Observer:
++  void OnNewMail(const thoron_mail::MailAccount& account,
++                 const std::vector<thoron_mail::MailMessage>& messages) override;
++
++ private:
++  const raw_ptr<Profile> profile_;
++  std::unique_ptr<thoron_mail::MailService> service_;
++};
++
++class ThoronMailMenuUI;
++
++class ThoronMailMenuUIConfig
++    : public DefaultTopChromeWebUIConfig<ThoronMailMenuUI> {
++ public:
++  ThoronMailMenuUIConfig();
++
++  // TopChromeWebUIConfig:
++  bool IsWebUIEnabled(content::BrowserContext* browser_context) override;
++  bool ShouldAutoResizeHost() override;
++};
++
++class ThoronMailMenuUI : public TopChromeWebUIController {
++ public:
++  explicit ThoronMailMenuUI(content::WebUI* web_ui);
++  ThoronMailMenuUI(const ThoronMailMenuUI&) = delete;
++  ThoronMailMenuUI& operator=(const ThoronMailMenuUI&) = delete;
++  ~ThoronMailMenuUI() override;
++
++  static constexpr std::string_view GetWebUIName() {
++    return "ThoronMailMenu";
++  }
++
++  // The page has drawn what it shows and asked to be shown, at least once.
++  bool ready() const { return ready_; }
++  void set_ready() { ready_ = true; }
++  // Shown again with its page kept: the page brings itself up to date, then
++  // asks to be shown. False when the page has not loaded yet.
++  bool TellShown();
++
++ private:
++  bool ready_ = false;
++
++  WEB_UI_CONTROLLER_TYPE_DECL();
++};
++
++#endif  // CHROME_BROWSER_UI_WEBUI_THORON_MAIL_UI_H_
+diff --git a/components/thoron_mail/BUILD.gn b/components/thoron_mail/BUILD.gn
+new file mode 100644
+index 0000000000000000000000000000000000000000..9ce54dcb049dffa229beef5c868dfe68446a03ae
+--- /dev/null
++++ b/components/thoron_mail/BUILD.gn
+@@ -0,0 +1,27 @@
++# Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++# found in the LICENSE file.
++
++# Thoron's mail notifier: the unread mail of the Google accounts a profile is
++# signed in to, read from Gmail's own feed with the profile's sign-in.
++static_library("thoron_mail") {
++  sources = [
++    "features.cc",
++    "features.h",
++    "mail_feed.cc",
++    "mail_feed.h",
++    "mail_page.cc",
++    "mail_page.h",
++    "mail_service.cc",
++    "mail_service.h",
++  ]
++  deps = [
++    "//base",
++    "//components/prefs",
++    "//net",
++    "//services/data_decoder/public/cpp",
++    "//services/data_decoder/public/mojom",
++    "//services/network/public/cpp",
++    "//services/network/public/mojom",
++    "//url",
++  ]
++}
+diff --git a/components/thoron_mail/features.cc b/components/thoron_mail/features.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..cfc2488015b7afa4ac5da2dba3920c310ea826c7
+--- /dev/null
++++ b/components/thoron_mail/features.cc
+@@ -0,0 +1,10 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "components/thoron_mail/features.h"
++
++namespace thoron_mail {
++
++BASE_FEATURE(kThoronMailNotifier, base::FEATURE_ENABLED_BY_DEFAULT);
++
++}  // namespace thoron_mail
+diff --git a/components/thoron_mail/features.h b/components/thoron_mail/features.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..12433ec42437edb9ceb29dabc8d15e17c5868600
+--- /dev/null
++++ b/components/thoron_mail/features.h
+@@ -0,0 +1,17 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef COMPONENTS_THORON_MAIL_FEATURES_H_
++#define COMPONENTS_THORON_MAIL_FEATURES_H_
++
++#include "base/feature_list.h"
++
++namespace thoron_mail {
++
++// Thoron's mail notifier: the unread mail of every Google account the person
++// is signed in to, in the toolbar, with a notice for new mail.
++BASE_DECLARE_FEATURE(kThoronMailNotifier);
++
++}  // namespace thoron_mail
++
++#endif  // COMPONENTS_THORON_MAIL_FEATURES_H_
+diff --git a/components/thoron_mail/mail_feed.cc b/components/thoron_mail/mail_feed.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..a5e3a57002d3ddd55f6ed110d427aca1cfc88752
+--- /dev/null
++++ b/components/thoron_mail/mail_feed.cc
+@@ -0,0 +1,174 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "components/thoron_mail/mail_feed.h"
++
++#include <algorithm>
++#include <string_view>
++#include <utility>
++
++#include "base/strings/string_number_conversions.h"
++#include "base/strings/string_util.h"
++#include "services/data_decoder/public/cpp/safe_xml_parser.h"
++#include "url/gurl.h"
++#include "url/url_constants.h"
++
++namespace thoron_mail {
++
++MailMessage::MailMessage() = default;
++MailMessage::MailMessage(const MailMessage&) = default;
++MailMessage& MailMessage::operator=(const MailMessage&) = default;
++MailMessage::~MailMessage() = default;
++
++MailAccount::MailAccount() = default;
++MailAccount::MailAccount(const MailAccount&) = default;
++MailAccount& MailAccount::operator=(const MailAccount&) = default;
++MailAccount::~MailAccount() = default;
++
++namespace {
++
++constexpr size_t kMostMessages = 20;
++constexpr size_t kMostText = 400;
++
++// "atom:entry" -> "entry"
++std::string_view LocalName(std::string_view tag) {
++  const size_t colon = tag.find(':');
++  return colon == std::string_view::npos ? tag : tag.substr(colon + 1);
++}
++
++bool Named(const base::Value& element, std::string_view name) {
++  std::string tag;
++  return data_decoder::GetXmlElementTagName(element, &tag) &&
++         LocalName(tag) == name;
++}
++
++std::vector<const base::Value*> Children(const base::Value& element,
++                                         std::string_view name) {
++  std::vector<const base::Value*> out;
++  if (const base::ListValue* children =
++          data_decoder::GetXmlElementChildren(element)) {
++    for (const base::Value& child : *children) {
++      if (Named(child, name)) {
++        out.push_back(&child);
++      }
++    }
++  }
++  return out;
++}
++
++const base::Value* Child(const base::Value& element, std::string_view name) {
++  const std::vector<const base::Value*> found = Children(element, name);
++  return found.empty() ? nullptr : found.front();
++}
++
++std::string Text(const base::Value* element) {
++  std::string text;
++  if (element) {
++    data_decoder::GetXmlElementText(*element, &text);
++  }
++  std::string out(base::TrimWhitespaceASCII(text, base::TRIM_ALL));
++  if (out.size() > kMostText) {
++    out.resize(kMostText);
++  }
++  return out;
++}
++
++// "Gmail - Inbox for name@example.com" -> "name@example.com"
++std::string EmailIn(const std::string& title) {
++  const size_t at = title.find('@');
++  if (at == std::string::npos) {
++    return std::string();
++  }
++  size_t from = at;
++  while (from > 0 && !base::IsAsciiWhitespace(title[from - 1])) {
++    --from;
++  }
++  size_t to = at;
++  while (to < title.size() && !base::IsAsciiWhitespace(title[to])) {
++    ++to;
++  }
++  std::string email = title.substr(from, to - from);
++  return email.size() >= 3 && email.front() != '@' && email.back() != '@'
++             ? email
++             : std::string();
++}
++
++}  // namespace
++
++base::Time FeedTime(const std::string& text) {
++  int year = 0, month = 0, day = 0, hour = 0, minute = 0, second = 0;
++  if (text.size() < 19 ||
++      !base::StringToInt(std::string_view(text).substr(0, 4), &year) ||
++      !base::StringToInt(std::string_view(text).substr(5, 2), &month) ||
++      !base::StringToInt(std::string_view(text).substr(8, 2), &day) ||
++      !base::StringToInt(std::string_view(text).substr(11, 2), &hour) ||
++      !base::StringToInt(std::string_view(text).substr(14, 2), &minute) ||
++      !base::StringToInt(std::string_view(text).substr(17, 2), &second)) {
++    return base::Time();
++  }
++  base::Time::Exploded exploded = {};
++  exploded.year = year;
++  exploded.month = month;
++  exploded.day_of_month = day;
++  exploded.hour = hour;
++  exploded.minute = minute;
++  exploded.second = second;
++  base::Time time;
++  return base::Time::FromUTCExploded(exploded, &time) ? time : base::Time();
++}
++
++std::string GmailLink(const std::string& link) {
++  GURL url(link);
++  if (!url.is_valid() || url.host() != "mail.google.com" ||
++      !(url.SchemeIs(url::kHttpsScheme) || url.SchemeIs(url::kHttpScheme))) {
++    return std::string();
++  }
++  GURL::Replacements secure;
++  secure.SetSchemeStr(url::kHttpsScheme);
++  return url.ReplaceComponents(secure).spec();
++}
++
++std::optional<MailAccount> AccountFromFeed(const base::Value& feed,
++                                           int index) {
++  if (!Named(feed, "feed")) {
++    return std::nullopt;
++  }
++  MailAccount account;
++  account.index = index;
++  account.email = EmailIn(Text(Child(feed, "title")));
++  if (account.email.empty()) {
++    return std::nullopt;
++  }
++  int unread = 0;
++  if (base::StringToInt(Text(Child(feed, "fullcount")), &unread) &&
++      unread > 0) {
++    account.unread = unread;
++  }
++  for (const base::Value* entry : Children(feed, "entry")) {
++    if (account.latest.size() >= kMostMessages) {
++      break;
++    }
++    MailMessage message;
++    message.id = Text(Child(*entry, "id"));
++    message.subject = Text(Child(*entry, "title"));
++    message.snippet = Text(Child(*entry, "summary"));
++    if (const base::Value* author = Child(*entry, "author")) {
++      message.from_name = Text(Child(*author, "name"));
++      message.from_email = Text(Child(*author, "email"));
++    }
++    if (const base::Value* link = Child(*entry, "link")) {
++      message.link =
++          GmailLink(data_decoder::GetXmlElementAttribute(*link, "href"));
++    }
++    message.issued = FeedTime(Text(Child(*entry, "issued")));
++    if (!message.id.empty()) {
++      account.latest.push_back(std::move(message));
++    }
++  }
++  // the feed holds at most 20 messages; the count may be larger, never smaller
++  account.unread =
++      std::max(account.unread, static_cast<int>(account.latest.size()));
++  return account;
++}
++
++}  // namespace thoron_mail
+diff --git a/components/thoron_mail/mail_feed.h b/components/thoron_mail/mail_feed.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..a7392581a4f0aaf050ae158e808198dbf481d11c
+--- /dev/null
++++ b/components/thoron_mail/mail_feed.h
+@@ -0,0 +1,60 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef COMPONENTS_THORON_MAIL_MAIL_FEED_H_
++#define COMPONENTS_THORON_MAIL_MAIL_FEED_H_
++
++#include <optional>
++#include <string>
++#include <vector>
++
++#include "base/time/time.h"
++#include "base/values.h"
++
++namespace thoron_mail {
++
++// One unread message, as Gmail's feed of unread mail tells of it.
++struct MailMessage {
++  MailMessage();
++  MailMessage(const MailMessage&);
++  MailMessage& operator=(const MailMessage&);
++  ~MailMessage();
++
++  std::string id;  // Gmail's own, for telling new mail from mail seen before
++  std::string subject;
++  std::string snippet;
++  std::string from_name;
++  std::string from_email;
++  // the conversation in Gmail (https://mail.google.com/ only; empty if not)
++  std::string link;
++  base::Time issued;
++};
++
++// One Google account the browser is signed in to: Gmail's u/<index>.
++struct MailAccount {
++  MailAccount();
++  MailAccount(const MailAccount&);
++  MailAccount& operator=(const MailAccount&);
++  ~MailAccount();
++
++  int index = 0;
++  std::string email;
++  int unread = 0;
++  // the newest unread messages, as many as the feed has (at most 20)
++  std::vector<MailMessage> latest;
++};
++
++// The account of Gmail's feed of unread mail (Atom 0.3) for u/`index`, from
++// the tree the data decoder (a sandboxed process) parsed it into. Nullopt for
++// anything else.
++std::optional<MailAccount> AccountFromFeed(const base::Value& feed, int index);
++
++// "2026-11-15T10:20:30Z" (the feed's times), or a null time.
++base::Time FeedTime(const std::string& text);
++
++// `link` if it opens something of Gmail's, made https; else empty.
++std::string GmailLink(const std::string& link);
++
++}  // namespace thoron_mail
++
++#endif  // COMPONENTS_THORON_MAIL_MAIL_FEED_H_
+diff --git a/components/thoron_mail/mail_page.cc b/components/thoron_mail/mail_page.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..5a8274003a5e7380efb6e3c399cf218516e1e5f1
+--- /dev/null
++++ b/components/thoron_mail/mail_page.cc
+@@ -0,0 +1,263 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "components/thoron_mail/mail_page.h"
++
++namespace thoron_mail {
++
++namespace {
++
++constexpr char kHtml[] = R"thoron(<!doctype html>
++<html dir="ltr">
++<head>
++<meta charset="utf-8">
++<title>Mail</title>
++<style>
++  :root { color-scheme: light dark; --line: color-mix(in srgb, currentColor 14%, transparent);
++          --soft: color-mix(in srgb, currentColor 62%, transparent); --accent: #0d9488; --unread: #d93025; }
++  body { margin: 0; inline-size: 360px; font: 13px/1.4 system-ui, "Segoe UI", sans-serif; background: Canvas;
++         color: CanvasText; }
++  header { display: flex; align-items: center; gap: 8px; padding: 12px 14px 10px;
++           border-block-end: 1px solid var(--line); }
++  header svg { flex: none; }
++  header .name { font-weight: 600; font-size: 14px; }
++  header .total { color: var(--soft); }
++  header button { margin-inline-start: auto; }
++  button { font: inherit; padding: 5px 12px; border-radius: 14px; border: 1px solid var(--line);
++           background: transparent; color: inherit; cursor: pointer; }
++  button:hover { border-color: var(--accent); }
++  button:focus-visible, a:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
++  main { max-block-size: 430px; overflow-y: auto; }
++  .account { padding: 10px 14px; border-block-end: 1px solid var(--line); }
++  .account .top { display: flex; align-items: center; gap: 8px; }
++  .account .email { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
++  .badge { min-inline-size: 20px; padding: 1px 7px; border-radius: 10px; background: var(--unread); color: #fff;
++           font-size: 12px; font-weight: 600; text-align: center; }
++  .badge.zero { background: var(--line); color: var(--soft); }
++  .message { display: block; inline-size: 100%; text-align: start; border: 0; border-radius: 8px; padding: 6px 8px;
++             margin-block-start: 4px; }
++  .message:hover { background: var(--line); }
++  .message .line { display: flex; gap: 8px; }
++  .message .from { font-weight: 600; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
++  .message .when { color: var(--soft); flex: none; font-size: 12px; }
++  .message .subject, .message .snippet { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
++  .message .snippet { color: var(--soft); font-size: 12px; }
++  .more, .note { color: var(--soft); font-size: 12px; margin: 6px 8px 0; }
++  .empty { padding: 18px 14px; color: var(--soft); }
++  footer { padding: 10px 14px 12px; display: grid; gap: 8px; border-block-start: 1px solid var(--line); }
++  footer .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
++  footer label { display: flex; align-items: center; gap: 6px; }
++  footer input { accent-color: var(--accent); }
++  select { font: inherit; padding: 3px 6px; border-radius: 8px; border: 1px solid var(--line); background: Canvas;
++           color: inherit; }
++  #state { color: var(--soft); font-size: 12px; }
++</style>
++</head>
++<body>
++<header>
++  <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true">
++    <rect x="2" y="4" width="16" height="12" rx="2.5" fill="#0d9488"/>
++    <path d="M3.5 6l6.5 4.6L16.5 6" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round"
++      stroke-linejoin="round"/>
++  </svg>
++  <span class="name" data-t>Mail</span>
++  <span class="total" id="total"></span>
++  <button id="check" type="button" data-t>Check now</button>
++</header>
++<main id="accounts"></main>
++<footer>
++  <div class="row">
++    <button id="add" type="button" data-t>Add an account</button>
++    <span id="state"></span>
++  </div>
++  <div class="row">
++    <label><input type="checkbox" id="notify"><span data-t>Tell me of new mail</span></label>
++    <label><span data-t>Look every</span>
++      <select id="interval"></select></label>
++  </div>
++</footer>
++<script type="module" src="mail.js"></script>
++</body>
++</html>
++)thoron";
++
++constexpr char kJs[] = R"thoron(// The menu of Thoron's mail notifier. It asks the browser (thoron_mail_ui.cc) for the accounts and their unread
++// mail, and tells it what the person chose.
++import {addWebUiListener, sendWithPromise} from 'chrome://resources/js/cr.js';
++
++const $ = (id) => document.getElementById(id);
++const make = (tag, cls, text) => {
++  const element = document.createElement(tag);
++  if (cls) {
++    element.className = cls;
++  }
++  if (text !== undefined) {
++    element.textContent = text;
++  }
++  return element;
++};
++
++// The languages Thoron's pages come in besides English.
++const LANG = (navigator.language || 'en').slice(0, 2).toLowerCase();
++const ROWS = {
++  'Mail': ['Correo', 'Courrier', 'E-Mail', 'E-mail', 'Почта'],
++  'Check now': ['Comprobar ahora', 'Vérifier maintenant', 'Jetzt prüfen', 'Verificar agora', 'Проверить сейчас'],
++  'Checking...': ['Comprobando...', 'Vérification...', 'Wird geprüft...', 'Verificando...', 'Проверка...'],
++  'Add an account': ['Añadir una cuenta', 'Ajouter un compte', 'Konto hinzufügen', 'Adicionar uma conta',
++                     'Добавить аккаунт'],
++  'Tell me of new mail': ['Avisarme del correo nuevo', 'Me prévenir des nouveaux messages',
++                          'Über neue E-Mails benachrichtigen', 'Avisar-me de novos e-mails', 'Сообщать о новых письмах'],
++  'Look every': ['Comprobar cada', 'Vérifier toutes les', 'Prüfen alle', 'Verificar a cada', 'Проверять каждые'],
++  'min': ['min', 'min', 'Min.', 'min', 'мин'],
++  'Open inbox': ['Abrir la bandeja', 'Ouvrir la boîte', 'Posteingang öffnen', 'Abrir a caixa', 'Открыть входящие'],
++  'No unread mail': ['Ningún correo sin leer', 'Aucun message non lu', 'Keine ungelesenen E-Mails', 'Nenhum e-mail não lido',
++                     'Нет непрочитанных писем'],
++  'unread': ['sin leer', 'non lus', 'ungelesen', 'não lidos', 'непрочитанных'],
++  'more unread': ['más sin leer', 'autres non lus', 'weitere ungelesen', 'outros não lidos', 'ещё непрочитанных'],
++  'Sign in to Gmail': ['Iniciar sesión en Gmail', 'Se connecter à Gmail', 'Bei Gmail anmelden', 'Entrar no Gmail',
++                       'Войти в Gmail'],
++  'You are not signed in to Gmail in this browser.': [
++    'No has iniciado sesión en Gmail en este navegador.', "Vous n'êtes pas connecté à Gmail dans ce navigateur.",
++    'Sie sind in diesem Browser nicht bei Gmail angemeldet.', 'Você não está conectado ao Gmail neste navegador.',
++    'Вы не вошли в Gmail в этом браузере.'],
++  'Gmail could not be reached. Thoron tries again by itself.': [
++    'No se pudo contactar con Gmail. Thoron lo intentará de nuevo.', 'Gmail est injoignable. Thoron réessaiera.',
++    'Gmail ist nicht erreichbar. Thoron versucht es erneut.', 'Não foi possível acessar o Gmail. O Thoron tentará de novo.',
++    'Gmail недоступен. Thoron попробует снова.'],
++  'Looked': ['Comprobado', 'Vérifié', 'Geprüft', 'Verificado', 'Проверено'],
++  'Not looked yet': ['Aún no comprobado', 'Pas encore vérifié', 'Noch nicht geprüft', 'Ainda não verificado',
++                     'Ещё не проверено'],
++};
++const AT = {es: 0, fr: 1, de: 2, pt: 3, ru: 4}[LANG];
++const t = (text) => (AT === undefined || !ROWS[text] ? text : ROWS[text][AT]);
++for (const element of document.querySelectorAll('[data-t]')) {
++  element.textContent = t(element.textContent);
++}
++const RELATIVE = new Intl.RelativeTimeFormat(navigator.language || 'en', {numeric: 'auto'});
++
++// "5 minutes ago", in the browser's language
++function ago(ms) {
++  const seconds = Math.round((ms - Date.now()) / 1000);
++  for (const [unit, size] of [['day', 86400], ['hour', 3600], ['minute', 60]]) {
++    if (Math.abs(seconds) >= size) {
++      return RELATIVE.format(Math.round(seconds / size), unit);
++    }
++  }
++  return RELATIVE.format(0, 'second');
++}
++
++let state = null;
++
++function showMessage(message, index) {
++  const button = make('button', 'message');
++  button.type = 'button';
++  const line = make('div', 'line');
++  line.append(make('span', 'from', message.from || message.fromEmail),
++              make('span', 'when', message.issued ? ago(message.issued) : ''));
++  button.append(line, make('div', 'subject', message.subject || '(no subject)'));
++  if (message.snippet) {
++    button.append(make('div', 'snippet', message.snippet));
++  }
++  button.title = message.fromEmail || '';
++  button.addEventListener('click', () => chrome.send('openLink', [message.link, index]));
++  return button;
++}
++
++function show(next) {
++  state = next;
++  const box = $('accounts');
++  box.replaceChildren();
++  $('total').textContent = next.accounts.length ? `${next.total} ${t('unread')}` : '';
++  $('check').textContent = next.checking ? t('Checking...') : t('Check now');
++  $('check').disabled = next.checking;
++  if (!next.accounts.length) {
++    const empty = make('div', 'empty');
++    if (next.problem === 'offline' || next.problem === 'error') {
++      empty.append(make('p', '', t('Gmail could not be reached. Thoron tries again by itself.')));
++    } else if (next.lastCheck) {
++      empty.append(make('p', '', t('You are not signed in to Gmail in this browser.')));
++      const signIn = make('button', '', t('Sign in to Gmail'));
++      signIn.type = 'button';
++      signIn.addEventListener('click', () => chrome.send('signIn'));
++      empty.append(signIn);
++    } else {
++      empty.append(make('p', '', t('Not looked yet')));
++    }
++    box.append(empty);
++  }
++  for (const account of next.accounts) {
++    const card = make('section', 'account');
++    const top = make('div', 'top');
++    top.append(make('span', 'email', account.email),
++               make('span', account.unread ? 'badge' : 'badge zero', String(account.unread)));
++    const open = make('button', '', t('Open inbox'));
++    open.type = 'button';
++    open.addEventListener('click', () => chrome.send('openInbox', [account.index]));
++    top.append(open);
++    card.append(top);
++    if (!account.unread) {
++      card.append(make('p', 'note', t('No unread mail')));
++    }
++    for (const message of account.latest.slice(0, 5)) {
++      card.append(showMessage(message, account.index));
++    }
++    if (account.unread > 5) {
++      card.append(make('p', 'more', `+${account.unread - 5} ${t('more unread')}`));
++    }
++    box.append(card);
++  }
++  $('state').textContent = next.lastCheck ? `${t('Looked')} ${ago(next.lastCheck)}` : '';
++  $('notify').checked = next.notify;
++  const interval = $('interval');
++  if (!interval.options.length) {
++    for (const minutes of next.intervals) {
++      const option = make('option', '', `${minutes} ${t('min')}`);
++      option.value = String(minutes);
++      interval.append(option);
++    }
++  }
++  interval.value = String(next.interval);
++}
++
++async function refresh() {
++  try {
++    show(await sendWithPromise('getMailState'));
++  } catch {
++    // the window went away
++  }
++}
++
++$('check').addEventListener('click', () => chrome.send('checkNow'));
++$('add').addEventListener('click', () => chrome.send('addAccount'));
++$('notify').addEventListener('change', () => chrome.send('setNotify', [$('notify').checked]));
++$('interval').addEventListener('change', () => chrome.send('setInterval', [Number($('interval').value)]));
++document.addEventListener('keydown', (event) => {
++  if (event.key === 'Escape') {
++    chrome.send('closeMenu');
++  }
++});
++addWebUiListener('mail-changed', refresh);
++addWebUiListener('menu-shown', async () => {
++  await refresh();
++  chrome.send('menuReady');
++});
++refresh().then(() => chrome.send('menuReady'));
++// the times shown ("2 minutes ago") stay right while the menu is open
++setInterval(() => {
++  if (state && !document.hidden) {
++    show(state);
++  }
++}, 30000);
++)thoron";
++
++}  // namespace
++
++std::string_view MailPageHtml() {
++  return kHtml;
++}
++
++std::string_view MailPageJs() {
++  return kJs;
++}
++
++}  // namespace thoron_mail
+diff --git a/components/thoron_mail/mail_page.h b/components/thoron_mail/mail_page.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..529372e73e8bc78edd93e438e343ad219e5ef0d6
+--- /dev/null
++++ b/components/thoron_mail/mail_page.h
+@@ -0,0 +1,18 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef COMPONENTS_THORON_MAIL_MAIL_PAGE_H_
++#define COMPONENTS_THORON_MAIL_MAIL_PAGE_H_
++
++#include <string_view>
++
++namespace thoron_mail {
++
++// The menu of the mail notifier (chrome://mail-notifier.top-chrome/): its page
++// and its script ("mail.js"), plain HTML and one module.
++std::string_view MailPageHtml();
++std::string_view MailPageJs();
++
++}  // namespace thoron_mail
++
++#endif  // COMPONENTS_THORON_MAIL_MAIL_PAGE_H_
+diff --git a/components/thoron_mail/mail_service.cc b/components/thoron_mail/mail_service.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..ec99f295e6030d291ab146c3c8a938a7d650252c
+--- /dev/null
++++ b/components/thoron_mail/mail_service.cc
+@@ -0,0 +1,266 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "components/thoron_mail/mail_service.h"
++
++#include <algorithm>
++#include <utility>
++
++#include "base/command_line.h"
++#include "base/functional/bind.h"
++#include "base/strings/string_number_conversions.h"
++#include "components/prefs/pref_service.h"
++#include "net/base/load_flags.h"
++#include "net/base/url_util.h"
++#include "net/cookies/site_for_cookies.h"
++#include "net/traffic_annotation/network_traffic_annotation.h"
++#include "services/data_decoder/public/mojom/xml_parser.mojom.h"
++#include "services/network/public/cpp/resource_request.h"
++#include "services/network/public/cpp/shared_url_loader_factory.h"
++#include "services/network/public/cpp/simple_url_loader.h"
++#include "services/network/public/mojom/url_response_head.mojom.h"
++#include "url/origin.h"
++
++namespace thoron_mail {
++
++namespace {
++
++constexpr char kNotifyPref[] = "thoron_mail.notify";
++constexpr char kIntervalPref[] = "thoron_mail.interval_minutes";
++// The first look comes after the browser has started and opened its pages.
++constexpr base::TimeDelta kFirstLook = base::Seconds(15);
++constexpr base::TimeDelta kTimeout = base::Seconds(20);
++// A feed is small (20 messages at most); anything far larger is not one.
++constexpr size_t kMostBytes = 512 * 1024;
++// Tests: Gmail's address is replaced by a local server's ("http://127.0.0.1:port/").
++constexpr char kFeedsForTesting[] = "thoron-mail-feeds-for-testing";
++
++constexpr net::NetworkTrafficAnnotationTag kTrafficAnnotation =
++    net::DefineNetworkTrafficAnnotation("thoron_mail_feed", R"(
++        semantics {
++          sender: "Thoron mail notifier"
++          description:
++            "Reads Gmail's feed of unread mail of each Google account the "
++            "person is signed in to in this profile (mail.google.com/mail/u/N/"
++            "feed/atom), to show the number of unread messages in the toolbar "
++            "and to tell of new mail."
++          trigger:
++            "The ThoronMailNotifier feature is on: a moment after the browser "
++            "starts, then every few minutes (the person's choice, 2 unless "
++            "changed), and when the person asks in the notifier's menu."
++          data:
++            "The profile's own sign-in cookies for mail.google.com, as when "
++            "the person opens Gmail. No password is asked for or kept."
++          destination: GOOGLE_OWNED_SERVICE
++        }
++        policy {
++          cookies_allowed: YES
++          cookies_store: "user"
++          setting: "Off when the ThoronMailNotifier feature is off."
++          policy_exception_justification: "No policy yet."
++        })");
++
++}  // namespace
++
++MailService::MailService(PrefService* prefs, FactoryGetter factory)
++    : prefs_(prefs), factory_(std::move(factory)) {}
++
++MailService::~MailService() = default;
++
++void MailService::AddObserver(Observer* observer) {
++  observers_.AddObserver(observer);
++}
++
++void MailService::RemoveObserver(Observer* observer) {
++  observers_.RemoveObserver(observer);
++}
++
++void MailService::Start() {
++  if (started_) {
++    return;
++  }
++  started_ = true;
++  timer_.Start(FROM_HERE, kFirstLook,
++               base::BindOnce(&MailService::CheckNow, base::Unretained(this)));
++}
++
++int MailService::total_unread() const {
++  int total = 0;
++  for (const MailAccount& account : accounts_) {
++    total += account.unread;
++  }
++  return total;
++}
++
++int MailService::interval_minutes() const {
++  const int minutes = prefs_ ? prefs_->GetInteger(kIntervalPref) : 0;
++  return std::ranges::find(kIntervals, minutes) != std::end(kIntervals)
++             ? minutes
++             : kDefaultInterval;
++}
++
++bool MailService::SetInterval(int minutes) {
++  if (!prefs_ ||
++      std::ranges::find(kIntervals, minutes) == std::end(kIntervals)) {
++    return false;
++  }
++  prefs_->SetInteger(kIntervalPref, minutes);
++  if (!checking_ && started_) {
++    Reschedule();
++  }
++  observers_.Notify(&Observer::OnMailChanged);
++  return true;
++}
++
++bool MailService::notify() const {
++  return prefs_ && prefs_->GetBoolean(kNotifyPref);
++}
++
++void MailService::SetNotify(bool on) {
++  if (prefs_) {
++    prefs_->SetBoolean(kNotifyPref, on);
++  }
++  observers_.Notify(&Observer::OnMailChanged);
++}
++
++GURL MailService::FeedUrl(int index) const {
++  const std::string path =
++      "mail/u/" + base::NumberToString(index) + "/feed/atom";
++  const std::string base =
++      base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
++          kFeedsForTesting);
++  const GURL testing(base);
++  // only a local server stands in for Gmail
++  if (testing.is_valid() && net::IsLocalhost(testing)) {
++    return testing.Resolve(path);
++  }
++  return GURL("https://mail.google.com/").Resolve(path);
++}
++
++// static
++GURL MailService::InboxUrl(int index) {
++  return GURL("https://mail.google.com/mail/u/" + base::NumberToString(index) +
++              "/#inbox");
++}
++
++void MailService::CheckNow() {
++  if (checking_) {
++    return;
++  }
++  timer_.Stop();
++  checking_ = true;
++  next_.clear();
++  observers_.Notify(&Observer::OnMailChanged);
++  Fetch(0);
++}
++
++void MailService::Fetch(int index) {
++  scoped_refptr<network::SharedURLLoaderFactory> factory =
++      factory_ ? factory_.Run() : nullptr;
++  if (!factory) {
++    Finish("error");
++    return;
++  }
++  auto request = std::make_unique<network::ResourceRequest>();
++  request->url = FeedUrl(index);
++  request->method = "GET";
++  // as Gmail's own page asks: the profile's sign-in for mail.google.com
++  request->credentials_mode = network::mojom::CredentialsMode::kInclude;
++  request->site_for_cookies = net::SiteForCookies::FromUrl(request->url);
++  request->request_initiator = url::Origin::Create(request->url);
++  request->load_flags = net::LOAD_DISABLE_CACHE;
++  request->headers.SetHeader("Accept", "application/atom+xml");
++  loader_ =
++      network::SimpleURLLoader::Create(std::move(request), kTrafficAnnotation);
++  loader_->SetTimeoutDuration(kTimeout);
++  // Without a sign-in Gmail answers 401: no account there, not a failure.
++  loader_->SetAllowHttpErrorResults(true);
++  loader_->DownloadToString(
++      factory.get(),
++      base::BindOnce(&MailService::OnFetched, weak_factory_.GetWeakPtr(),
++                     index),
++      kMostBytes);
++}
++
++void MailService::OnFetched(int index, std::optional<std::string> body) {
++  const int status = loader_ && loader_->ResponseInfo() &&
++                             loader_->ResponseInfo()->headers
++                         ? loader_->ResponseInfo()->headers->response_code()
++                         : 0;
++  const int net_error = loader_ ? loader_->NetError() : 0;
++  loader_.reset();
++  if (!body || status != 200) {
++    // The first account that is not there ends the look. No account at all:
++    // signed out (401 or a page to sign in), or the network.
++    std::string problem;
++    if (next_.empty()) {
++      problem = status == 401 || status == 302 || status == 403 ? "signed-out"
++                : status == 0 && net_error != 0                 ? "offline"
++                                                                : "error";
++    }
++    Finish(std::move(problem));
++    return;
++  }
++  data_decoder::DataDecoder::ParseXmlIsolated(
++      *body, data_decoder::mojom::XmlParser::WhitespaceBehavior::kIgnore,
++      base::BindOnce(&MailService::OnParsed, weak_factory_.GetWeakPtr(),
++                     index));
++}
++
++void MailService::OnParsed(int index,
++                           data_decoder::DataDecoder::ValueOrError result) {
++  std::optional<MailAccount> account =
++      result.has_value() ? AccountFromFeed(*result, index) : std::nullopt;
++  // Gmail answers an index past the last account with the first one again
++  const bool again = account && std::ranges::any_of(
++                                    next_, [&](const MailAccount& known) {
++                                      return known.email == account->email;
++                                    });
++  if (!account || again) {
++    Finish(!next_.empty() ? std::string() : "signed-out");
++    return;
++  }
++  next_.push_back(std::move(*account));
++  if (index + 1 >= kMostAccounts) {
++    Finish(std::string());
++    return;
++  }
++  Fetch(index + 1);
++}
++
++void MailService::Finish(std::string problem) {
++  checking_ = false;
++  last_check_ = base::Time::Now();
++  problem_ = std::move(problem);
++  // A failed look keeps what the last one found, as it was.
++  if (problem_.empty() || problem_ == "signed-out") {
++    accounts_ = std::move(next_);
++    std::map<std::string, std::set<std::string>> seen;
++    for (const MailAccount& account : accounts_) {
++      std::set<std::string>& known = seen_[account.email];
++      std::vector<MailMessage> fresh;
++      for (const MailMessage& message : account.latest) {
++        if (!known.contains(message.id)) {
++          fresh.push_back(message);
++        }
++        seen[account.email].insert(message.id);
++      }
++      if (first_look_done_ && !fresh.empty()) {
++        observers_.Notify(&Observer::OnNewMail, account, fresh);
++      }
++    }
++    // only what is still unread is remembered
++    seen_ = std::move(seen);
++    first_look_done_ = true;
++  }
++  next_.clear();
++  observers_.Notify(&Observer::OnMailChanged);
++  Reschedule();
++}
++
++void MailService::Reschedule() {
++  timer_.Start(FROM_HERE, base::Minutes(interval_minutes()),
++               base::BindOnce(&MailService::CheckNow, base::Unretained(this)));
++}
++
++}  // namespace thoron_mail
+diff --git a/components/thoron_mail/mail_service.h b/components/thoron_mail/mail_service.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..3c8738cbe5e3912f7436306068a450b71daf4527
+--- /dev/null
++++ b/components/thoron_mail/mail_service.h
+@@ -0,0 +1,122 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef COMPONENTS_THORON_MAIL_MAIL_SERVICE_H_
++#define COMPONENTS_THORON_MAIL_MAIL_SERVICE_H_
++
++#include <map>
++#include <memory>
++#include <optional>
++#include <set>
++#include <string>
++#include <vector>
++
++#include "base/functional/callback.h"
++#include "base/memory/raw_ptr.h"
++#include "base/memory/scoped_refptr.h"
++#include "base/memory/weak_ptr.h"
++#include "base/observer_list.h"
++#include "base/observer_list_types.h"
++#include "base/time/time.h"
++#include "base/timer/timer.h"
++#include "components/thoron_mail/mail_feed.h"
++#include "services/data_decoder/public/cpp/data_decoder.h"
++#include "url/gurl.h"
++
++class PrefService;
++
++namespace network {
++class SharedURLLoaderFactory;
++class SimpleURLLoader;
++}  // namespace network
++
++namespace thoron_mail {
++
++// The unread mail of every Google account a profile is signed in to (Gmail's
++// u/0, u/1, ...), from Gmail's own feed of unread mail, as a person who opens
++// Gmail is sent it: with the profile's own sign-in, and nothing else. No
++// password is asked for or kept; the feed is read in the data decoder's
++// sandboxed process. Looked at when the browser starts, every few minutes
++// after, and when asked; a message not seen before is told to the observers
++// (not on the first look, which only learns what is there). Its two settings,
++// "thoron_mail.notify" and "thoron_mail.interval_minutes", are registered with
++// the profile's (chrome/browser/prefs/browser_prefs.cc).
++class MailService {
++ public:
++  using FactoryGetter =
++      base::RepeatingCallback<scoped_refptr<network::SharedURLLoaderFactory>()>;
++
++  class Observer : public base::CheckedObserver {
++   public:
++    // the accounts, their counts or the state of a look changed
++    virtual void OnMailChanged() {}
++    // `messages` came to `account` since the last look
++    virtual void OnNewMail(const MailAccount& account,
++                           const std::vector<MailMessage>& messages) {}
++  };
++
++  // How often it looks, in minutes: the person's choice among these.
++  static constexpr int kIntervals[] = {1, 2, 5, 10, 15, 30};
++  static constexpr int kDefaultInterval = 2;
++  // the most accounts looked at (u/0 to u/9)
++  static constexpr int kMostAccounts = 10;
++
++  MailService(PrefService* prefs, FactoryGetter factory);
++  MailService(const MailService&) = delete;
++  MailService& operator=(const MailService&) = delete;
++  ~MailService();
++
++  void AddObserver(Observer* observer);
++  void RemoveObserver(Observer* observer);
++
++  // Starts looking (the first look a moment later). Again: no-op.
++  void Start();
++  // Looks now, unless a look is under way.
++  void CheckNow();
++
++  const std::vector<MailAccount>& accounts() const { return accounts_; }
++  int total_unread() const;
++  bool checking() const { return checking_; }
++  // when the last look ended; null before the first
++  base::Time last_check() const { return last_check_; }
++  // why the last look found no account ("" when it found some): "signed-out"
++  // (no Google account), "offline", "error"
++  const std::string& problem() const { return problem_; }
++
++  int interval_minutes() const;
++  bool SetInterval(int minutes);
++  bool notify() const;
++  void SetNotify(bool on);
++
++  // Gmail's address of the feed of account `index`.
++  GURL FeedUrl(int index) const;
++  // Gmail's inbox of account `index`.
++  static GURL InboxUrl(int index);
++
++ private:
++  void Fetch(int index);
++  void OnFetched(int index, std::optional<std::string> body);
++  void OnParsed(int index, data_decoder::DataDecoder::ValueOrError result);
++  void Finish(std::string problem);
++  void Reschedule();
++
++  const raw_ptr<PrefService> prefs_;
++  const FactoryGetter factory_;
++  base::ObserverList<Observer> observers_;
++  bool started_ = false;
++  bool checking_ = false;
++  bool first_look_done_ = false;
++  std::vector<MailAccount> accounts_;
++  std::vector<MailAccount> next_;
++  // per account: the messages already seen (only those still unread are kept)
++  std::map<std::string, std::set<std::string>> seen_;
++  base::Time last_check_;
++  std::string problem_;
++  std::unique_ptr<network::SimpleURLLoader> loader_;
++  base::OneShotTimer timer_;
++  base::WeakPtrFactory<MailService> weak_factory_{this};
++};
++
++}  // namespace thoron_mail
++
++#endif  // COMPONENTS_THORON_MAIL_MAIL_SERVICE_H_

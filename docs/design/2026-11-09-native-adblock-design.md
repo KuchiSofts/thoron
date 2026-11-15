@@ -1901,6 +1901,20 @@ response's body. Thoron is the browser, so it does it for every page:
 - **Checked** by `tools/qa/adblock_handover_check.py` (default, off, kept, both) with the browser started as
   a person starts it.
 
+### 12.60 Rules nested too deeply (P5.17, 2026-11-15)
+
+- **Found by the fuzzer** in a longer run (three hours planned): a hide rule with about a thousand `:has(` or
+  `:not(` inside each other ran the parsers out of stack (adblock-rust's selector parser reads every rule of a
+  list, when the engine is built and when a list is checked), which ends the browser. Any list, or My
+  filters, could hold such a line.
+- **Fixed:** a line nested deeper than 32 levels of parentheses, brackets and braces is left out before any
+  parser sees it (`engine_core::without_deep_lines`, `MAX_NESTING`), as a line that is not understood is;
+  uBlock Origin's own rules nest a few levels. The check of My filters names it "nested too deeply", and the
+  page runner's parser refuses such a selector as well. An engine test keeps it so, and inputs nested 1,500,
+  5,000 and 9,000 levels deep (each place a rule can nest, and pages nested as deep) run clean.
+- **Fuzzing on the fixed engine:** 702,946 more inputs in two hours (3 workers), 6,105 covered edges,
+  no crash, no panic, no sanitizer report.
+
 ### 12.59 The shield in the address bar, and the filter lists in the menu (P5.71, 2026-11-15)
 
 - **The address bar's shield:** the icon Chromium shows there for blocked ads ("Ads and trackers blocked",

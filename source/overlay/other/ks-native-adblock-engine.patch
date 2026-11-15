@@ -3622,10 +3622,10 @@ index 0000000000000000000000000000000000000000..5aeba22af3be4716ff8b31316d08da4a
 +}
 diff --git a/components/thoron_adblock/engine.rs b/components/thoron_adblock/engine.rs
 new file mode 100644
-index 0000000000000000000000000000000000000000..7039c741a56fad1aafa156043eae217198c618a5
+index 0000000000000000000000000000000000000000..fe597375b1e957c34056680f87692f69bd05e5c6
 --- /dev/null
 +++ b/components/thoron_adblock/engine.rs
-@@ -0,0 +1,1310 @@
+@@ -0,0 +1,1335 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -4141,6 +4141,11 @@ index 0000000000000000000000000000000000000000..7039c741a56fad1aafa156043eae2171
 +        if line.is_empty() || line.starts_with('!') || line.starts_with('[') {
 +            continue;
 +        }
++        // before the parser, which such a line would run out of stack
++        if engine_core::nesting(line) > engine_core::MAX_NESTING {
++            out.push(format!("{} (nested too deeply)", line.chars().take(200).collect::<String>()));
++            continue;
++        }
 +        let options = adblock::lists::ParseOptions::default();
 +        if let Err(e) = adblock::lists::parse_filter(line, false, options) {
 +            out.push(format!("{} ({e})", line.chars().take(200).collect::<String>()));
@@ -4469,6 +4474,26 @@ index 0000000000000000000000000000000000000000..7039c741a56fad1aafa156043eae2171
 +        assert!(d.isolated_script.contains(r#""r":"p:has-text(Sponsored)""#), "{}", d.isolated_script);
 +        assert!(!d.procedural[0].contains("\"r\":"), "{:?}", d.procedural);
 +        assert!(e.document_resources("https://other.example/").scriptlets.is_empty());
++    }
++
++    #[test]
++    fn a_rule_nested_too_deeply_is_left_out_and_named() {
++        // found by fuzzing: about a thousand of these inside each other ran the parsers out of stack
++        let deep = format!("example.com##div{}a{}", ":has(".repeat(5000), ")".repeat(5000));
++        let not = format!("example.com##div{}a{}", ":not(".repeat(5000), ")".repeat(5000));
++        let rules = format!("{RULES}{deep}\n{not}\nexample.com##.banner\n");
++        let engine = engine_from_rules(&rules);
++        let decision = engine.check_request("https://ads.example/a.js", "https://news.example/", "script", "GET");
++        assert!(decision.blocked, "the other rules are still used");
++        let page = engine.document_resources("https://example.com/");
++        assert!(page.stylesheet.contains(".banner"), "{}", page.stylesheet);
++        let problems = filter_problems(&rules);
++        assert_eq!(problems.len(), 2, "{problems:?}");
++        assert!(problems.iter().all(|p| p.ends_with("(nested too deeply)")));
++        let _ = explainer_from_rules(&rules);
++        // a rule as deep as a list may write is kept
++        assert_eq!(engine_core::nesting("a##div:has(:not(:has-text(/(a|(b))/)))"), 5);
++        assert!(engine_core::without_deep_lines("a\nb\n").as_ref() == "a\nb\n");
 +    }
 +
 +    #[test]
@@ -4938,10 +4963,10 @@ index 0000000000000000000000000000000000000000..7039c741a56fad1aafa156043eae2171
 +}
 diff --git a/components/thoron_adblock/engine_core.rs b/components/thoron_adblock/engine_core.rs
 new file mode 100644
-index 0000000000000000000000000000000000000000..bf2854f6cc4c9af58acc054451588ff430c808b0
+index 0000000000000000000000000000000000000000..9285e93448507acd8689d031151b21db1362c932
 --- /dev/null
 +++ b/components/thoron_adblock/engine_core.rs
-@@ -0,0 +1,476 @@
+@@ -0,0 +1,516 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -5003,6 +5028,42 @@ index 0000000000000000000000000000000000000000..bf2854f6cc4c9af58acc054451588ff4
 +    lines
 +}
 +
++/// The deepest a rule may nest brackets, parentheses and braces. A rule nested deeper is none a list
++/// writes (uBlock Origin's own rules nest a few levels), and it would run the parsers out of stack, which
++/// ends the browser: adblock-rust's selector parser does at about a thousand `:has(` or `:not(` inside each
++/// other (found by fuzzing, P5.17). Such a line is left out, as a line that is not understood is.
++pub const MAX_NESTING: usize = 32;
++
++/// How deep `line` nests (...), [...] and {...}.
++pub fn nesting(line: &str) -> usize {
++    let (mut depth, mut deepest) = (0usize, 0usize);
++    for b in line.bytes() {
++        match b {
++            b'(' | b'[' | b'{' => {
++                depth += 1;
++                deepest = deepest.max(depth);
++            }
++            b')' | b']' | b'}' => depth = depth.saturating_sub(1),
++            _ => {}
++        }
++    }
++    deepest
++}
++
++/// The lists file without its lines nested deeper than MAX_NESTING (borrowed when it has none).
++pub fn without_deep_lines(text: &str) -> std::borrow::Cow<'_, str> {
++    if !text.lines().any(|line| nesting(line) > MAX_NESTING) {
++        return std::borrow::Cow::Borrowed(text);
++    }
++    let mut out = String::with_capacity(text.len());
++    for line in text.split_inclusive('\n') {
++        if nesting(line) <= MAX_NESTING {
++            out.push_str(line);
++        }
++    }
++    std::borrow::Cow::Owned(out)
++}
++
 +/// The lists file by list, as (id, text). Text before the first marker has the id "".
 +pub fn split_lists(text: &str) -> Vec<(&str, &str)> {
 +    let mut lists = Vec::new();
@@ -5034,6 +5095,7 @@ index 0000000000000000000000000000000000000000..bf2854f6cc4c9af58acc054451588ff4
 +
 +impl Explainer {
 +    pub fn new(rules: &str) -> Explainer {
++        let rules = &*without_deep_lines(rules);
 +        let mut set = FilterSet::new(true);
 +        let mut ids = Vec::new();
 +        for (id, text) in split_lists(rules) {
@@ -5064,6 +5126,7 @@ index 0000000000000000000000000000000000000000..bf2854f6cc4c9af58acc054451588ff4
 +
 +/// The filter set of a lists file, each list parsed with the permission its id gives it.
 +pub fn filter_set(rules: &str) -> FilterSet {
++    let rules = &*without_deep_lines(rules);
 +    let mut set = FilterSet::new(false);
 +    for (id, text) in split_lists(rules) {
 +        let options = ParseOptions { permissions: list_permissions(id), ..Default::default() };
@@ -5233,6 +5296,8 @@ index 0000000000000000000000000000000000000000..bf2854f6cc4c9af58acc054451588ff4
 +
 +/// Builds the filters from the lists file.
 +pub fn build(rules: &str) -> Filters {
++    // every parser below reads the lists without the lines nested too deeply
++    let rules = &*without_deep_lines(rules);
 +    Filters::new(
 +        adblock::Engine::new_with_filter_set(filter_set(rules)),
 +        ParamRules::from_rules(rules),
@@ -15504,10 +15569,10 @@ index 0000000000000000000000000000000000000000..c90d28eb43b9f193fb2eb74bae78c933
 +})
 diff --git a/components/thoron_adblock/procedural.rs b/components/thoron_adblock/procedural.rs
 new file mode 100644
-index 0000000000000000000000000000000000000000..e8ba37d6d7127e3a48dab3fa94c3d34f111d2076
+index 0000000000000000000000000000000000000000..bb8de3e4e6d332ea6a25da72e32beb5f0fcb4d37
 --- /dev/null
 +++ b/components/thoron_adblock/procedural.rs
-@@ -0,0 +1,528 @@
+@@ -0,0 +1,532 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -15666,6 +15731,10 @@ index 0000000000000000000000000000000000000000..e8ba37d6d7127e3a48dab3fa94c3d34f
 +
 +/// Splits a rule's selector into CSS and procedural tasks. `None`: the selector cannot be used.
 +pub fn compile(selector: &str) -> Option<Compiled> {
++    // as deep as no list writes: refused, not parsed (engine_core::MAX_NESTING)
++    if crate::engine_core::nesting(selector) > crate::engine_core::MAX_NESTING {
++        return None;
++    }
 +    let b = selector.as_bytes();
 +    let mut css = String::new();
 +    let mut root: Option<String> = None;

@@ -65,7 +65,8 @@ few days, again as soon as the network is back, and after the computer wakes up.
   icons sit. `chrome://adblock` sets where it is: in both, in the address bar only, or in the toolbar
   only; and where exactly: in the toolbar right after the address bar, after the extensions or next to the
   menu, and in the address bar with the other icons, before them or at the far end. A small preview shows
-  your choice. It is teal while it blocks and grey where it is off; its number is what was blocked on the page
+  your choice. It shows Thoron's T on teal while it blocks; where it is off it is an outline, with a slash where you
+  allowed the site and two bars while blocking is off for every site; its number is what was blocked on the page
   you look at. Click it for the menu, click it again to close it; the menu is loaded ahead, so it opens
   at once:
   - the big **power button** switches blocking off or on for this site (the page reloads);

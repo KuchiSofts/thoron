@@ -14943,7 +14943,7 @@ index 0000000000000000000000000000000000000000..bb5e6c8789e8a4e07c5d7069027b5132
 +}
 diff --git a/components/thoron_adblock/popup_page.html b/components/thoron_adblock/popup_page.html
 new file mode 100644
-index 0000000000000000000000000000000000000000..fea166317a749a2ce47ac811c9cb436cf0af627a
+index 0000000000000000000000000000000000000000..fcdde57ed0efa7a8c10dc98dc91669ae382a98eb
 --- /dev/null
 +++ b/components/thoron_adblock/popup_page.html
 @@ -0,0 +1,308 @@
@@ -15114,11 +15114,11 @@ index 0000000000000000000000000000000000000000..fea166317a749a2ce47ac811c9cb436c
 +</head>
 +<body>
 +<header>
-+  <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
-+    <path d="M12 2.5 4.5 5.5v6c0 4.6 3.1 8.6 7.5 10 4.4-1.4 7.5-5.4 7.5-10v-6z"/>
-+    <path d="m8.8 12 2.3 2.3 4.2-4.6"/>
++  <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true">
++    <path fill="#0D9488" stroke="none" d="M10 1.8l6.3 2.3c.3.1.5.4.5.7v4.6c0 4-2.7 7.4-6.5 8.7a.9.9 0 0 1-.6 0C5.9 16.8 3.2 13.4 3.2 9.4V4.8c0-.3.2-.6.5-.7z"/>
++    <path fill="#FFFFFF" stroke="none" d="M6.4 6.2h7.2v2H11v5.6H9V8.2H6.4z"/>
 +  </svg>
-+  <span class="name">Thoron</span>
++  <span class="name">Thoron adblock</span>
 +  <span class="site" id="site"></span>
 +  <button id="everywhere" aria-pressed="true" title="Turn ad blocking off for every site">On</button>
 +</header>
@@ -19075,10 +19075,10 @@ index 0000000000000000000000000000000000000000..ad3dd042f0486ef9edb8b2b3c184efaf
 +</html>
 diff --git a/components/thoron_adblock/settings_page.js b/components/thoron_adblock/settings_page.js
 new file mode 100644
-index 0000000000000000000000000000000000000000..3e41ffc6704dcb8b9108370c95f46d232971212d
+index 0000000000000000000000000000000000000000..806396e86aa8632bbc5f1f89047d939d2d66c29f
 --- /dev/null
 +++ b/components/thoron_adblock/settings_page.js
-@@ -0,0 +1,1843 @@
+@@ -0,0 +1,1848 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -19757,10 +19757,15 @@ index 0000000000000000000000000000000000000000..3e41ffc6704dcb8b9108370c95f46d23
 +function shieldIcon() {
 +  const svg = document.createElementNS(SVG_NS, 'svg');
 +  svg.setAttribute('viewBox', '0 0 20 20');
-+  const path = document.createElementNS(SVG_NS, 'path');
-+  path.setAttribute('d', 'M10 2l6 2.3v4.5c0 4-2.6 7.4-6 8.7-3.4-1.3-6-4.7-6-8.7V4.3z');
-+  path.setAttribute('fill', '#0EA59B');
-+  svg.append(path);
++  // Thoron adblock's shield, as the toolbar draws it (P5.74)
++  for (const [d, fill] of [['M10 1.8l6.3 2.3c.3.1.5.4.5.7v4.6c0 4-2.7 7.4-6.5 8.7a.9.9 0 0 1-.6 0C5.9 16.8 3.2 ' +
++                            '13.4 3.2 9.4V4.8c0-.3.2-.6.5-.7z', '#0D9488'],
++                           ['M6.4 6.2h7.2v2H11v5.6H9V8.2H6.4z', '#FFFFFF']]) {
++    const path = document.createElementNS(SVG_NS, 'path');
++    path.setAttribute('d', d);
++    path.setAttribute('fill', fill);
++    svg.append(path);
++  }
 +  return svg;
 +}
 +

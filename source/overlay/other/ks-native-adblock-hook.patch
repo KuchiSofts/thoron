@@ -57,7 +57,7 @@ index 24f8cbe6bd907ca32b08e8e904d0cfc21ea61b96..dafe1ec125f1b19f03f98c84224221c3
      "//components/tracing:tracing_config",
      "//components/tracing:tracing_metrics",
 diff --git a/chrome/browser/about_flags.cc b/chrome/browser/about_flags.cc
-index cf314780497655d91f67ab18ba0eb2d6f487284e..9169554a4721f0d1ac835160516179570aef8411 100644
+index cf314780497655d91f67ab18ba0eb2d6f487284e..f29dc2638423824c65af44569301e9d2767b09b8 100644
 --- a/chrome/browser/about_flags.cc
 +++ b/chrome/browser/about_flags.cc
 @@ -195,6 +195,7 @@
@@ -68,13 +68,15 @@ index cf314780497655d91f67ab18ba0eb2d6f487284e..9169554a4721f0d1ac83516051617957
  #include "components/themes/cross_device/features.h"
  #include "components/thin_webview/features.h"
  #include "components/touch_to_search/core/browser/contextual_search_field_trial.h"
-@@ -5400,6 +5401,14 @@ const FeatureEntry kFeatureEntries[] = {
+@@ -5400,6 +5401,16 @@ const FeatureEntry kFeatureEntries[] = {
  #include "build/chromeos_buildflags.h"
  #include "chrome/browser/unexpire_flags_gen.inc"
  #include "chrome/browser/thorium_flag_entries.h"
-+    // Thoron: its built-in ad blocking (on unless turned off here).
-+    {"thoron-native-adblock", "Built-in ad blocking",
-+     "Blocks ads and trackers inside the browser itself, with the same filter "
++    // Thoron: Thoron adblock, its built-in ad blocker (on unless turned off
++    // here).
++    {"thoron-native-adblock", "Thoron adblock",
++     "Thoron's own ad blocker. Blocks ads and trackers inside the browser "
++     "itself, with the same filter "
 +     "lists as uBlock Origin; it is faster and lighter than an extension. If "
 +     "uBlock Origin is on as well, both do the same work: turn one of them "
 +     "off. Its lists and your own rules are on chrome://adblock.",
@@ -277,7 +279,7 @@ index 694f60ad604933cb33d6a7167d41278270e88a05..b6770d7affb257937f5564ff9c540edc
      BUILDFLAG(IS_WIN)
    // Handle the google-chrome:// scheme (and chromium://).
 diff --git a/chrome/browser/chrome_content_browser_client_navigation_throttles.cc b/chrome/browser/chrome_content_browser_client_navigation_throttles.cc
-index 1dc3fdf54fb9acdbba0450b349e3de3eb0ed3225..dea4f758843293b672f6da208b4fa3dffed25a72 100644
+index 1dc3fdf54fb9acdbba0450b349e3de3eb0ed3225..6ed52b0c525f6095a4acced1de7b24605bd62c92 100644
 --- a/chrome/browser/chrome_content_browser_client_navigation_throttles.cc
 +++ b/chrome/browser/chrome_content_browser_client_navigation_throttles.cc
 @@ -11,6 +11,7 @@
@@ -288,20 +290,39 @@ index 1dc3fdf54fb9acdbba0450b349e3de3eb0ed3225..dea4f758843293b672f6da208b4fa3df
  #include "chrome/browser/contextual_tasks/contextual_tasks_navigation_throttle.h"
  #include "chrome/browser/contextual_tasks/guest_opener_user_data.h"
  #include "chrome/browser/custom_handlers/chrome_protocol_handler_navigation_throttle.h"
-@@ -73,6 +74,7 @@
+@@ -73,6 +74,13 @@
  #include "components/security_interstitials/content/ssl_error_navigation_throttle.h"
  #include "components/subresource_filter/content/browser/content_subresource_filter_throttle_manager.h"
  #include "components/tabs/public/tab_interface.h"
++#include "base/functional/bind.h"
++#include "base/path_service.h"
++#include "chrome/common/chrome_paths.h"
++#include "components/thoron_adblock/engine_service.h"
++#include "components/thoron_adblock/features.h"
 +#include "components/thoron_adblock/page_block_throttle.h"
++#include "services/network/public/cpp/shared_url_loader_factory.h"
  #include "components/user_prefs/user_prefs.h"
  #include "components/webapps/browser/web_contents/web_app_url_loader.h"
  #include "content/public/browser/navigation_handle.h"
-@@ -306,6 +308,13 @@ void CreateAndAddChromeThrottlesForNavigation(
+@@ -306,6 +314,26 @@ void CreateAndAddChromeThrottlesForNavigation(
        registry.AddThrottle(std::move(throttle));
      }
  
 +    // Thoron's ad blocker: a page its lists block is not opened (strict
-+    // blocking); a page that says why is shown instead.
++    // blocking); a page that says why is shown instead. The first page of a
++    // start waits here for the engine, which is told first where its lists
++    // are kept (as in WillCreateURLLoaderFactory, which comes later).
++    if (base::FeatureList::IsEnabled(thoron_adblock::kThoronNativeAdblock) &&
++        !thoron_adblock::EngineService::Get().is_configured()) {
++      thoron_adblock::EngineService::Get().Configure(
++          base::PathService::CheckedGet(chrome::DIR_USER_DATA),
++          base::BindRepeating(
++              []() -> scoped_refptr<network::SharedURLLoaderFactory> {
++                return g_browser_process
++                           ? g_browser_process->shared_url_loader_factory()
++                           : nullptr;
++              }));
++    }
 +    thoron_adblock::PageBlockThrottle::MaybeAdd(
 +        registry, HostContentSettingsMapFactory::GetForProfile(
 +                      Profile::FromBrowserContext(
@@ -426,7 +447,7 @@ index a4c1c51327f52619864f9b13f7fd78162d131cd2..86ab7c825de3fe7010699c6892f58ba5
      if (info.type == type)
        return l10n_util::GetStringUTF16(info.string_id_mid_sentence);
 diff --git a/components/site_settings_strings.grdp b/components/site_settings_strings.grdp
-index ab3c100b747f5ec6244fa719272e29427f723280..77c2cca619ba41599c22742bf9e74186c63d8597 100644
+index ab3c100b747f5ec6244fa719272e29427f723280..93d993ec69dc94cc9a4efac2737b798716010b94 100644
 --- a/components/site_settings_strings.grdp
 +++ b/components/site_settings_strings.grdp
 @@ -325,4 +325,66 @@
@@ -478,7 +499,7 @@ index ab3c100b747f5ec6244fa719272e29427f723280..77c2cca619ba41599c22742bf9e74186
 +      other {and # more sites}}
 +  </message>
 +  <message name="IDS_THORON_ADBLOCK_MENU" desc="Name of the menu of Thoron's built-in ad blocking (opened from its shield in the toolbar), as the task manager lists it.">
-+    Ad blocking menu
++    Thoron adblock menu
 +  </message>
 +  <message name="IDS_THORON_ADBLOCK_BLOCK_ELEMENT" desc="Item of the page's context menu that starts Thoron's element picker on what was clicked, as uBlock Origin's item of that name.">
 +    Block element...
@@ -561,18 +582,19 @@ index 906206dad5253b96768c9e373798f8d0fba9ecf8..1181b57443b93c25d3a3604eb60b8f48
      default:
        return {};
 diff --git a/chrome/browser/ui/content_settings/content_setting_image_model.cc b/chrome/browser/ui/content_settings/content_setting_image_model.cc
-index 2d799ab588d4b40e53d7d4a81ffb71c7ea6011a0..ccb9143a2f24c6cde85a3ca3f76e12d2e4f562d7 100644
+index 2d799ab588d4b40e53d7d4a81ffb71c7ea6011a0..1db769db9e20cac88253dd753df4a70e328d0f67 100644
 --- a/chrome/browser/ui/content_settings/content_setting_image_model.cc
 +++ b/chrome/browser/ui/content_settings/content_setting_image_model.cc
-@@ -46,6 +46,7 @@
+@@ -46,6 +46,8 @@
  #include "components/permissions/permission_request_manager.h"
  #include "components/prefs/pref_service.h"
  #include "components/strings/grit/components_strings.h"
++#include "components/thoron_adblock/engine_service.h"
 +#include "components/thoron_adblock/features.h"
  #include "components/tabs/public/tab_interface.h"
  #include "components/vector_icons/vector_icons.h"
  #include "content/public/browser/page.h"
-@@ -833,6 +834,24 @@ bool ContentSettingBlockedImageModel::UpdateAndGetVisibility(
+@@ -833,6 +835,26 @@ bool ContentSettingBlockedImageModel::UpdateAndGetVisibility(
  
    int tooltip_id = image_details->blocked_tooltip_id;
    int explanation_id = image_details->blocked_explanatory_text_id;
@@ -585,8 +607,10 @@ index 2d799ab588d4b40e53d7d4a81ffb71c7ea6011a0..ccb9143a2f24c6cde85a3ca3f76e12d2
 +    explanation_id = 0;
 +    // P5.71: the blocker's own shield, on every web page, whether it blocked
 +    // anything yet or not and also where it is off, so it is always there to
-+    // open its menu; the view draws the shield and the count.
-+    if (!web_contents->GetLastCommittedURL().SchemeIsHTTPOrHTTPS()) {
++    // open its menu; the view draws the shield and the count. Not where the
++    // person keeps the shield in the toolbar only (P5.72).
++    if (!web_contents->GetLastCommittedURL().SchemeIsHTTPOrHTTPS() ||
++        !thoron_adblock::EngineService::Get().ShieldInAddressBar()) {
 +      return false;
 +    }
 +    SetIcon(type, /*blocked=*/true);
@@ -1274,7 +1298,7 @@ index 58fd6d16a629077cd44470d81143bb1b5bef94a5..1321c8d4c110196e495bdc08e46bc5fd
      "//chrome/browser/ui:browser_command_controller",
      "//chrome/browser/ui:browser_commands",
 diff --git a/chrome/browser/ui/views/location_bar/content_setting_image_view.cc b/chrome/browser/ui/views/location_bar/content_setting_image_view.cc
-index a02ab7d45eba361c16e5abd2da2c9328d73e7120..9b7fc900b471f7c23a1a6c1922e30e02cf3ebc19 100644
+index a02ab7d45eba361c16e5abd2da2c9328d73e7120..08c0d31c4025f44c8c0de202ea3352df0d4fbc23 100644
 --- a/chrome/browser/ui/views/location_bar/content_setting_image_view.cc
 +++ b/chrome/browser/ui/views/location_bar/content_setting_image_view.cc
 @@ -24,6 +24,11 @@
@@ -1304,7 +1328,7 @@ index a02ab7d45eba361c16e5abd2da2c9328d73e7120..9b7fc900b471f7c23a1a6c1922e30e02
    if (web_contents && !bubble_view_) {
      std::unique_ptr<ContentSettingBubbleModel> bubble_model =
          content_setting_image_model_->CreateBubbleModel(
-@@ -385,6 +398,22 @@ void ContentSettingImageView::CollapseKeptExpandedLabel(bool animate) {
+@@ -385,6 +398,24 @@ void ContentSettingImageView::CollapseKeptExpandedLabel(bool animate) {
  }
  
  void ContentSettingImageView::UpdateImage() {
@@ -1322,6 +1346,8 @@ index a02ab7d45eba361c16e5abd2da2c9328d73e7120..9b7fc900b471f7c23a1a6c1922e30e02
 +        &tooltip));
 +    SetTooltipText(tooltip);
 +    GetViewAccessibility().SetName(tooltip);
++    // the menu's page is loaded ahead, so that a click opens it at once
++    thoron_adblock::WarmUpMenuFor(delegate_->GetContentSettingWebContents());
 +    return;
 +  }
    gfx::Image icon = content_setting_image_model_->GetIcon(icon_color_.value_or(
@@ -1566,33 +1592,39 @@ index 0000000000000000000000000000000000000000..5ace492dd1a60c29b3c3dd04efae2228
 +#endif  // CHROME_BROWSER_UI_BROWSER_WEB_CONTENTS_DELEGATE_THORON_ADBLOCK_SHORTCUTS_H_
 diff --git a/chrome/browser/ui/views/toolbar/thoron_adblock_button.cc b/chrome/browser/ui/views/toolbar/thoron_adblock_button.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..8f9078ba29f440daf8bc2e99365a721b9ebb729e
+index 0000000000000000000000000000000000000000..1d1bd4b4a284aad08e9f9e73753f333c3652a428
 --- /dev/null
 +++ b/chrome/browser/ui/views/toolbar/thoron_adblock_button.cc
-@@ -0,0 +1,314 @@
+@@ -0,0 +1,454 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
 +#include "chrome/browser/ui/views/toolbar/thoron_adblock_button.h"
 +
++#include <memory>
++#include <optional>
 +#include <string>
 +#include <utility>
++#include <variant>
 +
 +#include "base/functional/bind.h"
 +#include "base/location.h"
 +#include "base/strings/string_number_conversions.h"
 +#include "base/task/single_thread_task_runner.h"
++#include "chrome/browser/platform_util.h"
 +#include "chrome/browser/content_settings/host_content_settings_map_factory.h"
 +#include "chrome/browser/profiles/profile.h"
 +#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 +#include "chrome/browser/ui/extensions/icon_with_badge_image_source.h"
 +#include "chrome/browser/ui/location_bar/location_bar.h"
 +#include "chrome/browser/ui/tabs/tab_strip_model.h"
++#include "chrome/browser/ui/views/bubble/webui_bubble_dialog_view.h"
 +#include "chrome/browser/ui/views/bubble/webui_bubble_manager.h"
 +#include "chrome/browser/ui/views/location_bar/location_bar_view.h"
 +#include "chrome/browser/ui/views/toolbar/toolbar_view.h"
 +#include "chrome/browser/ui/webui/thoron_adblock_popup_ui.h"
 +#include "chrome/browser/ui/webui/top_chrome/webui_contents_wrapper.h"
++#include "chrome/browser/ui/webui/webui_embedding_context.h"
 +#include "components/content_settings/core/browser/host_content_settings_map.h"
 +#include "components/strings/grit/components_strings.h"
 +#include "components/thoron_adblock/blocked_count.h"
@@ -1602,12 +1634,16 @@ index 0000000000000000000000000000000000000000..8f9078ba29f440daf8bc2e99365a721b
 +#include "content/public/browser/page.h"
 +#include "content/public/browser/render_frame_host.h"
 +#include "content/public/browser/web_contents.h"
++#include "content/public/browser/web_ui.h"
++#include "content/public/browser/web_ui_controller.h"
++#include "ui/base/base_window.h"
 +#include "ui/base/metadata/metadata_impl_macros.h"
 +#include "ui/color/color_provider.h"
 +#include "ui/gfx/image/image.h"
 +#include "ui/gfx/image/image_skia.h"
 +#include "ui/gfx/paint_vector_icon.h"
 +#include "ui/views/accessibility/view_accessibility.h"
++#include "ui/events/event.h"
 +#include "ui/views/bubble/bubble_border.h"
 +#include "ui/views/view_utils.h"
 +
@@ -1626,6 +1662,9 @@ index 0000000000000000000000000000000000000000..8f9078ba29f440daf8bc2e99365a721b
 +// How often at most the address bar's shield is drawn again while a page
 +// blocks a lot.
 +constexpr base::TimeDelta kAddressBarRefresh = base::Milliseconds(150);
++// A kept page brings itself up to date before it is shown: if it has not
++// asked to be shown by then, it is shown as it is.
++constexpr base::TimeDelta kShowAnyway = base::Milliseconds(250);
 +
 +std::string BadgeText(int count) {
 +  if (count <= 0) {
@@ -1671,17 +1710,18 @@ index 0000000000000000000000000000000000000000..8f9078ba29f440daf8bc2e99365a721b
 +
 +std::u16string ShieldTooltip(const Shield& shield) {
 +  if (shield.count < 0) {
-+    return u"Ad blocking: nothing to block on this page";
++    return u"Thoron adblock: nothing to block on this page";
 +  }
 +  if (shield.off_everywhere) {
-+    return u"Ad blocking: off for every site";
++    return u"Thoron adblock: off for every site";
 +  }
 +  if (shield.off_here) {
-+    return u"Ad blocking: off on this site";
++    return u"Thoron adblock: off on this site";
 +  }
-+  return shield.count == 1 ? std::u16string(u"Ad blocking: 1 blocked on this page")
-+                           : u"Ad blocking: " + base::NumberToString16(shield.count) +
-+                                 u" blocked on this page";
++  return shield.count == 1
++             ? std::u16string(u"Thoron adblock: 1 blocked on this page")
++             : u"Thoron adblock: " + base::NumberToString16(shield.count) +
++                   u" blocked on this page";
 +}
 +
 +ui::ImageModel DrawShield(const Shield& shield,
@@ -1713,6 +1753,89 @@ index 0000000000000000000000000000000000000000..8f9078ba29f440daf8bc2e99365a721b
 +
 +}  // namespace
 +
++// The menu's bubble manager (P5.72): WebUIBubbleManagerImpl's, and it can load
++// the menu's page ahead of a click (WarmUp), so the menu opens at once. The
++// page is kept as a closed menu's page is (30 seconds after it was shown).
++class ThoronMenuBubbleManager : public WebUIBubbleManager {
++ public:
++  explicit ThoronMenuBubbleManager(BrowserWindowInterface* browser)
++      : browser_(browser) {}
++  ~ThoronMenuBubbleManager() override = default;
++
++  // Loads the menu's page, unless it is loaded or the menu is open.
++  void WarmUp() {
++    if (GetBubbleWidget() || cached_contents_wrapper()) {
++      return;
++    }
++    set_cached_contents_wrapper(MakeContents());
++    // the tab the page is about, before it is shown
++    webui::SetBrowserWindowInterface(cached_contents_wrapper()->web_contents(),
++                                     browser_.get());
++  }
++
++  // The page's controller, once the page is there.
++  ThoronAdblockMenuUI* MenuUI() {
++    WebUIContentsWrapper* contents = cached_contents_wrapper();
++    content::WebUI* web_ui = contents && contents->web_contents()
++                                 ? contents->web_contents()->GetWebUI()
++                                 : nullptr;
++    return web_ui && web_ui->GetController()
++               ? web_ui->GetController()->GetAs<ThoronAdblockMenuUI>()
++               : nullptr;
++  }
++
++  // WebUIBubbleManager:
++  WebUIContentsWrapper* GetContentsWrapper() override {
++    return cached_contents_wrapper();
++  }
++
++ private:
++  std::unique_ptr<WebUIContentsWrapper> MakeContents() {
++    return std::make_unique<WebUIContentsWrapperT<ThoronAdblockMenuUI>>(
++        GURL(kThoronAdblockMenuUrl), browser_->GetProfile(),
++        IDS_THORON_ADBLOCK_MENU);
++  }
++
++  // As WebUIBubbleManagerImpl's.
++  base::WeakPtr<WebUIBubbleDialogView> CreateWebUIBubbleDialog(
++      Anchor anchor,
++      views::BubbleBorder::Arrow arrow) override {
++    set_bubble_using_cached_web_contents(!!cached_contents_wrapper());
++    if (!cached_contents_wrapper()) {
++      set_cached_contents_wrapper(MakeContents());
++    }
++    WebUIContentsWrapper* contents_wrapper = cached_contents_wrapper();
++    webui::SetBrowserWindowInterface(contents_wrapper->web_contents(),
++                                     browser_.get());
++    views::View* anchor_view = nullptr;
++    std::optional<gfx::Rect> anchor_rect;
++    if (std::holds_alternative<raw_ptr<views::View>>(anchor)) {
++      anchor_view = std::get<raw_ptr<views::View>>(anchor);
++      CHECK(anchor_view);
++    } else {
++      anchor_rect = std::get<gfx::Rect>(anchor);
++    }
++    auto bubble_view = std::make_unique<WebUIBubbleDialogView>(
++        anchor_view, contents_wrapper->GetWeakPtr(), anchor_rect, arrow);
++    if (!anchor_view) {
++      gfx::NativeWindow parent_window = browser_->GetWindow()->GetNativeWindow();
++      if (parent_window) {
++        bubble_view->set_parent_window(
++            platform_util::GetViewForWindow(parent_window));
++      }
++    }
++    if (!widget_initialization_callback_.is_null()) {
++      bubble_view->RegisterWidgetInitializedCallback(
++          std::move(widget_initialization_callback_));
++    }
++    auto weak_ptr = bubble_view->GetWeakPtr();
++    views::BubbleDialogDelegateView::CreateBubble(std::move(bubble_view));
++    return weak_ptr;
++  }
++
++  const raw_ptr<BrowserWindowInterface> browser_;
++};
++
 +ui::ImageModel ThoronAdblockShield(content::WebContents* tab,
 +                                   const views::View* view,
 +                                   int size,
@@ -1729,8 +1852,8 @@ index 0000000000000000000000000000000000000000..8f9078ba29f440daf8bc2e99365a721b
 +    : ToolbarButton(base::BindRepeating(&ThoronAdblockButton::ButtonPressed,
 +                                        base::Unretained(this))),
 +      browser_(browser) {
-+  SetTooltipText(u"Ad blocking");
-+  GetViewAccessibility().SetName(u"Ad blocking");
++  SetTooltipText(u"Thoron adblock");
++  GetViewAccessibility().SetName(u"Thoron adblock");
 +  browser_->GetTabStripModel()->AddObserver(this);
 +  Observe(browser_->GetTabStripModel()->GetActiveWebContents());
 +  thoron_adblock::AddMenuOpener(this);
@@ -1742,7 +1865,7 @@ index 0000000000000000000000000000000000000000..8f9078ba29f440daf8bc2e99365a721b
 +      thoron_adblock::EngineService::Get().AddBlockingObserver(
 +          base::BindRepeating(&ThoronAdblockButton::OnStateChanged,
 +                              base::Unretained(this)));
-+  SetVisible(thoron_adblock::EngineService::Get().Option("toolbar-shield"));
++  SetVisible(thoron_adblock::EngineService::Get().ShieldInToolbar());
 +  // The icon is drawn once the button is in a window (ToolbarButton calls
 +  // UpdateIcon() when the theme is known).
 +}
@@ -1789,8 +1912,13 @@ index 0000000000000000000000000000000000000000..8f9078ba29f440daf8bc2e99365a721b
 +  }
 +}
 +
++void ThoronAdblockButton::OnMouseEntered(const ui::MouseEvent& event) {
++  ToolbarButton::OnMouseEntered(event);
++  WarmUpMenu();
++}
++
 +void ThoronAdblockButton::OnStateChanged() {
-+  SetVisible(thoron_adblock::EngineService::Get().Option("toolbar-shield"));
++  SetVisible(thoron_adblock::EngineService::Get().ShieldInToolbar());
 +  UpdateIcon();
 +  RefreshAddressBar();
 +}
@@ -1826,15 +1954,36 @@ index 0000000000000000000000000000000000000000..8f9078ba29f440daf8bc2e99365a721b
 +  return true;
 +}
 +
++void ThoronAdblockButton::WarmUpMenuFor(content::WebContents* tab) {
++  if (warm_up_pending_ || browser_->GetTabStripModel()->GetIndexOfWebContents(
++                              tab) == TabStripModel::kNoTab) {
++    return;
++  }
++  // after this call: it comes while the address bar draws its icons
++  warm_up_pending_ = true;
++  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
++      FROM_HERE, base::BindOnce(&ThoronAdblockButton::WarmUpMenu,
++                                weak_factory_.GetWeakPtr()));
++}
++
++ThoronMenuBubbleManager& ThoronAdblockButton::Menu() {
++  if (!menu_) {
++    menu_ = std::make_unique<ThoronMenuBubbleManager>(browser_);
++  }
++  return *menu_;
++}
++
++void ThoronAdblockButton::WarmUpMenu() {
++  warm_up_pending_ = false;
++  Menu().WarmUp();
++}
++
 +void ThoronAdblockButton::ButtonPressed() {
 +  ShowMenu(nullptr);
 +}
 +
 +void ThoronAdblockButton::ShowMenu(views::View* anchor) {
-+  if (!menu_) {
-+    menu_ = WebUIBubbleManager::Create<ThoronAdblockMenuUI>(
-+        browser_, GURL(kThoronAdblockMenuUrl), IDS_THORON_ADBLOCK_MENU);
-+  }
++  Menu();
 +  // open: this press closes it
 +  if (menu_->GetBubbleWidget()) {
 +    menu_->CloseBubble();
@@ -1859,16 +2008,23 @@ index 0000000000000000000000000000000000000000..8f9078ba29f440daf8bc2e99365a721b
 +  if (!from || !menu_->ShowBubble(from, views::BubbleBorder::TOP_RIGHT)) {
 +    return;
 +  }
-+  // The menu's page is kept for 30 seconds after the menu closes, so that it
-+  // opens at once. A kept page told the bubble it was ready to show only when
-+  // it first loaded, and the bubble waits for that before it shows: a menu
-+  // opened again within those 30 seconds stayed hidden ("the menu did not
-+  // open"). The bubble is attached to the page by now; it is shown here.
-+  // (Loading the page again does not help: the new page's controller is not
-+  // the one the bubble knows.)
++  // A page loaded before (kept for 30 seconds after the menu closed, or
++  // loaded ahead when the pointer came over a shield, P5.72) told the bubble
++  // it was ready when there was no bubble to hear it, and the bubble waits for
++  // that before it shows (P5.71: "the menu did not open"). It is told it is
++  // shown: it brings itself up to date, for the tab now in front, and asks to
++  // be shown, a moment later; if it does not, it is shown as it is. A page
++  // still loading asks to be shown once it has loaded. (Loading the page again
++  // does not help: the new page's controller is not the one the bubble knows.)
 +  if (menu_->bubble_using_cached_web_contents()) {
-+    if (WebUIContentsWrapper* contents = menu_->GetContentsWrapper()) {
-+      contents->ShowUI();
++    ThoronAdblockMenuUI* ui = menu_->MenuUI();
++    if (!ui) {
++      ShowMenuNow();
++    } else {
++      ui->TellShown();
++      show_anyway_.Start(FROM_HERE, kShowAnyway,
++                         base::BindOnce(&ThoronAdblockButton::ShowMenuNow,
++                                        base::Unretained(this)));
 +    }
 +  }
 +  if (views::Widget* widget = menu_->GetBubbleWidget()) {
@@ -1877,19 +2033,29 @@ index 0000000000000000000000000000000000000000..8f9078ba29f440daf8bc2e99365a721b
 +  }
 +}
 +
++void ThoronAdblockButton::ShowMenuNow() {
++  views::Widget* widget = menu_ ? menu_->GetBubbleWidget() : nullptr;
++  if (widget && !widget->IsVisible()) {
++    if (WebUIContentsWrapper* contents = menu_->GetContentsWrapper()) {
++      contents->ShowUI();
++    }
++  }
++}
++
 +void ThoronAdblockButton::OnWidgetDestroying(views::Widget* widget) {
 +  menu_closed_at_ = base::TimeTicks::Now();
 +  menu_observation_.Reset();
++  show_anyway_.Stop();
 +}
 +
 +BEGIN_METADATA(ThoronAdblockButton)
 +END_METADATA
 diff --git a/chrome/browser/ui/views/toolbar/thoron_adblock_button.h b/chrome/browser/ui/views/toolbar/thoron_adblock_button.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..6358efd3e2bd34abb1d9ba0843b0a2ce1e787cb8
+index 0000000000000000000000000000000000000000..dd113ac35297b012d9bc94069247b8ad4e95b865
 --- /dev/null
 +++ b/chrome/browser/ui/views/toolbar/thoron_adblock_button.h
-@@ -0,0 +1,113 @@
+@@ -0,0 +1,124 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -1904,6 +2070,7 @@ index 0000000000000000000000000000000000000000..6358efd3e2bd34abb1d9ba0843b0a2ce
 +#include "base/memory/weak_ptr.h"
 +#include "base/scoped_observation.h"
 +#include "base/time/time.h"
++#include "base/timer/timer.h"
 +#include "chrome/browser/ui/tabs/tab_strip_model_observer.h"
 +#include "chrome/browser/ui/views/toolbar/toolbar_button.h"
 +#include "components/thoron_adblock/menu_opener.h"
@@ -1915,7 +2082,7 @@ index 0000000000000000000000000000000000000000..6358efd3e2bd34abb1d9ba0843b0a2ce
 +#include "ui/views/widget/widget_observer.h"
 +
 +class BrowserWindowInterface;
-+class WebUIBubbleManager;
++class ThoronMenuBubbleManager;
 +
 +namespace content {
 +class Page;
@@ -1937,9 +2104,9 @@ index 0000000000000000000000000000000000000000..6358efd3e2bd34abb1d9ba0843b0a2ce
 +                                   SkColor off_color,
 +                                   std::u16string* tooltip);
 +
-+// The shield of Thoron's built-in ad blocking in the toolbar, where an ad
-+// blocker's icon sits ("Show the shield in the toolbar too"; it is always in
-+// the address bar). Pressed, it opens the blocker's menu
++// The shield of Thoron adblock in the toolbar, where an ad blocker's icon
++// sits (chrome://adblock says where the shield is: the address bar, the
++// toolbar or both, P5.72). Pressed, it opens the blocker's menu
 +// (thoron_adblock_popup_ui.h); so does the address bar's shield, through
 +// thoron_adblock::OpenMenuFor. Shown only while the ThoronNativeAdblock
 +// feature is on.
@@ -1959,9 +2126,12 @@ index 0000000000000000000000000000000000000000..6358efd3e2bd34abb1d9ba0843b0a2ce
 +  // thoron_adblock::MenuOpener: the address bar's shield opens this menu too,
 +  // from itself (`anchor`), as uBlock Origin's icon does.
 +  bool OpenMenuFor(content::WebContents* tab, views::View* anchor) override;
++  void WarmUpMenuFor(content::WebContents* tab) override;
 +
 +  // ToolbarButton:
 +  void UpdateIcon() override;
++  // the pointer over the shield: the menu's page is loaded ahead
++  void OnMouseEntered(const ui::MouseEvent& event) override;
 +
 +  // TabStripModelObserver:
 +  void OnTabStripModelChanged(
@@ -1988,9 +2158,16 @@ index 0000000000000000000000000000000000000000..6358efd3e2bd34abb1d9ba0843b0a2ce
 +  // kAddressBarRefresh while a page blocks a lot.
 +  void RefreshAddressBar();
 +  void DoRefreshAddressBar();
++  // The menu's bubble manager, made when first needed.
++  ThoronMenuBubbleManager& Menu();
++  void WarmUpMenu();
++  // A kept page did not ask to be shown in time: the menu is shown anyway.
++  void ShowMenuNow();
 +
 +  const raw_ptr<BrowserWindowInterface> browser_;
-+  std::unique_ptr<WebUIBubbleManager> menu_;
++  std::unique_ptr<ThoronMenuBubbleManager> menu_;
++  bool warm_up_pending_ = false;
++  base::OneShotTimer show_anyway_;
 +  base::ScopedObservation<views::Widget, views::WidgetObserver>
 +      menu_observation_{this};
 +  // When the menu last closed: a press that closed it does not open it again.
@@ -2005,10 +2182,10 @@ index 0000000000000000000000000000000000000000..6358efd3e2bd34abb1d9ba0843b0a2ce
 +#endif  // CHROME_BROWSER_UI_VIEWS_TOOLBAR_THORON_ADBLOCK_BUTTON_H_
 diff --git a/chrome/browser/ui/webui/thoron_adblock_popup_ui.cc b/chrome/browser/ui/webui/thoron_adblock_popup_ui.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..07427013691848d09a43f462d27c8a63270f122f
+index 0000000000000000000000000000000000000000..ba733ba729e044732124e9fa11e2dbd9546e15fa
 --- /dev/null
 +++ b/chrome/browser/ui/webui/thoron_adblock_popup_ui.cc
-@@ -0,0 +1,662 @@
+@@ -0,0 +1,672 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -2631,6 +2808,7 @@ index 0000000000000000000000000000000000000000..07427013691848d09a43f462d27c8a63
 +  }
 +
 +  void MenuReady(const base::ListValue& args) {
++    controller_->set_ready();
 +    if (auto embedder = controller_->embedder()) {
 +      embedder->ShowUI();
 +    }
@@ -2670,13 +2848,22 @@ index 0000000000000000000000000000000000000000..07427013691848d09a43f462d27c8a63
 +
 +ThoronAdblockMenuUI::~ThoronAdblockMenuUI() = default;
 +
++bool ThoronAdblockMenuUI::TellShown() {
++  if (!ready_) {
++    return false;
++  }
++  const base::Value event("menu-shown");
++  web_ui()->CallJavascriptFunctionUnsafe("cr.webUIListenerCallback", event);
++  return true;
++}
++
 +WEB_UI_CONTROLLER_TYPE_IMPL(ThoronAdblockMenuUI)
 diff --git a/chrome/browser/ui/webui/thoron_adblock_popup_ui.h b/chrome/browser/ui/webui/thoron_adblock_popup_ui.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..2bddd94abf0be5ee5cbcb1c687fcbb5a69cd6f61
+index 0000000000000000000000000000000000000000..1aab475cbf411a46a2f31587adb837dbd6b700d1
 --- /dev/null
 +++ b/chrome/browser/ui/webui/thoron_adblock_popup_ui.h
-@@ -0,0 +1,51 @@
+@@ -0,0 +1,62 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -2723,7 +2910,18 @@ index 0000000000000000000000000000000000000000..2bddd94abf0be5ee5cbcb1c687fcbb5a
 +    return "ThoronAdblockMenu";
 +  }
 +
++  // P5.72: the page has drawn what it shows and asked to be shown, at least
++  // once.
++  bool ready() const { return ready_; }
++  void set_ready() { ready_ = true; }
++  // The menu is shown with a page loaded before (kept since the menu closed,
++  // or loaded ahead): the page brings itself up to date, then asks to be
++  // shown. False when the page has not loaded yet (it asks once it has).
++  bool TellShown();
++
 + private:
++  bool ready_ = false;
++
 +  WEB_UI_CONTROLLER_TYPE_DECL();
 +};
 +
@@ -2800,7 +2998,7 @@ index 0000000000000000000000000000000000000000..775954638d4dbf1764c678318776e97d
 +#endif  // CHROME_BROWSER_UI_WEBUI_THORON_ADBLOCK_SITE_JAVASCRIPT_H_
 diff --git a/chrome/browser/ui/webui/thoron_adblock_ui.cc b/chrome/browser/ui/webui/thoron_adblock_ui.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..c303a76e2cd73f176f11e0d921d340f48fc25dec
+index 0000000000000000000000000000000000000000..2fcbfb1173ae2ca051f70255bc24f51ef9a0d37c
 --- /dev/null
 +++ b/chrome/browser/ui/webui/thoron_adblock_ui.cc
 @@ -0,0 +1,845 @@
@@ -3313,7 +3511,7 @@ index 0000000000000000000000000000000000000000..c303a76e2cd73f176f11e0d921d340f4
 +         {"badge", "block-csp-reports", "ignore-generic", "default-media",
 +          "default-cosmetic", "default-fonts", "default-3p-script",
 +          "default-3p-frame", "auto-update", "context-menu", "advanced",
-+          "colorblind", "no-tooltips", "toolbar-shield"}) {
++          "colorblind", "no-tooltips", "toolbar-shield", "address-shield"}) {
 +      settings.Set(name, Service().Option(name));
 +    }
 +    settings.Set("media-kb", Service().large_media_kb());

@@ -80,6 +80,12 @@ Explanations live in the design docs under `docs/design/`.
 - **Ad blocking:** fixed: a filter rule nested about a thousand levels deep made the browser close when the list was read; such a line is now left out (found by fuzzing).
 - **Ad blocking:** the blocker's own shield in the address bar, on every page, with the count of what it blocked; its menu opens from it, and holds the filter lists (switch, update now, add, remove).
 - **Ad blocking:** fixed: the menu did not open again for 30 seconds after it had been closed.
+- **Ad blocking:** the built-in blocker is now called Thoron adblock, in the browser and in the docs.
+- **Ad blocking:** `chrome://adblock` sets where the shield is: the address bar, the toolbar next to it, or both.
+- **Ad blocking:** the menu opens at once: its page is loaded ahead, and brought up to date before it shows.
+- **Ad blocking:** pages that start while Thoron adblock loads (tabs opened again at start) wait for it, 4 s at most.
+- **Ad blocking:** fixed: Google Docs kept disconnecting and reconnecting; a blocked request the page's own scriptlet answers now gets that answer from the network too.
+- **QA tools:** `adblock_fakes_check.py` checks that answer offline; the icon check checks where the shield is and how fast the menu opens.
 - **QA tools:** `thoron_adblock_engine_fuzzer`, coverage-guided fuzzing of the ad blocking engine with libFuzzer; `adblock_breakage.py` measures pages beyond the home page and load times on the real network; `adblock_handover_check.py` checks the built-in blocker on by default and the hand-over from uBlock Origin.
 - **Version:** Thoron has its own version, 0.1.1, on the About page, `chrome://version` and in Windows.
 - **Ad blocking:** checks worker and service worker scripts and imports, and blocks WebSockets to hosts the lists block.

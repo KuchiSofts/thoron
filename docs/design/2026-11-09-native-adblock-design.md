@@ -1946,6 +1946,49 @@ response's body. Thoron is the browser, so it does it for every page:
   `adblock_menulists_check.py` (shown, off, update, add); online, `adblock_live_update_check.py` does the
   same in the menu with the real servers (switch, add: a list of the catalog by its address, and removed).
 
+### 12.61 Google Docs, the start, the name, where the shield is, a faster menu (P5.72, 2026-11-15)
+
+- **Google Docs kept disconnecting and reconnecting (reported by the owner).** EasyPrivacy blocks Docs'
+  `/logImpressions` calls, and uBlock Origin's own list answers them inside the page instead
+  (`docs.google.com##+js(no-xhr-if, method:POST url:/logImpressions)`): the page gets an empty success and
+  never learns they were blocked. A page that meets the network's refusal takes it for being offline and
+  shows "Trying to connect". Thoron adblock gave Docs that scriptlet, and it worked on a page that loaded
+  normally (checked on a public document: the call was answered in the page and never sent), but a page
+  that starts without its scriptlets met the refusal: the tabs the browser opens again at start (the engine
+  started loading only when the first page arrived, after that page had asked for its scriptlets), and
+  pages opened while blocking was off for a while and switched on again later.
+- **Fixed, at the network:** a blocked XMLHttpRequest or fetch request that one of the requesting page's own
+  `prevent-xhr` or `prevent-fetch` calls (`no-xhr-if`, `no-fetch-if`, the trusted ones) matches gets the very
+  answer the scriptlet would give, as a stand-in: an empty success, or `{}` and `[]` where the call says so
+  (`fakes.rs`). The calls' arguments are read as uBlock Origin reads them (`parsePropertiesToMatchFn`,
+  `initPattern`: text, `/regex/flags`, `!`), tested against the address in both forms a page may have used
+  (whole, or without its site) and the method; a call whose test or answer cannot be reproduced (a fetch
+  test of the body or headers, an opaque answer, a literal body) leaves the request refused, as before. Each
+  site's calls are worked out once (at most 256 sites kept, reset with new scriptlets); a page with its
+  scriptlets never sends such a request, so nothing changes for it.
+- **Fixed, at the start:** the engine starts loading when the first page starts (`PageBlockThrottle`, which
+  tells it first where its lists are kept), and a page that starts while it loads waits for it, four
+  seconds at most, as uBlock Origin's "Suspend network activity until all filter lists are loaded" (on by
+  default there). The engine loads in a few milliseconds from its saved form, so the wait is short. Such a
+  page now gets its hiding rules and scriptlets, and strict blocking applies to it. The wait is not a
+  setting: whether it is wanted would only be known once the saved settings are read, which is when the
+  engine is ready anyway.
+- **The name:** the built-in blocker is called Thoron adblock in the browser (the menu, `chrome://adblock`,
+  the shields' tooltips, the flag, the page strict blocking shows, the task manager) and in the docs.
+  uBlock Origin stays the name of the extension it is compared with and credited to.
+- **Where the shield is:** `chrome://adblock` sets it: in the address bar and in the toolbar (the default),
+  in the address bar only, or in the toolbar only, next to the address bar where extensions' icons sit
+  (`address-shield`, `toolbar-shield`). Never neither: with both off, the address bar's is shown. The menu
+  opens from whichever shield was clicked.
+- **A faster menu:** the menu's page is loaded ahead of the click, when the address bar's shield is drawn
+  and when the pointer comes over the toolbar's (`ThoronMenuBubbleManager`, the bubble manager Chromium
+  uses with a `WarmUp`). Shown with such a page, or with one kept since the menu closed, the page is told
+  so: it brings itself up to date for the tab in front, then asks to be shown, a moment later (shown as it
+  is after 250 ms if it does not). A kept page no longer asks the browser for its state every second while
+  it is hidden.
+- **Checked** by `tools/qa/adblock_fakes_check.py` (page, worker, plain), by the icon check's new steps (where
+  the shield is; how long each opening of the menu took, more than a second fails) and an engine test.
+
 ## 13. Credits
 
 The procedural operators and the rest of the filter syntax are uBlock Origin's (with forms from Adblock

@@ -44,7 +44,8 @@ SETTLE_S = 3.0
 NAMES = {"ublock", "origin", "thoron", "javascript", "webrtc", "csp", "ip", "ctrl", "alt", "shift", "kb", "mb",
          "https", "example", "com", "easylist"}
 # Texts that are the same word in English and in a language of the table
-SAME = {"Sites", "Sections", "Images", "Tab", "Type", "Pause", "5 minutes"}
+# "Thoron adblock": the name, in every language
+SAME = {"Sites", "Sections", "Images", "Tab", "Type", "Pause", "5 minutes", "Thoron adblock"}
 LATIN_WORD = re.compile(r"[A-Za-z]{2,}")
 # hosts, addresses and rules inside a text ("Allow: example.com on this site", "||ads^"): never translated
 CODE_LIKE = re.compile(r"\S*[.|^#$@/:=*+]\S*")

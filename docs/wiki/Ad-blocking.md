@@ -1,9 +1,10 @@
 # Ad blocking
 
-Thoron has two ad blockers. One is the uBlock Origin extension, which comes with the browser today. The
-other is built into the browser itself and is meant to replace the extension once it is finished.
+Thoron has two ad blockers. One is **Thoron adblock**, built into the browser itself, on by default and
+meant to replace the extension. The other is the uBlock Origin extension, which a profile that already has
+it keeps.
 
-## The built-in blocker
+## Thoron adblock
 
 ### How it works
 
@@ -37,9 +38,12 @@ lighter than the extension with the same blocking.
 
 It is **on by default**. A new profile no longer gets uBlock Origin; a profile that has it keeps it,
 and the menu of the shield says when both run: two blockers do the same work and slow pages down, so
-turn one of them off ("Open extensions"), or choose "Keep both". To take the built-in blocker out
-entirely, set "Built-in ad blocking" to **Disabled** on `chrome://flags/#thoron-native-adblock` and
+turn one of them off ("Open extensions"), or choose "Keep both". To take Thoron adblock out
+entirely, set "Thoron adblock" to **Disabled** on `chrome://flags/#thoron-native-adblock` and
 relaunch.
+
+When the browser starts, the tabs it opens again wait for Thoron adblock to be ready, a few milliseconds
+as a rule and four seconds at most, so they are filtered like every other page.
 
 ### Off and on
 
@@ -57,9 +61,11 @@ few days, again as soon as the network is back, and after the computer wakes up.
 
 ### Use it
 
-- **The shield:** in the address bar on every page, and next to the extensions button (you can hide
-  that one in the settings). It is teal while it blocks and grey where it is off; its number is what
-  was blocked on the page you look at. Click it for the menu, click it again to close it:
+- **The shield:** in the address bar on every page, and in the toolbar next to it, where extensions'
+  icons sit. `chrome://adblock` sets where it is: in both, in the address bar only, or in the toolbar
+  only. It is teal while it blocks and grey where it is off; its number is what was blocked on the page
+  you look at. Click it for the menu, click it again to close it; the menu is loaded ahead, so it opens
+  at once:
   - the big **power button** switches blocking off or on for this site (the page reloads);
   - **Filter lists:** every list with its number of rules; switch a list off or on, **Update now**,
     add a list by its address or remove one you added. A change is in use at once;
@@ -170,6 +176,10 @@ scripts that only uBlock Origin's own lists may use, unless you allow it for you
 - **HTML filtering, `##^responseheader()` and `$replace`** work in every page: uBlock Origin
   can do these only in Firefox. A script a list names is taken out of the page before it runs, also
   when the rule depends on the rest of the page.
+- **A page's quiet answers hold everywhere.** Some rules answer a blocked request inside the page with an
+  empty success, so the site does not notice (Google Docs needs this, or it keeps reconnecting). Thoron
+  adblock gives the same answer at the network as well, so it holds for a page that started before its
+  rules were ready, and for the page's workers.
 
 ## uBlock Origin
 

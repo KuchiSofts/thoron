@@ -1566,10 +1566,10 @@ index 0000000000000000000000000000000000000000..5ace492dd1a60c29b3c3dd04efae2228
 +#endif  // CHROME_BROWSER_UI_BROWSER_WEB_CONTENTS_DELEGATE_THORON_ADBLOCK_SHORTCUTS_H_
 diff --git a/chrome/browser/ui/views/toolbar/thoron_adblock_button.cc b/chrome/browser/ui/views/toolbar/thoron_adblock_button.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..b12eaab391cfaea93a74c527e502ee401e707350
+index 0000000000000000000000000000000000000000..8f9078ba29f440daf8bc2e99365a721b9ebb729e
 --- /dev/null
 +++ b/chrome/browser/ui/views/toolbar/thoron_adblock_button.cc
-@@ -0,0 +1,303 @@
+@@ -0,0 +1,314 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -1592,6 +1592,7 @@ index 0000000000000000000000000000000000000000..b12eaab391cfaea93a74c527e502ee40
 +#include "chrome/browser/ui/views/location_bar/location_bar_view.h"
 +#include "chrome/browser/ui/views/toolbar/toolbar_view.h"
 +#include "chrome/browser/ui/webui/thoron_adblock_popup_ui.h"
++#include "chrome/browser/ui/webui/top_chrome/webui_contents_wrapper.h"
 +#include "components/content_settings/core/browser/host_content_settings_map.h"
 +#include "components/strings/grit/components_strings.h"
 +#include "components/thoron_adblock/blocked_count.h"
@@ -1855,10 +1856,20 @@ index 0000000000000000000000000000000000000000..b12eaab391cfaea93a74c527e502ee40
 +      }
 +    }
 +  }
-+  // the menu's page is kept for a while after it closes, and shows at once
-+  // the next time
 +  if (!from || !menu_->ShowBubble(from, views::BubbleBorder::TOP_RIGHT)) {
 +    return;
++  }
++  // The menu's page is kept for 30 seconds after the menu closes, so that it
++  // opens at once. A kept page told the bubble it was ready to show only when
++  // it first loaded, and the bubble waits for that before it shows: a menu
++  // opened again within those 30 seconds stayed hidden ("the menu did not
++  // open"). The bubble is attached to the page by now; it is shown here.
++  // (Loading the page again does not help: the new page's controller is not
++  // the one the bubble knows.)
++  if (menu_->bubble_using_cached_web_contents()) {
++    if (WebUIContentsWrapper* contents = menu_->GetContentsWrapper()) {
++      contents->ShowUI();
++    }
 +  }
 +  if (views::Widget* widget = menu_->GetBubbleWidget()) {
 +    menu_observation_.Reset();

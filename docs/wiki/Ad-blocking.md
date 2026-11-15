@@ -33,17 +33,17 @@ other is built into the browser itself and is meant to replace the extension onc
 Because it is part of the browser, it starts before any page script runs, and it measures faster and
 lighter than the extension with the same blocking.
 
-### Turn it on
+### On by default
 
-It is **off by default** until its last correctness checks are done.
-
-1. Open `chrome://flags/#thoron-native-adblock`.
-2. Set "Built-in ad blocking" to **Enabled** and relaunch.
-3. Turn uBlock Origin off on `chrome://extensions`, or both do the same work.
+It is **on by default**. A new profile no longer gets uBlock Origin; a profile that has it keeps it,
+and the menu of the shield says when both run: two blockers do the same work and slow pages down, so
+turn one of them off ("Open extensions"), or choose "Keep both". To take the built-in blocker out
+entirely, set "Built-in ad blocking" to **Disabled** on `chrome://flags/#thoron-native-adblock` and
+relaunch.
 
 ### Off and on
 
-Once it is enabled, you switch it off and on whenever you like, with no relaunch:
+You switch it off and on whenever you like, with no relaunch:
 
 - in the menu of the shield, the **On** switch at the top: it asks for how long (5 minutes, 1 hour,
   until the browser closes, or until you turn it on). While it is off the shield is grey, and the
@@ -57,10 +57,12 @@ few days, again as soon as the network is back, and after the computer wakes up.
 
 ### Use it
 
-- **The shield in the toolbar:** while the blocker is on, a shield sits next to the extensions button.
-  Its number is what was blocked on the page you look at. Click it for the menu (the "Ads and trackers
-  blocked" icon in the address bar opens the same menu):
+- **The shield:** in the address bar on every page, and next to the extensions button (you can hide
+  that one in the settings). It is teal while it blocks and grey where it is off; its number is what
+  was blocked on the page you look at. Click it for the menu, click it again to close it:
   - the big **power button** switches blocking off or on for this site (the page reloads);
+  - **Filter lists:** every list with its number of rules; switch a list off or on, **Update now**,
+    add a list by its address or remove one you added. A change is in use at once;
   - the counts: blocked on this page (and its share of the page's requests), domains connected out of
     all the page asked, blocked so far;
   - **Block element:** click the thing you want gone, choose or edit the rule, press Enter or

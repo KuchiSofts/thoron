@@ -205,7 +205,9 @@ def _launch(browser: Path, profile: Path, port: int, host: str, native: bool) ->
     # features that do that are switched off.
     args = [str(browser), "--headless=new", f"--user-data-dir={profile}", "--no-first-run",
             "--no-default-browser-check", "--disable-default-apps", "--disable-background-networking",
-            "--disable-component-update", f"--disable-features={NO_HTTPS_FIRST}",
+            "--disable-component-update",
+            # the native engine is on by default (P5.24): the run without it turns it off
+            f"--disable-features={NO_HTTPS_FIRST}" + ("" if native else ",ThoronNativeAdblock"),
             f"--host-resolver-rules=MAP {host} 127.0.0.1:{port}, MAP * ~NOTFOUND, EXCLUDE 127.0.0.1",
             "--remote-debugging-address=127.0.0.1", "--remote-debugging-port=0"]
     if native:

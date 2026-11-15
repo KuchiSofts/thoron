@@ -75,6 +75,10 @@ Explanations live in the design docs under `docs/design/`.
 - **Ad blocking:** an accent color, "Disable tooltips", "Storage used" and the logger's "Reload", as in uBlock Origin.
 - **Ad blocking:** switch it off and on for every site at any time, with no relaunch: from its menu, its settings page or a shortcut, for good or for a while (5 minutes, an hour, until the browser closes).
 - **Ad blocking:** the filter lists are looked for again as soon as the network is back, and after the computer wakes up.
+- **Ad blocking:** the built-in blocker is on by default; a new profile no longer gets uBlock Origin, a profile that has it keeps it, and the menu says when both run.
+- **Ad blocking:** fixed: a filter rule whose site was written as `.*` alone made the browser close on the pages it was checked for (found by fuzzing).
+- **Ad blocking:** the blocker's own shield in the address bar, on every page, with the count of what it blocked; its menu opens from it, and holds the filter lists (switch, update now, add, remove).
+- **QA tools:** `thoron_adblock_engine_fuzzer`, coverage-guided fuzzing of the ad blocking engine with libFuzzer; `adblock_breakage.py` measures pages beyond the home page and load times on the real network; `adblock_handover_check.py` checks the built-in blocker on by default and the hand-over from uBlock Origin.
 - **Version:** Thoron has its own version, 0.1.1, on the About page, `chrome://version` and in Windows.
 - **Ad blocking:** checks worker and service worker scripts and imports, and blocks WebSockets to hosts the lists block.
 - **Ad blocking:** settings page `chrome://adblock`: lists on and off, add a list by address, your own rules.

@@ -1,17 +1,21 @@
 #!/usr/bin/env python3
 # Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be found in the LICENSE file.
-"""Native ad blocking, the address bar's icon for blocked ads opens the blocker's own menu, checked end to end and
-offline (ROADMAP P5.52). Windows only.
+"""Native ad blocking, the blocker's shield in the address bar, checked end to end and offline (ROADMAP P5.52,
+P5.71). Windows only.
 
-When the blocker stops something on a page, an icon shows in the address bar ("Ads and trackers blocked"). As
-uBlock Origin's icon does, a click on it opens the blocker's menu (chrome://adblock-menu.top-chrome), the same
-as the shield in the toolbar, not Chromium's small notice. The address bar is part of the window, which a
-headless browser does not draw, so this check runs the browser with a window, placed off the screen, and
-clicks the icon with Windows UI Automation. A local server serves a test page with an image from an ad host
-EasyList blocks (host-resolver rules; every other name fails, so nothing leaves the PC). Steps:
+The address bar holds the blocker's own shield on every web page, with the count of what it blocked there; a
+click on it opens the blocker's menu (chrome://adblock-menu.top-chrome) from the shield, as uBlock Origin's
+icon does, and a click on it again closes it. The address bar is part of the window, which a headless browser
+does not draw, so this check runs the browser with a window, placed off the screen: it finds the shield with
+Windows UI Automation and clicks it with the mouse messages a click sends to the window (the real mouse is
+not moved). A local server serves a test page with an image from an ad host EasyList blocks (host-resolver
+rules; every other name fails, so nothing leaves the PC). Steps:
 
-    icon   after the page loads, the icon is in the address bar
-    menu   a click on it opens the blocker's menu
+    icon    the shield is in the address bar as soon as the page is shown, before anything is blocked
+    count   it says how much was blocked once the ad image is stopped
+    menu    a click on it opens the blocker's menu
+    again   six clicks in a row: the menu opens and closes each time, the browser answers all along (the menu
+            once stopped opening after it had been opened and closed)
 
     py -3 -I tools/qa/adblock_icon_check.py --browser <out>\\thoron.exe --work <scratch dir>
 Exit status 0 when every step passes (or the check does not apply, on another system).
@@ -37,11 +41,14 @@ from tools.qa.adblock_trust_check import Server  # noqa: E402
 from tools.qa.cdp import WebSocket  # noqa: E402
 
 PAGE_HOST = "icon-check.test"
-ICON = "Ads and trackers blocked"
+# what the address bar's shield says, and so its name ("Ad blocking: 3 blocked on this page"); the toolbar's
+# shield is named "Ad blocking", with no colon
+ICON = "Ad blocking:"
 MENU_URL = "chrome://adblock-menu.top-chrome/"
 SETTLE_S = 3.0
-# Finds the icon among the elements of the test browser (its process id in THORON_PID; no other program's
-# windows are looked at), says whether it is there, and clicks it when asked.
+CLICKS = 6
+# Finds the shield among the elements of the test browser (its process id in THORON_PID; no other program's
+# windows are looked at): its name and where its middle is on the screen.
 UIA = """
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
 Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
@@ -51,19 +58,14 @@ $mine = New-Object System.Windows.Automation.PropertyCondition(
 $icon = $null
 for ($i = 0; $i -lt 24 -and -not $icon; $i++) {
   $icon = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $mine) |
-      Where-Object { $_.Current.Name.StartsWith('%s') } | Select-Object -First 1
+      Where-Object { $_.Current.Name.StartsWith('%s') } |
+      Sort-Object { $_.Current.BoundingRectangle.X } | Select-Object -First 1
   if (-not $icon) { Start-Sleep -Milliseconds 250 }
 }
-if (-not $icon) { 'no icon'; exit 1 }
-if ($env:THORON_CLICK -ne '1') { 'icon'; exit 0 }
-$pattern = $null
-if ($icon.TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern, [ref]$pattern)) {
-  $pattern.Invoke()
-} else {
-  $legacy = $icon.GetCurrentPattern([System.Windows.Automation.LegacyIAccessiblePattern]::Pattern)
-  $legacy.DoDefaultAction()
-}
-'clicked'
+if (-not $icon) { '{}'; exit 1 }
+$r = $icon.Current.BoundingRectangle
+@{ name = $icon.Current.Name; x = [int]($r.X + $r.Width / 2); y = [int]($r.Y + $r.Height / 2) } |
+    ConvertTo-Json -Compress
 """ % ICON
 
 
@@ -73,14 +75,27 @@ def ad_image(host: str) -> str:
             "document.body.append(i); return 1; })()")
 
 
-def menu_problems(icon: str, clicked: str, targets: list[str]) -> list[str]:
+def icon_problems(before: dict, after: dict) -> list[str]:
     out = []
-    if icon != "icon":
-        out.append(f"icon: the address bar has no {ICON!r} icon ({icon!r})")
-    elif clicked != "clicked":
-        out.append(f"menu: the icon could not be clicked ({clicked!r})")
-    elif not any(url.startswith(MENU_URL) for url in targets):
-        out.append(f"menu: a click on the icon did not open the blocker's menu (open: {targets})")
+    if not before.get("name"):
+        out.append("icon: the address bar has no shield before anything is blocked")
+    if not str(after.get("name", "")).endswith("blocked on this page") or \
+            str(after.get("name", "")).startswith(f"{ICON} 0 "):
+        out.append(f"count: the shield says {after.get('name')!r} once the ad image was stopped")
+    return out
+
+
+def menu_problems(opened: list[bool], answered: list[bool]) -> list[str]:
+    """`opened`: after each click, whether the menu showed; the first opens it, the next closes it, and so on."""
+    out = []
+    if not opened or not opened[0]:
+        out.append("menu: a click on the shield did not open the blocker's menu")
+    want = [n % 2 == 0 for n in range(len(opened))]
+    if opened and opened != want:
+        out.append(f"again: after each click the menu was {['open' if o else 'closed' for o in opened]}, "
+                   "not open and closed in turn")
+    if not all(answered):
+        out.append(f"again: the browser did not answer after some clicks ({answered})")
     return out
 
 
@@ -96,6 +111,41 @@ def _launch_window(browser: Path, profile: Path, port: int, host: str) -> subpro
     return subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
+def _windows(pid: int) -> list[int]:
+    """The visible top-level windows of the browser: its window, and the menu while it shows."""
+    import ctypes
+    import ctypes.wintypes as wt
+    user32 = ctypes.WinDLL("user32", use_last_error=True)
+    found = []
+
+    @ctypes.WINFUNCTYPE(wt.BOOL, wt.HWND, wt.LPARAM)
+    def each(hwnd, _):
+        owner = wt.DWORD()
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(owner))
+        if owner.value == pid and user32.IsWindowVisible(hwnd):
+            name = ctypes.create_unicode_buffer(64)
+            user32.GetClassNameW(hwnd, name, 64)
+            if name.value == "Chrome_WidgetWin_1":
+                found.append(hwnd)
+        return True
+
+    user32.EnumWindows(each, 0)
+    return found
+
+
+def _click(hwnd: int, x: int, y: int) -> None:
+    """What a click sends to the window, at a point on the screen; the real mouse is not moved."""
+    import ctypes
+    import ctypes.wintypes as wt
+    user32 = ctypes.WinDLL("user32", use_last_error=True)
+    point = wt.POINT(x, y)
+    user32.ScreenToClient(hwnd, ctypes.byref(point))
+    where = (point.y << 16) | (point.x & 0xFFFF)
+    for message, keys in ((0x0200, 0), (0x0201, 0x0001), (0x0202, 0)):  # move, left down, left up
+        user32.PostMessageW(hwnd, message, keys, where)
+        time.sleep(0.06)
+
+
 def run(browser: Path, work: Path, host: str) -> list[str]:
     profile = Path(tempfile.mkdtemp(prefix="icon-", dir=work))
     problems: list[str] = []
@@ -107,28 +157,59 @@ def run(browser: Path, work: Path, host: str) -> list[str]:
             target = _open(port, f"http://{PAGE_HOST}/page.html")
             time.sleep(SETTLE_S)
 
-            def uia(click: bool) -> str:
-                return subprocess.run(["powershell.exe", "-NoProfile", "-Command", UIA], capture_output=True,
-                                      text=True, encoding="utf-8", errors="replace", timeout=60,
-                                      env=dict(os.environ, THORON_PID=str(proc.pid),
-                                               THORON_CLICK="1" if click else "0")).stdout.strip()
+            def shield() -> dict:
+                out = subprocess.run(["powershell.exe", "-NoProfile", "-Command", UIA], capture_output=True,
+                                     text=True, encoding="utf-8", errors="replace", timeout=60,
+                                     env=dict(os.environ, THORON_PID=str(proc.pid))).stdout.strip()
+                return json.loads(out or "{}")
 
-            # the ad image: the page asks for it, the blocker stops it, the icon shows
+            before = shield()
+            # the ad image: the page asks for it, the blocker stops it, the shield counts it
             ws = WebSocket(target["webSocketDebuggerUrl"])
             try:
                 ws.call("Runtime.evaluate", expression=ad_image(host))
+                time.sleep(SETTLE_S)
+                after = shield()
+                found = icon_problems(before, after)
+                print(f"{'PASS' if not found else 'FAIL'}  icon and count: {before.get('name')!r} then "
+                      f"{after.get('name')!r}")
+                problems += found
+
+                main = _windows(proc.pid)
+                opened, answered = [], []
+
+                def menu_shown() -> bool:
+                    # the menu's own page says whether it shows (a tooltip is a window of its own too)
+                    menus = [t for t in json.loads(urllib.request.urlopen(
+                        f"http://127.0.0.1:{port}/json/list", timeout=10).read())
+                        if t.get("url", "").startswith(MENU_URL)]
+                    if not menus:
+                        return False
+                    menu = WebSocket(menus[0]["webSocketDebuggerUrl"])
+                    try:
+                        return menu.call("Runtime.evaluate", expression="document.visibilityState",
+                                         returnByValue=True)["result"]["value"] == "visible"
+                    finally:
+                        menu.close()
+
+                for _ in range(CLICKS if main and after.get("name") else 0):
+                    _click(main[0], after["x"], after["y"])
+                    time.sleep(1.5)
+                    opened.append(menu_shown())
+                    try:
+                        answered.append(ws.call("Runtime.evaluate", expression="1+1",
+                                                returnByValue=True)["result"]["value"] == 2)
+                    except (OSError, RuntimeError, KeyError):
+                        answered.append(False)
+                found = menu_problems(opened, answered)
+                targets = [t.get("url", "") for t in json.loads(
+                    urllib.request.urlopen(f"http://127.0.0.1:{port}/json/list", timeout=10).read())]
+                if opened and opened[0] and not any(url.startswith(MENU_URL) for url in targets):
+                    found.append("menu: what opened is not the blocker's menu")
+                print(f"{'PASS' if not found else 'FAIL'}  menu and again: {opened}, answered {answered}")
+                problems += found
             finally:
                 ws.close()
-            time.sleep(SETTLE_S)
-            icon = uia(click=False)
-            clicked = uia(click=True) if icon == "icon" else ""
-            time.sleep(2)
-            targets = [t.get("url", "") for t in json.loads(
-                urllib.request.urlopen(f"http://127.0.0.1:{port}/json/list", timeout=10).read())]
-            found = menu_problems(icon, clicked, targets)
-            print(f"{'PASS' if not found else 'FAIL'}  icon and menu: {icon!r}, {clicked!r}, "
-                  f"menu open: {any(u.startswith(MENU_URL) for u in targets)}")
-            problems += found
         except (OSError, RuntimeError, ValueError, KeyError, subprocess.TimeoutExpired) as e:
             problems.append(f"the run failed: {e}")
         finally:

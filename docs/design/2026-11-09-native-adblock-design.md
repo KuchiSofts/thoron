@@ -311,7 +311,7 @@ the previous engine and stays up (8 scenarios pass). Not done: a fuzz run of the
   new IPC that a renderer could abuse to query browsing history of other sites.
 - Fuzz the list parser and the request matcher (Chromium's fuzzing setup) before it ships on by
   default. First part done 2026-11-11 with a mutation fuzzer of Thoron's own (9.3); the run with
-  Chromium's coverage-guided setup is still to do.
+  Chromium's coverage-guided setup followed on 2026-11-15 (12.58).
 
 ## 9. Proof that it is better (measured, not claimed)
 
@@ -650,10 +650,9 @@ Generic hide rules as built (P5.21, 2026-11-11). The lists hold about 13,000 rul
 - Existing profiles: nothing is removed or changed. A profile that has uBlock Origin keeps it, with its
   settings and custom filters.
 - New profiles: once native blocking is on by default, the built-in uBlock Origin is no longer installed
-  into new profiles (decided 2026-11-11: section 11, decision 5). Until the default changes, nothing
-  changes.
-- A person who runs both gets double filtering. Settings will say so, once, with a button to turn one of
-  them off. Nothing is turned off silently.
+  into new profiles (decided 2026-11-11: section 11, decision 5); so since 2026-11-15 (12.58).
+- A person who runs both gets double filtering. The menu says so, with a button to the extensions page
+  and "Keep both" (12.58). Nothing is turned off silently.
 
 ### 12.6 Smart, beyond parity (in order of value)
 
@@ -1866,6 +1865,62 @@ response's body. Thoron is the browser, so it does it for every page:
   updates by `tools/qa/adblock_live_update_check.py`: online, unlike the other checks, it has a
   throwaway profile ask for "Update now" from the lists' real servers (the requests the browser makes by
   itself every few days) and wants every list in use downloaded, checked and taken in.
+
+### 12.58 On by default, and the hand-over from uBlock Origin (P5.17, P5.24, 2026-11-15)
+
+- **The last proofs** that section 9 and 8 asked for before the default changes:
+  - **Load times on the real network** (`docs/perf/2026-11-15-native-adblock-realnet.md`): 186 pages (the
+    99 home pages and 87 pages beyond them), uBlock Origin alone and the native engine alone taking turns
+    page by page, two rounds: the native engine is about 5 % faster per page (median ratio 0.950 with empty
+    caches, 0.947 with warm ones) and faster on 61 % of the pages, as offline (6.1 %).
+  - **Pages beyond the home page** (`docs/perf/2026-11-15-native-adblock-breakage-inner.md`): 2 of 87
+    flagged, neither broken (the same or more text, no script error; the extra blocks are a security-policy
+    report beacon and an ad-blocker detection script).
+  - **Coverage-guided fuzzing** with Chromium's libFuzzer setup and AddressSanitizer
+    (`thoron_adblock_engine_fuzzer`, `engine_fuzzer.cc`): the input is list text and a request; the engine
+    is built from it, saved and read back, and asked about the request every way the browser asks, and the
+    list is read as the settings page and the updater read it. Chromium's setup instruments C and C++ only,
+    so the engine's own Rust code gets cargo-fuzz's coverage flags in a fuzzing build
+    (`engine_fuzz_coverage`); the adblock-rust crate it builds on is fuzzed upstream. In its first minutes
+    it found a bug, fixed at once: a rule's site written as `.*` alone (a name under any ending, with no
+    name) made the search for the page's site look past the end of the host's name and panic, which ends
+    the browser on every page such a rule is checked for (`html.rs`; `uritransform.rs` searched the same
+    way but its rules never get there). `.*` alone now names no site, and the search stops at the end;
+    an engine test keeps it so. Then, on the fixed engine: 750,486 inputs in 60 minutes (3 workers), 5,558 covered edges of the engine's own code, no crash, no panic, no sanitizer report. On Windows, AddressSanitizer's checks
+    of global variables are off for the run: they report libFuzzer's own printf of an empty string, a
+    false alarm in the C runtime.
+- **On by default:** `ThoronNativeAdblock` is enabled by default. "Disabled" on `chrome://flags` takes the
+  blocker out entirely; its own switch (12.57) turns blocking off and on while the browser runs.
+- **The hand-over** (section 11, decision 5): a new profile gets no built-in uBlock Origin while the
+  built-in blocker is on (`preinstalled_extensions.cc`); a profile that has it keeps it, with its settings.
+  When both are on, the menu says so, with "Open extensions" (the extensions page at uBlock Origin) and
+  "Keep both" (not shown again).
+- **The QA tools** that compare with uBlock Origin alone or with no blocker now turn the native engine off
+  themselves (`adblock_breakage.py`, `adblock_proof.py`, `adblock_cosmetic_check.py`,
+  `adblock_syntax_check.py`).
+- **Checked** by `tools/qa/adblock_handover_check.py` (default, off, kept, both) with the browser started as
+  a person starts it.
+
+### 12.59 The shield in the address bar, and the filter lists in the menu (P5.71, 2026-11-15)
+
+- **The address bar's shield:** the icon Chromium shows there for blocked ads ("Ads and trackers blocked",
+  only once something was blocked) is now the blocker's own shield, on every web page: Thoron's teal while
+  it blocks, grey where it is off (for the site or for every site), and the count of what it blocked on the
+  page as a badge (`ThoronAdblockShield`, drawn for `ContentSettingImageView`); it says the same as a
+  tooltip. It is drawn again while a page blocks (at most every 150 ms) and when the switch or an option
+  changes. A click opens the menu from the shield itself, and a click again closes it.
+- **Opening and closing:** the menu opened from the address bar was anchored to the toolbar's shield; it
+  now opens from the shield that was clicked. A press that closes the menu (it closes when anything else is
+  pressed) no longer opens it again a moment later. The menu's page is kept between openings, and brought
+  up to date the moment it shows.
+- **The toolbar's shield** stays, with the same look: "Show the shield in the toolbar too (it is always in
+  the address bar)" on `chrome://adblock` takes it away; the menu then opens from the address bar.
+- **The filter lists in the menu**, as on `chrome://adblock`: each list with its rule count, a switch for
+  each built-in list, a way to remove a list that was added, "Update now", and a list added by its address;
+  every change is in use at once, and the section says what it did and when the lists were last looked for.
+- **Checked** by `tools/qa/adblock_icon_check.py` (the shield before anything is blocked, its count, the
+  menu from it, six clicks in a row with the mouse messages a click sends) and the new
+  `adblock_menulists_check.py` (shown, off, update, add).
 
 ## 13. Credits
 

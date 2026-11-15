@@ -2019,6 +2019,28 @@ response's body. Thoron is the browser, so it does it for every page:
   German) and the icon check's new steps (size: each shield on the line of its neighbours within 1 px and as
   tall within 2 px, measured on a picture; position: each of the six positions by the order of the buttons).
 
+### 12.63 Thoron adblock's own shield, and Windows Security in front (P5.74, 2026-11-15)
+
+- **The icon (the owner: "make a super professional and smart icon").** Chromium's generic shield is replaced by
+  Thoron adblock's own, drawn for the place it is in (`ShieldSource`, a 20 x 20 grid as large as the icons next
+  to it): Thoron's T in a shield filled with Thoron's teal (`#0D9488`, where white reads well) while it blocks;
+  an outline in the toolbar's own colour where it does not: with the T where there is nothing to block (not a web
+  page), with a slash where the site is allowed, and with two bars while blocking is off for every site. The
+  count's badge is laid over it as before. The menu's header and the settings page's preview draw the same shield.
+- **Windows Security behind the browser (reported by the owner, for passwords, passkeys and a password manager's
+  check).** Windows asks "is it you?" (Windows Hello, the PIN) in a window of its own process, and may open it
+  behind the browser. Thoron watches, from the first browser window on, for that window (Windows' class
+  "Credential Dialog Xaml Host") to be shown (`SetWinEventHook`, out of context: Windows tells the browser's UI
+  thread; nothing is loaded into another process) and, when the browser is in front or one of its windows covers
+  the prompt, brings the prompt above every window and gives it the keyboard (allowed while the browser is in
+  front), once more 350 ms later in case it falls behind while it lays itself out. The calls are posted to the
+  prompt's own thread (`SWP_ASYNCWINDOWPOS`), so the browser never waits on it. Other windows are never moved.
+  One watch covers every case: the browser's own requests and a password manager's (whose desktop program asks
+  Windows).
+- **Checked** by `tools/qa/windows_security_check.py`, which opens a stand-in window of that class behind an
+  off-screen test browser and an ordinary window the same way: the first is brought in front, the second stays.
+  No real prompt is opened. The icon check measures the new shield on a picture of the window.
+
 ## 13. Credits
 
 The procedural operators and the rest of the filter syntax are uBlock Origin's (with forms from Adblock

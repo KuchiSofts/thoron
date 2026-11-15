@@ -923,26 +923,28 @@ index aee2aaf3e11b078a7bf6cce51a44e22942a8246c..57919d82f51ba1119daa24b9a910346a
    map.AddWebUIConfig(std::make_unique<UsbInternalsUIConfig>());
    map.AddWebUIConfig(std::make_unique<user_actions_ui::UserActionsUIConfig>());
 diff --git a/chrome/browser/ui/views/toolbar/BUILD.gn b/chrome/browser/ui/views/toolbar/BUILD.gn
-index e4696aab4ad81244e702e205901840ca5dd9e338..a19d90b4f0a7fd179e05b11b89557df7164e0a88 100644
+index e4696aab4ad81244e702e205901840ca5dd9e338..6874d486aa58524d19ad15281ea030bf35af1a11 100644
 --- a/chrome/browser/ui/views/toolbar/BUILD.gn
 +++ b/chrome/browser/ui/views/toolbar/BUILD.gn
-@@ -32,6 +32,7 @@ source_set("toolbar") {
+@@ -32,6 +32,8 @@ source_set("toolbar") {
      "restore_tab_button.h",
      "reload_control.h",
      "split_tabs_button.h",
 +    "thoron_adblock_button.h",
++    "thoron_windows_security.h",
      "toolbar_action_hover_card_bubble_view.h",
      "toolbar_action_hover_card_controller.h",
      "toolbar_action_view.h",
-@@ -190,6 +191,7 @@ source_set("impl") {
+@@ -190,6 +192,8 @@ source_set("impl") {
      "reload_button.cc",
      "restore_tab_button.cc",
      "split_tabs_button.cc",
 +    "thoron_adblock_button.cc",
++    "thoron_windows_security.cc",
      "toolbar_action_hover_card_bubble_view.cc",
      "toolbar_action_hover_card_controller.cc",
      "toolbar_action_view.cc",
-@@ -291,6 +293,7 @@ source_set("impl") {
+@@ -291,6 +295,7 @@ source_set("impl") {
      "//chrome/browser/ui/customize_chrome",
      "//chrome/browser/ui/extensions",
      "//chrome/browser/ui/hats",
@@ -951,19 +953,20 @@ index e4696aab4ad81244e702e205901840ca5dd9e338..a19d90b4f0a7fd179e05b11b89557df7
      "//chrome/browser/ui/profiles",
      "//chrome/browser/ui/safety_hub",
 diff --git a/chrome/browser/ui/views/toolbar/toolbar_view.cc b/chrome/browser/ui/views/toolbar/toolbar_view.cc
-index bcf60bdb07a289ef9bc050bd709fee7249a2fc62..b5ec2807dff6eec6ec127981123ce6187ce4236c 100644
+index bcf60bdb07a289ef9bc050bd709fee7249a2fc62..9eccd15c132930c7ad7c5aa5ce62fcb1407fb74e 100644
 --- a/chrome/browser/ui/views/toolbar/toolbar_view.cc
 +++ b/chrome/browser/ui/views/toolbar/toolbar_view.cc
-@@ -111,6 +111,8 @@
+@@ -111,6 +111,9 @@
  #include "chrome/browser/ui/views/toolbar/reload_button.h"
  #include "chrome/browser/ui/views/toolbar/restore_tab_button.h"
  #include "chrome/browser/ui/views/toolbar/split_tabs_button.h"
 +#include "chrome/browser/ui/views/toolbar/thoron_adblock_button.h"
++#include "chrome/browser/ui/views/toolbar/thoron_windows_security.h"
 +#include "components/thoron_adblock/features.h"
  #include "chrome/browser/ui/views/toolbar/toolbar_button.h"
  #include "chrome/browser/ui/views/toolbar/toolbar_controller.h"
  #include "chrome/browser/ui/views/toolbar/toolbar_divider.h"
-@@ -523,6 +525,12 @@ void ToolbarView::Init() {
+@@ -523,6 +526,15 @@ void ToolbarView::Init() {
          std::make_unique<ExtensionsToolbarCoordinator>(extensions_container_);
    }
  
@@ -972,6 +975,9 @@ index bcf60bdb07a289ef9bc050bd709fee7249a2fc62..b5ec2807dff6eec6ec127981123ce618
 +  if (base::FeatureList::IsEnabled(thoron_adblock::kThoronNativeAdblock)) {
 +    AddChildView(std::make_unique<ThoronAdblockButton>(browser_));
 +  }
++  // Thoron: a Windows Security prompt (Windows Hello, the PIN) that opens
++  // behind the browser is brought to the front (Windows only; once).
++  thoron::WatchWindowsSecurityPrompts();
 +
    if (toolbar_divider) {
      toolbar_divider_ = AddChildView(std::move(toolbar_divider));
@@ -1656,10 +1662,10 @@ index 0000000000000000000000000000000000000000..5ace492dd1a60c29b3c3dd04efae2228
 +#endif  // CHROME_BROWSER_UI_BROWSER_WEB_CONTENTS_DELEGATE_THORON_ADBLOCK_SHORTCUTS_H_
 diff --git a/chrome/browser/ui/views/toolbar/thoron_adblock_button.cc b/chrome/browser/ui/views/toolbar/thoron_adblock_button.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..70dde0a6c05f1afd3ef23114eaac07178a7be14b
+index 0000000000000000000000000000000000000000..3b9d865b1e9ebc0717a93d83796fc73eab802b98
 --- /dev/null
 +++ b/chrome/browser/ui/views/toolbar/thoron_adblock_button.cc
-@@ -0,0 +1,537 @@
+@@ -0,0 +1,633 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -1675,6 +1681,7 @@ index 0000000000000000000000000000000000000000..70dde0a6c05f1afd3ef23114eaac0717
 +#include "base/location.h"
 +#include "base/strings/string_number_conversions.h"
 +#include "base/task/single_thread_task_runner.h"
++#include "cc/paint/paint_flags.h"
 +#include "chrome/browser/platform_util.h"
 +#include "chrome/browser/content_settings/host_content_settings_map_factory.h"
 +#include "chrome/browser/profiles/profile.h"
@@ -1707,6 +1714,11 @@ index 0000000000000000000000000000000000000000..70dde0a6c05f1afd3ef23114eaac0717
 +#include "ui/gfx/image/image_skia.h"
 +#include "ui/gfx/image/image_skia_operations.h"
 +#include "third_party/skia/include/core/SkBitmap.h"
++#include "third_party/skia/include/core/SkPathBuilder.h"
++#include "ui/gfx/canvas.h"
++#include "ui/gfx/geometry/point_f.h"
++#include "ui/gfx/geometry/rect_f.h"
++#include "ui/gfx/image/canvas_image_source.h"
 +#include "ui/gfx/paint_vector_icon.h"
 +#include "ui/views/accessibility/view_accessibility.h"
 +#include "ui/events/event.h"
@@ -1719,8 +1731,8 @@ index 0000000000000000000000000000000000000000..70dde0a6c05f1afd3ef23114eaac0717
 +// characters ("999", "1k", "12k").
 +constexpr SkColor kBadgeBackground = SkColorSetRGB(0xD9, 0x30, 0x25);
 +constexpr SkColor kBadgeText = SK_ColorWHITE;
-+// Thoron's teal: the shield while it blocks.
-+constexpr SkColor kShieldOn = SkColorSetRGB(0x0E, 0xA5, 0x9B);
++// Thoron's teal: the shield while it blocks (white reads well on it).
++constexpr SkColor kShieldOn = SkColorSetRGB(0x0D, 0x94, 0x88);
 +// The menu closes when anything else is pressed, the shields too: a press
 +// within this long of it closing is the one that closed it, and does not open
 +// it again.
@@ -1790,13 +1802,103 @@ index 0000000000000000000000000000000000000000..70dde0a6c05f1afd3ef23114eaac0717
 +                   u" blocked on this page";
 +}
 +
++// Thoron adblock's own shield (P5.74): Thoron's T in a shield, filled with
++// Thoron's teal while it blocks. Where it does not, an outline in the toolbar's
++// own colour: with the T where there is nothing to block (not a web page), with
++// a slash where the site is allowed, and with two bars while blocking is off
++// for every site. Drawn on a 20 x 20 grid, as large as the icons next to it.
++enum class ShieldLook { kOn, kNotWeb, kOffHere, kOffEverywhere };
++
++ShieldLook LookOf(const Shield& shield) {
++  if (shield.count < 0) {
++    return ShieldLook::kNotWeb;
++  }
++  if (shield.off_everywhere) {
++    return ShieldLook::kOffEverywhere;
++  }
++  return shield.off_here ? ShieldLook::kOffHere : ShieldLook::kOn;
++}
++
++class ShieldSource : public gfx::CanvasImageSource {
++ public:
++  ShieldSource(int size, ShieldLook look, SkColor off_color)
++      : gfx::CanvasImageSource(gfx::Size(size, size)),
++        look_(look),
++        off_color_(off_color) {}
++
++  void Draw(gfx::Canvas* canvas) override {
++    const float s = size().width() / 20.0f;
++    const bool on = look_ == ShieldLook::kOn;
++    // an outline is drawn a little inside, so it is as large as the filled one
++    const float k = on ? 1.0f : 0.92f;
++    auto at = [s, k](float x, float y) {
++      return SkPoint::Make((10 + (x - 10) * k) * s, (10 + (y - 10) * k) * s);
++    };
++    SkPathBuilder outline;
++    outline.moveTo(at(10, 1.8f));
++    outline.lineTo(at(16.3f, 4.1f));
++    outline.cubicTo(at(16.6f, 4.2f), at(16.8f, 4.5f), at(16.8f, 4.8f));
++    outline.lineTo(at(16.8f, 9.4f));
++    outline.cubicTo(at(16.8f, 13.4f), at(14.1f, 16.8f), at(10.3f, 18.1f));
++    outline.cubicTo(at(10.1f, 18.2f), at(9.9f, 18.2f), at(9.7f, 18.1f));
++    outline.cubicTo(at(5.9f, 16.8f), at(3.2f, 13.4f), at(3.2f, 9.4f));
++    outline.lineTo(at(3.2f, 4.8f));
++    outline.cubicTo(at(3.2f, 4.5f), at(3.4f, 4.2f), at(3.7f, 4.1f));
++    outline.close();
++    cc::PaintFlags body;
++    body.setAntiAlias(true);
++    body.setColor(on ? kShieldOn : off_color_);
++    if (!on) {
++      body.setStyle(cc::PaintFlags::kStroke_Style);
++      body.setStrokeWidth(1.5f * s);
++      body.setStrokeJoin(cc::PaintFlags::kRound_Join);
++    }
++    canvas->DrawPath(outline.detach(), body);
++
++    cc::PaintFlags mark;
++    mark.setAntiAlias(true);
++    mark.setColor(on ? SK_ColorWHITE : off_color_);
++    auto rect = [s](float x, float y, float w, float h) {
++      return gfx::RectF(x * s, y * s, w * s, h * s);
++    };
++    switch (look_) {
++      case ShieldLook::kOn:
++      case ShieldLook::kNotWeb:
++        // Thoron's T
++        canvas->DrawRect(rect(6.4f, 6.2f, 7.2f, 2.0f), mark);
++        canvas->DrawRect(rect(9.0f, 8.2f, 2.0f, 5.6f), mark);
++        break;
++      case ShieldLook::kOffEverywhere:
++        // paused
++        canvas->DrawRect(rect(7.4f, 6.6f, 1.9f, 6.6f), mark);
++        canvas->DrawRect(rect(10.7f, 6.6f, 1.9f, 6.6f), mark);
++        break;
++      case ShieldLook::kOffHere: {
++        // allowed here
++        cc::PaintFlags slash(mark);
++        slash.setStyle(cc::PaintFlags::kStroke_Style);
++        slash.setStrokeWidth(1.6f * s);
++        slash.setStrokeCap(cc::PaintFlags::kRound_Cap);
++        canvas->DrawLine(gfx::PointF(6.6f * s, 6.4f * s),
++                         gfx::PointF(13.4f * s, 13.6f * s), slash);
++        break;
++      }
++    }
++  }
++
++ private:
++  const ShieldLook look_;
++  const SkColor off_color_;
++};
++
 +ui::ImageModel DrawShield(const Shield& shield,
 +                          const views::View* view,
 +                          int size,
 +                          SkColor off_color) {
 +  // The shield fills its place as the icons next to it do (P5.73).
-+  const gfx::ImageSkia icon = gfx::CreateVectorIcon(
-+      vector_icons::kShieldIcon, size, shield.off() ? off_color : kShieldOn);
++  const gfx::ImageSkia icon(
++      std::make_unique<ShieldSource>(size, LookOf(shield), off_color),
++      gfx::Size(size, size));
 +  // the setting of chrome://adblock, as in uBlock Origin
 +  const bool badge = thoron_adblock::EngineService::Get().Option("badge");
 +  const std::string text =
@@ -2331,6 +2433,171 @@ index 0000000000000000000000000000000000000000..5223aea01a4d55eb4f860673adad0aeb
 +};
 +
 +#endif  // CHROME_BROWSER_UI_VIEWS_TOOLBAR_THORON_ADBLOCK_BUTTON_H_
+diff --git a/chrome/browser/ui/views/toolbar/thoron_windows_security.cc b/chrome/browser/ui/views/toolbar/thoron_windows_security.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..97dfc3f6866ed7ab120bee39f31f6d56acdad4b0
+--- /dev/null
++++ b/chrome/browser/ui/views/toolbar/thoron_windows_security.cc
+@@ -0,0 +1,134 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "chrome/browser/ui/views/toolbar/thoron_windows_security.h"
++
++#include "build/build_config.h"
++
++#if BUILDFLAG(IS_WIN)
++#include <windows.h>
++
++#include <stdint.h>
++#include <wchar.h>
++
++#include <iterator>
++
++#include "base/functional/bind.h"
++#include "base/location.h"
++#include "base/task/single_thread_task_runner.h"
++#include "base/time/time.h"
++#endif
++
++namespace thoron {
++
++#if BUILDFLAG(IS_WIN)
++namespace {
++
++// The window Windows Security asks in (Windows Hello, the PIN, passkeys),
++// shown by Windows' own process, not the browser's.
++constexpr wchar_t kPromptClass[] = L"Credential Dialog Xaml Host";
++// It may lay itself out after it is shown, and fall behind again: it is
++// brought up once more then.
++constexpr base::TimeDelta kAgain = base::Milliseconds(350);
++
++HWINEVENTHOOK g_hook = nullptr;
++
++bool IsSecurityPrompt(HWND window) {
++  wchar_t name[64] = {};
++  return ::GetClassNameW(window, name, static_cast<int>(std::size(name))) &&
++         wcscmp(name, kPromptClass) == 0;
++}
++
++bool OfThisBrowser(HWND window) {
++  DWORD process = 0;
++  ::GetWindowThreadProcessId(window, &process);
++  return process == ::GetCurrentProcessId();
++}
++
++// The prompt belongs in front: the browser is the window in front (the person
++// was using it when the prompt came), or a window of the browser covers the
++// prompt from above.
++bool BelongsInFront(HWND prompt) {
++  if (HWND front = ::GetForegroundWindow(); front && OfThisBrowser(front)) {
++    return true;
++  }
++  RECT prompt_rect;
++  if (!::GetWindowRect(prompt, &prompt_rect)) {
++    return false;
++  }
++  for (HWND above = ::GetWindow(prompt, GW_HWNDPREV); above;
++       above = ::GetWindow(above, GW_HWNDPREV)) {
++    RECT rect;
++    RECT overlap;
++    if (OfThisBrowser(above) && ::IsWindowVisible(above) &&
++        ::GetWindowRect(above, &rect) &&
++        ::IntersectRect(&overlap, &rect, &prompt_rect)) {
++      return true;
++    }
++  }
++  return false;
++}
++
++void BringToFront(HWND prompt) {
++  if (!::IsWindow(prompt) || !::IsWindowVisible(prompt)) {
++    return;
++  }
++  // Above every window, then a window like the others again, in front of
++  // them; posted to the prompt's own thread, so the browser never waits for
++  // it.
++  constexpr UINT kFlags =
++      SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS;
++  ::SetWindowPos(prompt, HWND_TOPMOST, 0, 0, 0, 0, kFlags);
++  ::SetWindowPos(prompt, HWND_NOTOPMOST, 0, 0, 0, 0, kFlags);
++  // The keyboard too, so the PIN can be typed at once. Windows allows it only
++  // while the browser is in front, which is when the person asked.
++  if (HWND front = ::GetForegroundWindow(); front && OfThisBrowser(front)) {
++    ::SetForegroundWindow(prompt);
++  }
++}
++
++void CALLBACK OnShown(HWINEVENTHOOK hook,
++                      DWORD event,
++                      HWND window,
++                      LONG object,
++                      LONG child,
++                      DWORD thread,
++                      DWORD time) {
++  if (object != OBJID_WINDOW || child != CHILDID_SELF || !window ||
++      ::GetAncestor(window, GA_ROOT) != window || !IsSecurityPrompt(window) ||
++      !BelongsInFront(window)) {
++    return;
++  }
++  BringToFront(window);
++  // the window as a number: it may be gone by then (BringToFront checks)
++  base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
++      FROM_HERE,
++      base::BindOnce(
++          [](uintptr_t prompt) {
++            BringToFront(reinterpret_cast<HWND>(prompt));
++          },
++          reinterpret_cast<uintptr_t>(window)),
++      kAgain);
++}
++
++}  // namespace
++
++void WatchWindowsSecurityPrompts() {
++  if (g_hook) {
++    return;
++  }
++  // Out of context: Windows tells the browser's UI thread, through its
++  // message loop, of every window shown by another process; nothing is
++  // loaded into that process.
++  g_hook = ::SetWinEventHook(EVENT_OBJECT_SHOW, EVENT_OBJECT_SHOW, nullptr,
++                             &OnShown, 0, 0,
++                             WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
++}
++
++#else
++
++void WatchWindowsSecurityPrompts() {}
++
++#endif  // BUILDFLAG(IS_WIN)
++
++}  // namespace thoron
+diff --git a/chrome/browser/ui/views/toolbar/thoron_windows_security.h b/chrome/browser/ui/views/toolbar/thoron_windows_security.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..558496fec9e4a001292ba9cbd6982267bbeb7071
+--- /dev/null
++++ b/chrome/browser/ui/views/toolbar/thoron_windows_security.h
+@@ -0,0 +1,19 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef CHROME_BROWSER_UI_VIEWS_TOOLBAR_THORON_WINDOWS_SECURITY_H_
++#define CHROME_BROWSER_UI_VIEWS_TOOLBAR_THORON_WINDOWS_SECURITY_H_
++
++namespace thoron {
++
++// Windows asks "is it you?" in a window of its own (Windows Security: Windows
++// Hello or the PIN, for showing and filling saved passwords, for passkeys and
++// security keys, and for a password manager's own check), and it may open
++// that window behind the browser. From the first call on, every such window
++// that opens while the browser is in front, or behind one of its windows, is
++// brought to the front at once. Windows only; elsewhere it does nothing.
++void WatchWindowsSecurityPrompts();
++
++}  // namespace thoron
++
++#endif  // CHROME_BROWSER_UI_VIEWS_TOOLBAR_THORON_WINDOWS_SECURITY_H_
 diff --git a/chrome/browser/ui/webui/thoron_adblock_popup_ui.cc b/chrome/browser/ui/webui/thoron_adblock_popup_ui.cc
 new file mode 100644
 index 0000000000000000000000000000000000000000..03563def7a66dc6c61c525fd671849a3389c3575

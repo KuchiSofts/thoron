@@ -1353,6 +1353,70 @@ index a02ab7d45eba361c16e5abd2da2c9328d73e7120..08c0d31c4025f44c8c0de202ea3352df
    gfx::Image icon = content_setting_image_model_->GetIcon(icon_color_.value_or(
        color_utils::DeriveDefaultIconColor(GetForegroundColor())));
    if (!icon.IsEmpty()) {
+diff --git a/chrome/browser/ui/views/location_bar/location_bar_view.cc b/chrome/browser/ui/views/location_bar/location_bar_view.cc
+index af9b6f1dc58174281ec64b74c578a3639888ce86..295412fd6cb75627a488278b42b466ff2cd9d7e9 100644
+--- a/chrome/browser/ui/views/location_bar/location_bar_view.cc
++++ b/chrome/browser/ui/views/location_bar/location_bar_view.cc
+@@ -63,6 +63,8 @@
+ #include "chrome/browser/ui/views/chrome_typography.h"
+ #include "chrome/browser/ui/views/frame/browser_view.h"
+ #include "chrome/browser/ui/views/location_bar/content_setting_image_view.h"
++#include "components/thoron_adblock/engine_service.h"
++#include "components/thoron_adblock/features.h"
+ #include "chrome/browser/ui/views/location_bar/location_bar_layout.h"
+ #include "chrome/browser/ui/views/location_bar/location_bar_util.h"
+ #include "chrome/browser/ui/views/location_bar/location_icon_state_helper.h"
+@@ -923,6 +925,28 @@ void LocationBarView::Layout(PassKey) {
+     }
+   };
+ 
++  // Thoron adblock (P5.73): its shield at the far end of the address bar, or
++  // before the other icons, as chrome://adblock says; else with the others.
++  ContentSettingImageView* thoron_shield = nullptr;
++  std::string thoron_place;
++  if (base::FeatureList::IsEnabled(thoron_adblock::kThoronNativeAdblock)) {
++    thoron_place =
++        thoron_adblock::EngineService::Get().Choice("address-position");
++    for (ContentSettingImageView* view : content_setting_views_) {
++      if ((thoron_place == "end" || thoron_place == "start") &&
++          view->GetType() == ContentSettingImageModel::ImageType::kAds) {
++        thoron_shield = view;
++      }
++    }
++  }
++  const int thoron_padding = features::IsThorium2024()
++                                 ? kThoriumContentSettingIntraItemPadding
++                                 : kContentSettingIntraItemPadding;
++  if (thoron_shield && thoron_place == "end") {
++    add_trailing_decoration(thoron_shield, thoron_padding,
++                            /*edge_padding=*/trailing_decorations_edge_padding);
++  }
++
+   if (features::IsPageActionsElevatedToolbarEnabled()) {
+     if (page_action_container_ && page_action_container_->GetVisible()) {
+       const bool is_capsule_active = page_action_container_->IsCapsuleActive();
+@@ -957,6 +981,9 @@ void LocationBarView::Layout(PassKey) {
+                           /*edge_padding=*/trailing_decorations_edge_padding);
+   for (ContentSettingImageView* view :
+        std::views::reverse(content_setting_views_)) {
++    if (view == thoron_shield) {
++      continue;
++    }
+     const int intra_item_padding = features::IsThorium2024()
+                                        ? kThoriumContentSettingIntraItemPadding
+                                        : kContentSettingIntraItemPadding;
+@@ -964,6 +991,11 @@ void LocationBarView::Layout(PassKey) {
+                             /*edge_padding=*/trailing_decorations_edge_padding);
+   }
+ 
++  if (thoron_shield && thoron_place == "start") {
++    add_trailing_decoration(thoron_shield, thoron_padding,
++                            /*edge_padding=*/trailing_decorations_edge_padding);
++  }
++
+   add_trailing_decoration(clear_all_button_, /*intra_item_padding=*/0,
+                           /*edge_padding=*/trailing_decorations_edge_padding);
+ 
 diff --git a/chrome/browser/prefs/browser_prefs.cc b/chrome/browser/prefs/browser_prefs.cc
 index fdd05fad32252be538eef299e830625a6a3c96ba..12d5c695cf9ea47c4090cc3d9b7ad0d4146ea3a4 100644
 --- a/chrome/browser/prefs/browser_prefs.cc
@@ -1592,10 +1656,10 @@ index 0000000000000000000000000000000000000000..5ace492dd1a60c29b3c3dd04efae2228
 +#endif  // CHROME_BROWSER_UI_BROWSER_WEB_CONTENTS_DELEGATE_THORON_ADBLOCK_SHORTCUTS_H_
 diff --git a/chrome/browser/ui/views/toolbar/thoron_adblock_button.cc b/chrome/browser/ui/views/toolbar/thoron_adblock_button.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..2095e716314642d7b2553290030fbbbbd01d28b3
+index 0000000000000000000000000000000000000000..70dde0a6c05f1afd3ef23114eaac07178a7be14b
 --- /dev/null
 +++ b/chrome/browser/ui/views/toolbar/thoron_adblock_button.cc
-@@ -0,0 +1,463 @@
+@@ -0,0 +1,537 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -1641,6 +1705,8 @@ index 0000000000000000000000000000000000000000..2095e716314642d7b2553290030fbbbb
 +#include "ui/color/color_provider.h"
 +#include "ui/gfx/image/image.h"
 +#include "ui/gfx/image/image_skia.h"
++#include "ui/gfx/image/image_skia_operations.h"
++#include "third_party/skia/include/core/SkBitmap.h"
 +#include "ui/gfx/paint_vector_icon.h"
 +#include "ui/views/accessibility/view_accessibility.h"
 +#include "ui/events/event.h"
@@ -1728,9 +1794,23 @@ index 0000000000000000000000000000000000000000..2095e716314642d7b2553290030fbbbb
 +                          const views::View* view,
 +                          int size,
 +                          SkColor off_color) {
++  // The shield fills its place as the icons next to it do (P5.73).
 +  const gfx::ImageSkia icon = gfx::CreateVectorIcon(
 +      vector_icons::kShieldIcon, size, shield.off() ? off_color : kShieldOn);
-+  // The badge is drawn over the icon the way an extension's badge is.
++  // the setting of chrome://adblock, as in uBlock Origin
++  const bool badge = thoron_adblock::EngineService::Get().Option("badge");
++  const std::string text =
++      shield.off() || !badge ? std::string() : BadgeText(shield.count);
++  if (text.empty()) {
++    return ui::ImageModel::FromImageSkia(icon);
++  }
++  // The count as an extension's badge, over the shield. The badge's image
++  // places an icon as if it were an extension's (16 px), which put the shield
++  // (as large as the icons next to it) 2 px right of and below its place: it
++  // is given an empty 16 px icon and draws only the badge.
++  SkBitmap empty;
++  empty.allocN32Pixels(16, 16);
++  empty.eraseColor(SK_ColorTRANSPARENT);
 +  auto source = std::make_unique<IconWithBadgeImageSource>(
 +      gfx::Size(size, size),
 +      base::BindRepeating(
@@ -1738,17 +1818,12 @@ index 0000000000000000000000000000000000000000..2095e716314642d7b2553290030fbbbb
 +            return view->GetColorProvider();
 +          },
 +          base::Unretained(view)));
-+  source->SetIcon(gfx::Image(icon));
-+  // the setting of chrome://adblock, as in uBlock Origin
-+  const bool badge = thoron_adblock::EngineService::Get().Option("badge");
-+  const std::string text =
-+      shield.off() || !badge ? std::string() : BadgeText(shield.count);
-+  if (!text.empty()) {
-+    source->SetBadge(std::make_unique<IconWithBadgeImageSource::Badge>(
-+        text, kBadgeText, kBadgeBackground));
-+  }
++  source->SetIcon(gfx::Image(gfx::ImageSkia::CreateFrom1xBitmap(empty)));
++  source->SetBadge(std::make_unique<IconWithBadgeImageSource::Badge>(
++      text, kBadgeText, kBadgeBackground));
++  const gfx::ImageSkia count(std::move(source), gfx::Size(size, size));
 +  return ui::ImageModel::FromImageSkia(
-+      gfx::ImageSkia(std::move(source), gfx::Size(size, size)));
++      gfx::ImageSkiaOperations::CreateSuperimposedImage(icon, count));
 +}
 +
 +}  // namespace
@@ -1920,7 +1995,66 @@ index 0000000000000000000000000000000000000000..2095e716314642d7b2553290030fbbbb
 +  WarmUpMenu();
 +}
 +
++void ThoronAdblockButton::AddedToWidget() {
++  ToolbarButton::AddedToWidget();
++  // after the toolbar has made its other buttons
++  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
++      FROM_HERE, base::BindOnce(&ThoronAdblockButton::ApplyPosition,
++                                weak_factory_.GetWeakPtr()));
++}
++
++void ThoronAdblockButton::ApplyPosition() {
++  ToolbarView* toolbar = views::AsViewClass<ToolbarView>(parent());
++  if (!toolbar) {
++    return;
++  }
++  const std::string where =
++      thoron_adblock::EngineService::Get().Choice("toolbar-position");
++  // The toolbar has no getters for its extensions and its menu: they are
++  // found by their kind.
++  auto child_named = [toolbar](std::string_view name) -> views::View* {
++    for (views::View* child : toolbar->children()) {
++      if (child->GetClassName() == name) {
++        return child;
++      }
++    }
++    return nullptr;
++  };
++  views::View* after = nullptr;   // the shield right after this one
++  views::View* before = nullptr;  // or right before this one
++  if (where == "menu") {
++    before = child_named("BrowserAppMenuButton");
++  } else if (where == "extensions") {
++    after = child_named("ExtensionsToolbarDesktop");
++  }
++  if (!after && !before) {
++    after = toolbar->location_bar_view();
++  }
++  views::View* anchor = after ? after : before;
++  if (!anchor || anchor->parent() != toolbar) {
++    return;
++  }
++  const std::optional<size_t> mine = toolbar->GetIndexOf(this);
++  std::optional<size_t> index = toolbar->GetIndexOf(anchor);
++  if (!mine || !index) {
++    return;
++  }
++  // the shield's own place is taken out first
++  size_t target = *index;
++  if (*mine < target) {
++    --target;
++  }
++  if (after) {
++    ++target;
++  }
++  if (target != *mine) {
++    toolbar->ReorderChildView(this, target);
++    toolbar->InvalidateLayout();
++  }
++}
++
 +void ThoronAdblockButton::OnStateChanged() {
++  ApplyPosition();
 +  SetVisible(thoron_adblock::EngineService::Get().ShieldInToolbar());
 +  UpdateIcon();
 +  RefreshAddressBar();
@@ -1943,6 +2077,10 @@ index 0000000000000000000000000000000000000000..2095e716314642d7b2553290030fbbbb
 +  if (ToolbarView* toolbar = views::AsViewClass<ToolbarView>(parent())) {
 +    if (LocationBar* location_bar = toolbar->location_bar()) {
 +      location_bar->UpdateContentSettingsIcons();
++    }
++    // where its shield is may have changed (P5.73)
++    if (views::View* location_bar_view = toolbar->location_bar_view()) {
++      location_bar_view->InvalidateLayout();
 +    }
 +  }
 +}
@@ -2061,10 +2199,10 @@ index 0000000000000000000000000000000000000000..2095e716314642d7b2553290030fbbbb
 +END_METADATA
 diff --git a/chrome/browser/ui/views/toolbar/thoron_adblock_button.h b/chrome/browser/ui/views/toolbar/thoron_adblock_button.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..dd113ac35297b012d9bc94069247b8ad4e95b865
+index 0000000000000000000000000000000000000000..5223aea01a4d55eb4f860673adad0aebb59256b4
 --- /dev/null
 +++ b/chrome/browser/ui/views/toolbar/thoron_adblock_button.h
-@@ -0,0 +1,124 @@
+@@ -0,0 +1,128 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -2141,6 +2279,7 @@ index 0000000000000000000000000000000000000000..dd113ac35297b012d9bc94069247b8ad
 +  void UpdateIcon() override;
 +  // the pointer over the shield: the menu's page is loaded ahead
 +  void OnMouseEntered(const ui::MouseEvent& event) override;
++  void AddedToWidget() override;
 +
 +  // TabStripModelObserver:
 +  void OnTabStripModelChanged(
@@ -2167,6 +2306,9 @@ index 0000000000000000000000000000000000000000..dd113ac35297b012d9bc94069247b8ad
 +  // kAddressBarRefresh while a page blocks a lot.
 +  void RefreshAddressBar();
 +  void DoRefreshAddressBar();
++  // Moves the shield where chrome://adblock says (P5.73): after the
++  // extensions, right after the address bar, or next to the menu.
++  void ApplyPosition();
 +  // The menu's bubble manager, made when first needed.
 +  ThoronMenuBubbleManager& Menu();
 +  void WarmUpMenu();
@@ -3017,10 +3159,10 @@ index 0000000000000000000000000000000000000000..775954638d4dbf1764c678318776e97d
 +#endif  // CHROME_BROWSER_UI_WEBUI_THORON_ADBLOCK_SITE_JAVASCRIPT_H_
 diff --git a/chrome/browser/ui/webui/thoron_adblock_ui.cc b/chrome/browser/ui/webui/thoron_adblock_ui.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..2fcbfb1173ae2ca051f70255bc24f51ef9a0d37c
+index 0000000000000000000000000000000000000000..84d097bec5aeda64eeb92bd9eba60e5ddd098cfb
 --- /dev/null
 +++ b/chrome/browser/ui/webui/thoron_adblock_ui.cc
-@@ -0,0 +1,845 @@
+@@ -0,0 +1,856 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -3533,6 +3675,10 @@ index 0000000000000000000000000000000000000000..2fcbfb1173ae2ca051f70255bc24f51e
 +          "colorblind", "no-tooltips", "toolbar-shield", "address-shield"}) {
 +      settings.Set(name, Service().Option(name));
 +    }
++    // where the shields are (P5.73)
++    for (const char* name : {"toolbar-position", "address-position"}) {
++      settings.Set(name, Service().Choice(name));
++    }
 +    settings.Set("media-kb", Service().large_media_kb());
 +    // the switch for every site (P5.70); not in a backup
 +    settings.Set("blocking",
@@ -3591,6 +3737,13 @@ index 0000000000000000000000000000000000000000..2fcbfb1173ae2ca051f70255bc24f51e
 +      Answer(*id, args[2].is_string() && Service().SetAccent(args[2].GetString())
 +                      ? std::string()
 +                      : std::string("This is not a colour."));
++      return;
++    }
++    if (thoron_adblock::EngineService::KnownChoiceName(name)) {
++      Answer(*id, args[2].is_string() &&
++                          Service().SetChoice(name, args[2].GetString())
++                      ? std::string()
++                      : std::string("This is not a choice."));
 +      return;
 +    }
 +    if (name == "theme") {

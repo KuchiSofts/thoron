@@ -63,7 +63,9 @@ few days, again as soon as the network is back, and after the computer wakes up.
 
 - **The shield:** in the address bar on every page, and in the toolbar next to it, where extensions'
   icons sit. `chrome://adblock` sets where it is: in both, in the address bar only, or in the toolbar
-  only. It is teal while it blocks and grey where it is off; its number is what was blocked on the page
+  only; and where exactly: in the toolbar right after the address bar, after the extensions or next to the
+  menu, and in the address bar with the other icons, before them or at the far end. A small preview shows
+  your choice. It is teal while it blocks and grey where it is off; its number is what was blocked on the page
   you look at. Click it for the menu, click it again to close it; the menu is loaded ahead, so it opens
   at once:
   - the big **power button** switches blocking off or on for this site (the page reloads);
@@ -116,6 +118,10 @@ few days, again as soon as the network is back, and after the computer wakes up.
   "Privacy and security", "Site settings", "Additional content settings", "Ads and trackers".
 
 ### Lists and your own rules
+
+- **Finding things:** type in "Find a setting" or "Find a list, a country or a language" and only what
+  matches stays. The lists for regions and languages show each country's flag and name, and the ones for
+  your browser's languages are suggested at the top (nothing is added unless you tick it).
 
 Open `chrome://adblock`.
 

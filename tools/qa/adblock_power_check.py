@@ -87,7 +87,7 @@ def menu_problems(step: str, seen: dict, *, on: bool, pause: bool = False) -> li
         out.append(f"{step}: the menu's switch shows {seen.get('pill')!r} ({seen.get('pressed')})")
     if seen.get("pause") is not (not pause):
         out.append(f"{step}: the menu's choices of how long are {'hidden' if seen.get('pause') else 'shown'}")
-    if not on and not str(seen.get("state", "")).startswith("Ad blocking is off for every site"):
+    if not on and not str(seen.get("state", "")).startswith("Thoron adblock is off for every site"):
         out.append(f"{step}: the menu says {seen.get('state')!r}")
     return out
 
@@ -185,7 +185,7 @@ def run(browser: Path, work: Path) -> list[str]:
                 got = _call(settings, "getSettings") or {}
                 got["state"] = _eval(settings, "document.getElementById('blocking-state').textContent")
                 got["box"] = _eval(settings, "document.getElementById('blocking').checked")
-                if got["box"] is got.get("blocking") and                         str(got["state"]).startswith("Ad blocking is on" if got.get("blocking") else "Ad blocking is off"):
+                if got["box"] is got.get("blocking") and                         str(got["state"]).startswith("Thoron adblock is on" if got.get("blocking") else "Thoron adblock is off"):
                     break
                 time.sleep(0.5)
             return got
@@ -215,7 +215,7 @@ def run(browser: Path, work: Path) -> list[str]:
             now = settings_now(settings)
             seen = load()
             found = page_problems("off", seen, blocking=False)
-            found += settings_problems("off", now, on=False, state="Ad blocking is off for every site.")
+            found += settings_problems("off", now, on=False, state="Thoron adblock is off for every site.")
             report("off", found, [seen, now.get("blocking"), now.get("state")])
 
             _eval(settings, "document.getElementById('blocking').click(); 1")
@@ -223,7 +223,7 @@ def run(browser: Path, work: Path) -> list[str]:
             now = settings_now(settings)
             seen = load()
             found = page_problems("back", seen, blocking=True)
-            found += settings_problems("back", now, on=True, state="Ad blocking is on for every site.")
+            found += settings_problems("back", now, on=True, state="Thoron adblock is on for every site.")
             report("back", found, [seen, now.get("blocking"), now.get("state")])
 
             # the menu, opened as a tab: it acts on the tab before it, the page
@@ -276,12 +276,12 @@ def run(browser: Path, work: Path) -> list[str]:
             now = settings_now(settings)
             if answer != "":
                 problems.append(f"while: the page answered {answer!r}")
-            found = settings_problems("while", now, on=False, state="Ad blocking is off for every site until ")
+            found = settings_problems("while", now, on=False, state="Thoron adblock is off for every site until ")
             found += while_problems(now.get("blocking-back"), now_ms)
             back_at = now.get("blocking-back") if isinstance(now.get("blocking-back"), (int, float)) else now_ms
             time.sleep(max(0.0, (back_at - time.time() * 1000) / 1000) + 6)
             later = settings_now(settings)
-            found += settings_problems("while", later, on=True, state="Ad blocking is on for every site.")
+            found += settings_problems("while", later, on=True, state="Thoron adblock is on for every site.")
             seen = load()
             found += page_problems("while", seen, blocking=True)
             report("while", found, [now.get("state"), later.get("blocking"), seen])
@@ -306,7 +306,7 @@ def run(browser: Path, work: Path) -> list[str]:
             second = settings_now(settings)
             found = settings_problems("kept", first, on=False)
             found += settings_problems("kept", closing, on=False,
-                                       state="Ad blocking is off for every site until the browser closes.")
+                                       state="Thoron adblock is off for every site until the browser closes.")
             found += settings_problems("kept", second, on=True)
             report("kept", found, [first.get("blocking"), closing.get("state"), second.get("blocking")])
             settings.close()

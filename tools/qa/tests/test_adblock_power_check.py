@@ -13,9 +13,9 @@ class StepTests(unittest.TestCase):
         self.assertEqual(len(pc.page_problems("off", {"banner": "none", "asked": 0}, blocking=False)), 2)
 
     def test_settings(self):
-        on = {"blocking": True, "state": "Ad blocking is on for every site."}
-        self.assertEqual(pc.settings_problems("back", on, on=True, state="Ad blocking is on"), [])
-        self.assertEqual(len(pc.settings_problems("off", on, on=False, state="Ad blocking is off")), 2)
+        on = {"blocking": True, "state": "Thoron adblock is on for every site."}
+        self.assertEqual(pc.settings_problems("back", on, on=True, state="Thoron adblock is on"), [])
+        self.assertEqual(len(pc.settings_problems("off", on, on=False, state="Thoron adblock is off")), 2)
         # a missing answer is not "on"
         self.assertEqual(len(pc.settings_problems("kept", {}, on=True)), 1)
 
@@ -23,7 +23,7 @@ class StepTests(unittest.TestCase):
         on = {"pill": "On", "pressed": "true", "pause": True, "state": ""}
         self.assertEqual(pc.menu_problems("menu", on, on=True), [])
         self.assertEqual(pc.menu_problems("menu", {**on, "pause": False}, on=True, pause=True), [])
-        off = {"pill": "Off", "pressed": "false", "pause": True, "state": "Ad blocking is off for every site."}
+        off = {"pill": "Off", "pressed": "false", "pause": True, "state": "Thoron adblock is off for every site."}
         self.assertEqual(pc.menu_problems("menu", off, on=False), [])
         self.assertEqual(len(pc.menu_problems("menu", {**off, "state": "Blocking is on for this site."},
                                               on=False)), 1)

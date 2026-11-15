@@ -9,7 +9,7 @@ rules; every other name fails, so nothing leaves the PC). Steps:
 
     default   a new profile: the built-in blocker is on with no switch (the image is never asked for), and no
               uBlock Origin is put into it
-    off       "Built-in ad blocking" off: a new profile gets the built-in uBlock Origin, as before
+    off       "Thoron adblock" off: a new profile gets the built-in uBlock Origin, as before
     kept      that profile started again with the built-in blocker on: uBlock Origin is still there and on
     both      the menu says that both are on; "Keep both" hides it for good, also when the menu opens again
 

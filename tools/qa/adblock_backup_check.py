@@ -43,7 +43,7 @@ LIST_OFF = "easyprivacy"
 TURNED_ON = ("block-csp-reports", "default-fonts")
 # the settings that are on unless changed (P5.46: auto-update, the context menu, the menu's grid), and the
 # largest media size unless changed
-DEFAULT_ON = ("badge", "auto-update", "context-menu", "advanced", "toolbar-shield")  # P5.71: the toolbar shield
+DEFAULT_ON = ("badge", "auto-update", "context-menu", "advanced", "toolbar-shield", "address-shield")  # P5.71: the toolbar shield
 DEFAULT_MEDIA_KB = 50
 
 CHANGE = f"""(async () => {{

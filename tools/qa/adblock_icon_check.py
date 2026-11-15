@@ -14,8 +14,11 @@ rules; every other name fails, so nothing leaves the PC). Steps:
     icon    the shield is in the address bar as soon as the page is shown, before anything is blocked
     count   it says how much was blocked once the ad image is stopped
     menu    a click on it opens the blocker's menu
-    again   six clicks in a row: the menu opens and closes each time, the browser answers all along (the menu
-            once stopped opening after it had been opened and closed)
+    again   six clicks in a row: a click on the shield while the menu is closed opens it, every time, and the
+            browser answers all along. The menu is seen by its own window: the page of a menu once kept saying
+            it was shown while its window stayed hidden, and the menu did not open again for 30 seconds after
+            it had closed (the page kept for a new opening). A menu closes when it loses the focus, which a
+            window off the screen may make it do by itself; a click that closes an open menu is no failure.
 
     py -3 -I tools/qa/adblock_icon_check.py --browser <out>\\thoron.exe --work <scratch dir>
 Exit status 0 when every step passes (or the check does not apply, on another system).
@@ -85,15 +88,15 @@ def icon_problems(before: dict, after: dict) -> list[str]:
     return out
 
 
-def menu_problems(opened: list[bool], answered: list[bool]) -> list[str]:
-    """`opened`: after each click, whether the menu showed; the first opens it, the next closes it, and so on."""
+def menu_problems(clicks: list[tuple[bool, bool]], answered: list[bool]) -> list[str]:
+    """`clicks`: for each click, whether the menu's window was open before it, and whether it showed after it.
+    A click on a closed menu must open it; a click on an open one may close it."""
     out = []
-    if not opened or not opened[0]:
+    if not clicks or not clicks[0][1]:
         out.append("menu: a click on the shield did not open the blocker's menu")
-    want = [n % 2 == 0 for n in range(len(opened))]
-    if opened and opened != want:
-        out.append(f"again: after each click the menu was {['open' if o else 'closed' for o in opened]}, "
-                   "not open and closed in turn")
+    missed = [n + 1 for n, (before, shown) in enumerate(clicks) if not before and not shown]
+    if clicks and missed and missed != [1]:
+        out.append(f"again: the menu was closed and did not open on click(s) {missed} of {len(clicks)}")
     if not all(answered):
         out.append(f"again: the browser did not answer after some clicks ({answered})")
     return out
@@ -131,6 +134,20 @@ def _windows(pid: int) -> list[int]:
 
     user32.EnumWindows(each, 0)
     return found
+
+
+def _menu_window(pid: int) -> bool:
+    """The menu's own window is shown: one of the browser's top-level windows about 330 px wide and tall enough
+    (a tooltip is a window too, a small one)."""
+    import ctypes
+    import ctypes.wintypes as wt
+    user32 = ctypes.WinDLL("user32", use_last_error=True)
+    for hwnd in _windows(pid):
+        r = wt.RECT()
+        user32.GetWindowRect(hwnd, ctypes.byref(r))
+        if 250 < r.right - r.left < 450 and r.bottom - r.top > 300:
+            return True
+    return False
 
 
 def _click(hwnd: int, x: int, y: int) -> None:
@@ -176,37 +193,28 @@ def run(browser: Path, work: Path, host: str) -> list[str]:
                 problems += found
 
                 main = _windows(proc.pid)
-                opened, answered = [], []
-
-                def menu_shown() -> bool:
-                    # the menu's own page says whether it shows (a tooltip is a window of its own too)
-                    menus = [t for t in json.loads(urllib.request.urlopen(
-                        f"http://127.0.0.1:{port}/json/list", timeout=10).read())
-                        if t.get("url", "").startswith(MENU_URL)]
-                    if not menus:
-                        return False
-                    menu = WebSocket(menus[0]["webSocketDebuggerUrl"])
-                    try:
-                        return menu.call("Runtime.evaluate", expression="document.visibilityState",
-                                         returnByValue=True)["result"]["value"] == "visible"
-                    finally:
-                        menu.close()
-
+                clicks, answered = [], []
                 for _ in range(CLICKS if main and after.get("name") else 0):
+                    open_before = _menu_window(proc.pid)
                     _click(main[0], after["x"], after["y"])
+                    shown, end = False, time.monotonic() + 1.5
+                    while time.monotonic() < end and not shown:
+                        time.sleep(0.1)
+                        shown = _menu_window(proc.pid)
+                    clicks.append((open_before, shown))
                     time.sleep(1.5)
-                    opened.append(menu_shown())
                     try:
                         answered.append(ws.call("Runtime.evaluate", expression="1+1",
                                                 returnByValue=True)["result"]["value"] == 2)
                     except (OSError, RuntimeError, KeyError):
                         answered.append(False)
-                found = menu_problems(opened, answered)
+                found = menu_problems(clicks, answered)
                 targets = [t.get("url", "") for t in json.loads(
                     urllib.request.urlopen(f"http://127.0.0.1:{port}/json/list", timeout=10).read())]
-                if opened and opened[0] and not any(url.startswith(MENU_URL) for url in targets):
+                if clicks and clicks[0][1] and not any(url.startswith(MENU_URL) for url in targets):
                     found.append("menu: what opened is not the blocker's menu")
-                print(f"{'PASS' if not found else 'FAIL'}  menu and again: {opened}, answered {answered}")
+                print(f"{'PASS' if not found else 'FAIL'}  menu and again: (open before, shown after) {clicks}, "
+                      f"answered {answered}")
                 problems += found
             finally:
                 ws.close()

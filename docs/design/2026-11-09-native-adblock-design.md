@@ -1927,6 +1927,15 @@ response's body. Thoron is the browser, so it does it for every page:
   now opens from the shield that was clicked. A press that closes the menu (it closes when anything else is
   pressed) no longer opens it again a moment later. The menu's page is kept between openings, and brought
   up to date the moment it shows.
+- **The menu that did not open (reported by the owner):** Chromium keeps a menu's page for 30 seconds
+  after the menu closes, and a menu's bubble waits until its page says it is ready to show. A kept page
+  said so only when it first loaded, so a menu opened again within those 30 seconds stayed hidden, and
+  every click after it only closed and opened that hidden bubble. Now a menu with a kept page is shown at
+  once (`ThoronAdblockButton::ShowMenu`). Loading the page again instead does not work: with each
+  navigation Chromium makes a new controller for the page, and the bubble does not know the new one. The
+  icon check had missed it because the page reports itself visible as soon as the bubble is made, before
+  its window shows; it now looks for the menu's own window, and fails when a click leaves a closed menu
+  closed.
 - **The toolbar's shield** stays, with the same look: "Show the shield in the toolbar too (it is always in
   the address bar)" on `chrome://adblock` takes it away; the menu then opens from the address bar.
 - **The filter lists in the menu**, as on `chrome://adblock`: each list with its rule count, a switch for

@@ -199,11 +199,17 @@ def rules_problems(box: str, exported: str) -> list[str]:
     return out
 
 
+def is_colorblind_allow(colour: str) -> bool:
+    """The grid's "allow" colour is the colour-blind friendly blue: one of its two shades, or both where the
+    page names its light and its dark shade at once ("light-dark(#1a73e8, #8ab4f8)")."""
+    return any(shade in colour.lower() for shade in COLORBLIND_ALLOW)
+
+
 def colorblind_problems(on: bool, seen: dict) -> list[str]:
     if on:
-        ok = seen.get("class") is True and seen.get("allow") in COLORBLIND_ALLOW
+        ok = seen.get("class") is True and is_colorblind_allow(seen.get("allow", ""))
     else:
-        ok = seen.get("class") is False and seen.get("allow") not in COLORBLIND_ALLOW
+        ok = seen.get("class") is False and not is_colorblind_allow(seen.get("allow", ""))
     return [] if ok else [f"colorblind: with the setting {'on' if on else 'off'} the menu has {seen}"]
 
 

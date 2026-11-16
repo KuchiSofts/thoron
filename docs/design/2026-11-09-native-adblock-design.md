@@ -2278,6 +2278,40 @@ response's body. Thoron is the browser, so it does it for every page:
   brought back; a wrong passphrase, none, and a changed file refused), and by `tools/qa/mail_check.py` (what of
   Gmail is counted).
 
+### 12.72 chrome://adblock as a dashboard with tabs (P5.79, 2026-11-16)
+
+- **Why (the owner):** the settings should match the browser's colours and style, be more professional, "with
+  tabs and a smart UI".
+- **The page:** a header that stays in view (the shield, the state On / Paused / Off, a search box), a bar of
+  eight tabs, one panel at a time:
+  Overview (on, off and for how long; five numbers; quick actions; troubleshooting), Settings (a card each
+  for appearance, privacy, default behavior, filtering, shortcuts, advanced), Filter lists (the lists in
+  use, add a list, the catalog), My filters, My rules, Sites (allowed sites, the menu's switches), Logger,
+  Backup (file, cloud storage, starting over).
+- **Addresses:** the tab is in the address (`chrome://adblock/#lists`), so a reload, a link, Back and Forward
+  keep it. Every address that worked before still does: an old anchor, or the id of anything on the page,
+  opens the tab it is on and goes to it (the menu's "Logger" and "Settings", the shortcuts, a subscribe
+  link).
+- **Keyboard:** the tabs follow the usual pattern (arrow keys, Home and End); `/` goes to the search; Ctrl+S
+  saves in the two editors.
+- **The look:** the browser theme's colours (twelve of them, from `chrome://theme/colors.css`), each with a
+  colour of the page's own behind it. A person's choice of light or dark and their accent colour still win;
+  a theme chosen against the browser's uses the page's own colours of that kind. Cards on a quiet
+  background, pill buttons, switches for what is on or off, as the browser's own settings have them; from
+  480 px wide to three columns on a wide screen.
+- **Smarter:** one search over tabs, settings (also by the choices of a select), buttons, lists in use,
+  catalog lists by name, address or country, and sites; counts on four tabs; a mark for unsaved changes in
+  both editors and an undo for My rules; empty states that say what to do; a red mark on a list that could
+  not be downloaded.
+- **Nothing given up:** every id, every `data-setting`, every control and every message of the page is kept
+  (97 ids of the settings page, 38 of the menu), no HTML strings, no outside resources; the new strings (21)
+  are in es, fr, de, pt and ru. Found on the way and fixed: importing allowed sites always ended in an error.
+- **Checked:** the 32 offline checks that work these pages pass on it. Three were written for the page as one
+  long sheet and follow the tabs now: the catalog check (a setting counts as shown when nothing it is in is
+  hidden), the theme check (a light page is told from a dark one by its text, and "as the system" is the
+  browser's own), the tools check (the colour-blind colours where a page names its light and dark shade at
+  once).
+
 ## 13. Credits
 
 The procedural operators and the rest of the filter syntax are uBlock Origin's (with forms from Adblock

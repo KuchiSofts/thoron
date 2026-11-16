@@ -3,10 +3,12 @@
 """Native ad blocking, uBlock Origin's theme choice for its pages, checked end to end and offline (ROADMAP P5.59).
 
 "Theme" on chrome://adblock: as the system, light or dark. The settings page and the menu are served with the
-choice, so they open in its colours; "as the system" follows the system's light or dark. The system's choice is
-emulated (DevTools), nothing leaves the PC. Steps:
+choice, so they open in its colours; "as the system" takes the browser theme's own colours (P5.78), so it is
+light or dark as the browser is. A light page has dark text and a dark page light text: that is how they are
+told apart, whatever the colours. For the two fixed choices the system's light or dark is emulated the other
+way round (DevTools); nothing leaves the PC. Steps:
 
-    auto      as the system: the pages are light with a light system and dark with a dark one
+    auto      as the system: both pages are light or dark as the browser itself is
     dark      "Dark" with a light system: both pages are dark, also when opened again
     light     "Light" with a dark system: both pages are light
     kept      the choice is in the settings after the browser starts again
@@ -16,6 +18,7 @@ Exit status 0 only when every step passes.
 """
 import argparse
 import json
+import re
 import shutil
 import sys
 import tempfile
@@ -30,17 +33,29 @@ from tools.qa.adblock_syntax_check import _launch  # noqa: E402
 from tools.qa.cdp import WebSocket  # noqa: E402
 
 PAGES = {"settings": "chrome://adblock/", "menu": "chrome://adblock-menu.top-chrome/"}
-LIGHT, DARK = "#7235da", "#b097fa"  # the pages' accent colour in each
+LIGHT, DARK = "light", "dark"
 SETTLE_S = 2.5
+# the theme the page was served with, the colour of its text, and whether the browser itself is dark
 READ = ("JSON.stringify({theme: document.documentElement.getAttribute('data-theme') || '',"
-        " accent: getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()})")
+        " text: getComputedStyle(document.body).color,"
+        " browserDark: matchMedia('(prefers-color-scheme: dark)').matches})")
+
+
+def kind_of(colour: str) -> str:
+    """"dark" for a page whose text has the colour `colour` ("rgb(230, 230, 234)": light text), else "light"."""
+    numbers = [float(n) for n in re.findall(r"[0-9.]+", colour)[:3]]
+    if len(numbers) < 3:
+        return ""
+    if max(numbers) <= 1.0:  # "color(srgb 0.9 0.9 0.92)"
+        numbers = [n * 255 for n in numbers]
+    red, green, blue = numbers
+    return DARK if 0.2126 * red + 0.7152 * green + 0.0722 * blue > 127 else LIGHT
 
 
 def colour_problems(step: str, page: str, seen: dict, want: str, theme: str) -> list[str]:
     out = []
-    if seen.get("accent") != want:
-        out.append(f"{step}: the {page} is {'dark' if seen.get('accent') == DARK else 'light'}, "
-                   f"not {'dark' if want == DARK else 'light'} ({seen})")
+    if kind_of(seen.get("text", "")) != want:
+        out.append(f"{step}: the {page} is {kind_of(seen.get('text', '')) or 'unknown'}, not {want} ({seen})")
     if seen.get("theme") != theme:
         out.append(f"{step}: the {page} was served with the theme {seen.get('theme')!r}, not {theme!r}")
     return out
@@ -54,10 +69,11 @@ def _eval(ws: WebSocket, expression: str):
 
 
 def look(port: int, page: str, system: str) -> dict:
-    """The page as it opens, with the system's `system` ("light" or "dark") emulated."""
+    """The page as it opens, with the system's `system` ("light" or "dark") emulated ("": as it is)."""
     ws = WebSocket(_open(port, "about:blank")["webSocketDebuggerUrl"])
     try:
-        ws.call("Emulation.setEmulatedMedia", features=[{"name": "prefers-color-scheme", "value": system}])
+        if system:
+            ws.call("Emulation.setEmulatedMedia", features=[{"name": "prefers-color-scheme", "value": system}])
         ws.call("Page.navigate", url=PAGES[page])
         time.sleep(SETTLE_S)
         return json.loads(_eval(ws, READ) or "{}")
@@ -101,11 +117,12 @@ def run(browser: Path, work: Path) -> list[str]:
                     found += colour_problems("kept", page, seen[page], DARK, "dark")
                 report("kept", found, seen)
                 break
+            # as the system: the browser theme's own colours, so light or dark as the browser is
             found, seen = [], {}
-            for system, want in (("light", LIGHT), ("dark", DARK)):
-                for page in PAGES:
-                    seen[f"{page}/{system}"] = look(port, page, system)
-                    found += colour_problems("auto", page, seen[f"{page}/{system}"], want, "")
+            for page in PAGES:
+                seen[page] = look(port, page, "")
+                want = DARK if seen[page].get("browserDark") else LIGHT
+                found += colour_problems("auto", page, seen[page], want, "")
             report("auto", found, seen)
 
             for step, theme, system, want in (("light", "light", "dark", LIGHT), ("dark", "dark", "light", DARK)):

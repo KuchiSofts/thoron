@@ -10330,10 +10330,10 @@ index 0000000000000000000000000000000000000000..d95a04c967cb90b8b678d3c68d76da87
 +}
 diff --git a/components/thoron_adblock/i18n.js b/components/thoron_adblock/i18n.js
 new file mode 100644
-index 0000000000000000000000000000000000000000..36623286180a8eacaa8f340bb5ebfa145361ce85
+index 0000000000000000000000000000000000000000..be0d755f1dad31cf6db8d263ea961f55d80b308e
 --- /dev/null
 +++ b/components/thoron_adblock/i18n.js
-@@ -0,0 +1,1284 @@
+@@ -0,0 +1,1346 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -11365,6 +11365,68 @@ index 0000000000000000000000000000000000000000..36623286180a8eacaa8f340bb5ebfa14
 +  [`click again to remove the rule`, `haz clic de nuevo para quitar la regla`, `cliquez à nouveau pour retirer la règle`,
 +   `erneut klicken, um die Regel zu entfernen`, `clique de novo para remover a regra`,
 +   `щёлкните ещё раз, чтобы удалить правило`],
++  // the dashboard of chrome://adblock: the tabs, the overview, the search box, what an empty list says
++  [`Overview`, `Resumen`, `Aperçu`, `Übersicht`, `Visão geral`, `Обзор`],
++  [`Search settings, lists and countries`, `Buscar ajustes, listas y países`,
++   `Rechercher des paramètres, des listes et des pays`, `Einstellungen, Listen und Länder suchen`,
++   `Pesquisar configurações, listas e países`, `Поиск настроек, списков и стран`],
++  [`Nothing found. Try another word.`, `No se encontró nada. Prueba con otra palabra.`,
++   `Rien trouvé. Essayez un autre mot.`, `Nichts gefunden. Versuche ein anderes Wort.`,
++   `Nada encontrado. Tente outra palavra.`, `Ничего не найдено. Попробуйте другое слово.`],
++  [`Paused`, `En pausa`, `En pause`, `Pausiert`, `Em pausa`, `Пауза`],
++  [`Unsaved changes`, `Cambios sin guardar`, `Modifications non enregistrées`, `Nicht gespeicherte Änderungen`,
++   `Alterações não salvas`, `Несохранённые изменения`],
++  [`Lists in use`, `Listas en uso`, `Listes utilisées`, `Aktive Listen`, `Listas em uso`, `Используемые списки`],
++  [`Rules in use`, `Reglas en uso`, `Règles utilisées`, `Aktive Regeln`, `Regras em uso`, `Используемые правила`],
++  [`Allowed sites`, `Sitios permitidos`, `Sites autorisés`, `Erlaubte Websites`, `Sites permitidos`,
++   `Разрешённые сайты`],
++  [`Quick actions`, `Acciones rápidas`, `Actions rapides`, `Schnellaktionen`, `Ações rápidas`, `Быстрые действия`],
++  [`One rule per line, like ||ads.example.com^`, `Una regla por línea, como ||ads.example.com^`,
++   `Une règle par ligne, comme ||ads.example.com^`, `Eine Regel pro Zeile, zum Beispiel ||ads.example.com^`,
++   `Uma regra por linha, como ||ads.example.com^`, `По одному правилу в строке, например ||ads.example.com^`],
++  [`One rule per line, like * * 3p-script block`, `Una regla por línea, como * * 3p-script block`,
++   `Une règle par ligne, comme * * 3p-script block`, `Eine Regel pro Zeile, zum Beispiel * * 3p-script block`,
++   `Uma regra por linha, como * * 3p-script block`, `По одному правилу в строке, например * * 3p-script block`],
++  [`To allow ads and trackers on a site, type it here or use the menu of the shield on that site.`,
++   `Para permitir anuncios y rastreadores en un sitio, escríbelo aquí o usa el menú del escudo en ese sitio.`,
++   `Pour autoriser les publicités et les traqueurs sur un site, saisissez-le ici ou utilisez le menu du ` +
++       `bouclier sur ce site.`,
++   `Um Werbung und Tracker auf einer Website zu erlauben, gib sie hier ein oder nutze das Menü des Schilds ` +
++       `auf dieser Website.`,
++   `Para permitir anúncios e rastreadores em um site, digite-o aqui ou use o menu do escudo nesse site.`,
++   `Чтобы разрешить рекламу и трекеры на сайте, введите его здесь или воспользуйтесь меню щита на этом сайте.`],
++  [`A switch you change for a site in the menu of the shield is listed here.`,
++   `Los interruptores que cambies para un sitio en el menú del escudo aparecen aquí.`,
++   `Un interrupteur que vous changez pour un site dans le menu du bouclier s'affiche ici.`,
++   `Ein Schalter, den du im Menü des Schilds für eine Website änderst, erscheint hier.`,
++   `Um interruptor que você muda para um site no menu do escudo aparece aqui.`,
++   `Переключатель, изменённый для сайта в меню щита, появится здесь.`],
++  [`More about the logger`, `Más sobre el registro`, `En savoir plus sur le journal`, `Mehr zum Protokoll`,
++   `Mais sobre o registro`, `Подробнее о журнале`],
++  [`Time`, `Hora`, `Heure`, `Zeit`, `Hora`, `Время`],
++  [`Result`, `Resultado`, `Résultat`, `Ergebnis`, `Resultado`, `Результат`],
++  [`Address`, `Dirección`, `Adresse`, `Adresse`, `Endereço`, `Адрес`],
++  [`Nothing to show yet. Open or reload a page: its requests are listed here.`,
++   `Aún no hay nada que mostrar. Abre o recarga una página: sus solicitudes aparecen aquí.`,
++   `Rien à afficher pour l'instant. Ouvrez ou rechargez une page : ses requêtes s'affichent ici.`,
++   `Noch nichts anzuzeigen. Öffne eine Seite oder lade sie neu: Ihre Anfragen erscheinen hier.`,
++   `Ainda não há nada para mostrar. Abra ou recarregue uma página: as solicitações dela aparecem aqui.`,
++   `Пока показывать нечего. Откройте или перезагрузите страницу: её запросы появятся здесь.`],
++  [`Cloud storage`, `Almacenamiento en la nube`, `Stockage dans le cloud`, `Cloud-Speicher`,
++   `Armazenamento na nuvem`, `Облачное хранилище`],
++  [`Start over`, `Empezar de nuevo`, `Repartir de zéro`, `Neu anfangen`, `Começar de novo`, `Начать заново`],
++  [`Your own rules, the lists you added, allowed sites and switches are removed, and every setting goes back ` +
++       `to its default. Back up first if you may want them again.`,
++   `Se quitarán tus reglas, las listas que añadiste, los sitios permitidos y los interruptores, y cada ajuste ` +
++       `volverá a su valor predeterminado. Haz antes una copia de seguridad si quizá los quieras de nuevo.`,
++   `Vos règles, les listes ajoutées, les sites autorisés et les interrupteurs seront retirés, et chaque ` +
++       `paramètre reviendra à sa valeur par défaut. Faites d'abord une sauvegarde si vous pourriez en avoir besoin.`,
++   `Deine Regeln, hinzugefügten Listen, erlaubten Websites und Schalter werden entfernt, und jede Einstellung ` +
++       `kehrt zum Standard zurück. Sichere zuerst, falls du sie wieder brauchst.`,
++   `Suas regras, as listas que você adicionou, os sites permitidos e os interruptores serão removidos, e cada ` +
++       `configuração voltará ao padrão. Faça uma cópia de segurança antes se talvez quiser tudo de volta.`,
++   `Ваши правила, добавленные списки, разрешённые сайты и переключатели будут удалены, а все настройки ` +
++       `вернутся к значениям по умолчанию. Сначала сделайте резервную копию, если они могут понадобиться.`],
 +];
 +
 +// Sentences with a part that changes. Each language writes the sentence with $1, $2... for the parts;
@@ -15356,16 +15418,17 @@ index 0000000000000000000000000000000000000000..bb5e6c8789e8a4e07c5d7069027b5132
 +}
 diff --git a/components/thoron_adblock/popup_page.html b/components/thoron_adblock/popup_page.html
 new file mode 100644
-index 0000000000000000000000000000000000000000..2467cf41411f9cbaffcf16cf1edf2a7cf6e9a080
+index 0000000000000000000000000000000000000000..02ef8ce9f3060da45d2b0f79f1fb0188bd1c3c6b
 --- /dev/null
 +++ b/components/thoron_adblock/popup_page.html
-@@ -0,0 +1,317 @@
+@@ -0,0 +1,345 @@
 +<!doctype html>
 +<!-- Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +     found in the LICENSE file. -->
 +<!-- The menu of Thoron's built-in ad blocking: what the shield button in the toolbar opens. Like
 +     uBlock Origin's popup: the switch for the site, what was blocked, the tools and the per-site
-+     switches. The text is set by popup_page.js; nothing here comes from a web page. -->
++     switches. The text is set by popup_page.js; nothing here comes from a web page.
++     Its colours and its font are the browser theme's, as on chrome://adblock (settings_page.html). -->
 +<html lang="en" dir="ltr">
 +<head>
 +<meta charset="utf-8">
@@ -15373,119 +15436,153 @@ index 0000000000000000000000000000000000000000..2467cf41411f9cbaffcf16cf1edf2a7c
 +<title>Thoron adblock</title>
 +<style>
 +  @import url(chrome://resources/css/text_defaults_md.css);
-+  /* the browser theme's colours (P5.78): the accent follows it */
++  /* the browser theme's colours (P5.78): the menu takes them all, each with a colour of its own behind it */
 +  @import url(chrome://theme/colors.css?sets=ui,chrome);
 +  :root {
-+    --line: color-mix(in srgb, currentColor 14%, transparent);
-+    --soft: color-mix(in srgb, currentColor 60%, transparent);
-+    --accent: var(--color-sys-primary, #7235da);
-+    --on-accent: var(--color-sys-on-primary, #fff);
-+    --on: #1e8e3e;
-+    --off: #9aa0a6;
-+    --switch-on: var(--color-sys-primary, #1a73e8);
++    /* The menu's own colours, light and dark. They are used when the theme gives none, and when a person
++       chooses light or dark against the browser's theme (whose colours are then of the other kind). */
++    --own-bg: light-dark(#ffffff, #27272c);
++    --own-fg: light-dark(#1f1f24, #e6e6ea);
++    --own-soft: light-dark(#5c5f66, #b1b3ba);
++    --own-line: light-dark(rgb(0 0 0 / .12), rgb(255 255 255 / .14));
++    --own-accent: light-dark(#7235da, #b097fa);
++    --own-on-accent: light-dark(#ffffff, #1b1036);
++    --own-hover: light-dark(rgb(0 0 0 / .06), rgb(255 255 255 / .08));
++
++    --bg: var(--color-sys-base-container-elevated, var(--color-sys-surface, var(--own-bg)));
++    --fg: var(--color-sys-on-surface, var(--own-fg));
++    --soft: var(--color-sys-on-surface-subtle, var(--own-soft));
++    --line: var(--color-sys-divider, var(--own-line));
++    --accent: var(--color-sys-primary, var(--own-accent));
++    --on-accent: var(--color-sys-on-primary, var(--own-on-accent));
++    --chip: var(--color-sys-tonal-container, color-mix(in srgb, var(--accent) 16%, transparent));
++    --on-chip: var(--color-sys-on-tonal-container, var(--fg));
++    --hover: var(--color-sys-state-hover-on-subtle, var(--own-hover));
++    --edge: color-mix(in srgb, var(--fg) 28%, transparent);
++    --on: light-dark(#1e8e3e, #81c995);
++    --off: light-dark(#80868b, #9aa0a6);
++    --switch-on: var(--accent);
++    /* uBlock Origin's grid of rules: allow, block, leave to the lists; what is written on a rule that is set */
++    --allow: light-dark(#1e8e3e, #81c995);
++    --block: light-dark(#d93025, #f28b82);
++    --noop: light-dark(#80868b, #9aa0a6);
++    --on-set: light-dark(#fff, #202124);
 +  }
 +  /* uBlock Origin's theme: as the system, unless <html data-theme> says light or dark */
-+  :root[data-theme=light] { color-scheme: light; --accent: #7235da; --on-accent: #fff; --switch-on: #1a73e8; }
-+  :root[data-theme=dark] { color-scheme: dark; --accent: #b097fa; --on-accent: #1b1036; --on: #81c995;
-+                           --switch-on: #8ab4f8; }
++  :root[data-theme=light] { color-scheme: light; }
++  :root[data-theme=dark] { color-scheme: dark; }
 +  @media (prefers-color-scheme: dark) {
-+    :root:not([data-theme=light]) { --accent: var(--color-sys-primary, #b097fa);
-+                                    --on-accent: var(--color-sys-on-primary, #1b1036); --on: #81c995;
-+                                    --switch-on: var(--color-sys-primary, #8ab4f8); }
++    :root[data-theme=light] {
++      --bg: var(--own-bg); --fg: var(--own-fg); --soft: var(--own-soft); --line: var(--own-line);
++      --accent: var(--own-accent); --on-accent: var(--own-on-accent); --hover: var(--own-hover);
++      --chip: color-mix(in srgb, var(--accent) 16%, transparent); --on-chip: var(--fg);
++    }
 +  }
++  @media (prefers-color-scheme: light) {
++    :root[data-theme=dark] {
++      --bg: var(--own-bg); --fg: var(--own-fg); --soft: var(--own-soft); --line: var(--own-line);
++      --accent: var(--own-accent); --on-accent: var(--own-on-accent); --hover: var(--own-hover);
++      --chip: color-mix(in srgb, var(--accent) 16%, transparent); --on-chip: var(--fg);
++    }
++  }
++  /* a person's own accent colour (the script writes --accent on <html>): what is tinted follows it */
++  :root[style*="--accent"] { --chip: color-mix(in srgb, var(--accent) 18%, transparent); --on-chip: var(--fg); }
++  /* uBlock Origin's "Color-blind friendly": blue and orange instead of green and red */
++  body.colorblind { --allow: light-dark(#1a73e8, #8ab4f8); --block: light-dark(#e8710a, #fdd663); }
++
 +  /* Thoron adblock's shield, in the accent */
 +  .shield-fill { fill: var(--accent); }
 +  .shield-mark { fill: var(--on-accent); }
 +  html, body { margin: 0; }
-+  body { inline-size: 320px; font-size: 13px; user-select: none; }
++  body { inline-size: 320px; font-size: 13px; line-height: 20px; user-select: none; background: var(--bg);
++         color: var(--fg); }
++  svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
++  button { font: inherit; }
++  #power:focus-visible, button:focus-visible, summary:focus-visible, input:focus-visible {
++    outline: 2px solid var(--accent); outline-offset: 2px;
++  }
 +  header {
-+    display: flex; align-items: center; gap: 8px; padding: 12px 14px 8px;
++    display: flex; align-items: center; gap: 8px; padding: 12px 12px 10px 16px;
 +    border-block-end: 1px solid var(--line);
 +  }
 +  header svg { flex: none; }
-+  header .name { font-weight: 600; }
++  header .name { font-weight: 500; font-size: 14px; white-space: nowrap; }
 +  header .site { margin-inline-start: auto; color: var(--soft); overflow: hidden; text-overflow: ellipsis;
 +                 white-space: nowrap; max-inline-size: 150px; }
 +  /* the switch for every site (P5.70) */
-+  #everywhere { flex: none; border: 1px solid var(--line); border-radius: 10px; background: transparent;
-+                color: var(--on); font: inherit; font-size: 11px; font-weight: 600; padding: 2px 8px;
++  #everywhere { flex: none; border: 1px solid var(--line); border-radius: 100px; background: transparent;
++                color: var(--on); font-size: 11px; font-weight: 500; line-height: 18px; padding: 1px 10px;
 +                cursor: pointer; }
 +  #everywhere[aria-pressed=false] { color: var(--off); }
-+  #everywhere:hover { background: var(--line); }
-+  #pause { padding: 8px 14px; border-block-end: 1px solid var(--line); }
-+  #pause p { margin: 0 0 6px; color: var(--soft); }
++  #everywhere:hover { background: var(--hover); }
++  /* the small buttons of the menu: rounded, as the browser's own */
++  #pause button, .list-actions button, #list-add button, .blocked-actions button, .grid-actions button {
++    border: 1px solid var(--edge); border-radius: 100px; background: transparent; color: var(--accent);
++    font-size: 12px; font-weight: 500; line-height: 18px; padding: 3px 12px; cursor: pointer;
++    white-space: nowrap; flex: none;
++  }
++  #pause button:hover, .list-actions button:hover, #list-add button:hover, .blocked-actions button:hover,
++  .grid-actions button:hover { background: var(--hover); }
++  .list-actions button:disabled, .grid-actions button:disabled { opacity: .4; cursor: default; background: transparent; }
++  #pause { padding: 10px 16px; border-block-end: 1px solid var(--line); }
++  #pause p { margin: 0 0 8px; color: var(--soft); }
 +  #pause .choices { display: flex; flex-wrap: wrap; gap: 6px; }
-+  #pause button { border: 1px solid var(--line); border-radius: 6px; background: transparent; color: inherit;
-+                  font: inherit; font-size: 12px; padding: 3px 10px; cursor: pointer; }
-+  #pause button:hover { background: var(--line); }
 +  /* the filter lists (P5.71) */
 +  #lists { margin: 6px 0 0; max-block-size: 200px; overflow-y: auto; }
 +  #lists .list { display: flex; align-items: center; gap: 6px; padding: 3px 0; }
-+  #lists label { flex: 1; min-inline-size: 0; display: flex; align-items: center; gap: 6px; cursor: pointer; }
++  #lists label { flex: 1; min-inline-size: 0; display: flex; align-items: center; gap: 8px; cursor: pointer; }
 +  #lists label span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 +  #lists input { margin: 0; accent-color: var(--accent); }
 +  #lists .n { color: var(--soft); font-variant-numeric: tabular-nums; font-size: 11px; }
-+  #lists .remove { border: 0; background: transparent; color: var(--soft); cursor: pointer; padding: 0 4px; }
-+  #lists .remove:hover { color: inherit; }
++  #lists .remove { border: 0; border-radius: 50%; background: transparent; color: var(--soft); cursor: pointer;
++                   inline-size: 22px; block-size: 22px; padding: 0; }
++  #lists .remove:hover { color: inherit; background: var(--hover); }
 +  .list-actions { display: flex; align-items: center; gap: 8px; padding-block-start: 8px; }
-+  .list-actions button, #list-add button { border: 1px solid var(--line); border-radius: 6px;
-+      background: transparent; color: inherit; font: inherit; font-size: 12px; padding: 3px 10px; cursor: pointer; }
-+  .list-actions button:hover, #list-add button:hover { background: var(--line); }
-+  .list-actions button:disabled { opacity: .4; cursor: default; }
-+  #lists-state { color: var(--soft); font-size: 11px; }
++  #lists-state { color: var(--soft); font-size: 11px; line-height: 14px; min-inline-size: 0; }
 +  #list-add { display: flex; gap: 6px; padding-block-start: 8px; margin: 0; }
-+  #list-url { flex: 1; min-inline-size: 0; font: inherit; font-size: 12px; padding: 3px 6px; border-radius: 6px;
-+             border: 1px solid var(--line); background: transparent; color: inherit; }
++  #list-url { flex: 1; min-inline-size: 0; font: inherit; font-size: 12px; padding: 3px 10px; border-radius: 8px;
++             border: 1px solid var(--edge); background: transparent; color: inherit; }
 +  body.lists-busy #lists-box input, body.lists-busy #lists-box button { pointer-events: none; opacity: .6; }
-+  #power-box { display: flex; flex-direction: column; align-items: center; padding: 14px 14px 6px; }
++  #power-box { display: flex; flex-direction: column; align-items: center; padding: 16px 16px 6px; }
 +  #power {
-+    inline-size: 84px; block-size: 84px; border-radius: 50%; border: 2px solid var(--line);
-+    background: transparent; color: var(--on); cursor: pointer; display: grid; place-items: center;
-+    transition: color .15s, border-color .15s;
++    inline-size: 84px; block-size: 84px; border-radius: 50%; border: 2px solid currentColor;
++    background: color-mix(in srgb, currentColor 9%, transparent); color: var(--on); cursor: pointer;
++    display: grid; place-items: center; transition: color .15s, background-color .15s;
 +  }
-+  #power[aria-pressed=false] { color: var(--off); }
++  #power:hover { background: color-mix(in srgb, currentColor 16%, transparent); }
++  #power[aria-pressed=false] { color: var(--off); background: transparent; border-color: var(--edge); }
++  #power[aria-pressed=false]:hover { background: var(--hover); }
 +  #power:disabled { cursor: default; opacity: .45; }
-+  #power:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-+  #state { margin: 8px 0 0; text-align: center; color: var(--soft); min-block-size: 18px; }
-+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; padding: 8px 14px 12px; }
-+  .stat { text-align: center; border: 1px solid var(--line); border-radius: 10px; padding: 8px 4px; }
-+  .stat b { display: block; font-size: 18px; font-weight: 600; }
++  #state { margin: 8px 0 0; text-align: center; color: var(--soft); min-block-size: 20px; }
++  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; padding: 8px 12px 12px; }
++  .stat { text-align: center; border-radius: 12px; padding: 8px 4px; background: var(--hover); }
++  .stat b { display: block; font-size: 18px; line-height: 24px; font-weight: 500; }
 +  .stat b small { font-size: 12px; font-weight: 400; opacity: 0.7; }
 +  .stat > span { display: block; color: var(--soft); font-size: 11px; line-height: 1.3; }
-+  .row { display: flex; justify-content: space-between; gap: 6px; padding: 8px 14px;
++  .row { display: flex; justify-content: space-between; gap: 4px; padding: 8px 12px;
 +         border-block-start: 1px solid var(--line); }
 +  .tool, .switch {
-+    flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 6px 2px;
-+    border: 0; border-radius: 8px; background: transparent; color: inherit; cursor: pointer; font: inherit;
-+    font-size: 11px;
++    flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 2px 6px;
++    border: 0; border-radius: 12px; background: transparent; color: inherit; cursor: pointer;
++    font-size: 11px; line-height: 14px;
 +  }
 +  /* the switches in two rows of four: room for longer words in other languages */
 +  .row:has(.switch) { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
-+  .tool:hover, .switch:hover { background: var(--line); }
++  .tool:hover, .switch:hover { background: var(--hover); }
 +  .tool:disabled, .switch:disabled { opacity: .4; cursor: default; background: transparent; }
-+  .switch[aria-pressed=true] { color: var(--switch-on); }
++  .switch[aria-pressed=true] { background: var(--chip); color: var(--on-chip); }
 +  .switch[aria-pressed=true] svg { stroke: var(--switch-on); }
-+  .caption { color: var(--soft); font-size: 11px; padding: 6px 14px 0; }
-+  details { border-block-start: 1px solid var(--line); padding: 8px 14px 12px; }
-+  summary { cursor: pointer; color: var(--soft); }
++  .caption { color: var(--soft); font-size: 11px; margin: 0; padding: 8px 16px 0; }
++  .caption + .row { border-block-start: 0; padding-block-start: 4px; }
++  details { border-block-start: 1px solid var(--line); padding: 8px 16px 12px; }
++  summary { cursor: pointer; color: var(--soft); border-radius: 6px; }
++  summary:hover { color: var(--fg); }
 +  ol { margin: 6px 0 0; padding: 0; list-style: none; max-block-size: 180px; overflow-y: auto; }
 +  li { display: flex; justify-content: space-between; gap: 8px; padding: 3px 0; }
 +  li .host { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 +  li .n { color: var(--soft); font-variant-numeric: tabular-nums; }
-+  svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 +  /* uBlock Origin's grid of rules: a row per type and per domain, a cell for every site and one for
 +     this site; a rule set in that cell is shown strong, one from a broader rule light */
-+  :root { --allow: #1e8e3e; --block: #d93025; --noop: #80868b; --on-set: #fff; }
-+  :root[data-theme=dark] { --allow: #81c995; --block: #f28b82; --noop: #9aa0a6; --on-set: #202124; }
-+  @media (prefers-color-scheme: dark) {
-+    :root:not([data-theme=light]) { --allow: #81c995; --block: #f28b82; --noop: #9aa0a6; --on-set: #202124; }
-+  }
-+  /* uBlock Origin's "Color-blind friendly": blue and orange instead of green and red */
-+  body.colorblind { --allow: #1a73e8; --block: #e8710a; }
-+  :root[data-theme=dark] body.colorblind { --allow: #8ab4f8; --block: #fdd663; }
-+  @media (prefers-color-scheme: dark) {
-+    :root:not([data-theme=light]) body.colorblind { --allow: #8ab4f8; --block: #fdd663; }
-+  }
 +  #grid-box[hidden] { display: none; }
 +  #grid-changed { color: var(--block); }
 +  .grid-head, .grid-row { display: grid; grid-template-columns: minmax(0, 1fr) 38px 56px 56px; gap: 6px;
@@ -15497,13 +15594,13 @@ index 0000000000000000000000000000000000000000..2467cf41411f9cbaffcf16cf1edf2a7c
 +  .grid-row.first-host { border-block-start: 1px solid var(--line); margin-block-start: 4px; padding-block-start: 6px; }
 +  .grid-row .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 +  .grid-row.type .name { color: var(--soft); }
-+  .grid-row.domain .name { font-weight: 600; }
++  .grid-row.domain .name { font-weight: 500; }
 +  .grid-row.host .name { padding-inline-start: 10px; }
 +  .grid-row .n { color: var(--soft); font-size: 11px; text-align: end; font-variant-numeric: tabular-nums; }
 +  .grid-row .n.some { color: var(--block); }
 +  .cell { display: flex; gap: 2px; justify-content: center; }
-+  .cell button { inline-size: 17px; block-size: 17px; padding: 0; border: 1px solid var(--line); border-radius: 4px;
-+                 background: transparent; color: var(--soft); font: inherit; font-size: 10px; line-height: 15px;
++  .cell button { inline-size: 17px; block-size: 17px; padding: 0; border: 1px solid var(--edge); border-radius: 5px;
++                 background: transparent; color: var(--soft); font-size: 10px; line-height: 15px;
 +                 cursor: pointer; }
 +  .cell button:hover { border-color: currentColor; }
 +  .cell .allow.set { background: var(--allow); border-color: var(--allow); color: var(--on-set); }
@@ -15512,26 +15609,19 @@ index 0000000000000000000000000000000000000000..2467cf41411f9cbaffcf16cf1edf2a7c
 +  .cell .allow.inherited { background: color-mix(in srgb, var(--allow) 30%, transparent); color: inherit; }
 +  .cell .block.inherited { background: color-mix(in srgb, var(--block) 30%, transparent); color: inherit; }
 +  .cell .noop.inherited { background: color-mix(in srgb, var(--noop) 30%, transparent); color: inherit; }
-+  #blocked-box { margin: 10px 14px 0; padding: 10px 12px; border-radius: 10px;
++  #blocked-box { margin: 10px 12px 0; padding: 10px 12px; border-radius: 12px;
 +                 border: 1px solid color-mix(in srgb, var(--block) 45%, transparent);
 +                 background: color-mix(in srgb, var(--block) 10%, transparent); }
 +  #blocked-box[hidden] { display: none; }
 +  /* uBlock Origin on as well (P5.24) */
-+  #both-box { margin: 10px 14px 0; padding: 10px 12px; border-radius: 10px;
-+              border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
-+              background: color-mix(in srgb, var(--accent) 10%, transparent); }
++  #both-box { margin: 10px 12px 0; padding: 10px 12px; border-radius: 12px; background: var(--chip);
++              color: var(--on-chip); }
 +  #both-box[hidden] { display: none; }
 +  #both-box p { margin: 0 0 8px; }
++  #both-box button { color: inherit; border-color: currentColor; }
 +  #blocked-box p { margin: 0 0 8px; }
 +  .blocked-actions { display: flex; gap: 6px; }
-+  .blocked-actions button { border: 1px solid var(--line); border-radius: 6px; background: transparent;
-+                            color: inherit; font: inherit; font-size: 12px; padding: 3px 10px; cursor: pointer; }
-+  .blocked-actions button:hover { background: var(--line); }
 +  .grid-actions { display: flex; gap: 6px; justify-content: flex-end; padding-block-start: 8px; }
-+  .grid-actions button { border: 1px solid var(--line); border-radius: 6px; background: transparent; color: inherit;
-+                         font: inherit; font-size: 12px; padding: 3px 10px; cursor: pointer; }
-+  .grid-actions button:hover { background: var(--line); }
-+  .grid-actions button:disabled { opacity: .4; cursor: default; background: transparent; }
 +</style>
 +</head>
 +<body>
@@ -19157,15 +19247,17 @@ index 0000000000000000000000000000000000000000..8ca3ab6f12cffec05fc98fb17aa21f44
 +#endif  // COMPONENTS_THORON_ADBLOCK_RENDERER_DOCUMENT_AGENT_H_
 diff --git a/components/thoron_adblock/settings_page.html b/components/thoron_adblock/settings_page.html
 new file mode 100644
-index 0000000000000000000000000000000000000000..33a6722ca309b35d265225f348648b9ff65fd1a6
+index 0000000000000000000000000000000000000000..15908f4d5dd6ac761966c367fedf08e5504fdba4
 --- /dev/null
 +++ b/components/thoron_adblock/settings_page.html
-@@ -0,0 +1,483 @@
+@@ -0,0 +1,901 @@
 +<!doctype html>
 +<!-- Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +     found in the LICENSE file.
 +     The settings page of Thoron's built-in ad blocking, chrome://adblock. Plain HTML and one module
-+     script (settings_page.js): the page's security policy allows no inline script. -->
++     script (settings_page.js): the page's security policy allows no inline script.
++     The page is a dashboard of tabs: a header that stays in view (the name, the state, a search box and
++     the tabs) and one panel at a time. The tab is in the address after the #. -->
 +<html lang="en" dir="ltr">
 +<head>
 +<meta charset="utf-8">
@@ -19175,180 +19267,475 @@ index 0000000000000000000000000000000000000000..33a6722ca309b35d265225f348648b9f
 +<link rel="icon" href="chrome://theme/current-channel-logo@2x">
 +<style>
 +  @import url(chrome://resources/css/text_defaults_md.css);
-+  /* the browser theme's colours (P5.78): the accent follows it */
++  /* the browser theme's colours (P5.78): the page takes them all, each with a colour of its own behind it */
 +  @import url(chrome://theme/colors.css?sets=ui,chrome);
 +  :root {
-+    --line: color-mix(in srgb, currentColor 16%, transparent);
-+    --soft: color-mix(in srgb, currentColor 62%, transparent);
-+    --accent: var(--color-sys-primary, #7235da);
-+    --on-accent: var(--color-sys-on-primary, #fff);
-+    --bad: #c5221f;
++    /* The page's own colours, light and dark. They are used when the theme gives none, and when a person
++       chooses light or dark against the browser's theme (whose colours are then of the other kind). */
++    --own-page: light-dark(#f2f3f7, #1b1b1f);
++    --own-card: light-dark(#ffffff, #27272c);
++    --own-fg: light-dark(#1f1f24, #e6e6ea);
++    --own-soft: light-dark(#5c5f66, #b1b3ba);
++    --own-line: light-dark(rgb(0 0 0 / .12), rgb(255 255 255 / .14));
++    --own-accent: light-dark(#7235da, #b097fa);
++    --own-on-accent: light-dark(#ffffff, #1b1036);
++    --own-hover: light-dark(rgb(0 0 0 / .06), rgb(255 255 255 / .08));
++    --own-bad: light-dark(#c5221f, #f28b82);
++
++    --page: var(--color-sys-base-container, var(--own-page));
++    --card: var(--color-sys-base-container-elevated, var(--color-sys-surface, var(--own-card)));
++    --fg: var(--color-sys-on-surface, var(--own-fg));
++    --soft: var(--color-sys-on-surface-subtle, var(--own-soft));
++    --line: var(--color-sys-divider, var(--own-line));
++    --accent: var(--color-sys-primary, var(--own-accent));
++    --on-accent: var(--color-sys-on-primary, var(--own-on-accent));
++    --chip: var(--color-sys-tonal-container, color-mix(in srgb, var(--accent) 16%, transparent));
++    --on-chip: var(--color-sys-on-tonal-container, var(--fg));
++    --hover: var(--color-sys-state-hover-on-subtle, var(--own-hover));
++    --bad: var(--color-sys-error, var(--own-bad));
++    --good: light-dark(#1e8e3e, #81c995);
++    --warn: light-dark(#b06000, #fdd663);
++    --edge: color-mix(in srgb, var(--fg) 28%, transparent);
++    --shadow: 0 1px 2px light-dark(rgb(0 0 0 / .08), transparent), 0 1px 3px 1px light-dark(rgb(0 0 0 / .05), transparent);
++    --mono: ui-monospace, Consolas, "Liberation Mono", monospace;
++    /* how wide the panels are; the header's height (kept up to date by the script) */
++    --content: 1000px;
++    --top: 105px;
 +  }
 +  /* uBlock Origin's theme: as the system, unless <html data-theme> says light or dark */
-+  :root[data-theme=light] { color-scheme: light; --accent: #7235da; --on-accent: #fff; }
-+  :root[data-theme=dark] { color-scheme: dark; --accent: #b097fa; --on-accent: #1b1036; --bad: #f28b82; }
++  :root[data-theme=light] { color-scheme: light; }
++  :root[data-theme=dark] { color-scheme: dark; }
 +  @media (prefers-color-scheme: dark) {
-+    :root:not([data-theme=light]) { --accent: var(--color-sys-primary, #b097fa);
-+                                    --on-accent: var(--color-sys-on-primary, #1b1036); --bad: #f28b82; }
++    :root[data-theme=light] {
++      --page: var(--own-page); --card: var(--own-card); --fg: var(--own-fg); --soft: var(--own-soft);
++      --line: var(--own-line); --accent: var(--own-accent); --on-accent: var(--own-on-accent);
++      --chip: color-mix(in srgb, var(--accent) 16%, transparent); --on-chip: var(--fg);
++      --hover: var(--own-hover); --bad: var(--own-bad);
++    }
 +  }
++  @media (prefers-color-scheme: light) {
++    :root[data-theme=dark] {
++      --page: var(--own-page); --card: var(--own-card); --fg: var(--own-fg); --soft: var(--own-soft);
++      --line: var(--own-line); --accent: var(--own-accent); --on-accent: var(--own-on-accent);
++      --chip: color-mix(in srgb, var(--accent) 16%, transparent); --on-chip: var(--fg);
++      --hover: var(--own-hover); --bad: var(--own-bad);
++    }
++  }
++  /* a person's own accent colour (the script writes --accent on <html>): what is tinted follows it */
++  :root[data-accent] { --chip: color-mix(in srgb, var(--accent) 18%, transparent); --on-chip: var(--fg); }
++
 +  /* Thoron adblock's shield, in the accent */
 +  .shield-fill { fill: var(--accent); }
 +  .shield-mark { fill: var(--on-accent); }
-+  body { margin: 0; }
-+  main { box-sizing: border-box; max-width: 860px; margin: 0 auto; padding: 32px 24px 64px; }
-+  h1 { font-size: 28px; font-weight: 500; margin: 0 0 8px; }
-+  h2 { font-size: 16px; font-weight: 500; margin: 0 0 6px; }
-+  p { margin: 0 0 12px; line-height: 1.5; }
-+  .lead, .note, .url, #last-check, #my-count { color: var(--soft); }
-+  section { border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; margin: 18px 0; }
-+  .list { display: flex; gap: 12px; align-items: flex-start; padding: 10px 0; border-top: 1px solid var(--line); }
-+  .list:first-child { border-top: 0; }
-+  .list input { margin-top: 3px; inline-size: 16px; block-size: 16px; accent-color: var(--accent); }
-+  .list .about { flex: 1; min-inline-size: 0; }
-+  .list .title { font-weight: 500; }
-+  .list .url { display: block; font-size: 12px; overflow-wrap: anywhere; }
-+  .list .count { font-size: 12px; color: var(--soft); }
-+  .list .next { display: block; font-size: 12px; color: var(--soft); }
-+  .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 12px 0 0; }
-+  button, .button {
-+    font: inherit; padding: 7px 16px; border-radius: 16px; border: 1px solid var(--line);
-+    background: transparent; color: inherit; cursor: pointer; text-decoration: none; display: inline-block;
++
++  html { scroll-padding-top: calc(var(--top) + 12px); scrollbar-gutter: stable; }
++  /* A tab is named as something on its panel is (#lists is also the box of the lists, #backup a button).
++     When the browser itself goes to such an address it scrolls to that element: with this it stays at the
++     top of the tab, which is what the address means. */
++  #settings, #lists, #mine, #rules, #sites, #logger, #backup { scroll-margin-block-start: 100vh; }
++  body { margin: 0; background: var(--page); color: var(--fg); line-height: 1.54; }
++  [hidden] { display: none !important; }
++  h1, h2, h3, p { margin: 0; }
++  h1 { font-size: 17px; font-weight: 500; white-space: nowrap; }
++  h2 { font-size: 15px; font-weight: 500; line-height: 22px; }
++  h3 { font-size: 14px; font-weight: 500; line-height: 20px; }
++  p { margin: 0 0 12px; }
++  a { color: var(--accent); }
++  .lead, .note, .url, #last-check, #my-count, #rules-note, #storage-used, #log-count, #viewer-count, #total {
++    color: var(--soft);
 +  }
-+  button.main { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
-+  button:disabled { opacity: .5; cursor: default; }
-+  button:focus-visible, .button:focus-visible, input:focus-visible, textarea:focus-visible {
++  .note { font-size: 12px; }
++  .sr { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
++  .ico { flex: none; inline-size: 18px; block-size: 18px; fill: none; stroke: currentColor; stroke-width: 1.8;
++         stroke-linecap: round; stroke-linejoin: round; }
++  code { font: 12px var(--mono); padding: 1px 5px; border-radius: 4px; background: var(--hover); }
++  pre { margin: 8px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.5 var(--mono); color: var(--soft); }
++
++  /* --- the header: the name, the state, the search box, the tabs --- */
++  .top { position: sticky; inset-block-start: 0; z-index: 5; background: var(--page);
++         border-block-end: 1px solid var(--line); }
++  .top-row { display: grid; grid-template-columns: minmax(max-content, 1fr) minmax(150px, 640px) minmax(0, 1fr);
++             align-items: center; gap: 16px; box-sizing: border-box; max-inline-size: 1848px; margin: 0 auto;
++             padding: 12px 24px 6px; }
++  .brand { display: flex; align-items: center; gap: 10px; min-inline-size: 0; }
++  .brand > svg { flex: none; inline-size: 26px; block-size: 26px; }
++  .state { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px 2px 8px; border-radius: 100px;
++           border: 1px solid var(--line); color: var(--soft); font-size: 12px; font-weight: 500;
++           text-decoration: none; white-space: nowrap; }
++  .state:hover { background: var(--hover); }
++  .state::before { content: ""; inline-size: 8px; block-size: 8px; border-radius: 50%; background: var(--soft); }
++  body[data-blocking=on] .state { color: var(--good); }
++  body[data-blocking=on] .state::before { background: var(--good); }
++  body[data-blocking=paused] .state { color: var(--warn); }
++  body[data-blocking=paused] .state::before { background: var(--warn); }
++  .search { position: relative; }
++  .search > .ico { position: absolute; inset-inline-start: 12px; inset-block-start: 9px; color: var(--soft);
++                   pointer-events: none; }
++  #find-all { box-sizing: border-box; inline-size: 100%; block-size: 36px; padding: 0 14px 0 38px;
++              border-radius: 100px; border: 1px solid transparent; background: var(--card); color: inherit;
++              font: inherit; box-shadow: var(--shadow); text-overflow: ellipsis; }
++  #find-all::placeholder, input.find::placeholder { color: var(--soft); }
++  /* the key that goes to the box, shown while it is empty and not in use */
++  .search kbd { position: absolute; inset-inline-end: 12px; inset-block-start: 8px; min-inline-size: 8px;
++                padding: 0 6px; border-radius: 6px; border: 1px solid var(--line); color: var(--soft);
++                font: 11px/18px var(--mono); text-align: center; pointer-events: none; }
++  #find-all:focus ~ kbd, #find-all:not(:placeholder-shown) ~ kbd { display: none; }
++  #find-results { position: absolute; inset-inline: 0; inset-block-start: 42px; z-index: 6; margin: 0;
++                  padding: 6px; border-radius: 12px; background: var(--card); border: 1px solid var(--line);
++                  box-shadow: 0 6px 24px rgb(0 0 0 / .22); max-block-size: min(70vh, 460px); overflow-y: auto; }
++  .hit { display: flex; flex-direction: column; gap: 1px; padding: 7px 12px; border-radius: 8px; cursor: pointer; }
++  .hit:hover { background: var(--hover); }
++  .hit[aria-selected=true] { background: var(--chip); color: var(--on-chip); }
++  .hit-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
++  .hit-where { display: flex; flex-wrap: wrap; gap: 0 6px; font-size: 11px; color: var(--soft); }
++  .hit[aria-selected=true] .hit-where { color: inherit; opacity: .8; }
++  .hit-where span + span::before { content: "/"; margin-inline-end: 6px; opacity: .6; }
++  #find-results .empty { margin: 0; padding: 10px 12px; }
++
++  nav.bar { max-inline-size: 1848px; margin: 0 auto; }
++  .tabs { position: relative; display: flex; gap: 2px; justify-content: safe center; overflow-x: auto; scrollbar-width: none;
++          padding: 0 20px; }
++  [role=tab] { position: relative; flex: none; display: inline-flex; align-items: center; gap: 8px;
++               block-size: 44px; padding: 0 12px; border-radius: 8px 8px 0 0; color: var(--soft);
++               font-weight: 500; text-decoration: none; white-space: nowrap; }
++  [role=tab]:hover { background: var(--hover); color: var(--fg); }
++  [role=tab][aria-selected=true] { color: var(--accent); }
++  [role=tab][aria-selected=true]::after { content: ""; position: absolute; inset-inline: 10px; inset-block-end: 0;
++                                          block-size: 3px; border-radius: 3px 3px 0 0; background: var(--accent); }
++  [role=tab]:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; }
++  .badge { min-inline-size: 8px; padding: 0 6px; border-radius: 100px; font-size: 11px; line-height: 18px;
++           text-align: center; font-variant-numeric: tabular-nums; background: var(--hover); }
++  /* the number is drawn here, so the text of a tab stays its name */
++  .badge::after { content: attr(data-count); }
++  [role=tab][aria-selected=true] .badge { background: var(--chip); color: var(--on-chip); }
++  .dot { inline-size: 8px; block-size: 8px; border-radius: 50%; background: var(--warn); }
++  /* a change is being made: a line runs under the header */
++  body.busy .top::after { content: ""; position: absolute; inset-inline: 0; inset-block-end: -1px; block-size: 2px;
++                          background: linear-gradient(90deg, transparent, var(--accent), transparent);
++                          background-size: 40% 100%; background-repeat: no-repeat;
++                          animation: busy 1.1s linear infinite; }
++  @keyframes busy { from { background-position: -70% 0; } to { background-position: 170% 0; } }
++
++  /* --- the panels and their cards --- */
++  main { box-sizing: border-box; max-inline-size: calc(var(--content) + 48px); margin: 0 auto; padding: 20px 24px 96px; }
++  body[data-tab=logger] { --content: 1800px; }
++  .panel { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr); }
++  .panel:focus-visible { outline: 2px solid var(--accent); outline-offset: 6px; border-radius: 12px; }
++  .stack { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr); align-content: start; }
++  .card { background: var(--card); border-radius: 12px; padding: 16px 20px; box-shadow: var(--shadow);
++          min-inline-size: 0; }
++  .card > :last-child { margin-block-end: 0; }
++  .card > h2, .card > h3 { margin-block-end: 6px; }
++  .card-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin-block-end: 6px; }
++  .lead { margin: 2px 4px 0; }
++  .banner { border-radius: 12px; padding: 12px 16px; margin: 0 0 16px; }
++  #not-applied { border: 1px solid var(--bad); color: var(--bad); background: color-mix(in srgb, var(--bad) 8%, transparent); }
++  #subscribe-box { border: 1px solid var(--accent); background: var(--chip); color: var(--on-chip); }
++  #subscribe-box p { margin: 0 0 6px; }
++  #subscribe-box .url { color: inherit; opacity: .8; overflow-wrap: anywhere; }
++  .row { display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: center; margin: 12px 0 0; }
++  .gap { margin-block-start: 12px; }
++  .flash { animation: flash 1.8s ease-out; border-radius: 8px; }
++  @keyframes flash { 0%, 35% { background: var(--chip); box-shadow: 0 0 0 6px var(--chip); }
++                     100% { background: transparent; box-shadow: 0 0 0 6px transparent; } }
++
++  /* --- controls, as the browser's own pages draw them --- */
++  button, .button {
++    box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; gap: 8px;
++    min-block-size: 32px; padding: 5px 16px; border-radius: 100px; border: 1px solid var(--edge);
++    background: transparent; color: var(--accent); font: inherit; font-weight: 500; line-height: 20px;
++    text-decoration: none; cursor: pointer; white-space: nowrap;
++  }
++  button:hover, .button:hover { background: var(--hover); }
++  button.main { background: var(--accent); border-color: transparent; color: var(--on-accent); }
++  button.main:hover { background: color-mix(in srgb, var(--accent) 88%, var(--fg)); }
++  button.danger { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 55%, transparent); }
++  button.danger:hover { background: color-mix(in srgb, var(--bad) 10%, transparent); }
++  button:disabled { opacity: .45; cursor: default; background: transparent; }
++  button.main:disabled { background: var(--accent); }
++  button:focus-visible, .button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible,
++  summary:focus-visible, a:focus-visible {
 +    outline: 2px solid var(--accent); outline-offset: 2px;
 +  }
++  button.view, .site-row button, .list button, .shortcuts button, #log td.act button, #accent-default {
++    min-block-size: 26px; padding: 2px 12px; font-size: 12px;
++  }
 +  form { display: flex; gap: 10px; }
-+  input[type=url] {
-+    flex: 1; min-inline-size: 0; font: inherit; padding: 7px 10px; border-radius: 8px;
-+    border: 1px solid var(--line); background: transparent; color: inherit;
++  input[type=url], input[type=text], input[type=search], input[type=number], select {
++    box-sizing: border-box; min-block-size: 32px; font: inherit; padding: 5px 10px; border-radius: 8px;
++    border: 1px solid var(--edge); background: var(--card); color: inherit; max-inline-size: 100%;
 +  }
++  input[type=url], #allow-host { flex: 1; min-inline-size: 0; }
++  input.find { inline-size: 100%; border-radius: 100px; padding-inline: 14px; margin: 2px 0 10px; }
 +  textarea {
-+    box-sizing: border-box; inline-size: 100%; padding: 10px; border-radius: 8px; border: 1px solid var(--line);
-+    background: transparent; color: inherit; resize: vertical;
-+    font: 13px/1.5 ui-monospace, Consolas, "Liberation Mono", monospace;
++    box-sizing: border-box; inline-size: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--edge);
++    background: color-mix(in srgb, var(--page) 55%, var(--card)); color: inherit; resize: vertical;
++    font: 13px/1.5 var(--mono);
 +  }
-+  code { font: 13px ui-monospace, Consolas, "Liberation Mono", monospace; }
-+  #message { position: sticky; inset-block-end: 12px; margin: 18px 0 0; padding: 10px 14px; border-radius: 8px;
-+             border: 1px solid var(--line); background: Canvas; min-block-size: 1.5em; }
-+  #message:empty { visibility: hidden; }
-+  #message.bad, #not-applied { border-color: var(--bad); color: var(--bad); }
-+  #not-applied { border: 1px solid var(--bad); border-radius: 8px; padding: 10px 14px; }
-+  #subscribe-box { border: 1px solid var(--accent); border-radius: 8px; padding: 10px 14px; margin: 12px 0; }
-+  #subscribe-box p { margin: 0 0 6px; }
-+  [hidden] { display: none !important; }
-+  details { margin-top: 12px; }
-+  #for-now { border: 1px solid var(--accent); border-radius: 8px; padding: 8px 12px; margin: 8px 0; }
-+  #for-now h3 { margin: 0 0 4px; font-size: 13px; }
-+  pre { margin: 8px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.5 ui-monospace, Consolas, monospace;
-+        color: var(--soft); }
++  .editor { field-sizing: content; min-block-size: 16lh; max-block-size: max(16lh, calc(100vh - var(--top) - 220px)); }
++  input[type=checkbox] { flex: none; inline-size: 16px; block-size: 16px; margin: 0; accent-color: var(--accent); }
++  /* an option that is on or off: a switch, at the end of its row */
++  .option { display: flex; align-items: center; gap: 12px; box-sizing: border-box; min-block-size: 44px; padding: 8px 0; }
++  .option + .option { border-block-start: 1px solid var(--line); }
++  label.option, .option label { cursor: pointer; }
++  .option > span:first-of-type, .option > label[for] { flex: 1; min-inline-size: 0; }
++  .option > label:not([for]) { display: contents; }
++  .option > label:not([for]) > span { flex: 0 1 auto; }
++  .option input[type=checkbox] {
++    order: 9; margin-inline-start: auto; appearance: none; position: relative; inline-size: 34px; block-size: 20px;
++    border-radius: 10px; border: 1px solid color-mix(in srgb, var(--fg) 50%, transparent);
++    background: color-mix(in srgb, var(--fg) 8%, transparent); cursor: pointer;
++  }
++  .option input[type=checkbox]::before {
++    content: ""; position: absolute; inset-block-start: 4px; inset-inline-start: 4px; inline-size: 10px;
++    block-size: 10px; border-radius: 50%; background: color-mix(in srgb, var(--fg) 62%, transparent);
++  }
++  /* a switch slides when it is changed, not while the page fills in (the script marks the body) */
++  body.ready .option input[type=checkbox] { transition: background-color .12s, border-color .12s; }
++  body.ready .option input[type=checkbox]::before { transition: inset-inline-start .12s, background-color .12s, scale .12s; }
++  .option input[type=checkbox]:checked { background: var(--accent); border-color: var(--accent); }
++  .option input[type=checkbox]:checked::before { inset-inline-start: 18px; background: var(--on-accent); scale: 1.3; }
++  #accent { inline-size: 36px; block-size: 28px; padding: 0; border: 0; background: none; cursor: pointer; }
++  #accent::-webkit-color-swatch-wrapper { padding: 0; }
++  #accent::-webkit-color-swatch { border: 1px solid var(--edge); border-radius: 8px; }
++  #media-kb { inline-size: 6.5em; min-block-size: 28px; padding-block: 2px; }
++  .shortcuts { display: grid; grid-template-columns: minmax(0, 1fr) 11em auto; gap: 6px 10px; align-items: center;
++               padding: 4px 0 2px; }
++  .shortcuts input { font: inherit; color: inherit; background: var(--card); border: 1px solid var(--edge);
++                     border-radius: 8px; padding: 3px 6px; text-align: center; min-inline-size: 0; }
++  details > summary { cursor: pointer; border-radius: 6px; }
 +  body.busy button, body.busy input, body.busy textarea { pointer-events: none; opacity: .6; }
-+  nav.bar { position: sticky; inset-block-start: 0; z-index: 1; display: flex; gap: 6px; flex-wrap: wrap;
-+            padding: 10px 0; background: Canvas; border-block-end: 1px solid var(--line); }
-+  nav.bar a { padding: 6px 14px; border-radius: 16px; color: inherit; text-decoration: none;
-+              border: 1px solid var(--line); }
-+  nav.bar a:hover, nav.bar a:focus-visible { border-color: var(--accent); }
-+  #total { color: var(--soft); }
-+  #settings h3 { font-size: 13px; font-weight: 600; color: var(--soft); margin: 18px 0 4px; }
-+  .option { display: flex; gap: 10px; align-items: flex-start; padding: 5px 0; }
-+  .option input { margin-top: 3px; accent-color: var(--accent); }
-+  div.option { align-items: center; gap: 6px; }
-+  .shortcuts { display: grid; grid-template-columns: minmax(0, 1fr) 12em auto; gap: 6px 10px; align-items: center;
-+               padding: 4px 0 8px; }
-+  .shortcuts input { font: inherit; color: inherit; background: transparent; border: 1px solid var(--line);
-+                     border-radius: 4px; padding: 2px 6px; text-align: center; }
-+  .shortcuts input:focus { outline: 2px solid var(--accent); }
-+  div.option label { display: flex; gap: 10px; align-items: flex-start; }
-+  #media-kb { inline-size: 7em; margin-top: 0; font: inherit; color: inherit; background: transparent;
-+              border: 1px solid var(--line); border-radius: 4px; padding: 1px 4px; }
-+  #catalog details { border-top: 1px solid var(--line); padding: 8px 0; margin: 0; }
-+  #catalog details:first-child { border-top: 0; }
-+  #catalog summary { cursor: pointer; font-weight: 500; }
-+  #catalog summary .on { color: var(--soft); font-weight: 400; }
-+  #catalog label { display: flex; gap: 10px; align-items: flex-start; padding: 6px 0 6px 4px; }
-+  #catalog label input { margin-top: 3px; accent-color: var(--accent); }
-+  #catalog .url { display: block; font-size: 12px; color: var(--soft); overflow-wrap: anywhere; }
-+  .site-row { display: flex; gap: 12px; align-items: center; padding: 8px 0; border-top: 1px solid var(--line); }
-+  .site-row:first-child { border-top: 0; }
-+  .site-row .name { flex: 1; min-inline-size: 0; overflow-wrap: anywhere; }
-+  .site-row .what { color: var(--soft); font-size: 12px; }
-+  .empty { color: var(--soft); }
-+  #log { max-block-size: 460px; overflow: auto; margin-top: 10px; border: 1px solid var(--line); border-radius: 8px; }
-+  #log table { inline-size: 100%; border-collapse: collapse; font-size: 12px; }
-+  #log td { padding: 4px 8px; border-top: 1px solid var(--line); vertical-align: top; }
-+  #log td.time { white-space: nowrap; color: var(--soft); }
-+  #log td.url { overflow-wrap: anywhere; font-family: ui-monospace, Consolas, monospace; }
-+  #log td.kind { white-space: nowrap; font-weight: 600; }
-+  #log tr.blocked td.kind { color: #d93025; }
-+  #log tr.allowed td.kind { color: var(--soft); }
-+  #log td.act button { padding: 2px 10px; font-size: 12px; }
-+  #log td.act { white-space: nowrap; }
-+  #log td.act button + button { margin-inline-start: 4px; }
-+  #log td.type { white-space: nowrap; color: var(--soft); }
-+  #log td.party { white-space: nowrap; color: var(--soft); font-size: 11px; }
-+  #log .why { margin-top: 4px; font-family: system-ui, sans-serif; color: var(--soft); }
-+  /* the list viewer */
-+  #viewer { inline-size: min(1000px, 94vw); max-block-size: 92vh; box-sizing: border-box; padding: 18px 20px;
-+            border: 1px solid var(--line); border-radius: 12px; background: Canvas; color: CanvasText; }
-+  #viewer::backdrop { background: rgb(0 0 0 / .45); }
-+  #viewer h2 { overflow-wrap: anywhere; }
-+  #viewer-about { font-size: 12px; overflow-wrap: anywhere; }
-+  #viewer-text { block-size: 62vh; resize: none; white-space: pre; overflow: auto; margin-top: 10px; }
-+  #viewer-find { flex: 1; min-inline-size: 12em; font: inherit; padding: 7px 10px; border-radius: 8px;
-+                 border: 1px solid var(--line); background: transparent; color: inherit; }
-+  #viewer-count { color: var(--soft); }
-+  button.view { padding: 2px 12px; font-size: 12px; }
-+  #catalog .entry { display: flex; gap: 10px; align-items: flex-start; }
-+  #catalog .entry label { flex: 1; min-inline-size: 0; }
-+  #catalog .entry button.view { margin-top: 6px; }
-+  select { font: inherit; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line); background: Canvas;
-+           color: inherit; max-inline-size: 100%; }
-+  /* P5.73: finding a setting or a list; the shield's preview; flags */
-+  input.find {
-+    box-sizing: border-box; inline-size: 100%; font: inherit; padding: 7px 12px; margin: 2px 0 10px;
-+    border-radius: 18px; border: 1px solid var(--line); background: transparent; color: inherit;
-+  }
-+  #shield-preview { margin: 6px 0 8px; padding: 10px 12px; border: 1px dashed var(--line); border-radius: 10px; }
-+  .pv-bar { display: flex; align-items: center; gap: 7px; }
-+  .pv-field {
-+    flex: 1; min-inline-size: 0; display: flex; align-items: center; gap: 7px; padding: 5px 10px;
-+    border-radius: 16px; background: color-mix(in srgb, currentColor 8%, transparent);
-+  }
++
++  /* --- Overview --- */
++  .hero-head { display: flex; align-items: center; gap: 16px; margin-block-end: 8px; }
++  .hero-shield { flex: none; display: grid; place-items: center; inline-size: 56px; block-size: 56px;
++                 border-radius: 50%; background: var(--chip); }
++  .hero-shield svg { inline-size: 32px; block-size: 32px; }
++  body:not([data-blocking=on]) .hero-shield { background: var(--hover); }
++  body:not([data-blocking=on]) .hero-shield .shield-fill { fill: var(--soft); }
++  body:not([data-blocking=on]) .hero-shield .shield-mark { fill: var(--card); }
++  .hero-text { min-inline-size: 0; }
++  .hero-text h2 { font-size: 12px; line-height: 18px; color: var(--soft); }
++  #blocking-state { margin: 0; font-size: 16px; line-height: 24px; font-weight: 500; color: var(--fg); }
++  #total { margin: 0; }
++  #total:empty { display: none; }
++  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
++  .tile { display: flex; flex-direction: column; gap: 2px; padding: 14px 16px; border-radius: 12px;
++          background: var(--card); box-shadow: var(--shadow); color: inherit; text-decoration: none; }
++  .tile:hover { outline: 1px solid var(--accent); }
++  .tile b { font-size: 24px; line-height: 30px; font-weight: 500; font-variant-numeric: tabular-nums; }
++  .tile span { color: var(--soft); }
++
++  /* --- Settings --- */
++  .settings-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; padding: 0 4px; }
++  .settings-head p { margin: 0; color: var(--soft); }
++  #settings .find { margin: 0; }
++  #find-none, #catalog-none { margin: 0 4px; }
++  .group > h3 { color: var(--accent); }
++  .group > p { color: var(--soft); font-size: 12px; margin-block-end: 4px; }
++  #shield-preview { margin: 4px 0 10px; padding: 8px 10px; border-radius: 10px; background: var(--page);
++                    border: 1px solid var(--line); }
++  .pv-bar { display: flex; align-items: center; gap: 8px; }
++  .pv-field { flex: 1; min-inline-size: 0; display: flex; align-items: center; gap: 8px; padding: 6px 12px;
++              border-radius: 100px; background: var(--card); }
 +  .pv-text { flex: 1; font-size: 12px; color: var(--soft); }
-+  .pv-icon {
-+    flex: none; inline-size: 14px; block-size: 14px; border-radius: 4px;
-+    background: color-mix(in srgb, currentColor 24%, transparent);
-+  }
++  .pv-icon { flex: none; inline-size: 14px; block-size: 14px; border-radius: 4px;
++             background: color-mix(in srgb, var(--fg) 22%, transparent); }
 +  .pv-nav { border-radius: 50%; }
 +  .pv-shield { background: none; display: inline-flex; outline: 2px solid var(--accent); outline-offset: 2px; }
 +  .pv-shield svg { inline-size: 14px; block-size: 14px; }
-+  svg.flag {
-+    flex: none; inline-size: 21px; block-size: 14px; vertical-align: -2px;
-+    clip-path: inset(0 round 2px); outline: 1px solid var(--line); outline-offset: -1px;
-+  }
++
++  /* --- Filter lists --- */
++  .list { display: flex; gap: 12px; align-items: center; padding: 10px 0; border-block-start: 1px solid var(--line); }
++  .list:first-child { border-block-start: 0; }
++  .list .about { flex: 1; min-inline-size: 0; }
++  .list > .about:first-child { padding-inline-start: 28px; }
++  .list .title, #catalog .title { font-weight: 500; }
++  .list .count { font-size: 12px; color: var(--soft); }
++  .list.problem .count { color: var(--bad); }
++  .list .url, .list .next { display: block; font-size: 12px; color: var(--soft); overflow-wrap: anywhere; }
++  #lists-section > .option { border-block-start: 1px solid var(--line); margin-block-start: 2px; }
++  #catalog details { border-block-start: 1px solid var(--line); padding: 4px 0; margin: 0; }
++  #catalog details:first-child { border-block-start: 0; }
++  #catalog summary { display: flex; align-items: center; gap: 10px; padding: 8px 4px; font-weight: 500; }
++  #catalog summary::before { content: ""; flex: none; inline-size: 6px; block-size: 6px; margin-inline: 3px 2px;
++                             border-inline-end: 2px solid var(--soft); border-block-end: 2px solid var(--soft);
++                             rotate: -45deg; transition: rotate .12s; }
++  #catalog details[open] > summary::before { rotate: 45deg; }
++  #catalog summary:hover { background: var(--hover); }
++  #catalog summary .on { margin-inline-start: auto; padding: 0 8px; border-radius: 100px; font-size: 11px;
++                         font-weight: 500; line-height: 18px; background: var(--chip); color: var(--on-chip); }
++  #catalog .entry { display: flex; gap: 10px; align-items: center; padding-inline-start: 4px; }
++  #catalog .entry label { flex: 1; min-inline-size: 0; display: flex; gap: 12px; align-items: flex-start;
++                          padding: 7px 0; cursor: pointer; }
++  #catalog label input { margin-block-start: 2px; }
++  #catalog .url, #catalog .countries { display: block; font-size: 12px; color: var(--soft); overflow-wrap: anywhere; }
 +  #catalog .flags { display: inline-flex; gap: 4px; margin-inline-end: 7px; vertical-align: middle; }
-+  #catalog .countries { display: block; font-size: 12px; color: var(--soft); }
++  svg.flag { flex: none; inline-size: 21px; block-size: 14px; vertical-align: -2px; clip-path: inset(0 round 2px);
++             outline: 1px solid var(--line); outline-offset: -1px; }
++
++  /* --- My filters, My rules --- */
++  .unsaved { display: inline-flex; align-items: center; gap: 6px; padding: 0 10px; border-radius: 100px;
++             font-size: 12px; font-weight: 500; line-height: 20px; color: var(--warn);
++             background: color-mix(in srgb, var(--warn) 14%, transparent); }
++  .unsaved::before { content: ""; inline-size: 6px; block-size: 6px; border-radius: 50%; background: currentColor; }
++  #for-now { border-radius: 10px; padding: 10px 14px; margin: 0 0 12px; background: var(--chip); color: var(--on-chip); }
++  #for-now h3 { margin: 0 0 4px; font-size: 13px; }
++  #for-now .note, #for-now pre { color: inherit; opacity: .85; }
++
++  /* --- Sites --- */
++  .site-row { display: flex; gap: 12px; align-items: center; padding: 8px 0; border-block-start: 1px solid var(--line); }
++  .site-row:first-child { border-block-start: 0; }
++  .site-row .name { flex: 1; min-inline-size: 0; overflow-wrap: anywhere; }
++  .site-row .what { color: var(--soft); font-size: 12px; }
++  .empty { color: var(--soft); }
++  #allowed .empty, #switches .empty { margin: 0; color: var(--fg); font-weight: 500; }
++  .hint { margin: 2px 0 0; font-size: 12px; color: var(--soft); }
++
++  /* --- Logger --- */
++  .help > summary { color: var(--accent); font-weight: 500; padding: 2px 4px; margin-inline-start: -4px;
++                    inline-size: fit-content; }
++  .help[open] > summary { margin-block-end: 8px; }
++  .help p { color: var(--soft); font-size: 12px; margin-block-end: 6px; }
++  .log-tools { margin-block-start: 10px; }
++  #log-tab { flex: 2 1 220px; min-inline-size: 0; }
++  #log-filter { flex: 3 1 160px; min-inline-size: 0; }
++  #log { max-block-size: max(320px, calc(100vh - var(--top) - 250px)); overflow: auto; margin-block-start: 12px;
++         border: 1px solid var(--line); border-radius: 10px; }
++  #log table { inline-size: 100%; border-collapse: collapse; font-size: 12px; }
++  #log th { position: sticky; inset-block-start: 0; z-index: 1; padding: 6px 8px; text-align: start; font-weight: 500;
++            color: var(--soft); background: var(--card); box-shadow: 0 1px 0 var(--line); white-space: nowrap; }
++  #log td { padding: 4px 8px; border-block-start: 1px solid var(--line); vertical-align: top; }
++  #log tbody tr:hover td { background: var(--hover); }
++  #log td.time { white-space: nowrap; color: var(--soft); font-variant-numeric: tabular-nums; }
++  #log td.url { overflow-wrap: anywhere; font-family: var(--mono); }
++  #log td.kind { white-space: nowrap; font-weight: 500; }
++  #log tr.blocked td.kind { color: var(--bad); }
++  #log tr.allowed td.kind { color: var(--soft); }
++  #log tr.page td.kind { color: var(--warn); }
++  #log td.act { white-space: nowrap; text-align: end; }
++  #log td.act button + button { margin-inline-start: 4px; }
++  #log td.type { white-space: nowrap; color: var(--soft); }
++  #log td.party { white-space: nowrap; color: var(--soft); font-size: 11px; }
++  #log .why { margin-block-start: 4px; padding: 4px 8px; border-radius: 6px; background: var(--hover);
++              font-family: system-ui, sans-serif; color: var(--fg); }
++  #log-empty { margin: 0; padding: 24px 16px 12px; text-align: center; }
++
++  /* --- what was done, said at the foot of the page --- */
++  #message { position: fixed; inset-block-end: 20px; inset-inline-start: 50%; translate: -50% 12px; z-index: 8;
++             box-sizing: border-box; max-inline-size: min(720px, calc(100vw - 32px)); max-block-size: 40vh;
++             overflow-y: auto; margin: 0; padding: 10px 18px; border-radius: 10px;
++             background: light-dark(#2b2b30, #e6e6ea); color: light-dark(#f3f3f6, #1f1f24);
++             box-shadow: 0 4px 16px rgb(0 0 0 / .3); overflow-wrap: anywhere; opacity: 0; pointer-events: none;
++             transition: opacity .15s, translate .15s; }
++  #message.show { opacity: 1; translate: -50% 0; pointer-events: auto; cursor: pointer; }
++  #message:empty { visibility: hidden; }
++  #message.bad { background: var(--bad); color: light-dark(#fff, #2b0b09); }
++  [dir=rtl] #message { translate: 50% 12px; }
++  [dir=rtl] #message.show { translate: 50% 0; }
++
++  /* --- the list viewer --- */
++  #viewer { inline-size: min(1000px, 94vw); max-block-size: 92vh; box-sizing: border-box; padding: 18px 20px;
++            border: 1px solid var(--line); border-radius: 16px; background: var(--card); color: var(--fg);
++            box-shadow: 0 12px 40px rgb(0 0 0 / .35); }
++  #viewer::backdrop { background: rgb(0 0 0 / .45); }
++  #viewer h2 { overflow-wrap: anywhere; }
++  #viewer-about { font-size: 12px; overflow-wrap: anywhere; margin-block-end: 0; }
++  #viewer-text { block-size: 62vh; resize: none; white-space: pre; overflow: auto; margin-block-start: 10px; }
++  #viewer-find { flex: 1; min-inline-size: 12em; border-radius: 100px; padding-inline: 14px; }
++
++  /* --- wide windows: two columns; narrow ones: less room around --- */
++  @media (min-width: 1400px) {
++    :root { --content: 1320px; }
++    .cols { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
++    #settings .groups { display: block; columns: 2; column-gap: 16px; }
++    #settings .groups > .card { break-inside: avoid; margin-block-end: 16px; }
++    .cols3 { grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; }
++  }
++  @media (max-width: 760px) {
++    .top-row { gap: 10px; padding: 10px 16px 4px; }
++    .tabs { justify-content: flex-start; padding: 0 8px; }
++    [role=tab] > .ico { display: none; }
++    main { padding: 16px 12px 96px; }
++    .card { padding: 14px 16px; }
++    .shortcuts { grid-template-columns: minmax(0, 1fr) 8em auto; }
++    .list, .site-row, #catalog .entry { flex-wrap: wrap; }
++    #add-form, #allow-form { flex-wrap: wrap; }
++  }
++  @media (max-width: 560px) {
++    h1 { font-size: 15px; }
++    .search kbd { display: none; }
++    .brand > svg { inline-size: 22px; block-size: 22px; }
++    .hero-shield { inline-size: 44px; block-size: 44px; }
++    .hero-shield svg { inline-size: 26px; block-size: 26px; }
++    #log td.party, #log th.party, #log td.type, #log th.type { display: none; }
++    #log td.act { white-space: normal; }
++    #log td.act button { display: block; margin: 0 0 4px auto; }
++    #log td.act button + button { margin-inline-start: auto; }
++    /* the numbers of the overview: two wide ones, then three */
++    .tiles { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; }
++    .tile { grid-column: span 2; padding: 12px; }
++    .tile:nth-child(-n+2) { grid-column: span 3; }
++  }
++  @media (prefers-reduced-motion: reduce) {
++    *, *::before, *::after { animation-duration: .01s !important; transition-duration: .01s !important; }
++  }
 +</style>
 +</head>
 +<body>
-+<main>
-+  <h1>Thoron adblock</h1>
++<header class="top" id="top">
++  <div class="top-row">
++    <div class="brand">
++      <svg viewBox="0 0 20 20" aria-hidden="true">
++        <path class="shield-fill" d="M10 1.8l6.3 2.3c.3.1.5.4.5.7v4.6c0 4-2.7 7.4-6.5 8.7a.9.9 0 0 1-.6 0C5.9 16.8 3.2 13.4 3.2 9.4V4.8c0-.3.2-.6.5-.7z"/>
++        <path class="shield-mark" d="M6.4 6.2h7.2v2H11v5.6H9V8.2H6.4z"/>
++      </svg>
++      <h1>Thoron adblock</h1>
++      <a class="state" id="header-state" href="#power-section"><span id="header-state-text">On</span></a>
++    </div>
++    <div class="search" role="search">
++      <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>
++      <input id="find-all" type="search" role="combobox" aria-autocomplete="list" aria-expanded="false"
++             aria-controls="find-results" autocomplete="off" spellcheck="false"
++             placeholder="Search settings, lists and countries" aria-label="Search settings, lists and countries">
++      <kbd aria-hidden="true">/</kbd>
++      <div id="find-results" role="listbox" aria-label="Search settings, lists and countries" hidden></div>
++    </div>
++  </div>
 +  <nav class="bar" aria-label="Sections">
-+    <a href="#settings">Settings</a>
-+    <a href="#lists-section">Filter lists</a>
-+    <a href="#more-lists">More lists</a>
-+    <a href="#mine">My filters</a>
-+    <a href="#rules">My rules</a>
-+    <a href="#sites">Sites</a>
-+    <a href="#logger">Logger</a>
++    <div class="tabs" id="tabs" role="tablist" aria-label="Thoron adblock">
++      <a role="tab" id="tab-overview" href="#overview" aria-controls="panel-overview" aria-selected="true">
++        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
++        <span class="tab-name">Overview</span></a>
++      <a role="tab" id="tab-settings" href="#settings" aria-controls="panel-settings" aria-selected="false" tabindex="-1">
++        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h8M18 7h2M4 17h2M12 17h8"/><circle cx="15" cy="7" r="2.5"/><circle cx="9" cy="17" r="2.5"/></svg>
++        <span class="tab-name">Settings</span></a>
++      <a role="tab" id="tab-lists" href="#lists" aria-controls="panel-lists" aria-selected="false" tabindex="-1">
++        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 6h11M10 12h11M10 18h11"/><path d="m3 6 1.5 1.5L7 5M3 12l1.5 1.5L7 11M3 18l1.5 1.5L7 17"/></svg>
++        <span class="tab-name">Filter lists</span><span class="badge" id="count-lists" hidden></span></a>
++      <a role="tab" id="tab-mine" href="#mine" aria-controls="panel-mine" aria-selected="false" tabindex="-1">
++        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18l-7 8.5V19l-4 2v-7.5z"/></svg>
++        <span class="tab-name">My filters</span><span class="badge" id="count-mine" hidden></span><span
++          class="dot" id="dot-mine" role="img" aria-label="Unsaved changes" hidden></span></a>
++      <a role="tab" id="tab-rules" href="#rules" aria-controls="panel-rules" aria-selected="false" tabindex="-1">
++        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M9 10v10M15 10v10"/></svg>
++        <span class="tab-name">My rules</span><span class="badge" id="count-rules" hidden></span><span
++          class="dot" id="dot-rules" role="img" aria-label="Unsaved changes" hidden></span></a>
++      <a role="tab" id="tab-sites" href="#sites" aria-controls="panel-sites" aria-selected="false" tabindex="-1">
++        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3z"/></svg>
++        <span class="tab-name">Sites</span><span class="badge" id="count-sites" hidden></span></a>
++      <a role="tab" id="tab-logger" href="#logger" aria-controls="panel-logger" aria-selected="false" tabindex="-1">
++        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
++        <span class="tab-name">Logger</span></a>
++      <a role="tab" id="tab-backup" href="#backup" aria-controls="panel-backup" aria-selected="false" tabindex="-1">
++        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 10.5l5 5 5-5M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
++        <span class="tab-name">Backup</span></a>
++    </div>
 +  </nav>
-+  <p id="total"></p>
-+  <p class="lead">Thoron blocks ads and trackers inside the browser, with the filter lists below. What you
-+    choose here stays on this computer. A list is downloaded from its address every few days, without
-+    cookies or anything that tells who you are.</p>
++</header>
 +
-+  <div id="subscribe-box" hidden role="alertdialog" aria-labelledby="subscribe-title">
++<main>
++  <div id="subscribe-box" class="banner" hidden role="alertdialog" aria-labelledby="subscribe-title">
 +    <p id="subscribe-title"></p>
 +    <p class="url" id="subscribe-url"></p>
 +    <div class="row">
@@ -19357,274 +19744,395 @@ index 0000000000000000000000000000000000000000..33a6722ca309b35d265225f348648b9f
 +    </div>
 +  </div>
 +
-+  <p id="not-applied" hidden>Your last change is not in use: the browser stopped while it was reading it.
++  <p id="not-applied" class="banner" hidden>Your last change is not in use: the browser stopped while it was reading it.
 +    Change the setting again, or remove the list or the rules you added last.</p>
 +
-+  <section id="power-section">
-+    <h2>On, off and allowed sites</h2>
-+    <label class="option"><input type="checkbox" id="blocking" checked>
-+      <span>Block ads and trackers on every site</span></label>
-+    <p id="blocking-state" class="note"></p>
-+    <div class="row" role="group" aria-labelledby="pause-label">
-+      <span id="pause-label">Turn it off for a while:</span>
-+      <button type="button" data-minutes="5">5 minutes</button>
-+      <button type="button" data-minutes="60">1 hour</button>
-+      <button type="button" data-minutes="-1">Until the browser closes</button>
-+    </div>
-+    <p>Turned off for a while, blocking comes back on by itself; turned off with the box above, it stays off
-+      until you turn it on again. Pages that are open change when they load again. Sites are allowed one by
-+      one in the menu of the shield, or in the site settings.</p>
-+    <a class="button" id="site-settings" href="chrome://settings/content/ads">Open "Ads and trackers" in Settings</a>
-+  </section>
-+
-+  <section id="settings">
-+    <h2>Settings</h2>
-+    <p>As in uBlock Origin. A change is in use at once.</p>
-+    <input id="find-setting" class="find" type="search" placeholder="Find a setting" aria-label="Find a setting">
-+    <p id="find-none" class="note" hidden>No setting matches.</p>
-+    <h3>Appearance</h3>
-+    <label class="option"><input type="checkbox" data-setting="badge">
-+      <span>Show the number of blocked requests on the shield</span></label>
-+    <div class="option"><label for="shield-place">Where the shield is</label>
-+      <select id="shield-place">
-+        <option value="both">In the address bar and in the toolbar</option>
-+        <option value="address">In the address bar only</option>
-+        <option value="toolbar">In the toolbar only, next to the address bar</option>
-+      </select></div>
-+    <div class="option" id="toolbar-position-row"><label for="toolbar-position">In the toolbar</label>
-+      <select id="toolbar-position" data-choice="toolbar-position">
-+        <option value="address">Right after the address bar</option>
-+        <option value="extensions">After the extensions</option>
-+        <option value="menu">Next to the menu</option>
-+      </select></div>
-+    <div class="option" id="address-position-row"><label for="address-position">In the address bar</label>
-+      <select id="address-position" data-choice="address-position">
-+        <option value="icons">With the other icons</option>
-+        <option value="start">Before the other icons</option>
-+        <option value="end">At the far end</option>
-+      </select></div>
-+    <div id="shield-preview" aria-hidden="true"></div>
-+    <div class="option"><label for="theme">Theme</label>
-+      <select id="theme">
-+        <option value="auto">As the system</option>
-+        <option value="light">Light</option>
-+        <option value="dark">Dark</option>
-+      </select></div>
-+    <div class="option"><label for="accent">Accent color</label>
-+      <input id="accent" type="color" value="#7235da">
-+      <button id="accent-default" type="button">As it was</button></div>
-+    <label class="option"><input type="checkbox" data-setting="no-tooltips">
-+      <span>Disable tooltips</span></label>
-+    <label class="option"><input type="checkbox" data-setting="colorblind">
-+      <span>Color-blind friendly: the menu's grid of rules in blue and orange instead of green and red</span></label>
-+    <label class="option"><input type="checkbox" data-setting="context-menu">
-+      <span>Make use of the context menu: "Block element..." when you right-click a page</span></label>
-+    <h3>Privacy</h3>
-+    <label class="option"><input type="checkbox" data-setting="prefetch">
-+      <span>Disable pre-fetching, so that blocked requests make no connection at all</span></label>
-+    <label class="option"><input type="checkbox" data-setting="hyperlink-auditing">
-+      <span>Disable hyperlink auditing (the pings a link sends when it is clicked)</span></label>
-+    <label class="option"><input type="checkbox" data-setting="webrtc">
-+      <span>Prevent WebRTC from leaking local IP addresses</span></label>
-+    <label class="option"><input type="checkbox" data-setting="block-csp-reports">
-+      <span>Block CSP reports (what a page's security policy reports to its servers)</span></label>
-+    <label class="option"><input type="checkbox" data-setting="cname-uncloak">
-+      <span>Uncloak canonical names: find trackers hidden under a site's own name</span></label>
-+    <h3>Default behavior</h3>
-+    <p>For every site. The switches in the menu of the shield change it for one site.</p>
-+    <label class="option"><input type="checkbox" data-setting="default-cosmetic">
-+      <span>Disable cosmetic filtering: nothing is hidden</span></label>
-+    <div class="option"><label><input type="checkbox" data-setting="default-media">
-+      <span>Block media elements larger than</span></label>
-+      <input type="number" id="media-kb" min="1" max="1048576" step="1" aria-label="Largest media size in kB"><span>kB</span></div>
-+    <label class="option"><input type="checkbox" data-setting="default-fonts">
-+      <span>Block remote fonts</span></label>
-+    <label class="option"><input type="checkbox" data-setting="javascript">
-+      <span>Disable JavaScript</span></label>
-+    <label class="option"><input type="checkbox" data-setting="default-3p-script">
-+      <span>Block third-party scripts (uBlock Origin's "medium mode", with the next one)</span></label>
-+    <label class="option"><input type="checkbox" data-setting="default-3p-frame">
-+      <span>Block third-party frames</span></label>
-+    <h3>Filtering</h3>
-+    <label class="option"><input type="checkbox" data-setting="ignore-generic">
-+      <span>Ignore generic cosmetic filters (hide rules written for every site)</span></label>
-+    <h3>Shortcuts</h3>
-+    <p>As in uBlock Origin: click a box and press the keys (Ctrl or Alt with a letter, a digit or F1 to F12).
-+      They work while a page has the focus.</p>
-+    <div id="shortcuts" class="shortcuts"></div>
-+    <h3>Advanced</h3>
-+    <label class="option"><input type="checkbox" data-setting="advanced">
-+      <span>I am an advanced user: the menu of the shield shows the grid of rules for the page</span></label>
-+    <h3>Troubleshooting</h3>
-+    <p>As uBlock Origin's support page: the browser's version, the lists in use and the settings that differ
-+      from the defaults, to paste where you ask for help. No address you visited is in it.</p>
-+    <div class="row">
-+      <button id="copy-info" type="button">Copy troubleshooting info</button>
-+      <span id="storage-used"></span>
-+    </div>
-+    <h3>Backup</h3>
-+    <p>A file with your lists, your own rules, allowed sites, switches and these settings. It stays where
-+      you save it; nothing is sent anywhere.</p>
-+    <div class="row">
-+      <button id="backup" type="button">Back up to file</button>
-+      <button id="restore" type="button">Restore from file</button>
-+      <input id="restore-file" type="file" accept=".json,application/json" hidden>
-+      <button id="reset" type="button">Reset to default settings</button>
-+    </div>
-+    <p class="note">Cloud storage, as uBlock Origin's: the same backup, kept with the browser's own sync, which
-+      carries it to your other computers when sync is on for settings. Without sync it stays on this
-+      computer.</p>
-+    <div class="row">
-+      <button id="cloud-send" type="button">Send to cloud storage</button>
-+      <button id="cloud-restore" type="button">Restore from cloud storage</button>
-+    </div>
-+  </section>
-+
-+  <section id="lists-section">
-+    <h2>Filter lists</h2>
-+    <p>A list that is switched off is neither used nor downloaded.</p>
-+    <div id="lists" role="list"></div>
-+    <label class="option"><input type="checkbox" data-setting="auto-update">
-+      <span>Auto-update filter lists (otherwise only "Update now" downloads them)</span></label>
-+    <div class="row">
-+      <button id="update-now" type="button">Update now</button>
-+      <span id="last-check"></span>
-+    </div>
-+    <p class="note">"Update now" downloads every list again, as uBlock Origin's "Purge all caches" and "Update
-+      now" together: no saved copy is reused.</p>
-+    <details id="result-box" hidden>
-+      <summary>What the last update did</summary>
-+      <pre id="result"></pre>
-+    </details>
-+  </section>
-+
-+  <section id="more-lists">
-+    <h2>More lists</h2>
-+    <p>The lists uBlock Origin offers besides its defaults: cookie notices and other annoyances, more privacy, and
-+      lists for regions and languages. A list you switch on is downloaded from its address and is in use at once.</p>
-+    <input id="catalog-find" class="find" type="search" placeholder="Find a list, a country or a language"
-+      aria-label="Find a list, a country or a language">
-+    <p id="catalog-none" class="note" hidden>No list matches.</p>
-+    <div id="catalog"></div>
-+  </section>
-+
-+  <section>
-+    <h2>Add a list</h2>
-+    <p>Give the address of a filter list. It must be a secure address.</p>
-+    <form id="add-form">
-+      <input id="add-url" type="url" required aria-label="Address of the list">
-+      <button id="add-button" class="main" type="submit">Add</button>
-+    </form>
-+    <p class="note row">Rules of a list you add block and hide like any other. They cannot use the powerful
-+      scripts that only uBlock Origin's own lists may use.</p>
-+  </section>
-+
-+  <section id="mine">
-+    <h2>My filters</h2>
-+    <p>Your own rules, one per line, written like the rules of the lists. <code>||ads.example.com^</code>
-+      blocks a host, <code>example.com##.banner</code> hides something on a site, and
-+      <code>@@||example.com^</code> allows a site.</p>
-+    <label class="option"><input type="checkbox" id="trust-filters">
-+      <span>Allow custom filters requiring trust: your own filters may use what only uBlock Origin's lists may
-+        use (scriptlets that set cookies, click elements or change what a page reads, and rules that send a
-+        request elsewhere). Only for filters you understand.</span></label>
-+    <textarea id="my-filters" rows="12" spellcheck="false" aria-label="My filters"></textarea>
-+    <div class="row">
-+      <button id="save-filters" class="main" type="button">Save</button>
-+      <button id="revert-filters" type="button">Undo changes</button>
-+      <button id="import-filters" type="button">Import and append</button>
-+      <button id="export-filters" type="button">Export</button>
-+      <input id="import-filters-file" type="file" accept=".txt,text/plain" hidden>
-+      <span id="my-count"></span>
-+    </div>
-+  </section>
-+
-+  <section id="rules">
-+    <h2>My rules</h2>
-+    <p>uBlock Origin's dynamic filtering: one rule per line, <code>source destination type action</code>.
-+      <code>* * 3p-script block</code> blocks scripts from other sites everywhere,
-+      <code>example.com * 3p-script noop</code> leaves them to the lists on example.com,
-+      <code>* ads.example.com * block</code> blocks a host, <code>example.com cdn.example.net * allow</code>
-+      lets a host through on a site whatever the lists say. Types: <code>*</code>, <code>3p</code>,
-+      <code>1p-script</code>, <code>3p-script</code>, <code>3p-frame</code>, <code>image</code>,
-+      <code>inline-script</code>; actions: <code>block</code>, <code>allow</code>, <code>noop</code>. The most
-+      specific rule decides.</p>
-+    <p class="note">uBlock Origin's switch lines work here too: "no-large-media: example.com true" and the
-+      like are applied to the sites' switches and the settings when you save, and Export writes them.</p>
-+    <div id="for-now" hidden>
-+      <h3>Changed in the menu for now</h3>
-+      <p class="note">As uBlock Origin's temporary rules: what the menu's grid changed and did not save. It is in
-+        use until the browser closes.</p>
-+      <pre id="for-now-lines" class="url"></pre>
-+      <div class="row">
-+        <button id="save-for-now" type="button">Save them</button>
-+        <button id="revert-for-now" type="button">Revert them</button>
++  <!-- Overview: the state, the numbers, what is done most -->
++  <div class="panel" id="panel-overview" data-tab="overview" role="tabpanel" aria-labelledby="tab-overview" tabindex="0">
++    <section id="power-section" class="card">
++      <div class="hero-head">
++        <span class="hero-shield" aria-hidden="true">
++          <svg viewBox="0 0 20 20">
++            <path class="shield-fill" d="M10 1.8l6.3 2.3c.3.1.5.4.5.7v4.6c0 4-2.7 7.4-6.5 8.7a.9.9 0 0 1-.6 0C5.9 16.8 3.2 13.4 3.2 9.4V4.8c0-.3.2-.6.5-.7z"/>
++            <path class="shield-mark" d="M6.4 6.2h7.2v2H11v5.6H9V8.2H6.4z"/>
++          </svg>
++        </span>
++        <div class="hero-text">
++          <h2>On, off and allowed sites</h2>
++          <p id="blocking-state"></p>
++          <p id="total"></p>
++        </div>
 +      </div>
-+    </div>
-+    <textarea id="my-rules" rows="10" spellcheck="false" aria-label="My rules"></textarea>
-+    <div class="row">
-+      <button id="save-rules" class="main" type="button">Save</button>
-+      <button id="import-rules" type="button">Import and append</button>
-+      <button id="export-rules" type="button">Export</button>
-+      <input id="import-rules-file" type="file" accept=".txt,text/plain" hidden>
-+      <span id="rules-note"></span>
-+    </div>
-+  </section>
++      <label class="option"><input type="checkbox" id="blocking" checked>
++        <span>Block ads and trackers on every site</span></label>
++      <div class="row" role="group" aria-labelledby="pause-label">
++        <span id="pause-label">Turn it off for a while:</span>
++        <button type="button" data-minutes="5">5 minutes</button>
++        <button type="button" data-minutes="60">1 hour</button>
++        <button type="button" data-minutes="-1">Until the browser closes</button>
++      </div>
++      <p class="note gap">Turned off for a while, blocking comes back on by itself; turned off with the box above, it stays off
++        until you turn it on again. Pages that are open change when they load again. Sites are allowed one by
++        one in the menu of the shield, or in the site settings.</p>
++      <div class="row">
++        <a class="button" id="site-settings" href="chrome://settings/content/ads">Open "Ads and trackers" in Settings</a>
++      </div>
++    </section>
 +
-+  <section id="sites">
-+    <h2>Sites</h2>
-+    <p>Ads and trackers are allowed on these sites: nothing is blocked or hidden there.</p>
-+    <div id="allowed" role="list"></div>
-+    <form id="allow-form" class="row">
-+      <input id="allow-host" type="text" required aria-label="Site to allow" placeholder="example.com">
-+      <button type="submit">Allow</button>
-+      <button id="import-sites" type="button">Import</button>
-+      <button id="export-sites" type="button">Export</button>
-+      <input id="import-sites-file" type="file" accept=".txt,text/plain" hidden>
-+    </form>
-+    <h2 class="row">Switches from the menu</h2>
-+    <p>What the menu of the shield in the toolbar changed for a site: no pop-ups, no large media, no hiding,
-+      no remote fonts or no JavaScript.</p>
-+    <div id="switches" role="list"></div>
-+  </section>
-+
-+  <section id="logger">
-+    <h2>Logger</h2>
-+    <p>The requests of the open tabs, the newest first: every blocked one, and while this page is open also
-+      those let through. It is kept only in memory: nothing is stored or sent. "Block" adds a rule for a host
-+      to My filters; "Allow" lets a blocked host through on that site; "Why?" names the rule that blocked
-+      the request or let it through, and its list.</p>
-+    <p class="note">While the logger is open, the hide rules that hide something on a page loaded since are
-+      listed too, as "hidden", with the rule.</p>
-+    <p class="note">The scriptlets such a page got are listed as "injected", as uBlock Origin writes them.</p>
-+    <p class="note">"3p" marks a request to another site than the tab's. As in uBlock Origin, the filter takes
-+      words that must all be in the address, -word for one that must not be, and /.../ for a regular
-+      expression.</p>
-+    <div class="row">
-+      <select id="log-tab" aria-label="Tab"></select>
-+      <select id="log-kind" aria-label="Show">
-+        <option value="">All</option>
-+        <option value="blocked">Blocked</option>
-+        <option value="allowed">Let through</option>
-+      </select>
-+      <select id="log-type" aria-label="Type">
-+        <option value="">All types</option>
-+      </select>
-+      <select id="log-party" aria-label="Party">
-+        <option value="">First and third party</option>
-+        <option value="first">First party</option>
-+        <option value="third">Third party</option>
-+      </select>
-+      <input id="log-filter" type="text" aria-label="Show only addresses with" placeholder="Filter"
-+             title="Words that must all be in the address; -word for one that must not be; /.../ for a regular expression">
-+      <button id="log-pause" type="button" aria-pressed="false">Pause</button>
-+      <button id="log-clear" type="button">Clear</button>
-+      <button id="log-export" type="button">Export</button>
-+      <button id="log-reload" type="button" title="Reload the tab shown">Reload</button>
-+      <span id="log-count"></span>
++    <div class="tiles" id="tiles">
++      <a class="tile" id="tile-lists" href="#lists"><b id="stat-lists">0</b><span>Lists in use</span></a>
++      <a class="tile" id="tile-rules" href="#lists-section"><b id="stat-rules">0</b><span>Rules in use</span></a>
++      <a class="tile" id="tile-filters" href="#mine"><b id="stat-filters">0</b><span>My filters</span></a>
++      <a class="tile" id="tile-my-rules" href="#rules"><b id="stat-my-rules">0</b><span>My rules</span></a>
++      <a class="tile" id="tile-sites" href="#sites"><b id="stat-sites">0</b><span>Allowed sites</span></a>
 +    </div>
-+    <div id="log"><table><tbody id="log-rows"></tbody></table></div>
-+  </section>
++
++    <section id="quick" class="card">
++      <h2>Quick actions</h2>
++      <div class="row">
++        <button id="quick-update" type="button">Update now</button>
++        <a class="button" id="quick-logger" href="#logger">Open the logger</a>
++        <button id="quick-backup" type="button">Back up to file</button>
++      </div>
++    </section>
++
++    <section id="troubleshooting" class="card">
++      <h2>Troubleshooting</h2>
++      <p>As uBlock Origin's support page: the browser's version, the lists in use and the settings that differ
++        from the defaults, to paste where you ask for help. No address you visited is in it.</p>
++      <div class="row">
++        <button id="copy-info" type="button">Copy troubleshooting info</button>
++        <span id="storage-used"></span>
++      </div>
++    </section>
++  </div>
++
++  <!-- Settings -->
++  <div class="panel" id="panel-settings" data-tab="settings" role="tabpanel" aria-labelledby="tab-settings" tabindex="0" hidden>
++    <section id="settings" class="stack">
++      <div class="settings-head">
++        <h2>Settings</h2>
++        <p>As in uBlock Origin. A change is in use at once.</p>
++      </div>
++      <input id="find-setting" class="find" type="search" placeholder="Find a setting" aria-label="Find a setting">
++      <p id="find-none" class="note" hidden>No setting matches.</p>
++      <div class="groups stack">
++        <div class="card group" id="group-appearance">
++          <h3>Appearance</h3>
++          <label class="option"><input type="checkbox" data-setting="badge">
++            <span>Show the number of blocked requests on the shield</span></label>
++          <div class="option"><label for="shield-place">Where the shield is</label>
++            <select id="shield-place">
++              <option value="both">In the address bar and in the toolbar</option>
++              <option value="address">In the address bar only</option>
++              <option value="toolbar">In the toolbar only, next to the address bar</option>
++            </select></div>
++          <div class="option" id="toolbar-position-row"><label for="toolbar-position">In the toolbar</label>
++            <select id="toolbar-position" data-choice="toolbar-position">
++              <option value="address">Right after the address bar</option>
++              <option value="extensions">After the extensions</option>
++              <option value="menu">Next to the menu</option>
++            </select></div>
++          <div class="option" id="address-position-row"><label for="address-position">In the address bar</label>
++            <select id="address-position" data-choice="address-position">
++              <option value="icons">With the other icons</option>
++              <option value="start">Before the other icons</option>
++              <option value="end">At the far end</option>
++            </select></div>
++          <div id="shield-preview" aria-hidden="true"></div>
++          <div class="option"><label for="theme">Theme</label>
++            <select id="theme">
++              <option value="auto">As the system</option>
++              <option value="light">Light</option>
++              <option value="dark">Dark</option>
++            </select></div>
++          <div class="option"><label for="accent">Accent color</label>
++            <input id="accent" type="color" value="#7235da">
++            <button id="accent-default" type="button">As it was</button></div>
++          <label class="option"><input type="checkbox" data-setting="no-tooltips">
++            <span>Disable tooltips</span></label>
++          <label class="option"><input type="checkbox" data-setting="colorblind">
++            <span>Color-blind friendly: the menu's grid of rules in blue and orange instead of green and red</span></label>
++          <label class="option"><input type="checkbox" data-setting="context-menu">
++            <span>Make use of the context menu: "Block element..." when you right-click a page</span></label>
++        </div>
++        <div class="card group" id="group-privacy">
++          <h3>Privacy</h3>
++          <label class="option"><input type="checkbox" data-setting="prefetch">
++            <span>Disable pre-fetching, so that blocked requests make no connection at all</span></label>
++          <label class="option"><input type="checkbox" data-setting="hyperlink-auditing">
++            <span>Disable hyperlink auditing (the pings a link sends when it is clicked)</span></label>
++          <label class="option"><input type="checkbox" data-setting="webrtc">
++            <span>Prevent WebRTC from leaking local IP addresses</span></label>
++          <label class="option"><input type="checkbox" data-setting="block-csp-reports">
++            <span>Block CSP reports (what a page's security policy reports to its servers)</span></label>
++          <label class="option"><input type="checkbox" data-setting="cname-uncloak">
++            <span>Uncloak canonical names: find trackers hidden under a site's own name</span></label>
++        </div>
++        <div class="card group" id="group-default">
++          <h3>Default behavior</h3>
++          <p>For every site. The switches in the menu of the shield change it for one site.</p>
++          <label class="option"><input type="checkbox" data-setting="default-cosmetic">
++            <span>Disable cosmetic filtering: nothing is hidden</span></label>
++          <div class="option"><label><input type="checkbox" data-setting="default-media">
++            <span>Block media elements larger than</span></label>
++            <input type="number" id="media-kb" min="1" max="1048576" step="1" aria-label="Largest media size in kB"><span>kB</span></div>
++          <label class="option"><input type="checkbox" data-setting="default-fonts">
++            <span>Block remote fonts</span></label>
++          <label class="option"><input type="checkbox" data-setting="javascript">
++            <span>Disable JavaScript</span></label>
++          <label class="option"><input type="checkbox" data-setting="default-3p-script">
++            <span>Block third-party scripts (uBlock Origin's "medium mode", with the next one)</span></label>
++          <label class="option"><input type="checkbox" data-setting="default-3p-frame">
++            <span>Block third-party frames</span></label>
++        </div>
++        <div class="card group" id="group-filtering">
++          <h3>Filtering</h3>
++          <label class="option"><input type="checkbox" data-setting="ignore-generic">
++            <span>Ignore generic cosmetic filters (hide rules written for every site)</span></label>
++        </div>
++        <div class="card group" id="group-shortcuts">
++          <h3>Shortcuts</h3>
++          <p>As in uBlock Origin: click a box and press the keys (Ctrl or Alt with a letter, a digit or F1 to F12).
++            They work while a page has the focus.</p>
++          <div id="shortcuts" class="shortcuts"></div>
++        </div>
++        <div class="card group" id="group-advanced">
++          <h3>Advanced</h3>
++          <label class="option"><input type="checkbox" data-setting="advanced">
++            <span>I am an advanced user: the menu of the shield shows the grid of rules for the page</span></label>
++        </div>
++      </div>
++    </section>
++  </div>
++
++  <!-- Filter lists: the lists in use, a list by its address, the lists to choose from -->
++  <div class="panel" id="panel-lists" data-tab="lists" role="tabpanel" aria-labelledby="tab-lists" tabindex="0" hidden>
++    <p class="lead">Thoron blocks ads and trackers inside the browser, with the filter lists below. What you
++      choose here stays on this computer. A list is downloaded from its address every few days, without
++      cookies or anything that tells who you are.</p>
++    <div class="stack cols">
++      <div class="stack">
++        <section id="lists-section" class="card">
++          <h2>Filter lists</h2>
++          <p>A list that is switched off is neither used nor downloaded.</p>
++          <div id="lists" role="list"></div>
++          <label class="option"><input type="checkbox" data-setting="auto-update">
++            <span>Auto-update filter lists (otherwise only "Update now" downloads them)</span></label>
++          <div class="row">
++            <button id="update-now" type="button">Update now</button>
++            <span id="last-check"></span>
++          </div>
++          <p class="note gap">"Update now" downloads every list again, as uBlock Origin's "Purge all caches" and "Update
++            now" together: no saved copy is reused.</p>
++          <details id="result-box" hidden>
++            <summary>What the last update did</summary>
++            <pre id="result"></pre>
++          </details>
++        </section>
++
++        <section id="add-list" class="card">
++          <h2>Add a list</h2>
++          <p>Give the address of a filter list. It must be a secure address.</p>
++          <form id="add-form">
++            <input id="add-url" type="url" required aria-label="Address of the list">
++            <button id="add-button" class="main" type="submit">Add</button>
++          </form>
++          <p class="note row">Rules of a list you add block and hide like any other. They cannot use the powerful
++            scripts that only uBlock Origin's own lists may use.</p>
++        </section>
++      </div>
++
++      <section id="more-lists" class="card">
++        <h2>More lists</h2>
++        <p>The lists uBlock Origin offers besides its defaults: cookie notices and other annoyances, more privacy, and
++          lists for regions and languages. A list you switch on is downloaded from its address and is in use at once.</p>
++        <input id="catalog-find" class="find" type="search" placeholder="Find a list, a country or a language"
++          aria-label="Find a list, a country or a language">
++        <p id="catalog-none" class="note" hidden>No list matches.</p>
++        <div id="catalog"></div>
++      </section>
++    </div>
++  </div>
++
++  <!-- My filters -->
++  <div class="panel" id="panel-mine" data-tab="mine" role="tabpanel" aria-labelledby="tab-mine" tabindex="0" hidden>
++    <section id="mine" class="card">
++      <div class="card-head">
++        <h2>My filters</h2>
++        <span class="unsaved" id="filters-dirty" hidden>Unsaved changes</span>
++      </div>
++      <p>Your own rules, one per line, written like the rules of the lists. <code>||ads.example.com^</code>
++        blocks a host, <code>example.com##.banner</code> hides something on a site, and
++        <code>@@||example.com^</code> allows a site.</p>
++      <label class="option"><input type="checkbox" id="trust-filters">
++        <span>Allow custom filters requiring trust: your own filters may use what only uBlock Origin's lists may
++          use (scriptlets that set cookies, click elements or change what a page reads, and rules that send a
++          request elsewhere). Only for filters you understand.</span></label>
++      <textarea id="my-filters" class="editor" rows="12" spellcheck="false" aria-label="My filters"
++                placeholder="One rule per line, like ||ads.example.com^"></textarea>
++      <div class="row">
++        <button id="save-filters" class="main" type="button">Save</button>
++        <button id="revert-filters" type="button">Undo changes</button>
++        <button id="import-filters" type="button">Import and append</button>
++        <button id="export-filters" type="button">Export</button>
++        <input id="import-filters-file" type="file" accept=".txt,text/plain" hidden>
++        <span id="my-count"></span>
++      </div>
++    </section>
++  </div>
++
++  <!-- My rules -->
++  <div class="panel" id="panel-rules" data-tab="rules" role="tabpanel" aria-labelledby="tab-rules" tabindex="0" hidden>
++    <section id="rules" class="card">
++      <div class="card-head">
++        <h2>My rules</h2>
++        <span class="unsaved" id="rules-dirty" hidden>Unsaved changes</span>
++      </div>
++      <p>uBlock Origin's dynamic filtering: one rule per line, <code>source destination type action</code>.
++        <code>* * 3p-script block</code> blocks scripts from other sites everywhere,
++        <code>example.com * 3p-script noop</code> leaves them to the lists on example.com,
++        <code>* ads.example.com * block</code> blocks a host, <code>example.com cdn.example.net * allow</code>
++        lets a host through on a site whatever the lists say. Types: <code>*</code>, <code>3p</code>,
++        <code>1p-script</code>, <code>3p-script</code>, <code>3p-frame</code>, <code>image</code>,
++        <code>inline-script</code>; actions: <code>block</code>, <code>allow</code>, <code>noop</code>. The most
++        specific rule decides.</p>
++      <p class="note">uBlock Origin's switch lines work here too: "no-large-media: example.com true" and the
++        like are applied to the sites' switches and the settings when you save, and Export writes them.</p>
++      <div id="for-now" hidden>
++        <h3>Changed in the menu for now</h3>
++        <p class="note">As uBlock Origin's temporary rules: what the menu's grid changed and did not save. It is in
++          use until the browser closes.</p>
++        <pre id="for-now-lines" class="url"></pre>
++        <div class="row">
++          <button id="save-for-now" type="button">Save them</button>
++          <button id="revert-for-now" type="button">Revert them</button>
++        </div>
++      </div>
++      <textarea id="my-rules" class="editor" rows="10" spellcheck="false" aria-label="My rules"
++                placeholder="One rule per line, like * * 3p-script block"></textarea>
++      <div class="row">
++        <button id="save-rules" class="main" type="button">Save</button>
++        <button id="revert-rules" type="button" disabled>Undo changes</button>
++        <button id="import-rules" type="button">Import and append</button>
++        <button id="export-rules" type="button">Export</button>
++        <input id="import-rules-file" type="file" accept=".txt,text/plain" hidden>
++        <span id="rules-note"></span>
++      </div>
++    </section>
++  </div>
++
++  <!-- Sites: the allowed ones, and those with a switch from the menu -->
++  <div class="panel" id="panel-sites" data-tab="sites" role="tabpanel" aria-labelledby="tab-sites" tabindex="0" hidden>
++    <section id="sites" class="stack cols">
++      <div class="card" id="allowed-card">
++        <h2>Sites</h2>
++        <p>Ads and trackers are allowed on these sites: nothing is blocked or hidden there.</p>
++        <div id="allowed" role="list"></div>
++        <p id="allowed-hint" class="hint" hidden>To allow ads and trackers on a site, type it here or use the menu of
++          the shield on that site.</p>
++        <form id="allow-form" class="row">
++          <input id="allow-host" type="text" required aria-label="Site to allow" placeholder="example.com">
++          <button class="main" type="submit">Allow</button>
++          <button id="import-sites" type="button">Import</button>
++          <button id="export-sites" type="button">Export</button>
++          <input id="import-sites-file" type="file" accept=".txt,text/plain" hidden>
++        </form>
++      </div>
++      <div class="card" id="switches-card">
++        <h2>Switches from the menu</h2>
++        <p>What the menu of the shield in the toolbar changed for a site: no pop-ups, no large media, no hiding,
++          no remote fonts or no JavaScript.</p>
++        <div id="switches" role="list"></div>
++        <p id="switches-hint" class="hint" hidden>A switch you change for a site in the menu of the shield is listed
++          here.</p>
++      </div>
++    </section>
++  </div>
++
++  <!-- Logger -->
++  <div class="panel" id="panel-logger" data-tab="logger" role="tabpanel" aria-labelledby="tab-logger" tabindex="0" hidden>
++    <section id="logger" class="card">
++      <h2>Logger</h2>
++      <p>The requests of the open tabs, the newest first: every blocked one, and while this page is open also
++        those let through. It is kept only in memory: nothing is stored or sent. "Block" adds a rule for a host
++        to My filters; "Allow" lets a blocked host through on that site; "Why?" names the rule that blocked
++        the request or let it through, and its list.</p>
++      <details class="help" id="logger-help">
++        <summary>More about the logger</summary>
++        <p class="note">While the logger is open, the hide rules that hide something on a page loaded since are
++          listed too, as "hidden", with the rule.</p>
++        <p class="note">The scriptlets such a page got are listed as "injected", as uBlock Origin writes them.</p>
++        <p class="note">"3p" marks a request to another site than the tab's. As in uBlock Origin, the filter takes
++          words that must all be in the address, -word for one that must not be, and /.../ for a regular
++          expression.</p>
++      </details>
++      <div class="row log-tools">
++        <select id="log-tab" aria-label="Tab"></select>
++        <select id="log-kind" aria-label="Show">
++          <option value="">All</option>
++          <option value="blocked">Blocked</option>
++          <option value="allowed">Let through</option>
++        </select>
++        <select id="log-type" aria-label="Type">
++          <option value="">All types</option>
++        </select>
++        <select id="log-party" aria-label="Party">
++          <option value="">First and third party</option>
++          <option value="first">First party</option>
++          <option value="third">Third party</option>
++        </select>
++        <input id="log-filter" type="text" aria-label="Show only addresses with" placeholder="Filter"
++               title="Words that must all be in the address; -word for one that must not be; /.../ for a regular expression">
++      </div>
++      <div class="row">
++        <button id="log-pause" type="button" aria-pressed="false">Pause</button>
++        <button id="log-clear" type="button">Clear</button>
++        <button id="log-export" type="button">Export</button>
++        <button id="log-reload" type="button" title="Reload the tab shown">Reload</button>
++        <span id="log-count"></span>
++      </div>
++      <div id="log"><table>
++        <thead><tr><th>Time</th><th>Result</th><th class="type">Type</th><th class="party">Party</th><th>Address</th>
++          <th><span class="sr">Tools</span></th></tr></thead>
++        <tbody id="log-rows"></tbody></table></div>
++      <p id="log-empty" class="empty" hidden>Nothing to show yet. Open or reload a page: its requests are listed here.</p>
++    </section>
++  </div>
++
++  <!-- Backup: a file, the browser's sync, back to the defaults -->
++  <div class="panel" id="panel-backup" data-tab="backup" role="tabpanel" aria-labelledby="tab-backup" tabindex="0" hidden>
++    <div class="stack cols3">
++      <section id="backup-card" class="card">
++        <h2>Backup</h2>
++        <p>A file with your lists, your own rules, allowed sites, switches and these settings. It stays where
++          you save it; nothing is sent anywhere.</p>
++        <div class="row">
++          <button id="backup" class="main" type="button">Back up to file</button>
++          <button id="restore" type="button">Restore from file</button>
++          <input id="restore-file" type="file" accept=".json,application/json" hidden>
++        </div>
++      </section>
++      <section id="cloud-card" class="card">
++        <h2>Cloud storage</h2>
++        <p class="note">Cloud storage, as uBlock Origin's: the same backup, kept with the browser's own sync, which
++          carries it to your other computers when sync is on for settings. Without sync it stays on this
++          computer.</p>
++        <div class="row">
++          <button id="cloud-send" type="button">Send to cloud storage</button>
++          <button id="cloud-restore" type="button">Restore from cloud storage</button>
++        </div>
++      </section>
++      <section id="reset-card" class="card">
++        <h2>Start over</h2>
++        <p>Your own rules, the lists you added, allowed sites and switches are removed, and every setting goes
++          back to its default. Back up first if you may want them again.</p>
++        <div class="row">
++          <button id="reset" class="danger" type="button">Reset to default settings</button>
++        </div>
++      </section>
++    </div>
++  </div>
 +
 +  <p id="message" role="status" aria-live="polite"></p>
 +  <dialog id="viewer" aria-labelledby="viewer-title">
@@ -19646,10 +20154,10 @@ index 0000000000000000000000000000000000000000..33a6722ca309b35d265225f348648b9f
 +</html>
 diff --git a/components/thoron_adblock/settings_page.js b/components/thoron_adblock/settings_page.js
 new file mode 100644
-index 0000000000000000000000000000000000000000..2f1d5d6e6cdae022effd59c9f0fff8978273b7aa
+index 0000000000000000000000000000000000000000..63e04888ea0cfa66b3ba6e6b66af53d77bb1c949
 --- /dev/null
 +++ b/components/thoron_adblock/settings_page.js
-@@ -0,0 +1,1850 @@
+@@ -0,0 +1,2336 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -19657,6 +20165,10 @@ index 0000000000000000000000000000000000000000..2f1d5d6e6cdae022effd59c9f0fff897
 +// browser (thoron_adblock_ui.cc) for the state and for each change; every answer to a change is ""
 +// when it was made, else what went wrong. The page is built with DOM calls only: its security policy
 +// allows no markup made from text.
++//
++// The page is a dashboard of tabs (see "Tabs" below): one panel shows at a time, the tab is in the address
++// after the #, and anything on the page can still be opened by its id (#mine, #logger, #rules), which
++// opens the tab it is on.
 +
 +import {sendWithPromise} from 'chrome://resources/js/cr.js';
 +
@@ -19695,11 +20207,20 @@ index 0000000000000000000000000000000000000000..2f1d5d6e6cdae022effd59c9f0fff897
 +let savedFilters = '';
 +let busy = false;
 +
++// What was done, or what went wrong: a notice at the foot of the page. One that went well goes away by
++// itself; one that went wrong stays until it is clicked or the next one comes. The text stays in #message.
++let sayTimer = 0;
 +function say(text, bad = false) {
 +  const message = $('message');
 +  message.textContent = text;
 +  message.classList.toggle('bad', bad);
++  message.classList.toggle('show', !!text);
++  clearTimeout(sayTimer);
++  if (text && !bad) {
++    sayTimer = setTimeout(() => message.classList.remove('show'), 6000);
++  }
 +}
++$('message').addEventListener('click', () => $('message').classList.remove('show'));
 +
 +function make(tag, className, text) {
 +  const element = document.createElement(tag);
@@ -19715,6 +20236,373 @@ index 0000000000000000000000000000000000000000..2f1d5d6e6cdae022effd59c9f0fff897
 +function rulesText(count) {
 +  return count === 1 ? '1 rule' : `${count.toLocaleString()} rules`;
 +}
++
++// --- Tabs: one panel at a time; the tab is in the address after the # ---
++// The tabs are links (<a role="tab" href="#lists">): a click goes to the address, and the address chooses the
++// panel, so a link, a reload and the Back button all keep the tab.
++const TAB_KEYS = ['overview', 'settings', 'lists', 'mine', 'rules', 'sites', 'logger', 'backup'];
++const tabOf = (key) => $(`tab-${key}`);
++const panelOf = (key) => $(`panel-${key}`);
++
++function selectTab(key) {
++  for (const each of TAB_KEYS) {
++    const on = each === key;
++    tabOf(each).setAttribute('aria-selected', String(on));
++    tabOf(each).tabIndex = on ? 0 : -1;
++    panelOf(each).hidden = !on;
++  }
++  document.body.dataset.tab = key;
++  // in a narrow window the tabs scroll sideways: the one chosen is brought into view
++  const bar = $('tabs');
++  const tab = tabOf(key);
++  if (tab.offsetLeft < bar.scrollLeft || tab.offsetLeft + tab.offsetWidth > bar.scrollLeft + bar.clientWidth) {
++    bar.scrollLeft = tab.offsetLeft - (bar.clientWidth - tab.offsetWidth) / 2;
++  }
++}
++
++// A number on a tab (none for 0). The style draws it from data-count, so the text of a tab stays its name.
++function showCount(id, count) {
++  const badge = $(id);
++  badge.hidden = !(count > 0);
++  badge.dataset.count = !(count > 0) ? '' : count < 10000 ? count.toLocaleString() :
++      new Intl.NumberFormat(undefined, {notation: 'compact', maximumFractionDigits: 1}).format(count);
++}
++
++// What an address ended on (#more-lists) is kept in view while the page fills in around it, until the
++// person does something.
++let landing = null;
++let landingUntil = 0;
++/** Whether the person did anything on the page yet. */
++let untouched = true;
++function keepLanding() {
++  if (landing && performance.now() < landingUntil) {
++    landing.scrollIntoView();
++  } else {
++    landing = null;
++  }
++}
++for (const type of ['wheel', 'pointerdown', 'keydown']) {
++  window.addEventListener(type, () => {
++    landing = null;
++    untouched = false;
++  }, {passive: true, capture: true});
++}
++
++// Opens the <details> an element is in, so it can be seen.
++function openAround(element) {
++  for (let box = element.closest('details'); box; box = box.parentElement && box.parentElement.closest('details')) {
++    box.open = true;
++  }
++}
++
++// Opens what the address names after the #: a tab by its name (#lists), or anything on the page by its id
++// (#mine, #logger, #more-lists), on the tab where it is. No name: the overview.
++function route() {
++  let name = '';
++  try {
++    name = decodeURIComponent(location.hash.slice(1));
++  } catch {
++    name = '';
++  }
++  landing = null;
++  if (name.startsWith('subscribe=')) {
++    // askToSubscribe() asks, and opens the filter lists
++    if (!document.body.dataset.tab) {
++      selectTab('overview');
++    }
++    return;
++  }
++  if (TAB_KEYS.includes(name)) {
++    selectTab(name);
++    // A tab may be named as something on its panel is (#backup is also a button, #lists a box). When the
++    // browser itself went to the address it went to that: the top of the tab is what is meant.
++    if (document.activeElement && document.activeElement.id === name) {
++      document.activeElement.blur();
++    }
++    window.scrollTo(0, 0);
++    return;
++  }
++  const target = name ? document.getElementById(name) : null;
++  const panel = target ? target.closest('.panel') : null;
++  if (!panel) {
++    // No name: the overview, unless a list is being asked about (askToSubscribe() took its name out of the
++    // address and opened the filter lists). A name that is nothing on a tab: the tab stays.
++    if ((!name && $('subscribe-box').hidden) || !document.body.dataset.tab) {
++      selectTab('overview');
++    }
++    return;
++  }
++  selectTab(panel.dataset.tab);
++  openAround(target);
++  landing = target;
++  landingUntil = performance.now() + 2000;
++  target.scrollIntoView();
++}
++window.addEventListener('hashchange', route);
++route();
++// the Back and Forward buttons, after a tab was gone to by a click
++window.addEventListener('popstate', route);
++// A tab may be named as something on its panel is (#backup is also a button, #lists a box). When the browser
++// itself goes to such an address, at a load, it goes to that element: the style keeps the page at the top
++// for it (scroll-margin), and until the person does something the element does not keep the focus the
++// browser gives it.
++document.addEventListener('focusin', (event) => {
++  if (untouched && TAB_KEYS.includes(event.target.id) && location.hash === `#${event.target.id}`) {
++    event.target.blur();
++  }
++});
++
++// The keys of a row of tabs: the arrows go to the tab before and after (and around the ends), Home and End
++// to the first and the last, and the tab the focus is on is the one shown.
++$('tabs').addEventListener('keydown', (event) => {
++  const tabs = TAB_KEYS.map(tabOf);
++  const at = tabs.indexOf(event.target.closest('[role=tab]'));
++  if (at < 0 || event.ctrlKey || event.altKey || event.metaKey) {
++    return;
++  }
++  const forward = document.documentElement.dir === 'rtl' ? 'ArrowLeft' : 'ArrowRight';
++  const back = document.documentElement.dir === 'rtl' ? 'ArrowRight' : 'ArrowLeft';
++  let to = at;
++  if (event.key === forward) {
++    to = (at + 1) % tabs.length;
++  } else if (event.key === back) {
++    to = (at + tabs.length - 1) % tabs.length;
++  } else if (event.key === 'Home') {
++    to = 0;
++  } else if (event.key === 'End') {
++    to = tabs.length - 1;
++  } else if (event.key === ' ') {
++    event.preventDefault();
++    tabs[at].click();
++    return;
++  } else {
++    return;
++  }
++  event.preventDefault();
++  // the address follows without a step in the history for every key
++  history.replaceState(null, '', `#${TAB_KEYS[to]}`);
++  selectTab(TAB_KEYS[to]);
++  window.scrollTo(0, 0);
++  tabs[to].focus();
++});
++// A click on a tab: the script goes to it (the address, then the panel), so the focus stays on the tab and
++// the browser does not go to something of the same name on the page. A click on the tab that is open goes
++// back to its top. With Ctrl, Shift or the middle button the link opens as any link does.
++$('tabs').addEventListener('click', (event) => {
++  const tab = event.target.closest('[role=tab]');
++  if (!tab || event.button !== 0 || event.ctrlKey || event.shiftKey || event.metaKey || event.altKey) {
++    return;
++  }
++  event.preventDefault();
++  if (location.hash !== tab.hash) {
++    history.pushState(null, '', tab.hash);
++  }
++  route();
++});
++
++// The header stays in view: its height, for the style, so that what is scrolled to stops under it.
++new ResizeObserver(() => {
++  document.documentElement.style.setProperty('--top', `${$('top').offsetHeight}px`);
++}).observe($('top'));
++
++// The overview's quick actions do what the buttons of the other tabs do.
++$('quick-update').addEventListener('click', () => $('update-now').click());
++$('quick-backup').addEventListener('click', () => $('backup').click());
++
++// --- The search box of the header: a setting, a list, a country or a site, on any tab ---
++const oneLine = (text) => text.trim().replace(/\s+/g, ' ');
++const tabName = (key) => oneLine(tabOf(key).querySelector('.tab-name').textContent);
++let hits = [];
++let hitAt = -1;
++
++// Everything the search can open: its name, the words it is found by, where it is, and how to get its
++// element (the lists are drawn again when they change, so an element is looked up when it is opened). The
++// texts are read from the page, so they are in the language the page is shown in.
++function searchTargets() {
++  const out = [];
++  const add = (key, title, words, where, locate) => {
++    if (title) {
++      // where it is: the tab and the card, each said once
++      out.push({key, title, words: `${title} ${words}`.toLowerCase(),
++                where: where.filter((part, i) => part !== where[i - 1]), locate});
++    }
++  };
++  const headingOf = (element) => {
++    const heading = element.closest('.card') && element.closest('.card').querySelector('h2, h3');
++    return heading ? [oneLine(heading.textContent)] : [];
++  };
++  for (const key of TAB_KEYS) {
++    const panel = panelOf(key);
++    const name = tabName(key);
++    add(key, name, '', [], () => panel);
++    for (const element of panel.querySelectorAll('h2, h3, .option, #shortcuts > span, button[id], a.button[id]')) {
++      if (element.closest('.not-used, #for-now[hidden], #result-box[hidden]') ||
++          (element.matches('button, a') && element.closest('.option, #quick'))) {
++        continue;  // not in use now, or the same as another
++      }
++      if (element.matches('.option')) {
++        const label = element.querySelector('label[for], span') || element;
++        // what a select offers counts too ("Dark", "Next to the menu")
++        add(key, oneLine(label.textContent), oneLine(element.textContent), [name, ...headingOf(element)],
++            () => element);
++      } else if (element.matches('h2, h3')) {
++        if (oneLine(element.textContent) !== name) {
++          add(key, oneLine(element.textContent), '', [name], () => element.closest('.card') || element);
++        }
++      } else {
++        add(key, oneLine(element.textContent), '', [name, ...headingOf(element)], () => element);
++      }
++    }
++  }
++  // the lists in use, and those to choose from with their countries
++  for (const row of $('lists').querySelectorAll('.list')) {
++    const id = row.dataset.id;
++    add('lists', oneLine(row.querySelector('.title').textContent), row.querySelector('.url').textContent,
++        [tabName('lists')], () => Array.from($('lists').children).find((r) => r.dataset.id === id));
++  }
++  const more = oneLine($('more-lists').querySelector('h2').textContent);
++  const seen = new Set();
++  for (const entry of catalogEntries) {
++    if (seen.has(entry.url)) {
++      continue;
++    }
++    seen.add(entry.url);
++    add('lists', entry.name + (entry.countries.length ? ` (${entry.countries.join(', ')})` : ''), entry.words,
++        [more, entry.group], () => {
++          if ($('catalog-find').value) {
++            $('catalog-find').value = '';
++            showCatalog(catalogLists);
++          }
++          return Array.from($('catalog').querySelectorAll('.entry')).find((r) => r.dataset.url === entry.url);
++        });
++  }
++  // the sites: allowed, or with a switch from the menu
++  for (const id of ['allowed', 'switches']) {
++    for (const row of $(id).querySelectorAll('.site-row')) {
++      const site = row.querySelector('.name').textContent;
++      const what = row.querySelector('.what');
++      add('sites', site, what ? what.textContent : '', [tabName('sites'), ...headingOf(row)],
++          () => Array.from($(id).querySelectorAll('.site-row'))
++                    .find((r) => r.querySelector('.name').textContent === site));
++    }
++  }
++  return out;
++}
++
++function closeFound() {
++  hits = [];
++  hitAt = -1;
++  $('find-results').hidden = true;
++  $('find-all').setAttribute('aria-expanded', 'false');
++  $('find-all').removeAttribute('aria-activedescendant');
++}
++
++function markHit(at) {
++  hitAt = at;
++  const options = $('find-results').querySelectorAll('.hit');
++  options.forEach((option, i) => option.setAttribute('aria-selected', String(i === at)));
++  if (at >= 0) {
++    $('find-all').setAttribute('aria-activedescendant', options[at].id);
++    options[at].scrollIntoView({block: 'nearest'});
++  } else {
++    $('find-all').removeAttribute('aria-activedescendant');
++  }
++}
++
++// Goes to what was found: its tab, the element in view and marked for a moment, the focus on its control.
++function openHit(hit) {
++  closeFound();
++  $('find-all').value = '';
++  // nothing stays filtered out of sight
++  if ($('find-setting').value) {
++    $('find-setting').value = '';
++    findSetting();
++  }
++  const element = hit.locate();
++  if (!element) {
++    return;
++  }
++  if (location.hash !== `#${hit.key}`) {
++    history.pushState(null, '', `#${hit.key}`);
++  }
++  selectTab(hit.key);
++  landing = null;
++  if (element === panelOf(hit.key)) {
++    window.scrollTo(0, 0);
++    element.focus({preventScroll: true});
++    return;
++  }
++  openAround(element);
++  element.scrollIntoView({block: 'center'});
++  element.classList.remove('flash');
++  void element.offsetWidth;  // the mark starts again when the same one is opened twice
++  element.classList.add('flash');
++  element.addEventListener('animationend', () => element.classList.remove('flash'), {once: true});
++  const control = element.matches('input, select, textarea, button, a') ? element :
++      element.querySelector('input:not([type=file]), select, textarea, button');
++  (control || panelOf(hit.key)).focus({preventScroll: true});
++}
++
++// Every word typed must be in what is found. First what starts with what was typed, then what has it in its
++// name, then the rest (found by an address, a country, a choice of a setting).
++function showFound() {
++  const words = oneLine($('find-all').value).toLowerCase().split(' ').filter(Boolean);
++  if (!words.length) {
++    closeFound();
++    return;
++  }
++  const phrase = words.join(' ');
++  const rank = (target) => {
++    const title = target.title.toLowerCase();
++    return title.startsWith(phrase) ? 0 : title.includes(phrase) ? 1 : words.every((w) => title.includes(w)) ? 2 : 3;
++  };
++  hits = searchTargets().filter((target) => words.every((word) => target.words.includes(word)))
++      .map((target, i) => [rank(target), i, target])
++      .sort((a, b) => a[0] - b[0] || a[1] - b[1])
++      .slice(0, 12).map(([, , target]) => target);
++  const box = $('find-results');
++  box.replaceChildren(...hits.map((hit, i) => {
++    const option = make('div', 'hit');
++    option.id = `find-hit-${i}`;
++    option.setAttribute('role', 'option');
++    const where = make('span', 'hit-where');
++    where.append(...hit.where.map((part) => make('span', '', part)));
++    option.append(make('span', 'hit-title', hit.title), where);
++    // the focus stays in the box while a result is clicked
++    option.addEventListener('mousedown', (event) => event.preventDefault());
++    option.addEventListener('click', () => openHit(hit));
++    return option;
++  }));
++  if (!hits.length) {
++    box.append(make('p', 'empty', 'Nothing found. Try another word.'));
++  }
++  box.hidden = false;
++  $('find-all').setAttribute('aria-expanded', 'true');
++  markHit(hits.length ? 0 : -1);
++}
++
++$('find-all').addEventListener('input', showFound);
++$('find-all').addEventListener('focus', showFound);
++$('find-all').addEventListener('blur', closeFound);
++$('find-all').addEventListener('keydown', (event) => {
++  if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') && hits.length) {
++    event.preventDefault();
++    markHit((hitAt + (event.key === 'ArrowDown' ? 1 : hits.length - 1)) % hits.length);
++  } else if (event.key === 'Enter' && hits[hitAt]) {
++    event.preventDefault();
++    openHit(hits[hitAt]);
++  } else if (event.key === 'Escape' && !$('find-results').hidden) {
++    closeFound();  // the box empties itself
++  }
++});
++// "/" goes to the search box, as on many pages, unless something is being typed
++document.addEventListener('keydown', (event) => {
++  if (event.key === '/' && !event.ctrlKey && !event.altKey && !event.metaKey && !$('viewer').open &&
++      event.target instanceof Element && !event.target.closest('input, textarea, select')) {
++    event.preventDefault();
++    $('find-all').focus();
++  }
++});
 +
 +// uBlock Origin's optional lists (its assets.json), in its groups. They are added like any list a person adds.
 +const CATALOG = [
@@ -20046,6 +20934,8 @@ index 0000000000000000000000000000000000000000..2f1d5d6e6cdae022effd59c9f0fff897
 +const SUGGESTED = 'Suggested for your languages';
 +const REGIONS = 'Regions and languages';
 +let catalogLists = [];
++// the catalog as it is shown (each list with its countries and the words it is found by), for the search box
++let catalogEntries = [];
 +
 +function showCatalog(lists) {
 +  catalogLists = lists;
@@ -20055,12 +20945,14 @@ index 0000000000000000000000000000000000000000..2f1d5d6e6cdae022effd59c9f0fff897
 +  const query = $('catalog-find').value.trim().toLowerCase();
 +  box.replaceChildren();
 +  // each list once, with its countries: the regional lists by the first country's name
-+  const entries = CATALOG.map((entry) => {
++  // (a list that is in the catalog twice is shown once)
++  const entries = CATALOG.filter((entry, i) => CATALOG.findIndex((e) => e.url === entry.url) === i).map((entry) => {
 +    const {codes, name} = regionalTitle(entry.title);
 +    const countries = codes.map(countryName);
 +    return {...entry, codes, name, countries,
 +            words: [entry.title, entry.url, name, ...codes, ...countries].join(' ').toLowerCase()};
 +  });
++  catalogEntries = entries;
 +  const sortKey = (entry) => entry.countries[0] || entry.name;
 +  const regional = entries.filter((e) => e.group === REGIONS)
 +                          .sort((a, b) => sortKey(a).localeCompare(sortKey(b)));
@@ -20128,6 +21020,7 @@ index 0000000000000000000000000000000000000000..2f1d5d6e6cdae022effd59c9f0fff897
 +      label.append(check, about);
 +      // the list's content, once it is added (a button may not sit in the label)
 +      const entryRow = make('div', 'entry');
++      entryRow.dataset.url = entry.url;
 +      entryRow.append(label);
 +      if (added.has(entry.url)) {
 +        entryRow.append(viewButton(added.get(entry.url).id, entry.name));
@@ -20153,6 +21046,8 @@ index 0000000000000000000000000000000000000000..2f1d5d6e6cdae022effd59c9f0fff897
 +    const row = make('div', 'list');
 +    row.setAttribute('role', 'listitem');
 +    row.dataset.id = list.id;
++    // a list that could not be downloaded or read shows it (the style)
++    row.classList.toggle('problem', /failed|missing|unreadable/.test(list.note || ''));
 +
 +    const about = make('div', 'about');
 +    listNames.set(list.id, list.title || list.url);
@@ -20255,11 +21150,30 @@ index 0000000000000000000000000000000000000000..2f1d5d6e6cdae022effd59c9f0fff897
 +// --- Settings ---
 +// uBlock Origin's "Custom accent color" and "Disable tooltips".
 +let tooltipsOff = false;
++// Whether a colour (#rrggbb) is light enough for dark text on it.
++function isLightColor(color) {
++  const parts = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(color);
++  if (!parts) {
++    return false;
++  }
++  const [r, g, b] = parts.slice(1).map((part) => {
++    const c = parseInt(part, 16) / 255;
++    return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
++  });
++  return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.21;
++}
++
 +function showLook(accent, noTooltips) {
++  const root = document.documentElement;
 +  if (accent) {
-+    document.documentElement.style.setProperty('--accent', accent);
++    root.style.setProperty('--accent', accent);
++    // what is written on the accent stays readable, and what the style tints with the accent follows it
++    root.style.setProperty('--on-accent', isLightColor(accent) ? '#1f1f24' : '#ffffff');
++    root.dataset.accent = 'own';
 +  } else {
-+    document.documentElement.style.removeProperty('--accent');
++    root.style.removeProperty('--accent');
++    root.style.removeProperty('--on-accent');
++    delete root.dataset.accent;
 +  }
 +  tooltipsOff = !!noTooltips;
 +  if (tooltipsOff) {
@@ -20322,6 +21236,9 @@ index 0000000000000000000000000000000000000000..2f1d5d6e6cdae022effd59c9f0fff897
 +  $('address-position').value = settings['address-position'] || 'icons';
 +  $('toolbar-position-row').hidden = !toolbar;
 +  $('address-position-row').hidden = !address;
++  // a row that is not in use stays out of sight while a setting is looked for, and is not found
++  $('toolbar-position-row').classList.toggle('not-used', !toolbar);
++  $('address-position-row').classList.toggle('not-used', !address);
 +  showPreview(address && $('address-position').value, toolbar && $('toolbar-position').value);
 +}
 +
@@ -20383,42 +21300,35 @@ index 0000000000000000000000000000000000000000..2f1d5d6e6cdae022effd59c9f0fff897
 +  });
 +}
 +
-+// Finding a setting (P5.73): the settings whose words hold what is typed, under their headings.
-+$('find-setting').addEventListener('input', () => {
-+  const query = $('find-setting').value.trim().toLowerCase();
-+  let heading = null;
-+  let headingHas = false;
++// Finding a setting (P5.73): the settings whose words hold what is typed, under their headings. The settings
++// are in groups, a card each with its heading: every word typed must be in a setting, a heading that holds
++// them shows its whole group, and a group with nothing to show is not shown.
++function findSetting() {
++  const words = $('find-setting').value.trim().toLowerCase().split(/\s+/).filter(Boolean);
++  const has = (text) => words.every((word) => text.includes(word));
 +  let shown = 0;
-+  const closeHeading = () => {
-+    if (heading) {
-+      heading.hidden = !!query && !headingHas;
++  for (const group of $('settings').querySelectorAll('.group')) {
++    const heading = group.querySelector('h3');
++    const whole = words.length > 0 && has(heading.textContent.toLowerCase());
++    let groupHas = false;
++    for (const element of group.children) {
++      if (element === heading) {
++        continue;
++      }
++      // what a select offers counts too ("Dark", "Next to the menu")
++      const match = (!words.length || whole || has(element.textContent.toLowerCase())) &&
++                    !element.classList.contains('not-used');
++      element.hidden = !match;
++      if (match) {
++        groupHas = true;
++        shown++;
++      }
 +    }
-+  };
-+  for (const element of $('settings').children) {
-+    if (element.tagName === 'H2' || element.id === 'find-setting' || element.id === 'find-none') {
-+      continue;
-+    }
-+    if (element.tagName === 'H3') {
-+      closeHeading();
-+      heading = element;
-+      headingHas = false;
-+      continue;
-+    }
-+    if (!heading) {
-+      continue;
-+    }
-+    // what a select offers counts too ("Dark", "Next to the menu")
-+    const words = element.textContent.toLowerCase();
-+    const match = !query || words.includes(query);
-+    element.hidden = !match;
-+    if (match && query) {
-+      headingHas = true;
-+      shown++;
-+    }
++    group.hidden = words.length > 0 && !groupHas;
 +  }
-+  closeHeading();
-+  $('find-none').hidden = !query || shown > 0;
-+});
++  $('find-none').hidden = !words.length || shown > 0;
++}
++$('find-setting').addEventListener('input', findSetting);
 +
 +$('shield-place').addEventListener('change', async () => {
 +  const place = $('shield-place').value;
@@ -20457,7 +21367,19 @@ index 0000000000000000000000000000000000000000..2f1d5d6e6cdae022effd59c9f0fff897
 +function showBlocking(settings) {
 +  const on = settings.blocking !== false;
 +  $('blocking').checked = on;
-+  $('blocking-state').textContent = on ? 'Thoron adblock is on for every site.' : offText(settings['blocking-back']);
++  const text = on ? 'Thoron adblock is on for every site.' : offText(settings['blocking-back']);
++  $('blocking-state').textContent = text;
++  // the header says it in a word (on, off, or off for a while), and the style colours what shows it
++  const back = settings['blocking-back'];
++  const state = on ? 'on' : back === -1 || back > 0 ? 'paused' : 'off';
++  if (document.body.dataset.blocking !== state) {
++    document.body.dataset.blocking = state;
++    $('header-state-text').textContent = state === 'on' ? 'On' : state === 'paused' ? 'Paused' : 'Off';
++  }
++  if ($('header-state').dataset.said !== text) {
++    $('header-state').dataset.said = text;
++    $('header-state').setAttribute('aria-label', text);
++  }
 +  return on;
 +}
 +
@@ -20513,6 +21435,9 @@ index 0000000000000000000000000000000000000000..2f1d5d6e6cdae022effd59c9f0fff897
 +  if (document.activeElement !== $('media-kb')) {
 +    $('media-kb').value = String(settings['media-kb'] || SETTING_DEFAULTS['media-kb']);
 +  }
++  findSetting();  // a setting being looked for stays what is shown
++  // from now on a switch slides when it changes (the style), not while the page fills in
++  requestAnimationFrame(() => document.body.classList.add('ready'));
 +}
 +
 +// --- My rules (uBlock Origin's dynamic filtering) ---
@@ -20542,6 +21467,7 @@ index 0000000000000000000000000000000000000000..2f1d5d6e6cdae022effd59c9f0fff897
 +  const now = $('for-now').dataset.now || '';
 +  await sendWithPromise('setMyRules', now);
 +  $('my-rules').value = now;
++  rulesSaved($('my-rules').value);
 +  say('The rules changed in the menu are saved.');
 +  showRulesForNow();
 +});
@@ -20552,13 +21478,41 @@ index 0000000000000000000000000000000000000000..2f1d5d6e6cdae022effd59c9f0fff897
 +  showRulesForNow();
 +});
 +
++/** The rules of My rules as they are saved, to tell whether the box was edited. */
++let savedRules = '';
++
++// Whether the box of My rules holds what is saved: said next to its heading and on its tab. (Save stays
++// usable either way, as it was.)
++function showRulesDirty() {
++  const dirty = $('my-rules').value !== savedRules;
++  $('rules-dirty').hidden = !dirty;
++  $('dot-rules').hidden = !dirty;
++  $('revert-rules').disabled = !dirty;
++}
++
++// `text` is what is saved now, with `count` rules in use: the tab and the overview show the number.
++function rulesSaved(text, count = ruleLines(text).length) {
++  savedRules = text;
++  showCount('count-rules', count);
++  $('stat-my-rules').textContent = Math.max(0, count).toLocaleString();
++  showRulesDirty();
++}
++
 +async function showMyRules() {
 +  try {
 +    $('my-rules').value = await sendWithPromise('getMyRules');
++    rulesSaved($('my-rules').value);
 +  } catch {
 +    // the page was closed meanwhile
 +  }
 +}
++
++$('my-rules').addEventListener('input', showRulesDirty);
++$('revert-rules').addEventListener('click', () => {
++  $('my-rules').value = savedRules;
++  showRulesDirty();
++  say('');
++});
 +
 +// uBlock Origin's switch lines in "My rules" ("no-large-media: example.com true"): what each is here. `site`:
 +// the switch of a site (its "-" form takes back a default); `all`: the setting for every site.
@@ -20688,6 +21642,7 @@ index 0000000000000000000000000000000000000000..2f1d5d6e6cdae022effd59c9f0fff897
 +  const rules = $('my-rules').value.split('\n').filter((l) => l.trim() && !/^\s*[#!]/.test(l)).length -
 +                problems.length;
 +  $('rules-note').textContent = `${rules} ${rules === 1 ? 'rule' : 'rules'} in use`;
++  rulesSaved($('my-rules').value, rules);
 +  const all = [...problems, ...used.problems];
 +  if (all.length) {
 +    say(`These lines are not rules and are not used: ${all.join(' | ')}`, true);
@@ -20711,6 +21666,7 @@ index 0000000000000000000000000000000000000000..2f1d5d6e6cdae022effd59c9f0fff897
 +  }
 +  const box = $('my-rules');
 +  box.value = box.value.trim() ? `${box.value.trimEnd()}\n${text}\n` : `${text}\n`;
++  showRulesDirty();
 +  say(`${text.split('\n').length} lines were added below your rules. Save to use them.`);
 +});
 +$('export-rules').addEventListener('click', async () => {
@@ -20875,6 +21831,13 @@ index 0000000000000000000000000000000000000000..2f1d5d6e6cdae022effd59c9f0fff897
 +  await refresh();
 +  await showSettings();
 +  await refreshSites();
++  // the saved rules changed too: the box of My rules keeps what it holds, as it did, and is marked as not
++  // saved when that is no longer what is saved
++  try {
++    rulesSaved((await sendWithPromise('getMyRules')).replace(/\r\n?/g, '\n'));
++  } catch {
++    // the page is closing
++  }
 +  if (problems.length) {
 +    say(`${done} Some parts could not be: ${problems.join(' ')}`, true);
 +  } else {
@@ -21076,6 +22039,12 @@ index 0000000000000000000000000000000000000000..2f1d5d6e6cdae022effd59c9f0fff897
 +  if (!sites.switches.length) {
 +    switches.append(make('p', 'empty', 'None.'));
 +  }
++  // what to do when a list is empty, and the numbers of the tab and of the overview
++  $('allowed-hint').hidden = sites.allowed.length > 0;
++  $('switches-hint').hidden = sites.switches.length > 0;
++  showCount('count-sites', sites.allowed.length + sites.switches.length);
++  $('stat-sites').textContent = sites.allowed.length.toLocaleString();
++  keepLanding();
 +}
 +
 +$('export-sites').addEventListener('click', async () => {
@@ -21105,7 +22074,7 @@ index 0000000000000000000000000000000000000000..2f1d5d6e6cdae022effd59c9f0fff897
 +      added++;
 +    }
 +  }
-+  say(`${added} sites were allowed.`, added === 0 && hosts.length > 0);
++  say(`${added} sites were allowed.`, added === 0 && lines.length > 0);
 +  refreshSites();
 +});
 +
@@ -21241,6 +22210,7 @@ index 0000000000000000000000000000000000000000..2f1d5d6e6cdae022effd59c9f0fff897
 +                                            (!typeSelect.value || (e.type || 'other') === typeSelect.value));
 +  logShown = entries;
 +  $('log-count').textContent = `${entries.length} shown`;
++  $('log-empty').hidden = entries.length > 0;
 +  let site = '';
 +  try {
 +    site = new URL(tab.url).hostname;
@@ -21269,6 +22239,7 @@ index 0000000000000000000000000000000000000000..2f1d5d6e6cdae022effd59c9f0fff897
 +    const key = `${e.time}|${e.url}`;
 +    // a hide rule that hid something, or a scriptlet that ran: the row names the rule
 +    const cosmetic = e.type === 'cosmetic' || e.type === 'scriptlet' || e.type === 'replace';
++    row.classList.toggle('page', cosmetic);  // done on the page, not a request: its own colour (the style)
 +    if (!cosmetic) {
 +      const ask = make('button', 'why-button', 'Why?');
 +      ask.type = 'button';
@@ -21361,12 +22332,24 @@ index 0000000000000000000000000000000000000000..2f1d5d6e6cdae022effd59c9f0fff897
 +  $('my-count').textContent = state.myFiltersRules > 0 ? `${rulesText(state.myFiltersRules)} in use` : '';
 +  $('trust-filters').checked = !!state.trustMyFilters;
 +  showDirty();
++  // the numbers of the tabs and of the overview
++  const inUse = state.lists.filter((l) => l.enabled !== false);
++  const mine = state.myFiltersRules > 0 ? state.myFiltersRules : 0;
++  showCount('count-lists', inUse.length);
++  showCount('count-mine', mine);
++  $('stat-lists').textContent = inUse.length.toLocaleString();
++  $('stat-rules').textContent = (inUse.reduce((sum, l) => sum + (l.rules || 0), 0) + mine).toLocaleString();
++  $('stat-filters').textContent = mine.toLocaleString();
++  keepLanding();
 +}
 +
 +function showDirty() {
 +  const dirty = $('my-filters').value !== savedFilters;
 +  $('save-filters').disabled = !dirty;
 +  $('revert-filters').disabled = !dirty;
++  // said next to the heading and on the tab
++  $('filters-dirty').hidden = !dirty;
++  $('dot-mine').hidden = !dirty;
 +}
 +
 +async function refresh() {
@@ -21410,6 +22393,16 @@ index 0000000000000000000000000000000000000000..2f1d5d6e6cdae022effd59c9f0fff897
 +});
 +
 +$('my-filters').addEventListener('input', showDirty);
++
++// Ctrl+S in a box of rules saves it, as in an editor.
++for (const [box, save] of [['my-filters', 'save-filters'], ['my-rules', 'save-rules']]) {
++  $(box).addEventListener('keydown', (event) => {
++    if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 's') {
++      event.preventDefault();
++      $(save).click();
++    }
++  });
++}
 +
 +$('save-filters').addEventListener('click', async () => {
 +  // When the browser refuses the rules, the box keeps what was typed.
@@ -21470,6 +22463,7 @@ index 0000000000000000000000000000000000000000..2f1d5d6e6cdae022effd59c9f0fff897
 +  $('subscribe-title').textContent = title ? `Add the filter list "${title}"?` : 'Add this filter list?';
 +  $('subscribe-url').textContent = url;
 +  $('subscribe-box').hidden = false;
++  selectTab('lists');  // where the list will be
 +  $('subscribe-box').scrollIntoView();
 +  $('subscribe-add').onclick = () => {
 +    $('subscribe-box').hidden = true;

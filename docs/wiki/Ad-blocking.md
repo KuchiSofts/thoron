@@ -124,7 +124,7 @@ few days, again as soon as the network is back, and after the computer wakes up.
   matches stays. The lists for regions and languages show each country's flag and name, and the ones for
   your browser's languages are suggested at the top (nothing is added unless you tick it).
 
-Open `chrome://adblock`, or choose **Thoron adblock** in the side menu of Settings (below Extensions).
+Open `chrome://adblock`, or choose **Thoron adblock** in the side menu of Settings (below Extensions). The page has tabs (Overview, Settings, Filter lists, My filters, My rules, Sites, Logger, Backup) and one search box that finds a setting, a list, a country or a site on any of them.
 
 - **Settings:** as in uBlock Origin. Show the count on the shield; privacy options (no pre-fetching, no
   hyperlink auditing, WebRTC without local IP addresses, no CSP reports, uncloaking canonical names); what

@@ -110,6 +110,7 @@ Explanations live in the design docs under `docs/design/`.
 - **Icons:** the shield and the envelope are moved with the mouse: to another place of the toolbar, and before or after each other.
 - **Mail:** Thoron M-Notifier only counts unless asked for more: a sound of its own for new mail (on), a notice (off) and the messages listed in the menu (off) are separate settings.
 - **Mail, Ad blocking:** the M-Notifier's menu and Thoron adblock's pages take the browser theme's colours.
+- **Ad blocking:** `chrome://adblock` is a dashboard with tabs (Overview, Settings, Filter lists, My filters, My rules, Sites, Logger, Backup), one search over everything, cards and switches in the browser's design.
 - **Mail:** Thoron M-Notifier takes mailboxes by address and password (IMAP: Yahoo, iCloud, GMX, Gmail with an app password and others), so it is not limited to the Google accounts the browser is signed in to; the password is kept encrypted by the system.
 - **Mail:** what of Gmail is counted is a setting: the whole inbox, only its Primary tab, or the inbox and spam.
 - **Mail:** Thoron M-Notifier has its own page (accounts, settings) and a backup of mailboxes and settings: as JSON, or sealed with a passphrase.

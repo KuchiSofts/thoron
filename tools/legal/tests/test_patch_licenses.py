@@ -166,6 +166,19 @@ class ResearchTests(unittest.TestCase):
         self.assertIn("**NOT STATED**", table)
         self.assertIn("NOT STATED: 1", table)
 
+    def test_the_table_is_read_back_as_it_was_written(self):
+        rows = [{"patch": "a.patch", "origin": "Thorium (Alex313031, gz83); idea from Iridium", "license": "BSD-3-Clause",
+                 "evidence": "research: x"},
+                {"patch": "b.patch", "origin": "ungoogled-chromium, Bromite", "license": "BSD-3-Clause AND GPL-3.0",
+                 "evidence": "y"},
+                {"patch": "c.patch", "origin": "Chromium_Clang (RobRich999)", "license": pl.NOT_STATED, "evidence": "z"}]
+        read = pl.read_table(pl.render_table(rows))
+        self.assertEqual(sorted(read, key=lambda r: r["patch"]), rows)
+        self.assertEqual([pl.origin_names(r["origin"]) for r in rows],
+                         [["Thorium", "Iridium"], ["ungoogled-chromium", "Bromite"], ["Chromium_Clang"]])
+        self.assertEqual(pl.read_table("# Patch licence inventory\n\n| Patch | Origin | Licence | Evidence |\n"
+                                       "|---|---|---|---|\n"), [])
+
     def test_main_fails_on_not_stated_and_on_stale_research(self):
         tmp = Path(tempfile.mkdtemp(prefix="thoron-test-"))
         try:

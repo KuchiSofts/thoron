@@ -65,7 +65,9 @@ and no profile. `build` runs it before it makes the `.zip`; the real check runs 
 Measured: two builds from the same folder gave the same bytes (about 229 MB, 264 files). The bytes depend on
 the Python and zlib that compress; with another zlib the compressed bytes may differ while the files inside
 are the same. The tool prints the SHA-256 of the `.zip`. Checksums and signatures of a release are the
-release script's work (P2.12); it does not call this tool yet.
+release script's work (P2.12): `tools/release/release.py prepare` calls this tool, keeps only the `.zip` in
+the release folder, lists it in `SHA256SUMS` and names it in the update manifest as the `portable` package
+of its variant.
 
 ## 3. The launcher
 
@@ -255,7 +257,7 @@ PORTABLE CHECK: PASSED
 | A portable copy that leaves no registry values | See section 4.1; it needs a change in the browser | no stage yet; upstream's report "Portable is not fully portable" (#592) is kept under P3.12 and P4.9 |
 | The browser started without the launcher from a portable folder | It uses the PC's profile | no stage yet; it belongs with the program launcher |
 | The first run's offers (import, default browser, P3.21) in a portable copy | The launcher only keeps the default browser question away | P3.21 |
-| The release script making and signing the `.zip` | `portable.py` is run by hand | P2.12 |
+| A signed `.zip` of a real release | `release.py prepare` makes it and lists it in `SHA256SUMS`; the release keys are not made yet | P2.11 |
 | Signed program files | Windows may warn about an unknown publisher | S.8 |
 | A test on a real USB drive, by a person | Section 4.2 | P2.8 |
 | The installer half of P2.8 | Not part of this work | P2.8 |

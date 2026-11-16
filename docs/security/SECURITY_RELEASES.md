@@ -112,9 +112,11 @@ Commands are run from the repository root in the build window of
 
    `apply` must end with `0 rejects`.
 8. Set the versions. A new Chromium starts at rebuild 0; a Thoron-only fix on the same Chromium is the
-   next rebuild:
+   next rebuild. Thoron's own version is the next one after the newest release tag; `next` prints it
+   (fetch the tags first):
 
    ```powershell
+   py -3 -I tools\release\version.py next --repo .
    py -3 -I tools\release\version.py set --src <chromium src> --rebuild 0
    py -3 -I tools\release\version.py rebuild --src <chromium src> --to <n>
    py -3 -I tools\release\version.py thoron --src <chromium src> --to <next 0.MINOR.PATCH>
@@ -145,6 +147,8 @@ Commands are run from the repository root in the build window of
     ```
 
 11. Write the build record: `py -3 -I tools\build\pipeline.py buildinfo ...` (`WINDOWS.md`, section 9).
+    It names the source of the build: the source tag (`v<Thoron version>`), the commit under it and the
+    Chromium tag. Build from a tree with nothing uncommitted, or step 13 refuses the record.
 
 **Check**
 
@@ -153,7 +157,12 @@ Commands are run from the repository root in the build window of
 **Release**
 
 13. Package, write the notes and sign, in one command. `prepare` stops on a release configuration, a
-    version or installer contents that fail, and never overwrites a release folder. `--security` and
+    version or installer contents that fail, and never overwrites a release folder. It also stops when
+    Thoron's version is not the next one after the newest release tag, when the build record does not
+    name its source (step 11) or the build tree has no whole text of the GPL, when the build's browser
+    folder cannot become the portable package, when `CREDITS.md` or `NOTICE` are not current, when
+    `CHANGELOG.md` is not in its short form or lists no change for the release, and when the wiki pages
+    fail the linter or do not name the version. `--security` and
     `--highlights` put the fixes and the hand-written opening into `NOTES.md` (section 5).
     `--manifest-key` makes the signed update manifest ([`MANIFEST.md`](../update/MANIFEST.md), section
     10); `--critical` goes with class A and E.
@@ -171,14 +180,25 @@ Commands are run from the repository root in the build window of
       and D. A `security.json` that is not a list of fixes stops `prepare` before anything is packaged.
     - `--previous-manifest` is the `update.json` of the newest release. The very first manifest is made
       with `--first-manifest --min-updater-version <build version>` instead.
+    - The release folder also gets the portable `.zip` (made from `<out dir>\Chrome-bin`, or the folder
+      `--chrome-bin` names) and the licence bundle `thoron-<build version>-licenses.zip` with the GPL
+      text; both are in `SHA256SUMS`, and the manifest names the portable package beside the installer.
+    - The notes' "Thoron changes" are the lines of `CHANGELOG.md`: the section of the version when there
+      is one, else what waits under `[Unreleased]`.
+    - `prepare` asks GitHub (read only, with `gh`) for upstream's contributors and compares them with
+      the list in `CREDITS.md`; `--contributors <saved list>` gives it a saved list instead. When the
+      list is out of date, run `tools\credits\contributors.py`, commit, and run `prepare` again. It
+      never rewrites `CREDITS.md` or `NOTICE` itself.
     - Key files stay outside the repository, the build tree and the release folder; `prepare` refuses
       one that is inside. Without `--manifest-key` it makes no manifest and says so, and step 14 then
       refuses the release.
     - Read `<release folder>\NOTES.md` before going on.
 
 14. Create the draft. It refuses a release without a signed `SHA256SUMS`, with a file that
-    `SHA256SUMS` does not list, or with an update manifest that is missing, unsigned, does not verify
-    with the public key, or names other files than the folder's.
+    `SHA256SUMS` does not list, with a build record whose source tag is not the draft's tag, without
+    the licence bundle and its GPL text, or with an update manifest that is missing, unsigned, does not
+    verify with the public key, or names other files than the folder's. The draft's tag is put on the
+    commit the build record names, so that commit must be on GitHub.
 
     ```powershell
     py -3 -I tools\release\release.py publish --dist <release folder> --version <Thoron version> `
@@ -188,7 +208,8 @@ Commands are run from the repository root in the build window of
     `<Thoron version>` is the `0.MINOR.PATCH` of step 8, as `prepare` printed it: the draft's tag is
     `v<Thoron version>`, the tag in the manifest's download addresses.
 15. **The owner reads the draft and publishes it.** Nothing else publishes a release.
-16. Afterwards: publish the wiki (`py -3 -I tools\docs\publish_wiki.py --repo KuchiSofts/thoron`),
+16. Afterwards: publish the wiki (`py -3 -I tools\docs\publish_wiki.py --repo KuchiSofts/thoron`; step 14
+    prints the command and never runs it, and `--dry-run` shows what would change),
     publish the advisory (class E and F), close the issue, and fill in a row of section 8.
 
 ## 4. Checks
@@ -203,8 +224,12 @@ Commands are run from the repository root in the build window of
 | Anything taken from upstream is audited | `tools/audit/audit_diff.py --strict` | A person has reviewed every finding |
 | Release configuration | `tools/build/release_args.py check` (also run by `release.py prepare`) | No difference from Thoron's choices, no Google API keys in `args.gn` |
 | Version | `tools/release/version.py check` (also run by `release.py prepare`) | Higher than the last release |
+| Thoron version | `release.py prepare` (the next one: `tools/release/version.py next`) | The next version after the newest release tag; `0.1.1` when there is none |
+| Source and licences (ROADMAP **L.2**) | `release.py prepare` and `publish` | The build record names the source tag, its commit and the Chromium tag; the licence bundle holds the GPL text |
+| Credits (ROADMAP **L.3**) | `release.py prepare` | The contributor list in `CREDITS.md` is the one made now; every origin and licence of the patch inventory is in `CREDITS.md` and `NOTICE` |
+| Changelog and wiki (ROADMAP **D.10**, **D.9**) | `release.py prepare` | `CHANGELOG.md` is in its short form and lists the release's changes; the wiki pages pass the linter and name the version |
 | The build starts, the sandbox is in force, nothing crashes | `tools/build/smoke.py` | `SMOKE: PASSED` |
-| Package contents | `tools/release/package_audit.py` (also run by `release.py prepare`) | The Thoron program is there; no Widevine, no Thorium-named file |
+| Package contents | `tools/release/package_audit.py` (also run by `release.py prepare`, for the installer and the portable package) | The Thoron program is there; no Widevine, no Thorium-named file; no profile data in the portable package |
 | A real profile survives the update (ROADMAP **Q.7**) | `tools/qa/profile_rehearsal.py` on a copy of a real profile | The last line says the new build kept everything |
 | Signature | `release.py prepare --minisign-key`, then `minisign -Vm SHA256SUMS -P <public key>` | The signature verifies; `publish` refuses a release without one |
 | Update manifest | `release.py prepare --manifest-key`, then `tools/update/manifest.py verify update.json --public-key <public key>` | The signature holds; `publish` refuses a release whose manifest is missing, unsigned, does not verify or names other files |
@@ -274,6 +299,7 @@ and the cause becomes a roadmap task.
 [ ] profile_rehearsal.py on a copy of a real profile: everything kept
 [ ] bench.py (offline) compared with the last release
 [ ] release.py prepare with --security and --highlights: no problem; NOTES.md names the fixes, in-the-wild ones first
+[ ] The release folder holds the installer, the portable .zip, BUILDINFO and the licence bundle
 [ ] SHA256SUMS signed and the signature verified
 [ ] update.json signed (critical for class A and E) and verified with manifest.py verify
 [ ] release.py publish --version <Thoron version>: draft created

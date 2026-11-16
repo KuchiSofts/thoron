@@ -8,6 +8,25 @@
              contents (tools/release/package_audit.py); then copies the installer and BUILDINFO into
              the release folder with Thoron names, writes SHA256SUMS and the release notes, and signs
              SHA256SUMS with minisign when a key is given.
+             It also stops, with nothing packaged, when:
+               - Thoron's own version is not the next one after the newest release tag of --repo
+                 (v0.1.1; with no tag yet the first is 0.1.1; fetch the tags first) (P2.24);
+               - BUILDINFO does not name the source tag, the commit under it, a tree with nothing
+                 uncommitted and the Chromium tag, or the build tree has no whole text of the GPL (L.2);
+               - the build's browser folder (--chrome-bin, default Chrome-bin in the out dir) cannot be
+                 made into the portable package (tools/release/portable.py) (P2.8);
+               - CREDITS.md and NOTICE of --repo are not current: the list of upstream contributors is
+                 made again (asked from GitHub with gh, read only, or read from --contributors) and must
+                 be the one in CREDITS.md, every origin of the patch licence inventory must be credited
+                 there and every licence of it named in NOTICE. Nothing is rewritten (L.3);
+               - CHANGELOG.md of --repo is not in its short form or lists no change for the release (D.10);
+               - the wiki pages in docs/wiki fail the docs linter or do not name the version (D.9).
+             The release folder then also holds the portable .zip and the licence bundle
+             (thoron-<version>-licenses.zip: LICENSE.md, NOTICE, CREDITS.md, the patch licence inventory
+             and the GPL text of the build tree), both listed in SHA256SUMS.
+             The notes take Thoron's changes from CHANGELOG.md: the section of the version when there is
+             one, else what waits under [Unreleased]. They name the source tag, its commit and the
+             Chromium tag, and say where the licence texts are.
              --security and --highlights put the security fixes (security.json, as changelog.py reads
              it) and a hand-written opening into the notes.
              --manifest-key makes the update manifest (docs/update/MANIFEST.md): update.json names the
@@ -18,9 +37,11 @@
              (tools/release/adblock_resources.py) as thoron_adblock_resources.signed. Without the key
              this step is left out.
     publish  creates the GitHub release, always as a draft, and only when SHA256SUMS is signed, the folder
-             holds exactly the files SHA256SUMS lists, and the update manifest verifies with the public
-             key and names those files at the draft's addresses. A person reviews and publishes it
-             (design: releases stay drafts).
+             holds exactly the files SHA256SUMS lists, the build record names the draft's tag as its
+             source tag, the licence bundle holds the GPL text, and the update manifest verifies with the
+             public key and names those files at the draft's addresses. The draft's tag is put on the
+             commit the build record names. A person reviews and publishes it (design: releases stay
+             drafts). The wiki is never published from here: publish prints the commands that do it.
 
 A private key is read from the file named on the command line and from nowhere else. It is never written,
 printed or copied, and a key file inside the repository, the build tree or the release folder is refused.
@@ -30,6 +51,7 @@ signature, and a manifest is signed again, with new dates, while its release is 
     py -3 -I tools/release/release.py prepare --src <chromium src> --out <out dir> --platform win
         --variant win-x64-avx2 --previous <last release> --buildinfo BUILDINFO.json --dist <folder>
         --repo . --since <last release tag> --chromium-old <version> [--sevenzip 7za.exe]
+        [--chrome-bin <browser folder>] [--contributors <saved list>]
         [--minisign-key <key file>] [--security security.json] [--highlights highlights.md]
         [--manifest-key <key file> --manifest-public-key <base64> --gh-repo KuchiSofts/thoron
          (--previous-manifest <last update.json> | --first-manifest --min-updater-version <build version>)
@@ -45,24 +67,43 @@ The draft's tag is v<version>. A manifest gives its packages the addresses of th
 import argparse
 import base64
 import hashlib
+import json
 import re
 import shutil
 import subprocess
 import sys
 import time
+import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
 if __package__ in (None, ""):  # running as a script under `py -3 -I`: make `tools` importable
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from tools.build import release_args  # noqa: E402
-from tools.release import adblock_resources, changelog, package_audit, version as ver  # noqa: E402
+from tools.credits import contributors  # noqa: E402
+from tools.docs import check_docs  # noqa: E402
+from tools.legal import patch_licenses  # noqa: E402
+from tools.release import adblock_resources, changelog, package_audit, portable, version as ver  # noqa: E402
 from tools.update import manifest as mf  # noqa: E402
 
 _VARIANT = re.compile(r"^(win|linux)-(x64|arm64)-[a-z0-9]+$")
 INSTALLERS = {"win": "mini_installer.exe"}
 _GH_REPO = re.compile(r"^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$")
 _SUM_LINE = re.compile(r"^([0-9a-f]{64})  ([A-Za-z0-9._+~-]+)$")
+_COMMIT = re.compile(r"^[0-9a-f]{40}$")
+
+CHROME_BIN = "Chrome-bin"                               # in the out dir: what the installer's chrome.7z holds
+# The GPL text in the build tree: the file the browser's chrome://credits page is made from.
+GPL_TEXT = "third_party/thoron_notices/LICENSE.GPL-3.0"
+GPL_MARKS = ("GNU GENERAL PUBLIC LICENSE", "Version 3, 29 June 2007", "END OF TERMS AND CONDITIONS")
+GPL_NAME = "GPL-3.0.txt"                                # its name in the licence bundle
+PATCH_INVENTORY = "docs/legal/PATCH_LICENSES.md"
+# The licence bundle of a release: these files of the repository beside the GPL text, in one folder.
+LICENCE_FILES = {"LICENSE.md": "LICENSE.md", "NOTICE": "NOTICE", "CREDITS.md": "CREDITS.md",
+                 "PATCH_LICENSES.md": PATCH_INVENTORY}
+LICENCE_FOLDER = "licenses"
+UPSTREAM_REPO = "Alex313031/thorium"                    # whose contributors CREDITS.md lists
+WIKI_VERSIONS = "Versions.md"                           # the wiki page that names the newest version
 
 MANIFEST_HOSTS = ("github.com",)                        # the packages of a release are its GitHub assets
 ADBLOCK_RESOURCES = "thoron_adblock_resources.json"     # as the build writes it into the out dir
@@ -122,7 +163,271 @@ def installer_name(version: str, variant: str) -> str:
     return f"thoron-{version}-{variant}-installer.exe"
 
 
-def assemble(out: Path, dist: Path, version: str, variant: str, buildinfo: Path) -> list[Path]:
+def portable_name(version: str, variant: str) -> str:
+    return f"thoron-{version}-{variant}-portable.zip"       # as tools/release/portable.py names it
+
+
+def licence_bundle_name(version: str) -> str:
+    return f"thoron-{version}-licenses.zip"
+
+
+# --- Thoron's own version (ROADMAP P2.24) ------------------------------------------------------------------
+
+def thoron_version_problems(thoron: str | None, tags: list[str]) -> list[str]:
+    """Why the build may not be released under its Thoron version: it has none, or it is not the next one
+    after the newest release among `tags` (the tags of the repository; with none, the first is 0.1.1)."""
+    if not thoron:
+        return ["chrome/VERSION has no THORON_VERSION: run tools/release/version.py thoron first"]
+    return ver.check_next_thoron(thoron, ver.latest_thoron(tags))
+
+
+# --- the source and the licences (ROADMAP L.2) -------------------------------------------------------------
+
+def read_buildinfo(path: Path) -> dict:
+    """The build record, as tools/build/buildinfo.py writes it."""
+    try:
+        info = json.loads(path.read_text(encoding="utf-8-sig"))
+    except ValueError as exc:
+        raise ReleaseError(f"{path.name} is not JSON: {exc}") from None
+    if not isinstance(info, dict):
+        raise ReleaseError(f"{path.name} is not a build record")
+    return info
+
+
+def source_problems(info: dict, thoron: str | None, chromium: str | None) -> list[str]:
+    """Why a build record does not name the source of the build. The GPL asks for the exact source of what
+    is handed out: the tag of this repository the build is released under, on a commit that holds all it
+    was built from, and Chromium's tag. `thoron` and `chromium` are what the build tree says, when known."""
+    out = []
+    tag, chromium_tag, commit = (info.get(key) for key in ("source_tag", "chromium_tag", "thoron_commit"))
+    if not isinstance(tag, str) or not tag:
+        out.append("no source tag (source_tag): set Thoron's version and write the record again with "
+                   "tools/build/buildinfo.py")
+    elif thoron and tag != release_tag(thoron):
+        out.append(f"the source tag is {tag}, and the build is Thoron {thoron} ({release_tag(thoron)})")
+    if not isinstance(chromium_tag, str) or not chromium_tag:
+        out.append("no Chromium tag (chromium_tag)")
+    elif chromium and chromium_tag != chromium:
+        out.append(f"the Chromium tag is {chromium_tag}, and the build is made of Chromium {chromium}")
+    if not isinstance(commit, str) or not _COMMIT.match(commit):
+        out.append("no commit (thoron_commit) for the source tag to stand on")
+    if info.get("thoron_dirty") is not False:
+        out.append("the build was not made from a tree with nothing uncommitted (thoron_dirty): the source tag "
+                   "would not hold what was built")
+    return out
+
+
+def gpl_problems(text: str) -> list[str]:
+    """Why a text is not the whole GNU General Public License version 3."""
+    missing = [mark for mark in GPL_MARKS if mark not in text]
+    return [f"not the whole GNU GPL version 3: it lacks {', '.join(repr(m) for m in missing)}"] if missing else []
+
+
+def licence_texts(repo: Path, src: Path) -> tuple[dict[str, bytes], list[str]]:
+    """What the licence bundle of a release holds, by the names inside it, and why it cannot be made.
+    The GPL text is the build tree's own, the one the browser shows at chrome://credits, so the bundle
+    and the packages carry the same text. Line ends are those of the repository, not of the checkout."""
+    texts, problems = {}, []
+    gpl = src / GPL_TEXT
+    if gpl.is_file():
+        texts[GPL_NAME] = gpl.read_bytes()
+        problems += [f"{GPL_TEXT} is {p}" for p in gpl_problems(texts[GPL_NAME].decode("utf-8", "replace"))]
+    else:
+        problems.append(f"the build tree has no {GPL_TEXT}: the browser and the release would go out without "
+                        "the text of the GPL")
+    for name, rel in LICENCE_FILES.items():
+        if (repo / rel).is_file():
+            texts[name] = (repo / rel).read_bytes()
+        else:
+            problems.append(f"{rel} is not in the repository; the licence bundle holds it")
+    return {name: data.replace(b"\r\n", b"\n") for name, data in texts.items()}, problems
+
+
+def write_licence_bundle(path: Path, texts: dict[str, bytes]) -> Path:
+    """The licence bundle as a .zip that must not exist yet. The same texts give the same bytes, as for
+    the portable package: sorted names, one fixed time, no host details."""
+    stamp = time.gmtime(portable.EPOCH)[:6]
+    with zipfile.ZipFile(path, "x", zipfile.ZIP_DEFLATED) as z:
+        for name in sorted(texts):
+            info = zipfile.ZipInfo(f"{LICENCE_FOLDER}/{name}", date_time=stamp)
+            info.compress_type = zipfile.ZIP_DEFLATED
+            info.create_system = 0
+            info.external_attr = 0x20
+            z.writestr(info, texts[name])
+    return path
+
+
+def licence_bundle_problems(dist: Path) -> list[str]:
+    """Why a release folder does not carry the text of the GPL in a licence bundle."""
+    bundles = sorted(dist.glob(licence_bundle_name("*")))
+    if not bundles:
+        return [f"no licence bundle ({licence_bundle_name('<version>')}) in the folder; prepare writes it"]
+    out = []
+    for path in bundles:
+        try:
+            with zipfile.ZipFile(path) as z:
+                text = z.read(f"{LICENCE_FOLDER}/{GPL_NAME}").decode("utf-8", "replace")
+        except (KeyError, zipfile.BadZipFile, OSError):
+            out.append(f"{path.name} holds no {LICENCE_FOLDER}/{GPL_NAME}")
+            continue
+        out += [f"{GPL_NAME} in {path.name} is {p}" for p in gpl_problems(text)]
+    return out
+
+
+def source_tag_problems(dist: Path, tag: str) -> list[str]:
+    """Why the draft's tag would not be the source tag of what a release folder holds."""
+    records = sorted(dist.glob("BUILDINFO-*.json"))
+    if not records:
+        return ["no build record (BUILDINFO-*.json) in the folder names the source of the release"]
+    out, commits = [], set()
+    for path in records:
+        try:
+            info = read_buildinfo(path)
+        except (ReleaseError, OSError) as exc:
+            out.append(str(exc))
+            continue
+        if info.get("source_tag") != tag:
+            out.append(f"{path.name} names the source tag {info.get('source_tag')}, and the draft would be "
+                       f"tagged {tag}")
+        commit = info.get("thoron_commit")
+        if isinstance(commit, str) and _COMMIT.match(commit):
+            commits.add(commit)
+        else:
+            out.append(f"{path.name} names no commit (thoron_commit) for the tag to stand on")
+    if len(commits) > 1:
+        out.append("the build records name different commits; one tag cannot be the source of them all")
+    return out
+
+
+def release_commit(dist: Path) -> str:
+    """The commit the draft's tag is put on: the one the build records of the folder name."""
+    commits = {read_buildinfo(path).get("thoron_commit") for path in sorted(dist.glob("BUILDINFO-*.json"))}
+    commit = commits.pop() if len(commits) == 1 else None
+    if not isinstance(commit, str) or not _COMMIT.match(commit):
+        raise ReleaseError(f"the build record in {dist} names no one commit for the tag to stand on; nothing is "
+                           "published without it")
+    return commit
+
+
+# --- the portable package (ROADMAP P2.8) -------------------------------------------------------------------
+
+def portable_problems(chrome_bin: Path, version: str) -> list[str]:
+    """Why the build's browser folder cannot become the portable package of this release, as
+    tools/release/portable.py judges it; empty when it can. Found before anything is packaged."""
+    if not chrome_bin.is_dir():
+        return [f"the browser folder {chrome_bin.name} is not there (--chrome-bin names it)"]
+    try:
+        names = portable.files(chrome_bin)
+        out = portable.source_problems(names)
+        if not out and portable.browser_version(names) != version:
+            out.append(f"the browser folder holds version {portable.browser_version(names)}, and the build is "
+                       f"{version}")
+    except portable.PortableError as exc:
+        return [str(exc)]
+    return out
+
+
+def add_portable(chrome_bin: Path, dist: Path, version: str, variant: str) -> Path:
+    """The portable .zip of the release, made by tools/release/portable.py in the release folder. The
+    folder it is zipped from, which that call has just made, is taken away again: a release folder holds
+    files only."""
+    try:
+        made = portable.build(chrome_bin, dist, variant)
+    except portable.PortableError as exc:
+        raise ReleaseError(f"portable package: {exc}") from None
+    shutil.rmtree(made["package"])
+    if made["zip"].name != portable_name(version, variant):
+        raise ReleaseError(f"portable package: {made['zip'].name} is not the package of build {version}")
+    return made["zip"]
+
+
+# --- credits (ROADMAP L.3) ---------------------------------------------------------------------------------
+
+def read_contributors(path: Path) -> list[dict]:
+    """A saved list of upstream's contributors, as GitHub gives it (contributors.py --from-json)."""
+    try:
+        people = json.loads(path.read_text(encoding="utf-8-sig"))
+    except ValueError as exc:
+        raise ReleaseError(f"{path.name} is not JSON: {exc}") from None
+    if not isinstance(people, list) or not people or not all(isinstance(p, dict) for p in people):
+        raise ReleaseError(f"{path.name} is not a list of contributors")
+    return people
+
+
+def upstream_contributors(saved: Path | None) -> list[dict]:
+    """The contributors of upstream Thorium as GitHub lists them: from a saved list, or asked now with gh.
+    Asking only reads; nothing is written there."""
+    if saved is not None:
+        return read_contributors(saved)
+    try:
+        return contributors.fetch(UPSTREAM_REPO)
+    except (OSError, ValueError, subprocess.CalledProcessError) as exc:
+        raise ReleaseError(f"the contributors of {UPSTREAM_REPO} could not be read from GitHub with gh "
+                           f"({type(exc).__name__}); --contributors takes a saved list instead") from None
+
+
+def _repo_text(path: Path) -> str | None:
+    return path.read_text(encoding="utf-8").replace("\r\n", "\n") if path.is_file() else None
+
+
+def credits_problems(repo: Path, people: list[dict]) -> list[str]:
+    """Why CREDITS.md and NOTICE of the tree are not current; nothing is rewritten here. The list of
+    upstream's contributors is made again from `people` and must be the one in CREDITS.md. Every origin the
+    patch licence inventory names must be credited in CREDITS.md, and every licence it lists named in NOTICE."""
+    credits_md, notice, inventory = (_repo_text(repo / name) for name in ("CREDITS.md", "NOTICE", PATCH_INVENTORY))
+    out = [f"{name} is not in the repository" for name, text in
+           (("CREDITS.md", credits_md), ("NOTICE", notice), (PATCH_INVENTORY, inventory)) if text is None]
+    rows = patch_licenses.read_table(inventory or "")
+    if inventory is not None and not rows:
+        out.append(f"{PATCH_INVENTORY} lists no patch")
+    if credits_md is not None:
+        try:
+            if contributors.replace_section(credits_md, contributors.render_contributors(people)) != credits_md:
+                out.append("CREDITS.md: the list of upstream contributors is out of date: run "
+                           "tools/credits/contributors.py and commit the result")
+        except ValueError as exc:
+            out.append(f"CREDITS.md: {exc}")
+        origins = sorted({name for row in rows for name in patch_licenses.origin_names(row["origin"])})
+        out += [f"CREDITS.md does not credit {name}, an origin in {PATCH_INVENTORY}"
+                for name in origins if name.lower() not in credits_md.lower()]
+    if notice is not None:
+        licences = sorted({part.strip() for row in rows for part in row["license"].split(" AND ")})
+        out += [f"NOTICE does not name the licence {licence}, which {PATCH_INVENTORY} lists"
+                for licence in licences if licence not in notice]
+    return out
+
+
+# --- the wiki (ROADMAP D.9) --------------------------------------------------------------------------------
+
+def wiki_problems(repo: Path, thoron: str | None) -> list[str]:
+    """Why the wiki pages of the tree may not go out with this release: they fail the docs linter (links
+    between pages, long dashes, private data), or the page about versions does not name the version being
+    released. Publishing them stays a step a person takes; `publish` prints its command."""
+    folder = repo / check_docs.WIKI_DIR
+    if not folder.is_dir():
+        return [f"{check_docs.WIKI_DIR} is not in the repository"]
+    pages = sorted(p for p in folder.glob("*.md") if p.is_file())
+    out = (check_docs.check_wiki(repo) + check_docs.check_dashes(repo, pages)
+           + check_docs.check_private(repo, pages, check_docs.private_strings_file()))
+    versions = folder / WIKI_VERSIONS
+    named = thoron and versions.is_file() and re.search(rf"(?<![\d.]){re.escape(thoron)}(?!\.?\d)",
+                                                         versions.read_text(encoding="utf-8"))
+    if thoron and not named:
+        out.append(f"{check_docs.WIKI_DIR}/{WIKI_VERSIONS} does not name Thoron {thoron}: the wiki is updated "
+                   "with every release")
+    return out
+
+
+def wiki_commands(gh_repo: str) -> list[str]:
+    """The commands that publish the wiki, the one that only looks first. They are printed, never run."""
+    tool = f"py -3 -I tools/docs/publish_wiki.py --repo {gh_repo}"
+    return [f"{tool} --dry-run", tool]
+
+
+def assemble(out: Path, dist: Path, version: str, variant: str, buildinfo: Path, chrome_bin: Path | None = None,
+             licences: dict[str, bytes] | None = None) -> list[Path]:
+    """Fills the release folder. With `chrome_bin` the portable package of a Windows build is made beside
+    the installer, and with `licences` the licence bundle; SHA256SUMS lists every file."""
     if not _VARIANT.match(variant):
         raise ReleaseError(f"variant must look like win-x64-avx2, got {variant!r}")
     if dist.exists() and any(dist.iterdir()):
@@ -135,9 +440,13 @@ def assemble(out: Path, dist: Path, version: str, variant: str, buildinfo: Path)
         target = dist / installer_name(version, variant)
         shutil.copy2(out / installer, target)
         files.append(target)
+    if chrome_bin is not None and platform == "win":
+        files.append(add_portable(chrome_bin, dist, version, variant))
     info = dist / f"BUILDINFO-{version}-{variant}.json"
     shutil.copy2(buildinfo, info)
     files.append(info)
+    if licences is not None:
+        files.append(write_licence_bundle(dist / licence_bundle_name(version), licences))
     sums = dist / "SHA256SUMS"
     sums.write_text("".join(f"{_sha256(p)}  {p.name}\n" for p in sorted(files)), encoding="utf-8", newline="\n")
     return files + [sums]
@@ -246,10 +555,14 @@ def manifest_plan(src: Path, *, channel: str, critical: bool, min_updater_versio
     return ManifestPlan(channel, thoron, critical, min_updater_version, previous, gh_repo, published, valid_days)
 
 
+def package_names(version: str, variant: str) -> dict[str, str]:
+    """The packages a release of `variant` is made of, by the kind of package a manifest knows."""
+    return {"installed": installer_name(version, variant), "portable": portable_name(version, variant)}
+
+
 def package_files(dist: Path, version: str, variant: str) -> dict[str, Path]:
     """The packages of the release folder an update can be made of, by kind of package."""
-    installer = dist / installer_name(version, variant)
-    return {"installed": installer} if installer.is_file() else {}
+    return {kind: dist / name for kind, name in package_names(version, variant).items() if (dist / name).is_file()}
 
 
 def manifest_packages(dist: Path, version: str, variant: str, gh_repo: str, tag: str) -> dict:
@@ -270,7 +583,7 @@ def build_manifest(plan: ManifestPlan, version: str, packages: dict) -> bytes:
 def manifest_problems(plan: ManifestPlan, version: str, variant: str, private_key: bytes,
                       public_key: bytes) -> list[str]:
     """Why no manifest could be signed for this release. Found before anything is packaged: the manifest
-    is built once with a stand-in for its package, so that only the package itself is still missing."""
+    is built once with a stand-in for each package, so that only the packages themselves are still missing."""
     out = []
     if mf.public_key_of(private_key) != public_key:
         out.append("--manifest-key does not belong to the public key that copies of Thoron hold "
@@ -279,10 +592,10 @@ def manifest_problems(plan: ManifestPlan, version: str, variant: str, private_ke
         return out + [f"{variant} is not a variant a manifest can name (known: {', '.join(mf.VARIANTS)})"]
     if variant.split("-")[0] not in INSTALLERS:
         return out + [f"no package is made for {variant} yet, so a manifest has nothing to name"]
-    stand_in = {"url": download_url(plan.gh_repo, plan.tag, installer_name(version, variant)), "size": 1,
-                "sha256": "0" * 64}
+    stand_ins = {kind: {"full": {"url": download_url(plan.gh_repo, plan.tag, name), "size": 1, "sha256": "0" * 64}}
+                 for kind, name in package_names(version, variant).items()}
     try:
-        build_manifest(plan, version, {variant: {"installed": {"full": stand_in}}})
+        build_manifest(plan, version, {variant: stand_ins})
     except mf.ManifestError as exc:
         out += exc.problems
     return out
@@ -411,17 +724,22 @@ def publish_problems(dist: Path, version: str, gh_repo: str, public_key: bytes, 
            for need, why in REQUIRED if not (dist / need).is_file()]
     if (dist / "SHA256SUMS").is_file():
         out += checksum_problems(dist)
+    out += [f"source: {p}" for p in source_tag_problems(dist, release_tag(version))]
+    out += [f"licences: {p}" for p in licence_bundle_problems(dist)]
     return out + [f"update manifest: {p}"
                   for p in signed_manifest_problems(dist, gh_repo, release_tag(version), public_key, now)]
 
 
 def publish(dist: Path, version: str, gh_repo: str, run=None) -> None:
-    """Creates the draft from a release folder. The `publish` command runs publish_problems() first."""
+    """Creates the draft from a release folder. The `publish` command runs publish_problems() first.
+    The tag a person makes by publishing the draft is put on the commit the build was made from, so that
+    the source tag the build record names is the source of what is handed out."""
     for need, why in REQUIRED:
         if not (dist / need).is_file():
             raise ReleaseError(f"no {why} ({need}) in {dist}; nothing is published without it")
     files = [str(p) for p in sorted(dist.iterdir()) if p.name not in NOT_UPLOADED]
     cmd = ["gh", "release", "create", release_tag(version), "--draft", "--repo", gh_repo,
+           "--target", release_commit(dist),
            "--title", f"Thoron {version}", "--notes-file", str(dist / "NOTES.md"), *files]
     if run is None:
         subprocess.run(cmd, check=True)
@@ -459,6 +777,7 @@ def _prepare(a) -> int:
     keep_out_of = (a.repo, a.src, a.out, a.dist)
     security = changelog.read_security(a.security) if a.security else None
     highlights = read_highlights(a.highlights) if a.highlights else None
+    info = read_buildinfo(a.buildinfo)
     bundle = None
     if a.adblock_key:       # signed in memory before anything is packaged; written with the rest
         resources = (a.adblock_resources or a.out / ADBLOCK_RESOURCES).read_text(encoding="utf-8")
@@ -467,6 +786,25 @@ def _prepare(a) -> int:
                                      public_key_from(a.adblock_public_key, "--adblock-public-key"))
     version, problems = preflight(a.src, a.out, a.platform, a.previous,
                                   lambda archive: package_audit.list_archive(archive, a.sevenzip))
+    thoron = read_thoron_version(a.src)
+    chromium_new = ver.split(version)[0] if read_version(a.src)[1] else None
+    chrome_bin = (a.chrome_bin or a.out / CHROME_BIN) if a.platform == "win" else None
+    problems += [f"Thoron version: {p}" for p in thoron_version_problems(thoron, ver.release_tags(a.repo))]
+    problems += [f"BUILDINFO: {p}" for p in source_problems(info, thoron, chromium_new)]
+    licences, found = licence_texts(a.repo, a.src)
+    problems += [f"licences: {p}" for p in found]
+    if chrome_bin is not None:
+        problems += [f"portable package: {p}" for p in portable_problems(chrome_bin, version)]
+    problems += [f"credits: {p}" for p in credits_problems(a.repo, upstream_contributors(a.contributors))]
+    problems += [f"wiki: {p}" for p in wiki_problems(a.repo, thoron)]
+    changes = None
+    try:
+        if not (a.repo / "CHANGELOG.md").is_file():
+            raise changelog.NotesError("CHANGELOG.md is not in the repository")
+        section, changes = changelog.release_changes((a.repo / "CHANGELOG.md").read_text(encoding="utf-8-sig"),
+                                                     thoron)
+    except changelog.NotesError as exc:
+        problems.append(f"changelog: {exc}")
     plan = private_key = public_key = None
     if a.manifest_key:
         private_key = read_signing_key(a.manifest_key, "--manifest-key", keep_out_of)
@@ -482,13 +820,18 @@ def _prepare(a) -> int:
             print(f"release: {prob}", file=sys.stderr)
         print(f"release: {len(problems)} problem(s); nothing was packaged")
         return 1
-    files = assemble(a.out, a.dist, version, a.variant, a.buildinfo)
+    if a.dist.exists() and any(a.dist.iterdir()):
+        raise ReleaseError(f"{a.dist} is not empty; a release folder is never overwritten")
     try:
-        chromium_new, _ = ver.split(version)
+        files = assemble(a.out, a.dist, version, a.variant, a.buildinfo, chrome_bin, licences)
+        source = {"tag": info["source_tag"], "commit": info["thoron_commit"], "chromium_tag": info["chromium_tag"],
+                  "licences": licence_bundle_name(version)}
         notes = changelog.render(version, a.chromium_old, chromium_new, a.repo, a.since,
                                  artifacts=(a.dist / "SHA256SUMS").read_text(encoding="utf-8").splitlines(),
-                                 security=security, highlights=highlights)
+                                 security=security, highlights=highlights, changes=changes, thoron_version=thoron,
+                                 source=source)
         (a.dist / "NOTES.md").write_text(notes, encoding="utf-8", newline="\n")
+        print(f"release: the notes list the changes under [{section}] of CHANGELOG.md")
         if a.minisign_key:
             files.append(sign(a.dist, a.minisign_key))
         else:
@@ -505,7 +848,8 @@ def _prepare(a) -> int:
             print(f"release: {ADBLOCK_BUNDLE} is signed (serial {a.adblock_serial}); it is no part of the "
                   f"draft: the owner uploads it to the release tagged {ADBLOCK_TAG}")
     except BaseException:
-        print(f"release: {a.dist} is incomplete; remove it before running prepare again", file=sys.stderr)
+        if a.dist.exists():
+            print(f"release: {a.dist} is incomplete; remove it before running prepare again", file=sys.stderr)
         raise
     print(f"release {version}: {len(files)} file(s) in {a.dist}")
     return 0
@@ -524,6 +868,10 @@ def _publish(a, run) -> int:
     if (a.dist / ADBLOCK_BUNDLE).is_file():
         print(f"release: {ADBLOCK_BUNDLE} is not in the draft; the owner uploads it to the release tagged "
               f"{ADBLOCK_TAG}")
+    print(f"release: the wiki is not published from here. Once the draft is published, see what would change "
+          f"in the wiki and then publish the pages of {check_docs.WIKI_DIR}:")
+    for command in wiki_commands(a.gh_repo):
+        print(f"    {command}")
     return 0
 
 
@@ -537,6 +885,10 @@ def main(argv: list[str], run=None) -> int:
     for name in ("--platform", "--variant", "--previous", "--since", "--chromium-old"):
         a_.add_argument(name, required=True)
     a_.add_argument("--sevenzip", default="7z")
+    a_.add_argument("--chrome-bin", type=Path, help=f"the build's browser folder, which becomes the portable "
+                    f"package; default: {CHROME_BIN} in the out dir")
+    a_.add_argument("--contributors", type=Path, help="a saved list of upstream's contributors, as "
+                    "tools/credits/contributors.py --from-json reads it; default: ask GitHub (read only)")
     a_.add_argument("--minisign-key", type=Path)
     a_.add_argument("--security", type=Path, help="security.json: the fixes the notes name")
     a_.add_argument("--highlights", type=Path, help="a hand-written opening of the notes")

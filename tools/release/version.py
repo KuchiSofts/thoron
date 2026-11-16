@@ -12,15 +12,19 @@ versions as usual. The older plain numbers (Thoron 156.0.8078.28) sort below the
 That four-part number is the build number: websites, extensions, the installer and the updater compare
 it. People see Thoron's own version instead (THORON_VERSION, three numbers, "0.1.1"): the About page,
 chrome://version, chrome://flags, the Windows list of apps and the files' product version. Every release
-published raises it.
+published gets the next one: PATCH plus one, or MINOR plus one with PATCH 0 for a new Chromium major version
+or a headline feature. The first release is 0.1.1. The releases are the tags of the repository (`v0.1.1`),
+so fetch the tags before asking for the next number.
     py -3 -I tools/release/version.py set --src <chromium src> --rebuild 0
     py -3 -I tools/release/version.py rebuild --src <chromium src> --to 1
+    py -3 -I tools/release/version.py next --repo .
     py -3 -I tools/release/version.py thoron --src <chromium src> --to 0.1.1
     py -3 -I tools/release/version.py check --new-thoron 0.1.2 --previous-thoron 0.1.1
     py -3 -I tools/release/version.py check --new 158.0.8127.3001 --previous 158.0.8127.3000
 """
 import argparse
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -28,6 +32,8 @@ MAX_PART = 65535
 REBUILDS = 100
 _VERSION = re.compile(r"^(\d{1,5})\.(\d{1,5})\.(\d{1,5})\.(\d{1,5})$")
 _THORON = re.compile(r"^(\d{1,4})\.(\d{1,4})\.(\d{1,4})$")
+_RELEASE_TAG = re.compile(r"^v(\d{1,4}\.\d{1,4}\.\d{1,4})$")
+FIRST_THORON = "0.1.1"
 
 
 class VersionError(Exception):
@@ -75,6 +81,44 @@ def check_thoron(new: str, previous: str) -> list[str]:
     except VersionError as exc:
         return [str(exc)]
     return []
+
+
+def release_tags(repo: Path) -> list[str]:
+    """The tags of a repository that begin like a release tag, as git lists them."""
+    out = subprocess.run(["git", "-C", str(repo), "tag", "--list", "v*"], capture_output=True, text=True,
+                         encoding="utf-8", check=True).stdout
+    return out.split()
+
+
+def latest_thoron(tags: list[str]) -> str | None:
+    """The highest Thoron version among release tags (`v0.1.1`); None while no release is tagged. A tag
+    of another form is not a release."""
+    found = [m.group(1) for m in map(_RELEASE_TAG.match, tags) if m]
+    return max(found, key=thoron_key) if found else None
+
+
+def next_thoron(previous: str | None) -> tuple[str, ...]:
+    """The versions that may follow the release `previous`, the usual one first: the next PATCH, or the
+    next MINOR with PATCH 0. With no release yet, only the first one."""
+    if previous is None:
+        return (FIRST_THORON,)
+    major, minor, patch = thoron_key(previous)
+    return (f"{major}.{minor}.{patch + 1}", f"{major}.{minor + 1}.0")
+
+
+def check_next_thoron(new: str, previous: str | None) -> list[str]:
+    """Problems with releasing Thoron `new` after the last release `previous` (empty when it is the next)."""
+    try:
+        thoron_key(new)
+        allowed = next_thoron(previous)
+    except VersionError as exc:
+        return [str(exc)]
+    if new in allowed:
+        return []
+    if previous is None:
+        return [f"Thoron {new} is not the next version: no release is tagged yet, and the first is {FIRST_THORON}"]
+    return [f"Thoron {new} is not the next version: after the last release {previous} comes "
+            f"{' or '.join(allowed)}"]
 
 
 def thoron_version_file(text: str, version: str) -> str:
@@ -155,6 +199,8 @@ def main(argv: list[str]) -> int:
     t = sub.add_parser("thoron", help="set Thoron's own version (three numbers) in a converted chrome/VERSION")
     t.add_argument("--src", type=Path, required=True)
     t.add_argument("--to", required=True)
+    n = sub.add_parser("next", help="print the Thoron version the next release gets")
+    n.add_argument("--repo", type=Path, required=True, help="the repository whose tags are the releases")
     c = sub.add_parser("check", help="a new release must be higher than the previous one")
     c.add_argument("--new")
     c.add_argument("--previous")
@@ -162,6 +208,9 @@ def main(argv: list[str]) -> int:
     c.add_argument("--previous-thoron")
     a = parser.parse_args(argv)
     try:
+        if a.cmd == "next":
+            print(next_thoron(latest_thoron(release_tags(a.repo)))[0])
+            return 0
         if a.cmd in ("set", "rebuild", "thoron"):
             path = a.src / "chrome" / "VERSION"
             text = path.read_bytes().decode("utf-8")
@@ -186,7 +235,7 @@ def main(argv: list[str]) -> int:
             if not (a.new_thoron and a.previous_thoron):
                 raise VersionError("--new-thoron and --previous-thoron go together")
             problems += check_thoron(a.new_thoron, a.previous_thoron)
-    except (VersionError, OSError) as exc:
+    except (VersionError, OSError, subprocess.CalledProcessError) as exc:
         print(f"version: {exc}", file=sys.stderr)
         return 2
     for p in problems:

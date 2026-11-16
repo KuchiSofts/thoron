@@ -42,6 +42,43 @@ class CheckDocsTests(unittest.TestCase):
         self.assertEqual(len(check_docs.check_changelog(bad)), 1)
         self.assertEqual(check_docs.check_changelog(good), [])
 
+    def test_changelog_keeps_its_short_form(self):
+        good = self.write("good/CHANGELOG.md", "# Changelog\n\nOne line per change.\n\n## [Unreleased]\n\n### Added\n\n"
+                          "- **Tabs:** a change wrapped\n  onto a second line.\n\n### Security\n\n- **Updates:** signed.\n\n"
+                          "## [0.1.1] - 2026-12-01\n\nBuilt on Chromium 158.0.8127.30.\n\n### Fixed\n\n- **Tabs:** kept.\n")
+        self.assertEqual(check_docs.check_changelog(good), [])
+        bad = self.write("bad/CHANGELOG.md", "# Changelog\n\n## [Unreleased]\n\n### Added\n\n- **Tabs:** new.\n\n"
+                         "The reason is a long story.\n\n### Performance\n\n- faster\n")
+        self.assertEqual(check_docs.check_changelog(bad), [
+            "CHANGELOG.md:9: not a change (`- text`, one line per change) and not a section heading",
+            "CHANGELOG.md:11: `### Performance`: the sections are Added, Changed, Fixed, Removed, Security"])
+
+    def test_wiki_pages_link_to_pages_that_exist(self):
+        self.write("docs/wiki/Home.md", "# Thoron\n\n[Install](Install) and [its steps](Install#the-steps), "
+                   "[the source](https://example.org/x), [up](#thoron).\n")
+        self.write("docs/wiki/Install.md", "# Install\n\n## The steps\n\nBack to [home](Home).\n")
+        self.write("docs/wiki/_Sidebar.md", "- [Install](Install)\n")
+        self.assertEqual(check_docs.check_wiki(self.root), [])
+        self.write("docs/wiki/_Sidebar.md", "- [Install](Install)\n- [Updates](Updates)\n- [x](Install#no-such)\n"
+                   "- [y](install)\n- [z](#nowhere)\n")
+        self.assertEqual(check_docs.check_wiki(self.root), [
+            "docs/wiki/_Sidebar.md:2: no wiki page -> Updates",
+            "docs/wiki/_Sidebar.md:3: broken anchor -> Install#no-such",
+            "docs/wiki/_Sidebar.md:4: no wiki page -> install",
+            "docs/wiki/_Sidebar.md:5: broken anchor -> #nowhere"])
+
+    def test_a_wiki_needs_its_home_page_and_main_checks_the_wiki(self):
+        self.write("README.md", "# ok\n")
+        self.write("docs/wiki/Install.md", "# Install\n")
+        self.assertEqual(check_docs.check_wiki(self.root), ["docs/wiki: no Home.md; a wiki needs its home page"])
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(check_docs.main(["--root", str(self.root)]), 1)
+        self.assertIn("docs/wiki: no Home.md", out.getvalue())
+        self.write("docs/wiki/Home.md", "# Thoron\n\n[Install](Install)\n")
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(check_docs.main(["--root", str(self.root)]), 0)
+
     def test_roadmap_duplicate_ids_and_legend(self):
         bad = self.write("bad/ROADMAP.md",
                          "Last updated: 2026-11-07\n- [ ] **P1.1** one\n- [x] **P1.1** two\n")

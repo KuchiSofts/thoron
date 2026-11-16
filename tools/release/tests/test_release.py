@@ -1,21 +1,29 @@
 # Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be found in the LICENSE file.
-"""Release script (ROADMAP P2.12, P3.2, S.9, P5.23). Keys are made in memory for one test run and never
-written anywhere; nothing here runs minisign, 7-Zip, git or gh, and nothing contacts the network."""
+"""Release script (ROADMAP P2.12, P3.2, S.9, P5.23, and its gates P2.24, L.2, P2.8, L.3, D.10, D.9). Keys
+are made in memory for one test run and never written anywhere; nothing here runs minisign, 7-Zip, git or
+gh, and nothing contacts the network: the repository's tags and upstream's contributors are answered from
+the fixture."""
 import base64
 import contextlib
 import hashlib
 import io
 import json
+import shutil
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 from unittest import mock
 
 from tools.build import release_args as ra
+from tools.credits import contributors
+from tools.docs import check_docs
+from tools.legal import patch_licenses
 from tools.release import adblock_resources as ar
 from tools.release import changelog
 from tools.release import package_audit
 from tools.release import release as rel
+from tools.release import version as ver
 from tools.update import manifest as mf
 
 UPSTREAM_ARGS = 'target_os = "win"\nbundle_widevine_cdm = true\nenable_rlz = true\n'
@@ -27,6 +35,30 @@ GH_REPO = "KuchiSofts/thoron"
 HOSTS = ("github.com",)
 INSTALLER = f"thoron-{BUILD}-{VARIANT}-installer.exe"
 INSTALLER_URL = f"https://github.com/{GH_REPO}/releases/download/v{THORON}/{INSTALLER}"
+PORTABLE = f"thoron-{BUILD}-{VARIANT}-portable.zip"
+PORTABLE_URL = f"https://github.com/{GH_REPO}/releases/download/v{THORON}/{PORTABLE}"
+LICENCES = f"thoron-{BUILD}-licenses.zip"
+RECORD = f"BUILDINFO-{BUILD}-{VARIANT}.json"
+COMMIT = "0123456789abcdef0123456789abcdef01234567"
+# A stand-in with the marks of the real text: its title, its version and its last line.
+GPL = ("                    GNU GENERAL PUBLIC LICENSE\n                       Version 3, 29 June 2007\n\n"
+       "  (the terms, left out of a test)\n\n                     END OF TERMS AND CONDITIONS\n")
+PEOPLE = [{"type": "User", "login": "Alex313031", "contributions": 4905},
+          {"type": "User", "login": "gz83", "contributions": 18},
+          {"type": "Anonymous", "name": "Someone Else", "email": "someone@example.com", "contributions": 1}]
+CHANGELOG = ("# Changelog\n\nOne line per change.\n\n## [Unreleased]\n\n### Added\n\n"
+             "- **Updates:** Thoron updates itself from inside.\n- **Portable:** a package that runs without\n"
+             "  installing.\n\n### Fixed\n\n- **Tabs:** tab groups are kept.\n")
+INVENTORY = patch_licenses.render_table([
+    {"patch": "a.patch", "origin": "Thorium (Alex313031, gz83)", "license": "BSD-3-Clause", "evidence": "x"},
+    {"patch": "b.patch", "origin": "ungoogled-chromium, Bromite", "license": "BSD-3-Clause AND GPL-3.0",
+     "evidence": "y"}])
+CREDITS = ("# Credits\n\nThorium, ungoogled-chromium and Bromite.\n\n" + contributors.START + "\n"
+           + contributors.render_contributors(PEOPLE) + contributors.END + "\n")
+REPO_FILES = {"CHANGELOG.md": CHANGELOG, "CREDITS.md": CREDITS, "LICENSE.md": "BSD 3-Clause License\n",
+              "NOTICE": "Thoron - third-party notices\n\nLicences: BSD-3-Clause and GPL-3.0.\n",
+              "docs/legal/PATCH_LICENSES.md": INVENTORY,
+              "docs/wiki/Home.md": "# Thoron\n\nSee [Versions](Versions).\n"}
 NOW = mf.parse_time("2026-12-01T12:00:00Z")
 DAY = 86400
 LOG = [{"author": "Dev", "subject": "fix: keep tab groups", "body": ""}]
@@ -132,25 +164,40 @@ class PublishTests(unittest.TestCase):
             with self.assertRaisesRegex(rel.ReleaseError, "signature"):
                 rel.publish(dist, "158.0.8127.3000", "KuchiSofts/thoron", run=calls.append)
             (dist / "SHA256SUMS.minisig").write_text("sig", encoding="utf-8")
+            with self.assertRaisesRegex(rel.ReleaseError, "no one commit for the tag to stand on"):
+                rel.publish(dist, "158.0.8127.3000", "KuchiSofts/thoron", run=calls.append)
+            self.assertEqual(calls, [])
+            (dist / RECORD).write_text(json.dumps({"thoron_commit": COMMIT}), encoding="utf-8")
             rel.publish(dist, "158.0.8127.3000", "KuchiSofts/thoron", run=calls.append)
         cmd = calls[-1]
         self.assertEqual(cmd[:3], ["gh", "release", "create"])
         self.assertIn("--draft", cmd)
         self.assertIn("v158.0.8127.3000", cmd)
         self.assertEqual(cmd[cmd.index("--repo") + 1], "KuchiSofts/thoron")
+        self.assertEqual(cmd[cmd.index("--target") + 1], COMMIT)    # the tag stands on the commit that was built
 
 
 class ReleaseFixture(Fixture):
-    """A fake build ready for a whole release: Thoron's own version is set and the build wrote Thoron
-    adblock's resources. The key files are names only: the keys are made here and stay in memory."""
+    """A fake build ready for a whole release, and the repository it is released from. Thoron's own
+    version is set, the build wrote its record, its browser folder, the GPL text and Thoron adblock's
+    resources; the repository holds the changelog, the credits and the wiki, and one release is tagged.
+    The key files are names only: the keys are made here and stay in memory."""
 
     def __init__(self):
         super().__init__()
         root = Path(self.tmp.name)
-        self.set_version(BUILD, THORON)
-        (self.out / rel.ADBLOCK_RESOURCES).write_text(RESOURCES, encoding="utf-8")
         self.repo, self.keys = root / "repo", root / "keys"         # the keys folder is never made
         self.repo.mkdir()
+        for name, content in REPO_FILES.items():
+            self.repo_file(name, content)
+        self.gpl = self.src / rel.GPL_TEXT
+        self.gpl.parent.mkdir(parents=True)
+        self.gpl.write_text(GPL, encoding="utf-8", newline="\n")
+        self.tags = ["v0.1.1"]                                      # what git lists as the repository's tags
+        self.people = list(PEOPLE)                                  # what GitHub lists as upstream's contributors
+        self.fetches, self.tag_asks = [], []
+        self.set_version(BUILD, THORON)
+        (self.out / rel.ADBLOCK_RESOURCES).write_text(RESOURCES, encoding="utf-8")
         self.security, self.highlights = root / "security.json", root / "highlights.md"
         self.security.write_text(json.dumps(SECURITY), encoding="utf-8")
         self.highlights.write_text(HIGHLIGHTS + "\n", encoding="utf-8")
@@ -158,14 +205,40 @@ class ReleaseFixture(Fixture):
         self.adblock_private, self.adblock_public = ar.keygen()
         self.key_reads = []
 
+    def repo_file(self, name: str, content: str) -> Path:
+        path = self.repo / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8", newline="\n")
+        return path
+
     def set_version(self, build: str, thoron: str | None):
+        """The build tree of that version, with what a build of it writes and the wiki page that names it."""
         major, minor, build_, patch = build.split(".")
         lines = [f"MAJOR={major}", f"MINOR={minor}", f"BUILD={build_}", f"PATCH={patch}", "THORON_REBUILD=0"]
         lines += [f"THORON_VERSION={thoron}"] if thoron else []
         (self.src / "chrome/VERSION").write_text("\n".join(lines) + "\n", encoding="utf-8")
+        self.record(source_tag=f"v{thoron}" if thoron else None, chromium_tag=ver.split(build)[0])
+        self.browser({"thoron.exe": b"program", f"{build}/chrome.dll": b"dll"})
+        if thoron:
+            self.repo_file("docs/wiki/Versions.md", f"# Versions\n\nThe newest version is **{thoron}**.\n")
+
+    def record(self, **changes):
+        """BUILDINFO as tools/build/buildinfo.py writes it for a release build, with `changes`."""
+        info = {"variant": VARIANT, "source_tag": f"v{THORON}", "chromium_tag": "158.0.8127.30",
+                "thoron_commit": COMMIT, "thoron_dirty": False}
+        info.update(changes)
+        self.buildinfo.write_text(json.dumps(info), encoding="utf-8")
+
+    def browser(self, files: dict):
+        """The build's browser folder, which becomes the portable package."""
+        folder = self.out / rel.CHROME_BIN
+        shutil.rmtree(folder, ignore_errors=True)
+        for name, data in files.items():
+            (folder / name).parent.mkdir(parents=True, exist_ok=True)
+            (folder / name).write_bytes(data)
 
     def main(self, *argv, clock: int = NOW, run=None) -> tuple[int, str, str]:
-        """The command line, with the clock set and the outside tools (git, 7-Zip) answered from here.
+        """The command line, with the clock set and the outside tools (git, 7-Zip, gh) answered from here.
         A key file is never opened: whoever asks for one gets the key of that name from memory."""
         keys = {"manifest.key": self.private, "adblock.key": self.adblock_private}
 
@@ -173,11 +246,24 @@ class ReleaseFixture(Fixture):
             self.key_reads.append(path)
             return keys[path.name]
 
+        def fetch(repo: str) -> list:
+            self.fetches.append(repo)
+            if isinstance(self.people, Exception):
+                raise self.people
+            return list(self.people)
+
+        def tags(repo: Path) -> list:
+            self.tag_asks.append(repo)
+            return list(self.tags)
+
         out, err = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err), \
                 mock.patch.object(mf, "read_private_key", side_effect=read_key), \
                 mock.patch.object(rel.time, "time", return_value=float(clock)), \
                 mock.patch.object(changelog, "_log", return_value=LOG), \
+                mock.patch.object(ver, "release_tags", side_effect=tags), \
+                mock.patch.object(contributors, "fetch", side_effect=fetch), \
+                mock.patch.object(check_docs, "private_strings_file", return_value=self.repo / "no-such-list"), \
                 mock.patch.object(package_audit, "list_archive", return_value=GOOD_LIST):
             code = rel.main([str(arg) for arg in argv], run=run)
         return code, out.getvalue(), err.getvalue()
@@ -250,7 +336,7 @@ class NotesTests(ReleaseTestCase):
         self.assertNotIn("Security fixes", notes)
         self.assertNotIn("Highlights", notes)
         self.assertIn("Chromium 156.0.8078.80 to 158.0.8127.30", notes)
-        self.assertIn("- keep tab groups", notes)
+        self.assertIn("- **Tabs:** tab groups are kept.", notes)
 
     def test_a_security_list_written_with_a_byte_order_mark_is_read(self):
         self.f.security.write_text(json.dumps(SECURITY), encoding="utf-8-sig")
@@ -485,24 +571,29 @@ class DryRunTests(ReleaseTestCase):
     def test_prepare_writes_a_signed_manifest_of_the_files_it_packaged(self):
         code, out, err = self.f.prepare(*self.f.with_manifest())
         self.assertEqual(code, 0, out + err)
-        self.assertEqual(self.names(), [f"BUILDINFO-{BUILD}-{VARIANT}.json", "NOTES.md", "SHA256SUMS", INSTALLER,
+        self.assertEqual(self.names(), [RECORD, "NOTES.md", "SHA256SUMS", LICENCES, INSTALLER, PORTABLE,
                                         "update.json", "update.json.sig"])
         self.assertIn("update.json is signed: Thoron 0.1.2 (build 158.0.8127.3000), channel stable, good for "
                       "30 days; publish it with --version 0.1.2", out)
-        self.assertIn(f"release {BUILD}: 5 file(s) in ", out)
+        self.assertIn(f"release {BUILD}: 7 file(s) in ", out)
         raw, signature = self.manifest()
         data = mf.verify(raw, signature, self.f.public, allowed_hosts=HOSTS)
-        installer = (self.f.dist / INSTALLER).read_bytes()
+        installer, portable = (self.f.dist / INSTALLER).read_bytes(), (self.f.dist / PORTABLE).read_bytes()
         self.assertEqual(installer, b"installer bytes")
         self.assertEqual(data, {
             "schema": 1, "channel": "stable", "serial": 2026120100,
             "published": "2026-12-01T12:00:00Z", "expires": "2026-12-31T12:00:00Z",
             "version": BUILD, "thoron_version": THORON, "chromium_version": "158.0.8127.30",
             "critical": False, "min_updater_version": BUILD,
-            "packages": {VARIANT: {"installed": {"full": {
-                "url": INSTALLER_URL, "size": len(installer), "sha256": hashlib.sha256(installer).hexdigest()}}}}})
+            "packages": {VARIANT: {
+                "installed": {"full": {"url": INSTALLER_URL, "size": len(installer),
+                                       "sha256": hashlib.sha256(installer).hexdigest()}},
+                "portable": {"full": {"url": PORTABLE_URL, "size": len(portable),
+                                      "sha256": hashlib.sha256(portable).hexdigest()}}}}})
         sums = (self.f.dist / "SHA256SUMS").read_text(encoding="utf-8")
-        self.assertIn(f"{data['packages'][VARIANT]['installed']['full']['sha256']}  {INSTALLER}\n", sums)
+        for kind, name in (("installed", INSTALLER), ("portable", PORTABLE)):
+            self.assertIn(f"{data['packages'][VARIANT][kind]['full']['sha256']}  {name}\n", sums)
+        self.assertEqual([line.split("  ")[1] for line in sums.splitlines()], [RECORD, LICENCES, INSTALLER, PORTABLE])
         self.assertNotIn("update.json", sums)                       # it carries its own signature
 
     def test_copies_of_thoron_take_the_manifest_prepare_wrote(self):
@@ -523,6 +614,8 @@ class DryRunTests(ReleaseTestCase):
         self.assertEqual(copy("158.0.8127.2900", updater="158.0.8127.2900").outcome, mf.UPDATER_TOO_OLD)
         self.assertEqual(copy("158.0.8127.2900", variant="win-x64-sse4").outcome, mf.NO_PACKAGE)
         self.assertEqual(copy("158.0.8127.2900", now=NOW + 32 * DAY).outcome, mf.EXPIRED)
+        carried = copy("158.0.8127.2900", kind="portable")          # a portable copy gets the portable package
+        self.assertEqual((carried.outcome, carried.full["url"]), (mf.UPDATE, PORTABLE_URL))
 
     def test_a_critical_release_says_so_in_its_manifest(self):
         self.prepared("--critical", "--manifest-days", "14", "--channel", "stable")
@@ -530,20 +623,42 @@ class DryRunTests(ReleaseTestCase):
         self.assertEqual((data["critical"], data["expires"]), (True, "2026-12-15T12:00:00Z"))
 
     def test_publish_checks_the_folder_and_makes_a_draft_of_it(self):
-        dist = self.prepared()
+        """The dry run from a fake build to the draft command, with every step of prepare on the way."""
+        dist = self.prepared("--security", self.f.security, "--highlights", self.f.highlights)
+        self.assertEqual(self.f.fetches, ["Alex313031/thorium"])    # the contributors were made again
+        notes = (dist / "NOTES.md").read_text(encoding="utf-8")
+        order = [notes.index(part) for part in (
+            "# Thoron 0.1.2\n", "Thoron 0.1.2 (build 158.0.8127.3000) is based on Chromium 158.0.8127.30",
+            "## Highlights", "### Security fixes", "## Thoron changes\n\n### Added\n\n- **Updates:** Thoron updates "
+            "itself from inside.\n- **Portable:** a package that runs without installing.\n\n### Fixed\n\n- **Tabs:** "
+            "tab groups are kept.\n", f"| `{PORTABLE}` |", "## Source and licences\n\nThe source of this release is "
+            f"the tag `v0.1.2` of this repository (commit `{COMMIT}`), applied to Chromium at its tag `158.0.8127.30`",
+            f"the other licence texts are in `{LICENCES}`", "## Credits")]
+        self.assertEqual(order, sorted(order))
+        self.assertNotIn("keep tab groups", notes)                  # a commit's subject is no line of the notes
+        with zipfile.ZipFile(dist / LICENCES) as bundle:
+            self.assertEqual(bundle.read("licenses/GPL-3.0.txt").decode("utf-8"), GPL)
+        with zipfile.ZipFile(dist / PORTABLE) as package:
+            self.assertIn("ThoronPortable/Application/thoron.exe", package.namelist())
         self.assertEqual(rel.publish_problems(dist, THORON, GH_REPO, self.f.public, NOW), [])
         calls = []
-        code, out, err = self.f.publish(run=calls.append)
+        with mock.patch.object(rel.subprocess, "run", side_effect=AssertionError("publish ran a program")):
+            code, out, err = self.f.publish(run=calls.append)
         self.assertEqual(code, 0, out + err)
         self.assertIn("draft release v0.1.2 created", out)
-        self.assertEqual(len(calls), 1)
+        self.assertEqual(len(calls), 1)                             # the draft, and nothing else
         cmd = calls[0]
         self.assertEqual(cmd[:6], ["gh", "release", "create", "v0.1.2", "--draft", "--repo"])
+        self.assertEqual(cmd[cmd.index("--target") + 1], COMMIT)
+        self.assertEqual(cmd[cmd.index("--title") + 1], "Thoron 0.1.2")
         self.assertEqual(cmd[cmd.index("--notes-file") + 1], str(dist / "NOTES.md"))
         uploaded = cmd[cmd.index("--notes-file") + 2:]
         self.assertEqual(uploaded, [str(dist / name) for name in (
-            f"BUILDINFO-{BUILD}-{VARIANT}.json", "SHA256SUMS", "SHA256SUMS.minisig", INSTALLER, "update.json",
+            RECORD, "SHA256SUMS", "SHA256SUMS.minisig", LICENCES, INSTALLER, PORTABLE, "update.json",
             "update.json.sig")])
+        self.assertIn("release: the wiki is not published from here.", out)
+        self.assertTrue(out.endswith("    py -3 -I tools/docs/publish_wiki.py --repo KuchiSofts/thoron --dry-run\n"
+                                     "    py -3 -I tools/docs/publish_wiki.py --repo KuchiSofts/thoron\n"))
 
     def test_any_changed_byte_of_the_manifest_or_the_signature_is_refused(self):
         dist = self.prepared()
@@ -637,7 +752,7 @@ class DryRunTests(ReleaseTestCase):
         self.assertIn("release: no update manifest was made (no --manifest-key); publish will refuse this release",
                       out)
         self.assertIn("release: SHA256SUMS is not signed (no --minisign-key); publish will refuse it", out)
-        self.assertEqual(self.names(), [f"BUILDINFO-{BUILD}-{VARIANT}.json", "NOTES.md", "SHA256SUMS", INSTALLER])
+        self.assertEqual(self.names(), [RECORD, "NOTES.md", "SHA256SUMS", LICENCES, INSTALLER, PORTABLE])
         self.assertEqual(self.f.key_reads, [])
         self.f.minisign_stand_in()
         self.publish_refused("update manifest: there is none (update.json); prepare makes it when it is given "
@@ -727,6 +842,7 @@ class DryRunTests(ReleaseTestCase):
     def test_the_next_release_follows_the_manifest_of_the_one_before(self):
         first = self.prepared()
         second = first.with_name("dist-next")
+        self.f.tags.append(f"v{THORON}")                            # the first draft was published
         self.f.set_version(NEXT_BUILD, NEXT_THORON)
         code, out, err = self.f.prepare(*self.f.with_manifest("--previous-manifest", first / "update.json"),
                                         dist=second, previous=BUILD, clock=NOW + 3600)
@@ -825,6 +941,426 @@ class AdblockBundleTests(ReleaseTestCase):
                       "tagged adblock-resources", out)
         self.assertFalse([arg for arg in calls[0] if "thoron_adblock_resources" in arg])
         self.assertIn(str(self.f.dist / "update.json.sig"), calls[0])
+
+
+class GateTestCase(ReleaseTestCase):
+    """A gate of prepare: what it refuses is said, and nothing is packaged."""
+
+    def refused(self, says: str, *argv, **kw):
+        code, out, err = self.f.prepare(*argv, **kw)
+        self.assertEqual(code, 1, out + err)
+        self.assertIn(f"release: {says}", err)
+        self.assertIn("nothing was packaged", out)
+        self.assert_nothing_packaged()
+
+    def passes(self, *argv):
+        code, out, err = self.f.prepare(*argv)
+        self.assertEqual(code, 0, out + err)
+        shutil.rmtree(self.f.dist)
+
+
+class VersionGateTests(GateTestCase):
+    """P2.24: a release gets the next Thoron version after the newest release tag, and no other."""
+
+    def test_the_next_version_after_the_last_release_tag_passes(self):
+        self.passes()                                               # 0.1.2 after v0.1.1
+        self.f.tags += ["adblock-resources", "v158.0.8127.3000", "vNext"]       # no releases
+        self.passes()
+        self.f.set_version(BUILD, "0.2.0")                          # the next minor version
+        self.passes()
+
+    def test_a_version_that_is_not_the_next_one_is_refused(self):
+        for thoron, tags, says in (
+                ("0.1.3", ["v0.1.1"], "Thoron 0.1.3 is not the next version: after the last release 0.1.1 comes "
+                                      "0.1.2 or 0.2.0"),
+                ("0.1.2", ["v0.1.1", "v0.1.2"], "Thoron 0.1.2 is not the next version: after the last release 0.1.2 "
+                                                "comes 0.1.3 or 0.2.0"),
+                ("0.1.2", ["v0.1.2", "v0.1.10", "v0.1.9"], "Thoron 0.1.2 is not the next version: after the last "
+                                                           "release 0.1.10 comes 0.1.11 or 0.2.0"),
+                ("0.2.1", ["v0.1.1"], "Thoron 0.2.1 is not the next version"),
+                ("1.0.0", ["v0.1.1"], "Thoron 1.0.0 is not the next version")):
+            with self.subTest(thoron=thoron, tags=tags):
+                self.f.set_version(BUILD, thoron)
+                self.f.tags = tags
+                self.refused(f"Thoron version: {says}")
+
+    def test_with_no_release_tag_the_first_version_is_0_1_1(self):
+        self.f.tags = []
+        self.refused("Thoron version: Thoron 0.1.2 is not the next version: no release is tagged yet, and the first "
+                     "is 0.1.1")
+        self.f.set_version(BUILD, "0.1.1")
+        self.passes()
+
+    def test_a_build_without_thorons_version_is_refused(self):
+        self.f.set_version(BUILD, None)
+        self.refused("Thoron version: chrome/VERSION has no THORON_VERSION: run tools/release/version.py thoron first")
+
+    def test_the_tags_asked_for_are_those_of_the_repository_given(self):
+        self.passes()
+        self.assertEqual(self.f.tag_asks, [self.f.repo])
+
+
+class SourceTests(GateTestCase):
+    """L.2: no release without the source tag and the Chromium tag in BUILDINFO and the text of the GPL."""
+
+    def test_a_build_record_that_names_its_source_has_no_problem(self):
+        info = json.loads(self.f.buildinfo.read_text(encoding="utf-8"))
+        self.assertEqual(rel.source_problems(info, THORON, "158.0.8127.30"), [])
+
+    def test_a_build_record_without_its_source_is_refused(self):
+        for name, changes, says in (
+                ("no source tag", {"source_tag": None}, "BUILDINFO: no source tag (source_tag)"),
+                ("another release's tag", {"source_tag": "v0.1.1"},
+                 "BUILDINFO: the source tag is v0.1.1, and the build is Thoron 0.1.2 (v0.1.2)"),
+                ("no Chromium tag", {"chromium_tag": ""}, "BUILDINFO: no Chromium tag (chromium_tag)"),
+                ("the build number for Chromium's tag", {"chromium_tag": BUILD},
+                 "BUILDINFO: the Chromium tag is 158.0.8127.3000, and the build is made of Chromium 158.0.8127.30"),
+                ("no commit", {"thoron_commit": None}, "BUILDINFO: no commit (thoron_commit) for the source tag"),
+                ("a short commit", {"thoron_commit": COMMIT[:12]}, "BUILDINFO: no commit (thoron_commit)"),
+                ("uncommitted changes", {"thoron_dirty": True}, "BUILDINFO: the build was not made from a tree with "
+                                                                "nothing uncommitted (thoron_dirty)")):
+            with self.subTest(name):
+                self.f.record(**changes)
+                self.refused(says)
+
+    def test_a_record_as_it_was_written_before_names_nothing_and_is_refused(self):
+        self.f.buildinfo.write_text('{"variant": "win-x64-avx2", "chromium_version": "158.0.8127.3000"}',
+                                    encoding="utf-8")
+        code, _, err = self.f.prepare()
+        self.assertEqual(code, 1)
+        for says in ("no source tag", "no Chromium tag", "no commit", "the build was not made from a tree with "
+                                                                       "nothing uncommitted"):
+            self.assertIn(f"release: BUILDINFO: {says}", err)
+        self.f.buildinfo.write_text("not a record", encoding="utf-8")
+        code, _, err = self.f.prepare()
+        self.assertEqual(code, 2)
+        self.assertIn("BUILDINFO.json is not JSON", err)
+        self.assert_nothing_packaged()
+
+    def test_a_build_tree_without_the_whole_gpl_text_is_refused(self):
+        self.f.gpl.write_text(GPL.replace("END OF TERMS AND CONDITIONS", ""), encoding="utf-8")
+        self.refused("licences: third_party/thoron_notices/LICENSE.GPL-3.0 is not the whole GNU GPL version 3: it "
+                     "lacks 'END OF TERMS AND CONDITIONS'")
+        self.f.gpl.write_text("BSD 3-Clause License\n", encoding="utf-8")
+        self.refused("licences: third_party/thoron_notices/LICENSE.GPL-3.0 is not the whole GNU GPL version 3")
+        self.f.gpl.unlink()
+        self.refused("licences: the build tree has no third_party/thoron_notices/LICENSE.GPL-3.0")
+
+    def test_a_licence_file_missing_from_the_repository_is_refused(self):
+        (self.f.repo / "LICENSE.md").unlink()
+        self.refused("licences: LICENSE.md is not in the repository; the licence bundle holds it")
+
+    def test_the_release_carries_the_licence_bundle_with_the_gpl_text(self):
+        (self.f.repo / "NOTICE").write_bytes(b"Thoron - third-party notices\r\n\r\nBSD-3-Clause and GPL-3.0.\r\n")
+        self.assertEqual(self.f.prepare()[0], 0)
+        with zipfile.ZipFile(self.f.dist / LICENCES) as bundle:
+            self.assertEqual(bundle.namelist(), ["licenses/CREDITS.md", "licenses/GPL-3.0.txt", "licenses/LICENSE.md",
+                                                 "licenses/NOTICE", "licenses/PATCH_LICENSES.md"])
+            self.assertEqual(bundle.read("licenses/GPL-3.0.txt"), self.f.gpl.read_bytes())
+            self.assertEqual(bundle.read("licenses/NOTICE"),        # the repository's line ends, not the checkout's
+                             b"Thoron - third-party notices\n\nBSD-3-Clause and GPL-3.0.\n")
+            self.assertEqual(bundle.read("licenses/PATCH_LICENSES.md").decode("utf-8"), INVENTORY)
+        digest = hashlib.sha256((self.f.dist / LICENCES).read_bytes()).hexdigest()
+        self.assertIn(f"{digest}  {LICENCES}\n", (self.f.dist / "SHA256SUMS").read_text(encoding="utf-8"))
+        self.assertEqual(rel.licence_bundle_problems(self.f.dist), [])
+
+    def test_the_same_texts_give_the_same_bundle(self):
+        texts, problems = rel.licence_texts(self.f.repo, self.f.src)
+        self.assertEqual(problems, [])
+        first = rel.write_licence_bundle(Path(self.f.tmp.name) / "a.zip", texts)
+        second = rel.write_licence_bundle(Path(self.f.tmp.name) / "b.zip", dict(reversed(texts.items())))
+        self.assertEqual(first.read_bytes(), second.read_bytes())
+        with self.assertRaises(FileExistsError):                    # never over another file
+            rel.write_licence_bundle(first, texts)
+
+    def test_publish_refuses_a_folder_whose_source_is_not_the_drafts_tag(self):
+        dist = self.f.dist
+        self.assertEqual(self.f.prepare(*self.f.with_manifest())[0], 0)
+        self.f.minisign_stand_in()
+        self.assertEqual(rel.source_tag_problems(dist, "v0.1.2"), [])
+        self.assertEqual(rel.source_tag_problems(dist, "v0.1.3"),
+                         [f"{RECORD} names the source tag v0.1.2, and the draft would be tagged v0.1.3"])
+        calls = []
+        code, _, err = self.f.publish(version="0.1.3", run=calls.append)
+        self.assertEqual((code, calls), (1, []))
+        self.assertIn(f"release: source: {RECORD} names the source tag v0.1.2, and the draft would be tagged v0.1.3",
+                      err)
+        (dist / RECORD).unlink()
+        self.assertEqual(rel.source_tag_problems(dist, "v0.1.2"),
+                         ["no build record (BUILDINFO-*.json) in the folder names the source of the release"])
+
+    def test_publish_refuses_a_folder_without_the_gpl_text(self):
+        dist = self.f.dist
+        self.assertEqual(self.f.prepare(*self.f.with_manifest())[0], 0)
+        self.f.minisign_stand_in()
+        bundle = dist / LICENCES
+        bundle.unlink()
+        calls = []
+        code, _, err = self.f.publish(run=calls.append)
+        self.assertEqual((code, calls), (1, []))
+        self.assertIn("release: licences: no licence bundle (thoron-<version>-licenses.zip) in the folder", err)
+        rel.write_licence_bundle(bundle, {"NOTICE": b"notices\n"})
+        self.assertEqual(rel.licence_bundle_problems(dist), [f"{LICENCES} holds no licenses/GPL-3.0.txt"])
+        bundle.unlink()
+        rel.write_licence_bundle(bundle, {"GPL-3.0.txt": b"GNU GENERAL PUBLIC LICENSE\n"})
+        self.assertIn(f"GPL-3.0.txt in {LICENCES} is not the whole GNU GPL version 3",
+                      rel.licence_bundle_problems(dist)[0])
+
+
+class PortableStepTests(GateTestCase):
+    """P2.8: prepare calls tools/release/portable.py, and the release holds the portable .zip."""
+
+    def test_the_release_holds_the_portable_zip_and_no_unpacked_package(self):
+        self.assertEqual(self.f.prepare()[0], 0)
+        self.assertIn(PORTABLE, self.names())
+        self.assertFalse([p for p in self.f.dist.iterdir() if p.is_dir()])
+        with zipfile.ZipFile(self.f.dist / PORTABLE) as package:
+            self.assertEqual(package.namelist(), [
+                f"ThoronPortable/Application/{BUILD}/chrome.dll", "ThoronPortable/Application/thoron.exe",
+                "ThoronPortable/README.txt", "ThoronPortable/Thoron.cmd"])
+            self.assertEqual(package.read("ThoronPortable/Application/thoron.exe"), b"program")
+        digest = hashlib.sha256((self.f.dist / PORTABLE).read_bytes()).hexdigest()
+        self.assertIn(f"{digest}  {PORTABLE}\n", (self.f.dist / "SHA256SUMS").read_text(encoding="utf-8"))
+        self.assertEqual(rel.package_files(self.f.dist, BUILD, VARIANT),
+                         {"installed": self.f.dist / INSTALLER, "portable": self.f.dist / PORTABLE})
+        self.assertEqual(sorted(p.name for p in (self.f.out / rel.CHROME_BIN).iterdir()), [BUILD, "thoron.exe"])
+
+    def test_a_browser_folder_that_may_not_be_packaged_is_refused(self):
+        good = {"thoron.exe": b"program", f"{BUILD}/chrome.dll": b"dll"}
+        for name, files, says in (
+                ("a profile", {**good, "User Data/Default/Preferences": b"{}"},
+                 "portable package: profile data or a leftover of a used browser: User Data/Default/Preferences"),
+                ("Widevine", {**good, f"{BUILD}/WidevineCdm/manifest.json": b"{}"},
+                 "portable package: package audit: Widevine must not be bundled"),
+                ("no program", {f"{BUILD}/chrome.dll": b"dll"}, "portable package: package audit: the program "
+                                                                "thoron.exe is missing"),
+                ("another build", {"thoron.exe": b"program", f"{NEXT_BUILD}/chrome.dll": b"dll"},
+                 f"portable package: the browser folder holds version {NEXT_BUILD}, and the build is {BUILD}")):
+            with self.subTest(name):
+                self.f.browser(files)
+                self.refused(says)
+        shutil.rmtree(self.f.out / rel.CHROME_BIN)
+        self.refused("portable package: the browser folder Chrome-bin is not there (--chrome-bin names it)")
+
+    def test_the_browser_folder_can_be_named(self):
+        elsewhere = Path(self.f.tmp.name) / "staging" / "Chrome-bin"
+        elsewhere.parent.mkdir()
+        shutil.move(self.f.out / rel.CHROME_BIN, elsewhere)
+        self.assertEqual(self.f.prepare("--chrome-bin", elsewhere)[0], 0)
+        self.assertIn(PORTABLE, self.names())
+
+    def test_a_package_that_fails_while_it_is_made_stops_prepare_and_the_folder_is_called_incomplete(self):
+        with mock.patch.object(rel.portable, "build", side_effect=rel.portable.PortableError("the .zip does not hold "
+                                                                                             "the package's files")):
+            code, _, err = self.f.prepare()
+        self.assertEqual(code, 2)
+        self.assertIn("release: portable package: the .zip does not hold the package's files", err)
+        self.assertIn("is incomplete; remove it before running prepare again", err)
+        self.assertNotIn("SHA256SUMS", self.names())
+
+    def test_a_linux_release_folder_gets_no_windows_package(self):
+        files = rel.assemble(self.f.out, self.f.dist, BUILD, "linux-x64-avx2", self.f.buildinfo,
+                             self.f.out / rel.CHROME_BIN)
+        self.assertEqual([p.name for p in files], [f"BUILDINFO-{BUILD}-linux-x64-avx2.json", "SHA256SUMS"])
+
+
+class CreditsTests(GateTestCase):
+    """L.3: the contributors are made again, and CREDITS.md and NOTICE must be current; nothing is rewritten."""
+
+    def test_current_files_have_no_problem(self):
+        self.assertEqual(rel.credits_problems(self.f.repo, PEOPLE), [])
+        credits = self.f.repo / "CREDITS.md"
+        credits.write_bytes(credits.read_bytes().replace(b"\n", b"\r\n"))      # a Windows checkout
+        self.assertEqual(rel.credits_problems(self.f.repo, PEOPLE), [])
+
+    def test_a_contributor_list_that_is_out_of_date_stops_the_release_and_is_not_rewritten(self):
+        before = (self.f.repo / "CREDITS.md").read_bytes()
+        for name, people in (
+                ("one more commit", [dict(PEOPLE[0], contributions=4906)] + PEOPLE[1:]),
+                ("a new contributor", PEOPLE + [{"type": "User", "login": "newcomer", "contributions": 2}]),
+                ("one gone", PEOPLE[:2])):
+            with self.subTest(name):
+                self.f.people = people
+                self.refused("credits: CREDITS.md: the list of upstream contributors is out of date: run "
+                             "tools/credits/contributors.py and commit the result")
+                self.assertEqual((self.f.repo / "CREDITS.md").read_bytes(), before)
+        self.assertEqual(self.f.fetches, ["Alex313031/thorium"] * 3)
+
+    def test_no_email_is_read_into_the_list(self):
+        made = contributors.render_contributors(PEOPLE)
+        self.assertIn("- Someone Else (1 commit)", made)
+        self.assertNotIn("@example.com", made)
+
+    def test_a_saved_list_is_used_instead_of_asking_github(self):
+        saved = Path(self.f.tmp.name) / "contributors.json"
+        saved.write_text(json.dumps(PEOPLE), encoding="utf-8")
+        self.passes("--contributors", saved)
+        self.assertEqual(self.f.fetches, [])
+        saved.write_text(json.dumps(PEOPLE[:2]), encoding="utf-8")
+        self.refused("credits: CREDITS.md: the list of upstream contributors is out of date", "--contributors", saved)
+        for content, says in (("{}", "contributors.json is not a list of contributors"),
+                              ("[", "contributors.json is not JSON")):
+            saved.write_text(content, encoding="utf-8")
+            code, _, err = self.f.prepare("--contributors", saved)
+            self.assertEqual(code, 2)
+            self.assertIn(says, err)
+        self.assertEqual(self.f.fetches, [])
+        self.assert_nothing_packaged()
+
+    def test_when_github_cannot_be_asked_prepare_says_how_to_go_on(self):
+        self.f.people = FileNotFoundError("gh")
+        code, _, err = self.f.prepare()
+        self.assertEqual(code, 2)
+        self.assertIn("the contributors of Alex313031/thorium could not be read from GitHub with gh "
+                      "(FileNotFoundError); --contributors takes a saved list instead", err)
+        self.assert_nothing_packaged()
+
+    def test_credits_without_the_markers_are_a_problem(self):
+        self.f.repo_file("CREDITS.md", "# Credits\n\nThorium, ungoogled-chromium and Bromite.\n")
+        self.assertEqual(rel.credits_problems(self.f.repo, PEOPLE),
+                         ["CREDITS.md: markers <!-- contributors:start --> ... <!-- contributors:end --> not found"])
+
+    def test_every_origin_and_licence_of_the_patch_inventory_is_credited_and_named(self):
+        rows = patch_licenses.read_table(INVENTORY) + [
+            {"patch": "c.patch", "origin": "Thorium (Alex313031, gz83); idea from Iridium", "license": "MIT",
+             "evidence": "z"}]
+        self.f.repo_file("docs/legal/PATCH_LICENSES.md", patch_licenses.render_table(rows))
+        self.assertEqual(rel.credits_problems(self.f.repo, PEOPLE), [
+            "CREDITS.md does not credit Iridium, an origin in docs/legal/PATCH_LICENSES.md",
+            "NOTICE does not name the licence MIT, which docs/legal/PATCH_LICENSES.md lists"])
+        self.refused("credits: CREDITS.md does not credit Iridium, an origin in docs/legal/PATCH_LICENSES.md")
+        self.f.repo_file("CREDITS.md", CREDITS + "\nIridium.\n")
+        self.f.repo_file("NOTICE", "Licences: BSD-3-Clause, GPL-3.0 and MIT.\n")
+        self.assertEqual(rel.credits_problems(self.f.repo, PEOPLE), [])
+
+    def test_missing_files_are_problems(self):
+        for name in ("CREDITS.md", "NOTICE", "docs/legal/PATCH_LICENSES.md"):
+            (self.f.repo / name).unlink()
+        self.assertEqual(rel.credits_problems(self.f.repo, PEOPLE),
+                         [f"{name} is not in the repository" for name in ("CREDITS.md", "NOTICE",
+                                                                          "docs/legal/PATCH_LICENSES.md")])
+        self.f.repo_file("docs/legal/PATCH_LICENSES.md", "# Patch licence inventory\n")
+        self.assertIn("docs/legal/PATCH_LICENSES.md lists no patch", rel.credits_problems(self.f.repo, PEOPLE))
+
+
+class ChangelogStepTests(GateTestCase):
+    """D.10, D.4: the notes' changes are the lines of the short changelog, and a release has some."""
+
+    def notes(self) -> str:
+        return (self.f.dist / "NOTES.md").read_text(encoding="utf-8")
+
+    def test_what_waits_under_unreleased_becomes_the_notes(self):
+        code, out, err = self.f.prepare()
+        self.assertEqual(code, 0, out + err)
+        self.assertIn("release: the notes list the changes under [Unreleased] of CHANGELOG.md", out)
+        self.assertIn("## Thoron changes\n\n### Added\n\n- **Updates:** Thoron updates itself from inside.\n"
+                      "- **Portable:** a package that runs without installing.\n\n### Fixed\n\n"
+                      "- **Tabs:** tab groups are kept.\n\n## Upstream Thorium", self.notes())
+        self.assertTrue(self.notes().startswith("# Thoron 0.1.2\n\nThoron 0.1.2 (build 158.0.8127.3000) is based on "
+                                                "Chromium 158.0.8127.30"))
+
+    def test_the_section_of_the_version_is_taken_when_there_is_one(self):
+        self.f.repo_file("CHANGELOG.md", "# Changelog\n\n## [Unreleased]\n\n### Added\n\n- **Later:** not yet.\n\n"
+                         "## [0.1.2] - 2026-12-01\n\nBuilt on Chromium 158.0.8127.30.\n\n### Security\n\n"
+                         "- **Updates:** the manifest is signed.\n\n## [0.1.1] - 2026-11-20\n\n### Added\n\n"
+                         "- **First:** the first release.\n")
+        code, out, err = self.f.prepare()
+        self.assertEqual(code, 0, out + err)
+        self.assertIn("the notes list the changes under [0.1.2] of CHANGELOG.md", out)
+        self.assertIn("## Thoron changes\n\n### Security\n\n- **Updates:** the manifest is signed.\n\n## Upstream",
+                      self.notes())
+        for other in ("not yet", "the first release"):
+            self.assertNotIn(other, self.notes())
+
+    def test_a_release_without_a_line_in_the_changelog_is_refused(self):
+        for name, text, says in (
+                ("nothing waits", "# Changelog\n\n## [Unreleased]\n\n## [0.1.1] - 2026-11-20\n\n### Added\n\n- x\n",
+                 "changelog: the changelog lists no change under [Unreleased]"),
+                ("headings only", "# Changelog\n\n## [Unreleased]\n\n### Added\n\n### Fixed\n",
+                 "changelog: the changelog lists no change under [Unreleased]"),
+                ("its own section is empty", "# Changelog\n\n## [Unreleased]\n\n### Added\n\n- x\n\n## [0.1.2] - "
+                 "2026-12-01\n", "changelog: the changelog lists no change under [0.1.2]"),
+                ("no section to take", "# Changelog\n\n## [0.1.1] - 2026-11-20\n\n### Added\n\n- x\n",
+                 "changelog: the changelog has no [Unreleased] section")):
+            with self.subTest(name):
+                self.f.repo_file("CHANGELOG.md", text)
+                self.refused(says)
+        (self.f.repo / "CHANGELOG.md").unlink()
+        self.refused("changelog: CHANGELOG.md is not in the repository")
+
+    def test_a_changelog_that_is_not_in_its_short_form_is_refused(self):
+        for name, text, says in (
+                ("a paragraph for a change", CHANGELOG + "\nThis one took a while to get right.\n",
+                 "line 17: not a change (`- text`, one line per change) and not a section heading"),
+                ("a section of its own", CHANGELOG.replace("### Fixed", "### Bug fixes"),
+                 "line 13: `### Bug fixes`: the sections are Added, Changed, Fixed, Removed, Security"),
+                ("a change under no section", CHANGELOG.replace("### Added\n\n", ""),
+                 "line 7: a change outside Added, Changed, Fixed, Removed, Security"),
+                ("a list inside a change", CHANGELOG.replace("  installing.", "  - installing."),
+                 "line 11: not a change (`- text`, one line per change) and not a section heading")):
+            with self.subTest(name):
+                self.f.repo_file("CHANGELOG.md", text)
+                self.refused(f"changelog: the changelog is not in its short form: {says}")
+
+
+class WikiStepTests(GateTestCase):
+    """D.9: the wiki pages are linted and name the version; publishing them is never done from here."""
+
+    def test_the_wiki_of_the_tree_has_no_problem(self):
+        self.assertEqual(rel.wiki_problems(self.f.repo, THORON), [])
+
+    def test_pages_that_fail_the_linter_stop_the_release(self):
+        dash = chr(0x2014)
+        for name, page, text, says in (
+                ("a link to no page", "Home.md", "# Thoron\n\n[Install](Install)\n",
+                 "wiki: docs/wiki/Home.md:3: no wiki page -> Install"),
+                ("a link to no heading", "Home.md", "# Thoron\n\n[Versions](Versions#history)\n",
+                 "wiki: docs/wiki/Home.md:3: broken anchor -> Versions#history"),
+                ("a long dash", "Home.md", f"# Thoron\n\nFast {dash} and private.\n",
+                 "wiki: docs/wiki/Home.md:3: long dash, use '-' (house style)"),
+                ("a path of one PC", "Install.md", "# Install\n\nUnpack it to C:\\Users\\someone\\Thoron.\n",  # privacy-check: allow
+                 "wiki: docs/wiki/Install.md:3: private data (user directory path)")):
+            with self.subTest(name):
+                path = self.f.repo / "docs/wiki" / page
+                before = path.read_bytes() if path.exists() else None
+                self.f.repo_file(f"docs/wiki/{page}", text)
+                self.refused(says)
+                if before is None:
+                    path.unlink()
+                else:
+                    path.write_bytes(before)
+
+    def test_a_wiki_without_its_home_page_or_its_folder_stops_the_release(self):
+        (self.f.repo / "docs/wiki/Home.md").unlink()
+        self.refused("wiki: docs/wiki: no Home.md; a wiki needs its home page")
+        shutil.rmtree(self.f.repo / "docs/wiki")
+        self.refused("wiki: docs/wiki is not in the repository")
+
+    def test_the_wiki_names_the_version_being_released(self):
+        for text in ("# Versions\n\nThe newest version is **0.1.1**.\n", "# Versions\n\nNow 0.1.20 and 10.1.2.\n"):
+            self.f.repo_file("docs/wiki/Versions.md", text)
+            self.refused("wiki: docs/wiki/Versions.md does not name Thoron 0.1.2: the wiki is updated with every "
+                         "release")
+        self.f.repo_file("docs/wiki/Versions.md", "# Versions\n\nThe newest version is 0.1.2.\n")
+        self.assertEqual(rel.wiki_problems(self.f.repo, THORON), [])
+        (self.f.repo / "docs/wiki/Versions.md").unlink()
+        self.f.repo_file("docs/wiki/Home.md", "# Thoron\n")
+        self.refused("wiki: docs/wiki/Versions.md does not name Thoron 0.1.2")
+
+    def test_the_commands_that_publish_the_wiki_are_printed_and_never_run(self):
+        self.assertEqual(rel.wiki_commands(GH_REPO), [
+            "py -3 -I tools/docs/publish_wiki.py --repo KuchiSofts/thoron --dry-run",
+            "py -3 -I tools/docs/publish_wiki.py --repo KuchiSofts/thoron"])
+        self.assertEqual(self.f.prepare(*self.f.with_manifest())[0], 0)
+        self.f.minisign_stand_in()
+        calls = []
+        with mock.patch("tools.docs.publish_wiki.publish", side_effect=AssertionError("the wiki was published")), \
+                mock.patch.object(rel.subprocess, "run", side_effect=AssertionError("publish ran a program")):
+            code, out, _ = self.f.publish(run=calls.append)
+        self.assertEqual(code, 0)
+        self.assertEqual([cmd[:3] for cmd in calls], [["gh", "release", "create"]])
+        for command in rel.wiki_commands(GH_REPO):
+            self.assertIn(f"    {command}\n", out)
 
 
 class ChecksumTests(ReleaseTestCase):

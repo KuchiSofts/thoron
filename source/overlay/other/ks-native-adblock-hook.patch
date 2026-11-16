@@ -11930,10 +11930,10 @@ index 0000000000000000000000000000000000000000..3e4c28764458836945e8dccad2197a69
 +#endif  // COMPONENTS_THORON_MAIL_MAIL_SERVICE_H_
 diff --git a/components/thoron_update/BUILD.gn b/components/thoron_update/BUILD.gn
 new file mode 100644
-index 0000000000000000000000000000000000000000..709a428d3f876e115b1e251e342b3ec9681ecc46
+index 0000000000000000000000000000000000000000..d62c944463e5256ff83ef13db44bc7c643a0a2b4
 --- /dev/null
 +++ b/components/thoron_update/BUILD.gn
-@@ -0,0 +1,51 @@
+@@ -0,0 +1,56 @@
 +# Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +# found in the LICENSE file.
 +
@@ -11948,6 +11948,8 @@ index 0000000000000000000000000000000000000000..709a428d3f876e115b1e251e342b3ec9
 +    "manifest.h",
 +    "package.cc",
 +    "package.h",
++    "snapshot.cc",
++    "snapshot.h",
 +    "swap.cc",
 +    "swap.h",
 +  ]
@@ -11955,6 +11957,7 @@ index 0000000000000000000000000000000000000000..709a428d3f876e115b1e251e342b3ec9
 +    "//base",
 +    "//crypto",
 +    "//third_party/boringssl",
++    "//third_party/sqlite",
 +  ]
 +}
 +
@@ -11966,6 +11969,7 @@ index 0000000000000000000000000000000000000000..709a428d3f876e115b1e251e342b3ec9
 +    "manifest_test_vectors.h",
 +    "manifest_unittest.cc",
 +    "package_unittest.cc",
++    "snapshot_unittest.cc",
 +    "swap_unittest.cc",
 +  ]
 +  deps = [
@@ -11973,6 +11977,7 @@ index 0000000000000000000000000000000000000000..709a428d3f876e115b1e251e342b3ec9
 +    "//base",
 +    "//crypto",
 +    "//testing/gtest",
++    "//third_party/sqlite",
 +  ]
 +}
 +
@@ -11987,13 +11992,14 @@ index 0000000000000000000000000000000000000000..709a428d3f876e115b1e251e342b3ec9
 +}
 diff --git a/components/thoron_update/DEPS b/components/thoron_update/DEPS
 new file mode 100644
-index 0000000000000000000000000000000000000000..425f66c8c89f128650954c2a7e6587079d0e57fe
+index 0000000000000000000000000000000000000000..114da93bd0ffd20dab18a7fedbee789741199aa1
 --- /dev/null
 +++ b/components/thoron_update/DEPS
-@@ -0,0 +1,4 @@
+@@ -0,0 +1,5 @@
 +include_rules = [
 +  "+crypto",
 +  "+third_party/boringssl/src/include/openssl",
++  "+third_party/sqlite",
 +]
 diff --git a/components/thoron_update/README.md b/components/thoron_update/README.md
 new file mode 100644
@@ -18382,6 +18388,589 @@ index 0000000000000000000000000000000000000000..8b4271f1d0784dfe774c24341cca2b93
 +#elif BUILDFLAG(IS_LINUX)
 +  EXPECT_FALSE(VariantsFor(Os::kLinux, ThisProcessor()).empty());
 +#endif
++}
++
++}  // namespace
++}  // namespace thoron_update
+diff --git a/components/thoron_update/snapshot.cc b/components/thoron_update/snapshot.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..fbe92ef53f49c7c8338957d94a9a1308f62964d6
+--- /dev/null
++++ b/components/thoron_update/snapshot.cc
+@@ -0,0 +1,314 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "components/thoron_update/snapshot.h"
++
++#include <algorithm>
++#include <array>
++#include <optional>
++#include <string>
++#include <utility>
++#include <vector>
++
++#include "base/files/file.h"
++#include "base/files/file_enumerator.h"
++#include "base/files/file_util.h"
++#include "base/files/important_file_writer.h"
++#include "base/json/json_reader.h"
++#include "base/json/json_writer.h"
++#include "base/strings/string_number_conversions.h"
++#include "base/strings/string_util.h"
++#include "base/values.h"
++#include "components/thoron_update/package.h"
++#include "crypto/hash.h"
++#include "third_party/sqlite/sqlite3.h"
++
++namespace thoron_update {
++
++namespace {
++
++constexpr char kRecord[] = "snapshot.json";
++constexpr char kLocalState[] = "Local State";
++constexpr char kSessions[] = "Sessions";
++constexpr int64_t kMostRecordBytes = 4 * 1024 * 1024;
++
++// Files of a profile; true for an SQLite database.
++constexpr std::array<std::pair<const char*, bool>, 10> kProfileFiles = {{
++    {"Bookmarks", false},
++    {"Preferences", false},
++    {"Secure Preferences", false},
++    {"Login Data", true},
++    {"Login Data For Account", true},
++    {"History", true},
++    {"Web Data", true},
++    {"Network/Cookies", true},
++    {"Shortcuts", true},
++    {"Top Sites", true},
++}};
++
++base::FilePath Under(const base::FilePath& folder, std::string_view path) {
++  return folder.Append(base::FilePath::FromUTF8Unsafe(path))
++      .NormalizePathSeparators();
++}
++
++std::optional<std::string> Sha256Of(const base::FilePath& path) {
++  base::File file(path, base::File::FLAG_OPEN | base::File::FLAG_READ);
++  if (!file.IsValid()) {
++    return std::nullopt;
++  }
++  crypto::hash::Hasher hasher(crypto::hash::kSha256);
++  std::vector<uint8_t> buffer(1024 * 1024);
++  while (true) {
++    const std::optional<size_t> read = file.ReadAtCurrentPos(buffer);
++    if (!read) {
++      return std::nullopt;
++    }
++    if (*read == 0) {
++      break;
++    }
++    hasher.Update(base::span(buffer).first(*read));
++  }
++  std::array<uint8_t, crypto::hash::kSha256Size> digest;
++  hasher.Finish(digest);
++  return base::HexEncodeLower(digest);
++}
++
++// SQLite's own check of the database at `path`. It is opened for writing, so
++// that a journal next to it is rolled back first, as the browser would.
++std::string DatabaseCheck(const base::FilePath& path) {
++  // Chromium builds SQLite without its automatic start.
++  if (sqlite3_initialize() != SQLITE_OK) {
++    return "could not be checked";
++  }
++  sqlite3* db = nullptr;
++  if (sqlite3_open_v2(path.AsUTF8Unsafe().c_str(), &db, SQLITE_OPEN_READWRITE,
++                      nullptr) != SQLITE_OK) {
++    sqlite3_close(db);
++    return "could not be opened";
++  }
++  std::string result = "could not be checked";
++  sqlite3_stmt* statement = nullptr;
++  if (sqlite3_prepare_v2(db, "PRAGMA integrity_check", -1, &statement,
++                         nullptr) == SQLITE_OK &&
++      sqlite3_step(statement) == SQLITE_ROW) {
++    const unsigned char* text = sqlite3_column_text(statement, 0);
++    result = text ? std::string(reinterpret_cast<const char*>(text)) : "";
++    result = result == "ok" ? "ok" : "damaged";
++  } else {
++    result = "damaged";
++  }
++  sqlite3_finalize(statement);
++  sqlite3_close(db);
++  return result;
++}
++
++bool IsLabel(std::string_view label) {
++  return !label.empty() && label.size() <= 80 && label.front() != '.' &&
++         std::ranges::all_of(label, [](char c) {
++           return base::IsAsciiAlphaNumeric(c) || c == '-' || c == '_' ||
++                  c == '.';
++         });
++}
++
++// The profile folders of `user_data`: those that hold a Preferences file.
++std::vector<base::FilePath> Profiles(const base::FilePath& user_data) {
++  std::vector<base::FilePath> out;
++  base::FileEnumerator found(user_data, /*recursive=*/false,
++                             base::FileEnumerator::DIRECTORIES);
++  for (base::FilePath path = found.Next(); !path.empty(); path = found.Next()) {
++    if (base::PathExists(path.AppendASCII("Preferences"))) {
++      out.push_back(path);
++    }
++  }
++  std::ranges::sort(out);
++  return out;
++}
++
++// Copies `from` to `to` and gives the copy's length and SHA-256 when the copy
++// is the same as what was read.
++std::optional<std::pair<int64_t, std::string>> CopyChecked(
++    const base::FilePath& from,
++    const base::FilePath& to) {
++  const std::optional<std::string> before = Sha256Of(from);
++  if (!before || !base::CreateDirectory(to.DirName()) ||
++      !base::CopyFile(from, to)) {
++    return std::nullopt;
++  }
++  const std::optional<std::string> after = Sha256Of(to);
++  std::optional<int64_t> size = base::GetFileSize(to);
++  if (!after || !size || *after != *before) {
++    return std::nullopt;
++  }
++  return std::make_pair(*size, *after);
++}
++
++void RemoveOldest(const base::FilePath& snapshots, int keep) {
++  std::vector<std::pair<base::Time, base::FilePath>> found;
++  base::FileEnumerator all(snapshots, /*recursive=*/false,
++                           base::FileEnumerator::DIRECTORIES);
++  for (base::FilePath path = all.Next(); !path.empty(); path = all.Next()) {
++    if (base::PathExists(path.AppendASCII(kRecord))) {
++      found.emplace_back(all.GetInfo().GetLastModifiedTime(), path);
++    }
++  }
++  std::ranges::sort(found);
++  for (size_t i = 0; i + keep < found.size(); ++i) {
++    base::DeletePathRecursively(found[i].second);
++  }
++}
++
++}  // namespace
++
++std::vector<std::string> SnapshotFiles() {
++  std::vector<std::string> out;
++  for (const auto& [path, database] : kProfileFiles) {
++    out.emplace_back(path);
++  }
++  out.emplace_back(std::string(kSessions) + "/");
++  return out;
++}
++
++SnapshotReport TakeSnapshot(const base::FilePath& user_data,
++                            const base::FilePath& snapshots,
++                            std::string_view label,
++                            int keep) {
++  SnapshotReport report;
++  if (!IsLabel(label) || keep < 1 || !base::DirectoryExists(user_data)) {
++    report.problems.push_back("nothing to take a snapshot of, or a bad label");
++    return report;
++  }
++  report.folder = snapshots.AppendASCII(label);
++  if (base::PathExists(report.folder) ||
++      !base::CreateDirectory(report.folder)) {
++    report.problems.push_back("the snapshot's folder exists or cannot be made");
++    return report;
++  }
++  base::ListValue files;
++  auto take = [&](const base::FilePath& from, const std::string& name,
++                  bool database) {
++    const base::FilePath to = Under(report.folder, name);
++    const std::optional<std::pair<int64_t, std::string>> copied =
++        CopyChecked(from, to);
++    if (!copied) {
++      report.problems.push_back(name + ": the copy does not verify");
++      return;
++    }
++    const base::FilePath journal(from.value() + FILE_PATH_LITERAL("-journal"));
++    if (database && base::PathExists(journal)) {
++      // The journal goes with it, so the copy is what the browser would read.
++      base::CopyFile(journal, base::FilePath(to.value() + FILE_PATH_LITERAL("-journal")));
++    }
++    std::string sha256 = copied->second;
++    int64_t size = copied->first;
++    if (database) {
++      const std::string check = DatabaseCheck(to);
++      if (check != "ok") {
++        report.problems.push_back(name + ": " + check);
++      }
++      // A journal that was rolled back changed the copy: record what is kept.
++      std::optional<std::string> now = Sha256Of(to);
++      std::optional<int64_t> now_size = base::GetFileSize(to);
++      base::DeleteFile(base::FilePath(to.value() + FILE_PATH_LITERAL("-journal")));
++      if (now && now_size) {
++        sha256 = *now;
++        size = *now_size;
++      }
++    }
++    files.Append(base::DictValue()
++                     .Set("path", name)
++                     .Set("size", base::NumberToString(size))
++                     .Set("sha256", sha256));
++    ++report.files;
++    report.bytes += size;
++  };
++
++  if (base::PathExists(user_data.AppendASCII(kLocalState))) {
++    take(user_data.AppendASCII(kLocalState), kLocalState, false);
++  }
++  for (const base::FilePath& profile : Profiles(user_data)) {
++    const std::string profile_name = profile.BaseName().AsUTF8Unsafe();
++    ++report.profiles;
++    for (const auto& [path, database] : kProfileFiles) {
++      const base::FilePath from = Under(profile, path);
++      if (base::PathExists(from)) {
++        take(from, profile_name + "/" + path, database);
++      }
++    }
++    base::FileEnumerator sessions(profile.AppendASCII(kSessions),
++                                  /*recursive=*/false,
++                                  base::FileEnumerator::FILES);
++    for (base::FilePath path = sessions.Next(); !path.empty();
++         path = sessions.Next()) {
++      take(path,
++           profile_name + "/" + kSessions + "/" + path.BaseName().AsUTF8Unsafe(),
++           false);
++    }
++  }
++  const std::optional<std::string> record =
++      base::WriteJsonWithOptions(base::DictValue()
++                                     .Set("format", "thoron-profile-snapshot")
++                                     .Set("version", 1)
++                                     .Set("files", std::move(files)),
++                                 base::JSONWriter::OPTIONS_PRETTY_PRINT);
++  if (!record || !base::ImportantFileWriter::WriteFileAtomically(
++                     report.folder.AppendASCII(kRecord), *record)) {
++    report.problems.push_back("the snapshot's record could not be written");
++    return report;
++  }
++  RemoveOldest(snapshots, keep);
++  report.ok = report.problems.empty();
++  return report;
++}
++
++bool RestoreSnapshot(const base::FilePath& folder,
++                     const base::FilePath& user_data,
++                     std::vector<std::string>* problems) {
++  std::string text;
++  std::optional<base::DictValue> record;
++  if (base::ReadFileToStringWithMaxSize(folder.AppendASCII(kRecord), &text,
++                                        kMostRecordBytes)) {
++    record = base::JSONReader::ReadDict(text, base::JSON_PARSE_RFC);
++  }
++  const std::string* format = record ? record->FindString("format") : nullptr;
++  const base::ListValue* files = record ? record->FindList("files") : nullptr;
++  if (!format || *format != "thoron-profile-snapshot" || !files) {
++    problems->push_back("not a snapshot");
++    return false;
++  }
++  // First every file is checked; only then is anything put back.
++  std::vector<std::string> paths;
++  for (const base::Value& value : *files) {
++    const base::DictValue* entry = value.GetIfDict();
++    const std::string* path = entry ? entry->FindString("path") : nullptr;
++    const std::string* size = entry ? entry->FindString("size") : nullptr;
++    const std::string* sha256 = entry ? entry->FindString("sha256") : nullptr;
++    int64_t length = 0;
++    const base::FilePath relative =
++        path ? base::FilePath::FromUTF8Unsafe(*path) : base::FilePath();
++    if (!path || !size || !sha256 || !base::StringToInt64(*size, &length) ||
++        relative.IsAbsolute() || relative.ReferencesParent() ||
++        CheckFile(Under(folder, *path), PackageFile{std::string(), length, *sha256}) !=
++            FileCheck::kOk) {
++      problems->push_back((path ? *path : std::string("an entry")) +
++                          ": does not verify");
++      continue;
++    }
++    paths.push_back(*path);
++  }
++  if (!problems->empty()) {
++    return false;
++  }
++  for (const std::string& path : paths) {
++    const base::FilePath to = Under(user_data, path);
++    if (!base::CreateDirectory(to.DirName()) ||
++        !base::CopyFile(Under(folder, path), to)) {
++      problems->push_back(path + ": could not be put back");
++      continue;
++    }
++    // A journal of the file that is there now belongs to the file that went.
++    base::DeleteFile(base::FilePath(to.value() + FILE_PATH_LITERAL("-journal")));
++  }
++  return problems->empty();
++}
++
++}  // namespace thoron_update
+diff --git a/components/thoron_update/snapshot.h b/components/thoron_update/snapshot.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..0e84d873bb1b7cdb45833c66f3e7511cd69fe54f
+--- /dev/null
++++ b/components/thoron_update/snapshot.h
+@@ -0,0 +1,60 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef COMPONENTS_THORON_UPDATE_SNAPSHOT_H_
++#define COMPONENTS_THORON_UPDATE_SNAPSHOT_H_
++
++#include <stdint.h>
++
++#include <string>
++#include <string_view>
++#include <vector>
++
++#include "base/files/file_path.h"
++
++// A copy of what matters most in every profile, taken before an update that
++// changes the major version (ROADMAP P3.7), and put back by a rollback (P3.8):
++// bookmarks, settings, saved passwords, history, cookies, autofill, and the
++// open windows and tabs. Each file is copied, its copy checked, and every
++// database in it checked by SQLite itself. Nothing of what the files hold is
++// read beyond that, logged or sent anywhere.
++
++namespace thoron_update {
++
++struct SnapshotReport {
++  // A snapshot was written and every file in it verified. A database that
++  // SQLite finds damaged is copied as it is and named in `problems`; the
++  // snapshot is still kept, and `ok` is false.
++  bool ok = false;
++  base::FilePath folder;
++  int profiles = 0;
++  int files = 0;
++  int64_t bytes = 0;
++  // Names of files and what is wrong, never their content.
++  std::vector<std::string> problems;
++};
++
++// The files of a profile that a snapshot holds, as paths inside it. A database
++// is copied with its journal when it has one.
++std::vector<std::string> SnapshotFiles();
++
++// Takes a snapshot of `user_data` (the browser's folder of profiles) into a new
++// folder of `snapshots` named `label` (letters, digits, '-', '_' and '.' only),
++// and removes the oldest snapshots so that `keep` are left. The browser should
++// not be running; files it is writing may differ from what was read.
++SnapshotReport TakeSnapshot(const base::FilePath& user_data,
++                            const base::FilePath& snapshots,
++                            std::string_view label,
++                            int keep = 2);
++
++// Puts the files of the snapshot in `folder` back into `user_data`, after
++// checking each of them against what the snapshot recorded. Nothing is put back
++// unless every file verifies. Files of the profiles that the snapshot does not
++// hold are left alone. True when everything was put back.
++bool RestoreSnapshot(const base::FilePath& folder,
++                     const base::FilePath& user_data,
++                     std::vector<std::string>* problems);
++
++}  // namespace thoron_update
++
++#endif  // COMPONENTS_THORON_UPDATE_SNAPSHOT_H_
+diff --git a/components/thoron_update/snapshot_unittest.cc b/components/thoron_update/snapshot_unittest.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..2f5b859dac4db51d0df2007646fa94d7a8b96aba
+--- /dev/null
++++ b/components/thoron_update/snapshot_unittest.cc
+@@ -0,0 +1,191 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "components/thoron_update/snapshot.h"
++
++#include <algorithm>
++#include <cstdlib>
++#include <map>
++#include <string>
++#include <vector>
++
++#include "base/environment.h"
++#include "base/files/file_enumerator.h"
++#include "base/files/file_path.h"
++#include "base/files/file_util.h"
++#include "base/files/scoped_temp_dir.h"
++#include "base/strings/string_number_conversions.h"
++#include "testing/gtest/include/gtest/gtest.h"
++#include "third_party/sqlite/sqlite3.h"
++
++namespace thoron_update {
++namespace {
++
++void MakeDatabase(const base::FilePath& path, const std::string& row) {
++  ASSERT_TRUE(base::CreateDirectory(path.DirName()));
++  ASSERT_EQ(sqlite3_initialize(), SQLITE_OK);
++  sqlite3* db = nullptr;
++  ASSERT_EQ(sqlite3_open_v2(path.AsUTF8Unsafe().c_str(), &db,
++                            SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nullptr),
++            SQLITE_OK);
++  const std::string sql = "CREATE TABLE t(v TEXT); INSERT INTO t VALUES('" + row + "');";
++  ASSERT_EQ(sqlite3_exec(db, sql.c_str(), nullptr, nullptr, nullptr), SQLITE_OK);
++  sqlite3_close(db);
++}
++
++std::map<std::string, std::string> AllFiles(const base::FilePath& root) {
++  std::map<std::string, std::string> out;
++  base::FileEnumerator found(root, /*recursive=*/true, base::FileEnumerator::FILES);
++  for (base::FilePath path = found.Next(); !path.empty(); path = found.Next()) {
++    base::FilePath relative;
++    root.AppendRelativePath(path, &relative);
++    std::string content;
++    EXPECT_TRUE(base::ReadFileToString(path, &content));
++    std::string name = relative.AsUTF8Unsafe();
++    std::replace(name.begin(), name.end(), '\\', '/');
++    out[name] = content;
++  }
++  return out;
++}
++
++class ThoronUpdateSnapshotTest : public testing::Test {
++ protected:
++  void SetUp() override {
++    ASSERT_TRUE(dir_.CreateUniqueTempDir());
++    user_data_ = dir_.GetPath().AppendASCII("User Data");
++    snapshots_ = dir_.GetPath().AppendASCII("snapshots");
++    // two profiles, as the browser lays them out (made-up content)
++    for (const char* profile : {"Default", "Profile 1"}) {
++      const base::FilePath p = user_data_.AppendASCII(profile);
++      ASSERT_TRUE(base::CreateDirectory(p.AppendASCII("Sessions")));
++      ASSERT_TRUE(base::WriteFile(p.AppendASCII("Preferences"), "{\"made\":\"up\"}"));
++      ASSERT_TRUE(base::WriteFile(p.AppendASCII("Bookmarks"), std::string("{\"b\":") + profile + "}"));
++      ASSERT_TRUE(base::WriteFile(p.AppendASCII("Sessions").AppendASCII("Session_1"), "tabs"));
++      MakeDatabase(p.AppendASCII("History"), profile);
++      MakeDatabase(p.AppendASCII("Network").AppendASCII("Cookies"), "c");
++      // not part of a snapshot
++      ASSERT_TRUE(base::WriteFile(p.AppendASCII("Cache.bin"), std::string(5000, 'x')));
++    }
++    ASSERT_TRUE(base::WriteFile(user_data_.AppendASCII("Local State"), "{\"profile\":{}}"));
++  }
++
++  base::ScopedTempDir dir_;
++  base::FilePath user_data_;
++  base::FilePath snapshots_;
++};
++
++TEST_F(ThoronUpdateSnapshotTest, TakesTheCriticalFilesOfEveryProfileAndVerifiesThem) {
++  const SnapshotReport report = TakeSnapshot(user_data_, snapshots_, "before-159");
++  EXPECT_TRUE(report.ok) << (report.problems.empty() ? "" : report.problems[0]);
++  EXPECT_EQ(report.profiles, 2);
++  // Local State, and in each profile Preferences, Bookmarks, History, Cookies, a session
++  EXPECT_EQ(report.files, 11);
++  EXPECT_GT(report.bytes, 0);
++  const std::map<std::string, std::string> taken = AllFiles(report.folder);
++  EXPECT_TRUE(taken.contains("snapshot.json"));
++  EXPECT_FALSE(taken.contains("Default/Cache.bin"));
++  EXPECT_EQ(taken.at("Profile 1/Bookmarks"), "{\"b\":Profile 1}");
++}
++
++TEST_F(ThoronUpdateSnapshotTest, ADamagedDatabaseIsNamedAndTheSnapshotKept) {
++  const base::FilePath history = user_data_.AppendASCII("Default").AppendASCII("History");
++  std::string bytes;
++  ASSERT_TRUE(base::ReadFileToString(history, &bytes));
++  // The second page is the table's; its header says what kind of page it is.
++  // A header that is no kind of page is damage SQLite's check finds.
++  const size_t page = static_cast<uint8_t>(bytes[16]) * 256 + static_cast<uint8_t>(bytes[17]);
++  ASSERT_GE(page, 512u);
++  ASSERT_GE(bytes.size(), 2 * page);
++  for (size_t i = page; i < page + 12; ++i) {
++    bytes[i] = static_cast<char>(0xff);
++  }
++  ASSERT_TRUE(base::WriteFile(history, bytes));
++  const SnapshotReport report = TakeSnapshot(user_data_, snapshots_, "damaged");
++  EXPECT_FALSE(report.ok);
++  ASSERT_EQ(report.problems.size(), 1u);
++  EXPECT_EQ(report.problems[0], "Default/History: damaged");
++  EXPECT_TRUE(base::PathExists(report.folder.AppendASCII("snapshot.json")));
++}
++
++TEST_F(ThoronUpdateSnapshotTest, OnlyTheLastTwoAreKept) {
++  for (const char* label : {"one", "two", "three"}) {
++    ASSERT_TRUE(TakeSnapshot(user_data_, snapshots_, label).ok);
++    base::TouchFile(snapshots_.AppendASCII(label), base::Time::Now(), base::Time::Now());
++  }
++  EXPECT_FALSE(base::PathExists(snapshots_.AppendASCII("one")));
++  EXPECT_TRUE(base::PathExists(snapshots_.AppendASCII("two")));
++  EXPECT_TRUE(base::PathExists(snapshots_.AppendASCII("three")));
++}
++
++TEST_F(ThoronUpdateSnapshotTest, ABadLabelOrATakenOneIsRefused) {
++  for (const char* label : {"", "../out", "a/b", ".hidden"}) {
++    EXPECT_FALSE(TakeSnapshot(user_data_, snapshots_, label).ok) << label;
++  }
++  ASSERT_TRUE(TakeSnapshot(user_data_, snapshots_, "same").ok);
++  EXPECT_FALSE(TakeSnapshot(user_data_, snapshots_, "same").ok);
++}
++
++// P3.8, the profile's half: changed after the snapshot, put back byte for byte.
++TEST_F(ThoronUpdateSnapshotTest, ARestoreGivesBackTheSnapshotByteForByte) {
++  const std::map<std::string, std::string> before = AllFiles(user_data_);
++  const SnapshotReport report = TakeSnapshot(user_data_, snapshots_, "before-159");
++  ASSERT_TRUE(report.ok);
++  // what a new version might do to the profile
++  const base::FilePath p = user_data_.AppendASCII("Default");
++  ASSERT_TRUE(base::WriteFile(p.AppendASCII("Preferences"), "{\"made\":\"other\"}"));
++  ASSERT_TRUE(base::DeleteFile(p.AppendASCII("Bookmarks")));
++  MakeDatabase(p.AppendASCII("Web Data"), "new");
++  std::vector<std::string> problems;
++  ASSERT_TRUE(RestoreSnapshot(report.folder, user_data_, &problems));
++  std::map<std::string, std::string> after = AllFiles(user_data_);
++  // a file the snapshot did not hold is left alone
++  EXPECT_TRUE(after.contains("Default/Web Data"));
++  after.erase("Default/Web Data");
++  EXPECT_EQ(after, before);
++}
++
++TEST_F(ThoronUpdateSnapshotTest, NothingIsPutBackFromASnapshotThatDoesNotVerify) {
++  const SnapshotReport report = TakeSnapshot(user_data_, snapshots_, "before-159");
++  ASSERT_TRUE(report.ok);
++  ASSERT_TRUE(base::WriteFile(report.folder.AppendASCII("Default").AppendASCII("Bookmarks"), "x"));
++  ASSERT_TRUE(base::WriteFile(user_data_.AppendASCII("Default").AppendASCII("Preferences"), "{}"));
++  std::vector<std::string> problems;
++  EXPECT_FALSE(RestoreSnapshot(report.folder, user_data_, &problems));
++  ASSERT_EQ(problems.size(), 1u);
++  EXPECT_EQ(problems[0], "Default/Bookmarks: does not verify");
++  // the profile is as it was before the attempt
++  std::string preferences;
++  ASSERT_TRUE(base::ReadFileToString(user_data_.AppendASCII("Default").AppendASCII("Preferences"),
++                                     &preferences));
++  EXPECT_EQ(preferences, "{}");
++}
++
++// On a copy of a real profile, when one is named (THORON_SNAPSHOT_PROFILE_COPY):
++// the snapshot is taken, every file verifies, and what SQLite finds is reported.
++// Only counts and file names are printed.
++TEST(ThoronUpdateSnapshotRealTest, OnACopyOfARealProfile) {
++  const std::unique_ptr<base::Environment> env = base::Environment::Create();
++  const std::optional<std::string> copy = env->GetVar("THORON_SNAPSHOT_PROFILE_COPY");
++  if (!copy || copy->empty()) {
++    GTEST_SKIP() << "no profile copy named";
++  }
++  base::ScopedTempDir out;
++  ASSERT_TRUE(out.CreateUniqueTempDir());
++  const SnapshotReport report =
++      TakeSnapshot(base::FilePath::FromUTF8Unsafe(*copy), out.GetPath(), "real");
++  printf("snapshot of a profile copy: %d profiles, %d files, %lld bytes, %zu problem(s)\n",
++         report.profiles, report.files, static_cast<long long>(report.bytes),
++         report.problems.size());
++  for (const std::string& problem : report.problems) {
++    printf("  %s\n", problem.c_str());
++  }
++  EXPECT_GT(report.profiles, 0);
++  EXPECT_GT(report.files, 0);
++  EXPECT_TRUE(base::PathExists(report.folder.AppendASCII("snapshot.json")));
++  for (const std::string& problem : report.problems) {
++    EXPECT_EQ(problem.find("does not verify"), std::string::npos) << problem;
++  }
 +}
 +
 +}  // namespace

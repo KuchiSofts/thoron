@@ -613,8 +613,8 @@ class LauncherRunTests(unittest.TestCase):
                                                                      "variant"])
         self.assertEqual(list((package / "User Data").iterdir()), [])     # made by the launcher, and left empty
         self.assertEqual(sorted(p.name for p in package.parent.iterdir()), [package.name])
-        # known limit: the launcher starts the browser in the package's folder, not in the caller's
-        self.assertEqual(Path(found["cwd"]), package)
+        # the browser starts in the caller's working directory, so a relative file on the command line is theirs
+        self.assertEqual(Path(found["cwd"]), elsewhere)
         found = self.launch('cmd.exe /d /s /c ".\\Thoron.exe one"', cwd=package)
         self.assert_started(found, package, ["one"])
         found = self.launch(f'cmd.exe /d /s /c ""{package.name}\\Thoron.exe" one"', cwd=package.parent)  # relative
@@ -723,21 +723,19 @@ class LauncherRunTests(unittest.TestCase):
         found = self.launch(f'"{package / "Thoron.exe"}" one', wait=False)
         self.assertFalse(found["started"])
         self.assertEqual(found["code"], 4)
-        self.assertIn("cannot write its profile", found["said"])
+        self.assertIn("write-protected", found["said"])
         self.assertFalse((package / "User Data").exists())
 
-    @unittest.expectedFailure
     def test_a_file_in_the_place_of_the_profile_folder_starts_nothing(self):
-        # Known fault of the launcher (thoron_launcher_win.cc): CreateDirectoryW answers ERROR_ALREADY_EXISTS
-        # for a file as well, and the launcher takes that for the folder, so the browser is started and falls
-        # back to the PC's own profile folder. The fix is to ask whether "User Data" is a folder; then this
-        # test passes and the mark comes off.
+        # CreateDirectoryW answers ERROR_ALREADY_EXISTS for a file as well, and the browser, given a profile
+        # folder it cannot use, would fall back to the PC's own: the launcher asks whether it is a folder
         package = self.package(f"R&D 100% (new)! {CYRILLIC}")
         (package / "User Data").write_bytes(b"in the way")
         found = self.launch(f'"{package / "Thoron.exe"}" one')     # patient: a late start must be seen
         self.assertEqual((package / "User Data").read_bytes(), b"in the way")
         self.assertFalse(found["started"])
         self.assertEqual(found["code"], 4)
+        self.assertIn("a file has that name", found["said"])
 
     def test_the_processor(self):
         package = self.package(f"processor {LATIN}")

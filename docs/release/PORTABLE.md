@@ -159,15 +159,15 @@ there, and is skipped when the account running it passes over such a rule).
 
 ### 3.2 Known limits
 
-- **A file named `User Data` in the package's folder is not caught.** Windows answers "already there" for a
-  file as for a folder, and the launcher takes that for its profile folder, so it starts the browser, which
-  then falls back to the PC's own profile. The fix is one more question in the launcher (is it a folder?).
-  `test_a_file_in_the_place_of_the_profile_folder_starts_nothing` is marked as an expected failure until
-  then. The `.cmd` caught this case.
-- **The browser runs in the package's folder**, not in the folder it was started from. A file named by a
-  relative path (`Thoron.exe page.html` at a prompt elsewhere) is then looked for in the package's folder.
-  A full path, a web address, and what Windows passes for "Open with" are not affected. The working
-  directory was measured with the stand-in; a relative path with the real browser was not tried.
+- Fixed 2026-11-16, found by these tests: **a file named `User Data`** in the package's folder was taken for
+  the profile folder (Windows answers "already there" for a file as for a folder), and the browser then fell
+  back to the PC's own profile. The launcher now asks whether it is a folder and otherwise starts nothing
+  and says why (`test_a_file_in_the_place_of_the_profile_folder_starts_nothing`). A junction there is a
+  folder and is used, as the person made it.
+- Fixed 2026-11-16, found by these tests: **the browser ran in the package's folder** instead of the
+  caller's, so a file named by a relative path (`Thoron.exe page.html` at a prompt elsewhere) was looked for
+  in the package. The launcher now leaves the working directory as it is
+  (`test_started_from_another_working_directory`); a relative path with the real browser was not tried.
 - **`Application\<version>\thoron.exe` started on its own uses the PC's profile**, not the one in the
   folder. Only the launcher sets the profile's place.
 - **Full paths longer than about 250 characters** are not tried.
@@ -298,8 +298,6 @@ writes: `thoron_update.exe --root <package>\Application --status` answered `curr
 | What | Until then | Stage |
 |---|---|---|
 | Updates | A portable copy does not update itself: the updater is in the package, but nothing runs it yet (the in-browser updater and a swap at the start are later work). By hand: close Thoron and replace everything in the folder except `User Data` | P3.6, P3.12 |
-| A file named `User Data` in the folder | Not caught by the launcher (section 3.2) | P3.12 |
-| The browser's working directory | The package's folder, not the caller's (section 3.2) | P3.12 |
 | A profile that opens on any PC | Saved passwords and sign-ins are locked to the Windows account they were saved with (measured: the profile's key is kept by DPAPI). On another PC or account they cannot be read and may be lost (known from how Chromium protects them; not measured). The browser's flag that stores them unprotected is deliberately not used | P4.9 |
 | Taking over an upstream Thorium portable folder | Not offered | P4.10 |
 | A portable copy that leaves no registry values | See section 4.1; it needs a change in the browser | no stage yet; upstream's report "Portable is not fully portable" (#592) is kept under P3.12 and P4.9 |

@@ -121,7 +121,7 @@ Explanations live in the design docs under `docs/design/`.
 - **Release tools:** `release.py publish` makes no draft of a release whose update manifest is missing, unsigned, changed or names other files.
 - **Release tools:** `release.py prepare --security --highlights` writes the security fixes and a hand-written opening into the release notes.
 - **Release tools:** `release.py prepare --adblock-key` signs Thoron adblock's scriptlets and stand-ins with a release.
-- **Install:** a Windows portable package: unpack `ThoronPortable`, start `Thoron.cmd`; the profile stays in the folder, nothing is installed.
+- **Install:** a Windows portable package: unpack `ThoronPortable`, start `Thoron.exe`; the profile stays in the folder, nothing is installed. No console window, and it starts from any folder, even one with `%TEMP%` in its name.
 - **Release tools:** `portable.py` makes the portable folder and a reproducible `.zip`; it refuses a build that fails the package audit or holds profile data.
 - **QA tools:** `portable_check.py` starts the portable package for real from folders with spaces, non-Latin names and `& % !`, moved, and from a drive root.
 - **Docs:** `docs/release/PORTABLE.md`: the portable package, its launcher, what it leaves on a PC and what is not there yet.

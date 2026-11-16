@@ -7,8 +7,10 @@ from pathlib import Path
 
 from tools.audit.tests.gitfixture import GitRepo
 from tools.build import buildinfo
+from tools.release import release
 
-KEYS = {"schema", "product", "variant", "chromium_version", "thoron_commit", "thoron_dirty", "upstream_ref",
+KEYS = {"schema", "product", "variant", "chromium_version", "chromium_tag", "source_tag", "thoron_commit",
+        "thoron_dirty", "upstream_ref",
         "depot_tools_commit", "gn_args_sha256", "gn_args", "toolchain", "host", "started_utc",
         "finished_utc", "duration_s"}
 
@@ -28,6 +30,33 @@ class BuildInfoTests(unittest.TestCase):
 
     def test_chromium_version_reads_VERSION_file(self):
         self.assertEqual(buildinfo.chromium_version(self.make_src()), "156.0.8078.28")
+
+    def test_the_source_of_a_release_build_is_named_by_its_two_tags(self):
+        src = self.make_src()
+        self.assertEqual((buildinfo.chromium_tag(src), buildinfo.source_tag(src)), ("156.0.8078.28", None))
+        (src / "chrome" / "VERSION").write_text(
+            "MAJOR=158\nMINOR=0\nBUILD=8127\nPATCH=3001\nTHORON_REBUILD=1\nTHORON_VERSION=0.1.2\n", encoding="utf-8")
+        self.assertEqual(buildinfo.chromium_version(src), "158.0.8127.3001")      # the build number
+        self.assertEqual(buildinfo.chromium_tag(src), "158.0.8127.30")            # Chromium's own, without the rebuild
+        self.assertEqual(buildinfo.source_tag(src), "v0.1.2")
+        repo = GitRepo()
+        try:
+            repo.write("a.txt", b"x\n")
+            commit = repo.commit("init")
+
+            def record() -> dict:
+                return buildinfo.collect(build_root=self.tmp, src=src, thoron_repo=Path(repo.path), upstream_ref="x",
+                                         variant="v", args_text="", toolchain={}, started=1.0, finished=2.0)
+
+            info = record()
+            self.assertEqual((info["chromium_tag"], info["source_tag"], info["thoron_commit"], info["thoron_dirty"]),
+                             ("158.0.8127.30", "v0.1.2", commit, False))
+            # what the release script asks of a record (ROADMAP L.2) is what this one says
+            self.assertEqual(release.source_problems(info, "0.1.2", "158.0.8127.30"), [])
+            repo.write("b.txt", b"not committed\n")
+            self.assertIn("nothing uncommitted", release.source_problems(record(), "0.1.2", "158.0.8127.30")[0])
+        finally:
+            repo.cleanup()
 
     def test_gn_args_digest_ignores_comments_and_order(self):
         a = "# comment\nis_official_build = true\n\nuse_avx2 = true  # inline\n"

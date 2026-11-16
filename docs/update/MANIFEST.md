@@ -383,6 +383,8 @@ py -3 -I tools/release/release.py publish --dist <release folder> --version <Tho
 
 - `prepare` takes the build version and Thoron's version from the build tree (`chrome/VERSION`), and
   gives each package the address it will have as an asset of the release tagged `v<Thoron version>`.
+  A Windows release names two packages for its variant: the installer as `installed` and the portable
+  `.zip` as `portable`.
   `--critical` marks a security release; `--channel` and `--manifest-days` change `stable` and 30 days.
 - `--previous-manifest` is the manifest this one replaces. The first manifest of a channel is made with
   `--first-manifest --min-updater-version <build version>` instead. Later manifests keep the

@@ -1,13 +1,20 @@
 #!/usr/bin/env python3
 # Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be found in the LICENSE file.
-"""Release notes for a Thoron release (ROADMAP P2.13, design section 8).
+"""Release notes for a Thoron release (ROADMAP P2.13, D.4, D.10, design section 8).
 
 Sections, in this order: highlights (optional, written by hand), the Chromium version change and its
-security fixes, Thoron's changes grouped by commit prefix (CONTRIBUTING.md), upstream Thorium commits
-credited by author, patches added, removed and refreshed, fixed issues, downloads with SHA-256, credits.
+security fixes, Thoron's changes, upstream Thorium commits credited by author, patches added, removed and
+refreshed, fixed issues, downloads with SHA-256, the source and the licences (when given), credits.
 Everything comes from git and local files; nothing is fetched. Author names are used, never emails.
+
+Thoron's changes are the lines of the short changelog: with --changelog, the section of --thoron-version
+when CHANGELOG.md has one, else what waits under [Unreleased]. A changelog that is not in its short form
+(per version, one line per change under Added, Changed, Fixed, Removed and Security), or that lists no
+change for the release, is refused. Without --changelog the commits since --since are grouped by their
+prefix (CONTRIBUTING.md) instead.
     py -3 -I tools/release/changelog.py --version 158.0.8127.3000 --chromium-old 156.0.8078.80
         --chromium-new 158.0.8127.30 --repo . --since <last release tag>
+        [--changelog CHANGELOG.md] [--thoron-version 0.1.2]
         [--upstream <upstream tree> --upstream-since <commit>] [--series-old <tree> --series-new <tree>]
         [--security security.json] [--sha256sums SHA256SUMS] [--highlights highlights.md] --out NOTES.md
 security.json is a list of {"cve", "severity", "title"} taken from the Chrome Releases post.
@@ -32,10 +39,84 @@ _MERGE = re.compile(r"^Merge (pull request|branch|remote-tracking branch)\b")
 _ISSUE = re.compile(r"(?i)\b(?:fix(?:es|ed)?|close[sd]?|resolve[sd]?)\s+#(\d+)")
 _LONG_DASH = re.compile("[" + chr(0x2013) + chr(0x2014) + "]")
 CHROME_RELEASES = "https://chromereleases.googleblog.com/"
+SECTIONS = ("Added", "Changed", "Fixed", "Removed", "Security")     # of the short changelog, in its order
+UNRELEASED = "Unreleased"
+_VERSION_HEADING = re.compile(r"^## \[([^\]]+)\]")
+_ITEM = re.compile(r"^- \S")
+_LIST_MARK = re.compile(r"^(?:[-*+]|\d+[.)])(?:\s|$)")
+_LINK_DEFINITION = re.compile(r"^\[[^\]]+\]:\s+\S")
 
 
 class NotesError(Exception):
     pass
+
+
+def short_changelog(text: str) -> tuple[dict[str, dict[str, list[str]]], list[tuple[int, str]]]:
+    """CHANGELOG.md read in its short form (ROADMAP D.10): per version, and for what waits under
+    [Unreleased], one line per change under Added, Changed, Fixed, Removed and Security.
+
+    Returns the changes by version and section, and every line that is not in that form, with its number.
+    A change wrapped onto indented lines that follow it is still one change. What stands before the first
+    version, and between a version's heading and its first section, is free text."""
+    versions: dict[str, dict[str, list[str]]] = {}
+    problems: list[tuple[int, str]] = []
+    version = section = None        # where the line being read stands
+    in_change = False               # the line before was a change, or a wrapped part of one
+    for number, raw in enumerate(text.splitlines(), 1):
+        line = raw.rstrip()
+        wrapped = in_change and line[:1] in (" ", "\t") and not _LIST_MARK.match(line.strip())
+        in_change = False
+        if not line:
+            continue
+        if line.startswith("## "):
+            m = _VERSION_HEADING.match(line)
+            name = m.group(1) if m else line[3:].strip()
+            if not m:
+                problems.append((number, "a version heading is `## [0.1.1] - YYYY-MM-DD` or `## [Unreleased]`"))
+            elif name in versions:
+                problems.append((number, f"[{name}] is there twice"))
+            version, section = versions.setdefault(name, {}), None
+        elif version is None:
+            continue
+        elif line.startswith("### "):
+            name = line[4:].strip()
+            if name not in SECTIONS:
+                problems.append((number, f"`### {name}`: the sections are {', '.join(SECTIONS)}"))
+                section = []                            # its lines are read and kept nowhere
+            else:
+                if name in version:
+                    problems.append((number, f"`### {name}` is there twice under one version"))
+                section = version.setdefault(name, [])
+        elif _ITEM.match(line):
+            if section is None:
+                problems.append((number, f"a change outside {', '.join(SECTIONS)}"))
+            else:
+                section.append(line[2:].strip())
+            in_change = True
+        elif wrapped:
+            if section:
+                section[-1] += " " + line.strip()
+            in_change = True
+        elif section is not None and not _LINK_DEFINITION.match(line):
+            problems.append((number, "not a change (`- text`, one line per change) and not a section heading"))
+    return versions, problems
+
+
+def release_changes(text: str, version: str | None = None) -> tuple[str, dict[str, list[str]]]:
+    """The changes of one release from the short changelog: the section of `version` (Thoron's own, such as
+    0.1.2) when the file has one, else what waits under [Unreleased]. Returns the section taken and its
+    changes; NotesError when the file is not in its short form or that section lists no change."""
+    versions, problems = short_changelog(text)
+    if problems:
+        shown = "; ".join(f"line {number}: {what}" for number, what in problems[:5])
+        raise NotesError("the changelog is not in its short form: " + shown
+                         + (f"; and {len(problems) - 5} more" if len(problems) > 5 else ""))
+    name = version if version in versions else UNRELEASED
+    if name not in versions:
+        raise NotesError(f"the changelog has no [{UNRELEASED}] section")
+    if not any(versions[name].values()):
+        raise NotesError(f"the changelog lists no change under [{name}]: the notes of a release are its lines there")
+    return name, versions[name]
 
 
 def _clean(text: str) -> str:
@@ -127,9 +208,14 @@ def series_files(tree: Path) -> dict[str, str]:
 def render(version: str, chromium_old: str, chromium_new: str, repo: Path, since: str,
            upstream: Path | None = None, upstream_since: str | None = None,
            series: dict | None = None, security: list | None = None, artifacts: list | None = None,
-           highlights: str | None = None) -> str:
-    out = [f"# Thoron {version}", "",
-           f"Thoron {version} is based on Chromium {chromium_new} and the Thorium patch series.", ""]
+           highlights: str | None = None, changes: dict | None = None, thoron_version: str | None = None,
+           source: dict | None = None) -> str:
+    """`changes` are the release's lines of the short changelog (release_changes); without them the commits
+    are grouped by prefix. `thoron_version` is the version people see; `version` stays the build number.
+    `source` names the tag, the commit, the Chromium tag and the licence bundle of the release (L.2)."""
+    built = f"Thoron {thoron_version} (build {version})" if thoron_version else f"Thoron {version}"
+    out = [f"# Thoron {thoron_version or version}", "",
+           f"{built} is based on Chromium {chromium_new} and the Thorium patch series.", ""]
     if highlights:
         out += ["## Highlights", "", _clean(highlights), ""]
     out += ["## Chromium", ""]
@@ -143,10 +229,14 @@ def render(version: str, chromium_old: str, chromium_new: str, repo: Path, since
     entries = _log(repo, since)
     groups = group_commits([e["subject"] for e in entries])
     out += ["", "## Thoron changes"]
-    for cat in CATEGORIES:
-        if groups[cat]:
-            out += ["", f"### {cat}", ""] + [f"- {s}" for s in groups[cat]]
-    if not any(groups.values()):
+    if changes is not None:
+        listed = [(name, changes.get(name) or []) for name in SECTIONS]
+    else:
+        listed = [(cat, groups[cat]) for cat in CATEGORIES]
+    for title, lines in listed:
+        if lines:
+            out += ["", f"### {title}", ""] + [f"- {_clean(s)}" for s in lines]
+    if not any(lines for _, lines in listed):
         out += ["", "No changes of our own."]
     out += ["", "## Upstream Thorium", ""]
     if upstream and upstream_since:
@@ -175,6 +265,13 @@ def render(version: str, chromium_old: str, chromium_new: str, repo: Path, since
                     " (Verifying downloads)."]
     else:
         out.append("The files are attached to this release with `SHA256SUMS` and its signature.")
+    if source:
+        out += ["", "## Source and licences", "",
+                f"The source of this release is the tag `{source['tag']}` of this repository (commit"
+                f" `{source['commit']}`), applied to Chromium at its tag `{source['chromium_tag']}`. Parts of"
+                " Thoron are under the GNU General Public License version 3; `NOTICE` says which. Its text and"
+                f" the other licence texts are in `{source['licences']}`, and in the browser at"
+                " `chrome://credits`."]
     out += ["", "## Credits", "",
             "Thoron is based on [Thorium](https://github.com/Alex313031/thorium) by Alex313031 and gz83, and on"
             " Chromium by The Chromium Authors. Every contributor and patch source is credited in"
@@ -199,16 +296,22 @@ def main(argv: list[str]) -> int:
     p.add_argument("--security", type=Path)
     p.add_argument("--sha256sums", type=Path)
     p.add_argument("--highlights", type=Path)
+    p.add_argument("--changelog", type=Path, help="CHANGELOG.md in its short form: Thoron's changes come from it")
+    p.add_argument("--thoron-version", help="Thoron's own version, such as 0.1.2: the notes' title, and the "
+                   "changelog section taken when there is one")
     p.add_argument("--out", type=Path, required=True)
     a = p.parse_args(argv)
     try:
         series = (series_changes(series_files(a.series_old), series_files(a.series_new))
                   if a.series_old and a.series_new else None)
+        changes = (release_changes(a.changelog.read_text(encoding="utf-8-sig"), a.thoron_version)[1]
+                   if a.changelog else None)
         text = render(a.version, a.chromium_old, a.chromium_new, a.repo, a.since, a.upstream, a.upstream_since,
                       series,
                       read_security(a.security) if a.security else None,
                       a.sha256sums.read_text(encoding="utf-8").splitlines() if a.sha256sums else None,
-                      a.highlights.read_text(encoding="utf-8") if a.highlights else None)
+                      a.highlights.read_text(encoding="utf-8") if a.highlights else None,
+                      changes, a.thoron_version)
     except (NotesError, OSError, ValueError, subprocess.CalledProcessError) as exc:
         print(f"changelog: {exc}", file=sys.stderr)
         return 2

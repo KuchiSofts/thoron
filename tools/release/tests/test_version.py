@@ -1,9 +1,12 @@
 # Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be found in the LICENSE file.
-"""Thoron's version numbers (ROADMAP P2.14)."""
+"""Thoron's version numbers (ROADMAP P2.14, P2.24)."""
+import contextlib
+import io
 import tempfile
 import unittest
 from pathlib import Path
 
+from tools.audit.tests.gitfixture import GitRepo
 from tools.release import version as v
 
 VERSION_FILE = "MAJOR=158\nMINOR=0\nBUILD=8127\nPATCH=30\n"
@@ -134,6 +137,57 @@ class VersionFileTests(unittest.TestCase):
             self.assertEqual(v.main(["set", "--src", str(src), "--rebuild", "2"]), 0)
             self.assertIn("PATCH=3002", (src / "chrome" / "VERSION").read_text(encoding="utf-8"))
             self.assertEqual(v.main(["check", "--new", "158.0.8127.3002", "--previous", "158.0.8127.3002"]), 1)
+
+
+class NextReleaseTests(unittest.TestCase):
+    """P2.24: every release gets the next Thoron version; the releases are the tags of the repository."""
+
+    def test_the_first_release_and_what_follows_one(self):
+        self.assertEqual(v.next_thoron(None), ("0.1.1",))
+        self.assertEqual(v.next_thoron("0.1.1"), ("0.1.2", "0.2.0"))
+        self.assertEqual(v.next_thoron("0.2.9"), ("0.2.10", "0.3.0"))
+
+    def test_only_the_next_version_passes(self):
+        for new, previous in (("0.1.1", None), ("0.1.2", "0.1.1"), ("0.2.0", "0.1.7"), ("0.1.10", "0.1.9")):
+            self.assertEqual(v.check_next_thoron(new, previous), [], (new, previous))
+        for new, previous, says in (
+                ("0.1.2", None, "Thoron 0.1.2 is not the next version: no release is tagged yet, and the first is 0.1.1"),
+                ("0.1.1", "0.1.1", "Thoron 0.1.1 is not the next version: after the last release 0.1.1 comes 0.1.2 or "
+                                   "0.2.0"),
+                ("0.1.3", "0.1.1", "comes 0.1.2 or 0.2.0"), ("0.1.0", "0.1.1", "comes 0.1.2 or 0.2.0"),
+                ("0.2.1", "0.1.1", "comes 0.1.2 or 0.2.0"), ("1.0.0", "0.1.1", "comes 0.1.2 or 0.2.0"),
+                ("0.1.02", "0.1.1", "comes 0.1.2 or 0.2.0"),
+                ("0.1", "0.1.1", "not a Thoron version of three numbers"),
+                ("0.1.2", "v0.1.1", "not a Thoron version of three numbers")):
+            with self.subTest(new=new, previous=previous):
+                found = v.check_next_thoron(new, previous)
+                self.assertEqual(len(found), 1)
+                self.assertIn(says, found[0])
+
+    def test_the_last_release_is_the_highest_release_tag(self):
+        self.assertIsNone(v.latest_thoron([]))
+        self.assertIsNone(v.latest_thoron(["adblock-resources", "v158.0.8127.3000", "vNext", "v0.1", "0.1.1"]))
+        self.assertEqual(v.latest_thoron(["v0.1.9", "v0.1.10", "v0.1.2", "adblock-resources"]), "0.1.10")
+
+    def test_the_tags_are_read_from_the_repository(self):
+        def next_version(folder) -> tuple[int, str]:
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+                return v.main(["next", "--repo", str(folder)]), out.getvalue()
+
+        repo = GitRepo()
+        try:
+            repo.write("a.txt", b"x\n")
+            repo.commit("init")
+            self.assertEqual(v.release_tags(Path(repo.path)), [])
+            self.assertEqual(next_version(repo.path), (0, "0.1.1\n"))
+            for tag in ("v0.1.1", "adblock-resources", "v0.1.2"):
+                repo.git("tag", tag)
+            self.assertEqual(sorted(v.release_tags(Path(repo.path))), ["v0.1.1", "v0.1.2"])
+            self.assertEqual(next_version(repo.path), (0, "0.1.3\n"))
+            self.assertEqual(next_version(Path(repo.path) / "missing")[0], 2)
+        finally:
+            repo.cleanup()
 
 
 if __name__ == "__main__":

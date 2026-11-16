@@ -343,6 +343,22 @@ def portable_problems(chrome_bin: Path, version: str, variant: str, launcher: Pa
 
 
 MOST_DELTAS = 3       # ROADMAP P4.1: from each of the previous 3 releases
+SETUP = "ThoronSetup.exe"  # ROADMAP P3.19: the one installer for good, the same name in every release
+# What only the build of ThoronSetup for tests holds: its switches and the published test key.
+SETUP_TEST_MARKS = (b"from-folder", b"assume-cpu", b"message-file", b"9i/S9Os0cVBrrPIeJJEiTNqJucILUa97MBNquyuERHM=")
+
+
+def setup_problems(path: Path) -> list[str]:
+    """Why a ThoronSetup.exe may not ship: not a program, or the build for tests (its switches or the test
+    key in it)."""
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return [f"{path.name} cannot be read"]
+    out = [] if data[:2] == b"MZ" else [f"{path.name} is not a Windows program"]
+    out += [f"{path.name} holds {mark.decode()!r}: it is the build for tests" for mark in SETUP_TEST_MARKS
+            if mark in data]
+    return out
 
 
 def delta_name(old_version: str, version: str, variant: str) -> str:
@@ -527,6 +543,13 @@ def assemble(out: Path, dist: Path, version: str, variant: str, buildinfo: Path,
     if chrome_bin is not None and platform == "win":
         files.append(add_portable(chrome_bin, dist, version, variant, launcher or out / portable.BUILT_LAUNCHER,
                                   updater or out / portable.UPDATER))
+        setup = out / SETUP
+        if setup.is_file():
+            found = setup_problems(setup)
+            if found:
+                raise ReleaseError("; ".join(found))
+            shutil.copy2(setup, dist / SETUP)
+            files.append(dist / SETUP)
         if deltas_from:
             made, reports = add_deltas(chrome_bin, dist, version, variant, list(deltas_from),
                                        zucchini or out / "zucchini.exe")

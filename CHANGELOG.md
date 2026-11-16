@@ -7,6 +7,7 @@ Explanations live in the design docs under `docs/design/`.
 ## [Unreleased]
 
 ### Added
+- **Install:** `ThoronSetup.exe`, one small installer for every release: it downloads the newest signed Thoron for your processor, checks it and installs it.
 - **Updates:** a portable copy can update with a small delta instead of the whole package (about 2 % of it between two builds), checked file by file.
 - **Updates:** a download that breaks goes on where it stopped, also after a restart; on a metered connection updates wait unless you ask for them; the menu offers the relaunch once an update is installed.
 - **Updates:** going back to the version before asks for confirmation first, and can put the profile back as it was before the update, checked file by file.

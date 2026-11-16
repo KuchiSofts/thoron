@@ -2389,24 +2389,14 @@ index a8fb5de0b5a99198c901e81a2df54d7fcb9c7dd2..d134439f071fcda8430f589b0d23c950
  
 diff --git a/chrome/browser/thoron_update/BUILD.gn b/chrome/browser/thoron_update/BUILD.gn
 new file mode 100644
-index 0000000000000000000000000000000000000000..d345a9b5a9e7492291134540f13777e9ca3e7830
+index 0000000000000000000000000000000000000000..1b10ff55539379837a7ec09847faa9a0035db10d
 --- /dev/null
 +++ b/chrome/browser/thoron_update/BUILD.gn
-@@ -0,0 +1,53 @@
+@@ -0,0 +1,43 @@
 +# Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +# found in the LICENSE file.
 +
-+declare_args() {
-+  # The base64 of the Ed25519 public key update manifests are checked with
-+  # (docs/update/MANIFEST.md). Empty: the browser never looks for updates.
-+  thoron_update_public_key = ""
-+
-+  # The channel's update.json; update.json.sig and update.key are beside it.
-+  thoron_update_manifest_url =
-+      "https://github.com/KuchiSofts/thoron/releases/latest/download/update.json"
-+
-+  thoron_update_channel = "stable"
-+}
++import("//chrome/browser/thoron_update/args.gni")
 +
 +# The variant this build is, as the manifest names it.
 +if (current_cpu == "arm64") {
@@ -2446,6 +2436,32 @@ index 0000000000000000000000000000000000000000..d345a9b5a9e7492291134540f13777e9
 +    "//url",
 +  ]
 +}
+diff --git a/chrome/browser/thoron_update/args.gni b/chrome/browser/thoron_update/args.gni
+new file mode 100644
+index 0000000000000000000000000000000000000000..26d5206b0d3bd2726cb709c61e859f845a2d2587
+--- /dev/null
++++ b/chrome/browser/thoron_update/args.gni
+@@ -0,0 +1,20 @@
++# Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++# found in the LICENSE file.
++
++declare_args() {
++  # The base64 of the Ed25519 public key update manifests are checked with
++  # (docs/update/MANIFEST.md). Empty: the browser never looks for updates and
++  # ThoronSetup.exe installs nothing.
++  thoron_update_public_key = ""
++
++  # The channel's update.json; update.json.sig and update.key are beside it.
++  thoron_update_manifest_url =
++      "https://github.com/KuchiSofts/thoron/releases/latest/download/update.json"
++
++  thoron_update_channel = "stable"
++}
++
++# The public half of the published test key of the reference tool
++# (components/thoron_update/make_test_vectors.py: its private half is in the
++# repository). Only programs made for tests trust it; nothing shipped does.
++thoron_update_test_public_key = "9i/S9Os0cVBrrPIeJJEiTNqJucILUa97MBNquyuERHM="
 diff --git a/chrome/browser/thoron_update/thoron_update_win.cc b/chrome/browser/thoron_update/thoron_update_win.cc
 new file mode 100644
 index 0000000000000000000000000000000000000000..f0f1a6c7d60c6812e2f3451d3743b1bf6a11c96c
@@ -12455,10 +12471,10 @@ index 0000000000000000000000000000000000000000..3e4c28764458836945e8dccad2197a69
 +#endif  // COMPONENTS_THORON_MAIL_MAIL_SERVICE_H_
 diff --git a/components/thoron_update/BUILD.gn b/components/thoron_update/BUILD.gn
 new file mode 100644
-index 0000000000000000000000000000000000000000..bcc95deb66605d080963bb36981a39786d3a6b3d
+index 0000000000000000000000000000000000000000..f50352badfbdb9641b3097366d8a27ed133f5812
 --- /dev/null
 +++ b/components/thoron_update/BUILD.gn
-@@ -0,0 +1,122 @@
+@@ -0,0 +1,129 @@
 +# Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +# found in the LICENSE file.
 +
@@ -12477,6 +12493,8 @@ index 0000000000000000000000000000000000000000..bcc95deb66605d080963bb36981a3978
 +    "manifest.h",
 +    "package.cc",
 +    "package.h",
++    "setup_plan.cc",
++    "setup_plan.h",
 +    "portable_package.cc",
 +    "portable_package.h",
 +    "snapshot.cc",
@@ -12525,6 +12543,7 @@ index 0000000000000000000000000000000000000000..bcc95deb66605d080963bb36981a3978
 +    "manifest_unittest.cc",
 +    "package_unittest.cc",
 +    "portable_package_unittest.cc",
++    "setup_plan_unittest.cc",
 +    "snapshot_unittest.cc",
 +    "swap_unittest.cc",
 +    "update_client_test_data.h",
@@ -12568,7 +12587,11 @@ index 0000000000000000000000000000000000000000..bcc95deb66605d080963bb36981a3978
 +    ":thoron_update_unittests",
 +  ]
 +  if (is_win) {
-+    deps += [ "launcher:thoron_launcher" ]
++    deps += [
++      "launcher:thoron_launcher",
++      "setup:thoron_setup",
++      "setup:thoron_setup_for_tests",
++    ]
 +  }
 +}
 +
@@ -12600,10 +12623,10 @@ index 0000000000000000000000000000000000000000..7ec239331342b7f306c7d09622c231e6
 +]
 diff --git a/components/thoron_update/README.md b/components/thoron_update/README.md
 new file mode 100644
-index 0000000000000000000000000000000000000000..a9eaf82dcece3be8971bc66e47fbaf7895ec5cab
+index 0000000000000000000000000000000000000000..7411a1891eab751b076c52cb62d43795be6e7c64
 --- /dev/null
 +++ b/components/thoron_update/README.md
-@@ -0,0 +1,198 @@
+@@ -0,0 +1,206 @@
 +# thoron_update
 +
 +The core of Thoron's updater (ROADMAP P3.3): what a copy of Thoron makes of the two files a release
@@ -12670,6 +12693,14 @@ index 0000000000000000000000000000000000000000..a9eaf82dcece3be8971bc66e47fbaf78
 +  its restore (P3.7, P3.8).
 +- `cli.h`: the command line, `thoron_update.exe`, and the update modes (P3.11).
 +- `launcher/`: `Thoron.exe` of the portable package (P3.12).
++- `setup/`: `ThoronSetup.exe`, the one installer for good (P3.19): it fetches the channel's signed manifest
++  with Windows' own HTTP client (https only, no cookies, the system's proxy), checks it as every updater does,
++  picks the fastest build the processor runs (`setup_plan.h`: AVX2, then SSE4; a release whose
++  `min_updater_version` is above its own build stops it), downloads that release's full installer, checks it
++  on the disk against the signed manifest and runs it. The same file serves every release. Its build for
++  tests (`thoron_setup_for_tests`, never shipped) trusts only the published test key and takes the release
++  from a folder; `tools/qa/thoron_setup_check.py` runs it, and `release.py` ships `ThoronSetup.exe` only when
++  it holds none of the test build's switches.
 +- `update_client.h`: the browser's own updater (P3.20, P3.9): fetches `update.json`, `update.json.sig` and
 +  `update.key` beside it (no cookies, no cache, https only, redirects included), decides with
 +  `CheckUpdateWithKeys`, keeps the highest accepted serial and the key statements that lead to a trusted
@@ -21824,6 +21855,656 @@ index 0000000000000000000000000000000000000000..27f891d13b10545dc2c188835a5306e2
 +  EXPECT_FALSE(ReplaceLauncher(Path("bare.zip"), launcher));
 +  ASSERT_TRUE(base::ReadFileToString(launcher, &read));
 +  EXPECT_EQ(read, "launcher of p");
++}
++
++}  // namespace
++}  // namespace thoron_update
+diff --git a/components/thoron_update/setup/BUILD.gn b/components/thoron_update/setup/BUILD.gn
+new file mode 100644
+index 0000000000000000000000000000000000000000..e4ece09a964a66edf4249b3338daa420ef05e6df
+--- /dev/null
++++ b/components/thoron_update/setup/BUILD.gn
+@@ -0,0 +1,43 @@
++# Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++# found in the LICENSE file.
++
++import("//chrome/browser/thoron_update/args.gni")
++
++# ThoronSetup.exe, the one installer for good (ROADMAP P3.19).
++template("thoron_setup_executable") {
++  executable(target_name) {
++    forward_variables_from(invoker, [ "output_name" ])
++    sources = [ "thoron_setup_win.cc" ]
++    configs -= [ "//build/config/win:console" ]
++    configs += [ "//build/config/win:windowed" ]
++    defines = invoker.defines
++    deps = [
++      "//base",
++      "//base/version_info",
++      "//components/thoron_update",
++      "//url",
++    ]
++    libs = [
++      "comctl32.lib",
++      "winhttp.lib",
++    ]
++  }
++}
++
++thoron_setup_executable("thoron_setup") {
++  output_name = "ThoronSetup"
++  defines = [
++    "THORON_SETUP_PUBLIC_KEY=\"$thoron_update_public_key\"",
++    "THORON_SETUP_MANIFEST_URL=\"$thoron_update_manifest_url\"",
++  ]
++}
++
++# For tests only, never shipped: the published test key of the reference tool
++# (make_test_vectors.py), and the seams the tests use (thoron_setup_win.cc).
++thoron_setup_executable("thoron_setup_for_tests") {
++  defines = [
++    "THORON_SETUP_FOR_TESTS",
++    "THORON_SETUP_PUBLIC_KEY=\"$thoron_update_test_public_key\"",
++    "THORON_SETUP_MANIFEST_URL=\"https://github.com/KuchiSofts/thoron/releases/download/v0.1.2/update.json\"",
++  ]
++}
+diff --git a/components/thoron_update/setup/thoron_setup_win.cc b/components/thoron_update/setup/thoron_setup_win.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..a386969ce53dd0f7f3b285e1c846e1c526b36360
+--- /dev/null
++++ b/components/thoron_update/setup/thoron_setup_win.cc
+@@ -0,0 +1,372 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++// ThoronSetup.exe, the one installer for good (ROADMAP P3.19): a small program
++// that never changes with a release. It fetches the channel's signed update
++// manifest from Thoron's releases on GitHub, checks it as every updater does
++// (manifest.h), picks the fastest build this processor runs (setup_plan.h),
++// downloads that release's full installer, checks its length and SHA-256
++// against the signed manifest, and runs it. Anything that does not verify is
++// never run.
++//
++// Exit status: 0 installed; 2 the release cannot be verified; 3 no installer
++// for this computer; 4 the network failed; 5 the download is not the one the
++// manifest names; 6 the installer failed; 7 this Setup is too old.
++//
++// The build for tests (thoron_setup_for_tests, never shipped: its key is the
++// published test key) also takes --from-folder <dir> (the release's files from
++// a folder instead of the network), --now <seconds>, --assume-cpu
++// avx2|sse4|old and --message-file <path> (the message is written there
++// instead of shown).
++
++#include <windows.h>
++
++#include <commctrl.h>
++#include <winhttp.h>
++
++#include <optional>
++#include <string>
++#include <vector>
++
++#include "base/at_exit.h"
++#include "base/base64.h"
++#include "base/command_line.h"
++#include "base/files/file.h"
++#include "base/files/file_path.h"
++#include "base/files/file_util.h"
++#include "base/process/launch.h"
++#include "base/process/process.h"
++#include "base/strings/string_number_conversions.h"
++#include "base/strings/utf_string_conversions.h"
++#include "base/time/time.h"
++#include "base/version_info/version_info.h"
++#include "components/thoron_update/manifest.h"
++#include "components/thoron_update/package.h"
++#include "components/thoron_update/setup_plan.h"
++#include "url/gurl.h"
++
++namespace {
++
++constexpr char kPublicKey[] = THORON_SETUP_PUBLIC_KEY;
++constexpr char kManifestUrl[] = THORON_SETUP_MANIFEST_URL;
++constexpr char kChannel[] = "stable";
++
++enum ExitCode {
++  kInstalled = 0,
++  kCannotVerify = 2,
++  kNoInstaller = 3,
++  kNetwork = 4,
++  kBadDownload = 5,
++  kInstallerFailed = 6,
++  kSetupTooOld = 7,
++};
++
++constexpr UINT kProgressMessage = WM_APP + 1;
++constexpr UINT kDoneMessage = WM_APP + 2;
++
++struct State {
++  HWND window = nullptr;
++  HWND label = nullptr;
++  HWND bar = nullptr;
++  int exit_code = kNetwork;
++  std::wstring message;
++};
++State g_state;
++
++const base::CommandLine& Command() {
++  return *base::CommandLine::ForCurrentProcess();
++}
++
++#if defined(THORON_SETUP_FOR_TESTS)
++bool ForTests() {
++  return true;
++}
++#else
++bool ForTests() {
++  return false;
++}
++#endif
++
++void SetLabel(const std::wstring& text) {
++  if (g_state.label) {
++    ::SetWindowTextW(g_state.label, text.c_str());
++  }
++}
++
++// --- the network: Windows' own HTTP client, https only, the system's proxy ---
++
++std::optional<std::string> Fetch(const std::string& url_text,
++                                 int64_t most,
++                                 bool report_progress) {
++  const GURL url(url_text);
++  if (!url.is_valid() || !url.SchemeIs("https")) {
++    return std::nullopt;
++  }
++  HINTERNET session = ::WinHttpOpen(L"Thoron Setup", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
++                                    WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
++  if (!session) {
++    return std::nullopt;
++  }
++  DWORD protocols = WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_2 | WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_3;
++  ::WinHttpSetOption(session, WINHTTP_OPTION_SECURE_PROTOCOLS, &protocols, sizeof(protocols));
++  std::optional<std::string> body;
++  const std::wstring host = base::UTF8ToWide(url.host());
++  const std::wstring path = base::UTF8ToWide(url.PathForRequest());
++  HINTERNET connection = ::WinHttpConnect(session, host.c_str(),
++                                          static_cast<INTERNET_PORT>(url.EffectiveIntPort()), 0);
++  HINTERNET request = connection
++                          ? ::WinHttpOpenRequest(connection, L"GET", path.c_str(), nullptr,
++                                                 WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES,
++                                                 WINHTTP_FLAG_SECURE)
++                          : nullptr;
++  // Redirects stay on https (the default policy refuses https to http); no
++  // cookies are kept or sent.
++  DWORD no_cookies = WINHTTP_DISABLE_COOKIES;
++  if (request) {
++    ::WinHttpSetOption(request, WINHTTP_OPTION_DISABLE_FEATURE, &no_cookies, sizeof(no_cookies));
++  }
++  if (request &&
++      ::WinHttpSendRequest(request, WINHTTP_NO_ADDITIONAL_HEADERS, 0, WINHTTP_NO_REQUEST_DATA, 0, 0,
++                           0) &&
++      ::WinHttpReceiveResponse(request, nullptr)) {
++    DWORD status = 0;
++    DWORD size = sizeof(status);
++    ::WinHttpQueryHeaders(request, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
++                          WINHTTP_HEADER_NAME_BY_INDEX, &status, &size, WINHTTP_NO_HEADER_INDEX);
++    if (status == 200) {
++      std::string data;
++      bool ok = true;
++      while (ok) {
++        DWORD available = 0;
++        if (!::WinHttpQueryDataAvailable(request, &available)) {
++          ok = false;
++          break;
++        }
++        if (available == 0) {
++          break;
++        }
++        if (static_cast<int64_t>(data.size() + available) > most) {
++          ok = false;  // longer than may be: refused, never cut
++          break;
++        }
++        const size_t at = data.size();
++        data.resize(at + available);
++        DWORD read = 0;
++        if (!::WinHttpReadData(request, data.data() + at, available, &read)) {
++          ok = false;
++          break;
++        }
++        data.resize(at + read);
++        if (report_progress && g_state.window) {
++          ::PostMessageW(g_state.window, kProgressMessage,
++                         static_cast<WPARAM>(data.size() * 100 / std::max<int64_t>(1, most - 1)), 0);
++        }
++      }
++      if (ok) {
++        body = std::move(data);
++      }
++    }
++  }
++  if (request) {
++    ::WinHttpCloseHandle(request);
++  }
++  if (connection) {
++    ::WinHttpCloseHandle(connection);
++  }
++  ::WinHttpCloseHandle(session);
++  return body;
++}
++
++// The release's files: from the network, or (tests) from a folder.
++std::optional<std::string> ReleaseFile(const std::string& url, int64_t most, bool progress) {
++  if (ForTests() && Command().HasSwitch("from-folder")) {
++    const base::FilePath file =
++        Command().GetSwitchValuePath("from-folder").AppendASCII(GURL(url).ExtractFileName());
++    std::string data;
++    if (!base::ReadFileToStringWithMaxSize(file, &data, static_cast<size_t>(most))) {
++      return std::nullopt;
++    }
++    return data;
++  }
++  return Fetch(url, most, progress);
++}
++
++thoron_update::Processor TheProcessor() {
++  thoron_update::Processor cpu = thoron_update::ThisProcessor();
++  if (ForTests() && Command().HasSwitch("assume-cpu")) {
++    const std::string assume = Command().GetSwitchValueASCII("assume-cpu");
++    if (assume == "sse4" || assume == "old") {
++      cpu.avx = cpu.avx2 = cpu.fma3 = cpu.avx512 = false;
++    }
++    if (assume == "old") {
++      cpu.sse41 = cpu.sse42 = false;
++    }
++  }
++  return cpu;
++}
++
++int64_t Now() {
++  int64_t now = (base::Time::Now() - base::Time::UnixEpoch()).InSeconds();
++  if (ForTests() && Command().HasSwitch("now")) {
++    base::StringToInt64(Command().GetSwitchValueASCII("now"), &now);
++  }
++  return now;
++}
++
++void Finish(int code, const std::string& message) {
++  g_state.exit_code = code;
++  g_state.message = base::UTF8ToWide(message);
++}
++
++// --- the work -----------------------------------------------------------------
++
++void Work() {
++  SetLabel(L"Looking for the newest Thoron...");
++  const GURL manifest_url(kManifestUrl);
++  const std::optional<std::string> manifest =
++      ReleaseFile(kManifestUrl, thoron_update::kMaxManifestBytes + 1, false);
++  if (!manifest) {
++    return Finish(kNetwork, "Thoron Setup could not reach Thoron's releases on GitHub. Check the "
++                            "connection and try again.");
++  }
++  const std::string signature =
++      ReleaseFile(std::string(kManifestUrl) + ".sig", thoron_update::kSignatureBytes + 1, false)
++          .value_or(std::string());
++  std::vector<std::string> statements;
++  if (const std::optional<std::string> keys = ReleaseFile(
++          manifest_url.Resolve("update.key").spec(),
++          thoron_update::kKeyStatementBytes * thoron_update::kMostKeyStatements + 1, false)) {
++    for (size_t at = 0; at + thoron_update::kKeyStatementBytes <= keys->size() &&
++                        keys->size() % thoron_update::kKeyStatementBytes == 0;
++         at += thoron_update::kKeyStatementBytes) {
++      statements.push_back(keys->substr(at, thoron_update::kKeyStatementBytes));
++    }
++  }
++  thoron_update::PublicKey built_in = {};
++  std::string key;
++  if (base::Base64Decode(kPublicKey, &key) && key.size() == built_in.size()) {
++    std::copy(key.begin(), key.end(), built_in.begin());
++  }
++  const std::optional<thoron_update::BuildVersion> own =
++      thoron_update::ParseBuildVersion(version_info::GetVersionNumber());
++  const thoron_update::SetupPlan plan = thoron_update::PlanSetup(
++      *manifest, signature, thoron_update::TrustedKeys(built_in, statements), {"github.com"},
++      kChannel, own.value_or(thoron_update::BuildVersion()), TheProcessor(), Now());
++  if (plan.outcome != thoron_update::Outcome::kUpdate || !plan.file) {
++    const int code = plan.outcome == thoron_update::Outcome::kNoPackage ? kNoInstaller
++                     : plan.outcome == thoron_update::Outcome::kUpdaterTooOld
++                         ? kSetupTooOld
++                         : kCannotVerify;
++    return Finish(code, thoron_update::SetupMessage(plan));
++  }
++
++  SetLabel(base::UTF8ToWide("Downloading Thoron " + plan.thoron_version + "..."));
++  const std::optional<std::string> installer = ReleaseFile(plan.file->url, plan.file->size + 1, true);
++  if (!installer) {
++    return Finish(kNetwork, "Thoron Setup could not download Thoron " + plan.thoron_version +
++                                ". Check the connection and try again.");
++  }
++  base::FilePath folder;
++  if (!base::GetTempDir(&folder)) {
++    return Finish(kBadDownload, "Thoron Setup cannot write its download.");
++  }
++  folder = folder.AppendASCII("ThoronSetup");
++  const base::FilePath file = folder.AppendASCII(plan.file->sha256.substr(0, 16) + ".exe");
++  base::DeleteFile(file);
++  if (!base::CreateDirectory(folder) || !base::WriteFile(file, *installer)) {
++    return Finish(kBadDownload, "Thoron Setup cannot write its download.");
++  }
++  // What runs is the file as it lies on the disk, so that is what is checked.
++  if (thoron_update::CheckFile(file, *plan.file) != thoron_update::FileCheck::kOk) {
++    base::DeleteFile(file);
++    return Finish(kBadDownload, "The download is not the installer Thoron's signed release names, so "
++                                "it was deleted and nothing was installed.");
++  }
++
++  SetLabel(base::UTF8ToWide("Installing Thoron " + plan.thoron_version + "..."));
++  base::Process process = base::LaunchProcess(base::CommandLine(file), base::LaunchOptions());
++  int code = -1;
++  if (!process.IsValid() || !process.WaitForExit(&code)) {
++    base::DeleteFile(file);
++    return Finish(kInstallerFailed, "The installer of Thoron could not be started.");
++  }
++  base::DeleteFile(file);
++  // chrome/installer/util/util_constants.h: installed, repaired, updated, the
++  // version already there, a newer one already there, updated while in use.
++  for (int fine : {0, 1, 2, 3, 4, 30}) {
++    if (code == fine) {
++      return Finish(kInstalled, "Thoron " + plan.thoron_version + " is installed.");
++    }
++  }
++  Finish(kInstallerFailed,
++         "The installer of Thoron stopped with code " + base::NumberToString(code) + ".");
++}
++
++DWORD WINAPI WorkThread(void*) {
++  Work();
++  ::PostMessageW(g_state.window, kDoneMessage, 0, 0);
++  return 0;
++}
++
++LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM w, LPARAM l) {
++  switch (message) {
++    case kProgressMessage:
++      ::SendMessageW(g_state.bar, PBM_SETPOS, std::min<WPARAM>(w, 100), 0);
++      return 0;
++    case kDoneMessage:
++      ::DestroyWindow(window);
++      return 0;
++    case WM_CLOSE:
++      // The work is not stopped halfway; the window goes when it is done.
++      return 0;
++    case WM_DESTROY:
++      ::PostQuitMessage(0);
++      return 0;
++  }
++  return ::DefWindowProcW(window, message, w, l);
++}
++
++}  // namespace
++
++int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show) {
++  base::AtExitManager at_exit;
++  base::CommandLine::Init(0, nullptr);
++  INITCOMMONCONTROLSEX controls = {sizeof(controls), ICC_PROGRESS_CLASS};
++  ::InitCommonControlsEx(&controls);
++
++  WNDCLASSW type = {};
++  type.lpfnWndProc = WindowProc;
++  type.hInstance = instance;
++  type.hCursor = ::LoadCursorW(nullptr, IDC_ARROW);
++  type.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
++  type.lpszClassName = L"ThoronSetup";
++  ::RegisterClassW(&type);
++  const bool quiet = ForTests() && Command().HasSwitch("message-file");
++  g_state.window = ::CreateWindowExW(0, L"ThoronSetup", L"Thoron Setup",
++                                     WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU, CW_USEDEFAULT,
++                                     CW_USEDEFAULT, 440, 150, nullptr, nullptr, instance, nullptr);
++  g_state.label = ::CreateWindowExW(0, L"STATIC", L"", WS_CHILD | WS_VISIBLE, 20, 20, 390, 24,
++                                    g_state.window, nullptr, instance, nullptr);
++  g_state.bar = ::CreateWindowExW(0, PROGRESS_CLASSW, nullptr, WS_CHILD | WS_VISIBLE, 20, 55, 390,
++                                  20, g_state.window, nullptr, instance, nullptr);
++  if (!quiet) {
++    ::ShowWindow(g_state.window, show);
++  }
++  HANDLE worker = ::CreateThread(nullptr, 0, WorkThread, nullptr, 0, nullptr);
++  MSG message;
++  while (::GetMessageW(&message, nullptr, 0, 0) > 0) {
++    ::TranslateMessage(&message);
++    ::DispatchMessageW(&message);
++  }
++  if (worker) {
++    ::WaitForSingleObject(worker, INFINITE);
++    ::CloseHandle(worker);
++  }
++  if (quiet) {
++    base::WriteFile(Command().GetSwitchValuePath("message-file"),
++                    base::WideToUTF8(g_state.message));
++  } else if (g_state.exit_code != kInstalled) {
++    ::MessageBoxW(nullptr, g_state.message.c_str(), L"Thoron Setup", MB_OK | MB_ICONWARNING);
++  }
++  return g_state.exit_code;
++}
+diff --git a/components/thoron_update/setup_plan.cc b/components/thoron_update/setup_plan.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..544bc76809b5d8e900769a9cc774a334172a69be
+--- /dev/null
++++ b/components/thoron_update/setup_plan.cc
+@@ -0,0 +1,72 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "components/thoron_update/setup_plan.h"
++
++namespace thoron_update {
++
++SetupPlan PlanSetup(std::string_view manifest,
++                    std::string_view signature,
++                    const std::vector<PublicKey>& keys,
++                    const std::vector<std::string>& allowed_hosts,
++                    const std::string& channel,
++                    const BuildVersion& own_build,
++                    const Processor& cpu,
++                    int64_t now) {
++  SetupPlan plan;
++  const std::vector<Variant> variants = VariantsFor(Os::kWindows, cpu);
++  if (variants.empty()) {
++    plan.outcome = Outcome::kNoPackage;
++    return plan;
++  }
++  for (Variant variant : variants) {
++    CopyInfo copy;
++    copy.allowed_hosts = allowed_hosts;
++    copy.channel = channel;
++    copy.installed = BuildVersion();  // nothing installed
++    copy.updater = own_build;
++    copy.variant = variant;
++    copy.kind = Kind::kInstalled;
++    const Decision decision = CheckUpdateWithKeys(manifest, signature, copy, keys, now);
++    plan.outcome = decision.outcome;
++    plan.variant = variant;
++    if (decision.manifest) {
++      plan.version = ToString(decision.manifest->version);
++      plan.thoron_version = decision.manifest->thoron_version;
++    }
++    if (decision.outcome == Outcome::kUpdate && decision.full) {
++      plan.file = decision.full;
++      return plan;
++    }
++    // Only a release without an installer for this build gives way to the
++    // next build; anything else is the answer.
++    if (decision.outcome != Outcome::kNoPackage) {
++      return plan;
++    }
++  }
++  return plan;
++}
++
++std::string SetupMessage(const SetupPlan& plan) {
++  switch (plan.outcome) {
++    case Outcome::kUpdate:
++      return "Thoron " + plan.thoron_version + " is ready to install.";
++    case Outcome::kNoPackage:
++      return plan.version.empty()
++                 ? "This computer's processor is too old for Thoron: it needs SSE4.2 at least."
++                 : "Thoron " + plan.thoron_version + " has no installer for this computer yet.";
++    case Outcome::kUpdaterTooOld:
++      return "This copy of Thoron Setup is too old for the newest release. Download Thoron Setup "
++             "again from Thoron's releases page on GitHub.";
++    case Outcome::kNotYetValid:
++    case Outcome::kExpired:
++      return "Thoron Setup cannot verify the release (" + std::string(OutcomeName(plan.outcome)) +
++             "), so it installs nothing. If this computer's date and time are wrong, set them and "
++             "try again.";
++    default:
++      return "Thoron Setup cannot verify the release (" + std::string(OutcomeName(plan.outcome)) +
++             "), so it installs nothing.";
++  }
++}
++
++}  // namespace thoron_update
+diff --git a/components/thoron_update/setup_plan.h b/components/thoron_update/setup_plan.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..940796ec9da937f61ae3725e9e95304d9582ff5e
+--- /dev/null
++++ b/components/thoron_update/setup_plan.h
+@@ -0,0 +1,50 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef COMPONENTS_THORON_UPDATE_SETUP_PLAN_H_
++#define COMPONENTS_THORON_UPDATE_SETUP_PLAN_H_
++
++#include <stdint.h>
++
++#include <optional>
++#include <string>
++#include <string_view>
++#include <vector>
++
++#include "components/thoron_update/manifest.h"
++#include "components/thoron_update/package.h"
++
++// What the one installer for good, ThoronSetup.exe (ROADMAP P3.19), downloads:
++// the newest release's full installer for the fastest build this processor
++// runs. It is an updater too, from nothing installed (0.0.0.0): the manifest is
++// checked as any updater checks it (manifest.h), and a release whose
++// min_updater_version is above ThoronSetup's own build stops it.
++namespace thoron_update {
++
++struct SetupPlan {
++  // kUpdate: `file` is the installer to download; anything else is why not.
++  Outcome outcome = Outcome::kInvalidCopy;
++  std::optional<PackageFile> file;
++  Variant variant = Variant::kWinX64Sse4;
++  std::string version;         // the release's build version
++  std::string thoron_version;  // and Thoron's own, for people
++};
++
++// The plan for the manifest and signature as fetched, under `keys`, on this
++// processor (`cpu`, Windows). The variants that run on it are tried fastest
++// first; one without an installer gives way to the next (AVX2, then SSE4).
++SetupPlan PlanSetup(std::string_view manifest,
++                    std::string_view signature,
++                    const std::vector<PublicKey>& keys,
++                    const std::vector<std::string>& allowed_hosts,
++                    const std::string& channel,
++                    const BuildVersion& own_build,
++                    const Processor& cpu,
++                    int64_t now);
++
++// A sentence for the person about a plan that is not kUpdate.
++std::string SetupMessage(const SetupPlan& plan);
++
++}  // namespace thoron_update
++
++#endif  // COMPONENTS_THORON_UPDATE_SETUP_PLAN_H_
+diff --git a/components/thoron_update/setup_plan_unittest.cc b/components/thoron_update/setup_plan_unittest.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..9ff45f1c48f2a4055ef0d7742f09012e9e607e3f
+--- /dev/null
++++ b/components/thoron_update/setup_plan_unittest.cc
+@@ -0,0 +1,83 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "components/thoron_update/setup_plan.h"
++
++#include <string>
++
++#include "components/thoron_update/update_client_test_data.h"
++#include "testing/gtest/include/gtest/gtest.h"
++
++namespace thoron_update {
++namespace {
++
++namespace data = client_test;
++
++std::string Bytes(const uint8_t* bytes, size_t n) {
++  return std::string(reinterpret_cast<const char*>(bytes), n);
++}
++
++PublicKey TestKey() {
++  PublicKey key;
++  std::copy(std::begin(data::kPublicKey), std::end(data::kPublicKey), key.begin());
++  return key;
++}
++
++Processor Cpu(bool sse4, bool avx2) {
++  Processor cpu;
++  cpu.x64 = true;
++  cpu.sse41 = cpu.sse42 = sse4;
++  cpu.avx = cpu.avx2 = cpu.fma3 = avx2;
++  return cpu;
++}
++
++SetupPlan Plan(const Processor& cpu,
++               const std::string& build = data::kInstalled,
++               int64_t now = data::kNow,
++               std::string signature = Bytes(data::kSignature, sizeof(data::kSignature))) {
++  return PlanSetup(data::kManifest, signature, {TestKey()}, {"github.com"}, "stable",
++                   *ParseBuildVersion(build), cpu, now);
++}
++
++TEST(ThoronUpdateSetupPlanTest, TheNewestFullInstallerForTheFastestBuild) {
++  const SetupPlan plan = Plan(Cpu(true, true));
++  EXPECT_EQ(plan.outcome, Outcome::kUpdate);
++  ASSERT_TRUE(plan.file);
++  // the full installer, never a delta: nothing is installed yet
++  EXPECT_EQ(plan.file->url, data::kInstallerUrl);
++  EXPECT_EQ(plan.variant, Variant::kWinX64Avx2);
++  EXPECT_EQ(plan.version, data::kNewest);
++  EXPECT_EQ(plan.thoron_version, "0.1.2");
++}
++
++TEST(ThoronUpdateSetupPlanTest, AProcessorWithoutAvx2GetsTheSse4BuildOrIsTold) {
++  // the test release has no SSE4 installer
++  const SetupPlan plan = Plan(Cpu(true, false));
++  EXPECT_EQ(plan.outcome, Outcome::kNoPackage);
++  EXPECT_EQ(plan.variant, Variant::kWinX64Sse4);
++  EXPECT_NE(SetupMessage(plan).find("no installer for this computer yet"), std::string::npos);
++  const SetupPlan old = Plan(Cpu(false, false));
++  EXPECT_EQ(old.outcome, Outcome::kNoPackage);
++  EXPECT_NE(SetupMessage(old).find("too old for Thoron"), std::string::npos);
++}
++
++TEST(ThoronUpdateSetupPlanTest, ASetupBelowTheMinimumUpdaterStops) {
++  const SetupPlan plan = Plan(Cpu(true, true), "158.0.8127.2999");
++  EXPECT_EQ(plan.outcome, Outcome::kUpdaterTooOld);
++  EXPECT_NE(SetupMessage(plan).find("Download Thoron Setup again"), std::string::npos);
++}
++
++TEST(ThoronUpdateSetupPlanTest, NothingIsInstalledFromAReleaseThatDoesNotVerify) {
++  std::string forged = Bytes(data::kSignature, sizeof(data::kSignature));
++  forged[3] ^= 1;
++  const SetupPlan bad = Plan(Cpu(true, true), data::kInstalled, data::kNow, forged);
++  EXPECT_EQ(bad.outcome, Outcome::kBadSignature);
++  EXPECT_FALSE(bad.file);
++  EXPECT_NE(SetupMessage(bad).find("installs nothing"), std::string::npos);
++  const SetupPlan expired = Plan(Cpu(true, true), data::kInstalled, data::kNow + 200 * 86400);
++  EXPECT_EQ(expired.outcome, Outcome::kExpired);
++  EXPECT_NE(SetupMessage(expired).find("date and time"), std::string::npos);
 +}
 +
 +}  // namespace

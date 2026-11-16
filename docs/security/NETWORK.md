@@ -254,6 +254,11 @@ metered connection the looks on their own fetch the three small files and downlo
 download that breaks goes on with an HTTP `Range` request for the rest. The requests use the browser's
 network settings, so a proxy set in Windows is used as for any page.
 
+`ThoronSetup.exe` (ROADMAP P3.19) asks the same `github.com` addresses for the same three files and then
+for the newest full installer, through Windows' own HTTP client: HTTPS only (a redirect to HTTP is
+refused), no cookies, the system's proxy. Without a key in the build (every build until P2.11) nothing it
+fetches verifies, so it installs nothing.
+
 The requests are plain HTTPS GETs through the browser's own network context: no profile, no cookies or
 other credentials, not stored in the HTTP cache, no identifiers; a redirect away from HTTPS is refused.
 A manifest is read only after its signature holds (`docs/update/MANIFEST.md`), a package is used only

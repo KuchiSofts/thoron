@@ -1537,5 +1537,22 @@ class DeltaReleaseTests(unittest.TestCase):
                                Path("zucchini.exe"))
 
 
+
+class SetupReleaseTests(unittest.TestCase):
+    """ROADMAP P3.19: the ThoronSetup.exe a release ships."""
+
+    def test_the_setup_for_tests_never_ships(self):
+        with tempfile.TemporaryDirectory() as d:
+            shipped = Path(d) / "ThoronSetup.exe"
+            shipped.write_bytes(b"MZ" + b"\0" * 100 + b"a program")
+            self.assertEqual(rel.setup_problems(shipped), [])
+            for mark in rel.SETUP_TEST_MARKS:
+                with self.subTest(mark=mark):
+                    shipped.write_bytes(b"MZ" + b"\0" * 100 + mark)
+                    self.assertEqual(len(rel.setup_problems(shipped)), 1)
+            shipped.write_bytes(b"not a program")
+            self.assertIn("is not a Windows program", rel.setup_problems(shipped)[0])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -18,6 +18,13 @@ before it is at the top of the [roadmap](https://github.com/KuchiSofts/thoron/bl
 - [Building from source](Building-from-source)
 - [Questions and answers](Questions-and-answers)
 
+## Step-by-step guides
+
+- [Install guide](https://github.com/KuchiSofts/thoron/blob/main/docs/user/INSTALL.md)
+- [Import guide](https://github.com/KuchiSofts/thoron/blob/main/docs/user/IMPORT.md)
+- [Updates and rollback guide](https://github.com/KuchiSofts/thoron/blob/main/docs/user/UPDATES.md)
+- [Portable passphrase guide](https://github.com/KuchiSofts/thoron/blob/main/docs/user/PORTABLE_PASSPHRASE.md)
+
 ## What Thoron promises
 
 - **Your data stays yours.** An update or an import never deletes, moves or changes your profile. No telemetry.

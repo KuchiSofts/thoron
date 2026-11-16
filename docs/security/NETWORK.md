@@ -239,6 +239,24 @@ Not contacted yet (from the source): once Thoron has its signing key (ROADMAP **
 check also asks `github.com` for a signed file of the blocker's stand-in scripts
 (`KuchiSofts/thoron/releases/download/adblock-resources/`). Without a key nothing is asked.
 
+### 7.1 The updater (ROADMAP P3.20)
+
+Not contacted yet: a build has no update key until the key ceremony (ROADMAP **P2.11**), and without one
+the updater asks nothing, also when the About page is opened. With a key, an installed copy on Windows
+asks `github.com` for three small files of the newest published release
+(`KuchiSofts/thoron/releases/latest/download/update.json`, `update.json.sig` and `update.key`, the last
+one only there when the release moves to a new key), and, when they name a newer release, for its
+package; GitHub answers those with a redirect to its file host (`objects.githubusercontent.com` or
+`release-assets.githubusercontent.com`). It looks 10 minutes after the start and then every 5 hours,
+only in the update mode `auto` (`thoron_update --mode`), and whenever the About page is opened. The
+switch `--disable-background-networking` stops the looks on its own; the About page still looks.
+
+The requests are plain HTTPS GETs through the browser's own network context: no profile, no cookies or
+other credentials, not stored in the HTTP cache, no identifiers; a redirect away from HTTPS is refused.
+A manifest is read only after its signature holds (`docs/update/MANIFEST.md`), a package is used only
+when its length and SHA-256 are the signed manifest's, and what the updater keeps (the highest serial
+it accepted, the key statements it trusts) is in the browser's `Local State`, outside every profile.
+
 ## 8. Measuring again
 
 ```powershell

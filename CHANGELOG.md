@@ -131,6 +131,7 @@ Explanations live in the design docs under `docs/design/`.
 - **Mail:** the list shows which Google accounts are counted; "Sign in" opens Google's page with the address filled in, "Copy password" puts the kept password on the clipboard.
 - **Mail:** the M-Notifier's backup holds the list of Google accounts.
 - **QA tools:** `mail_xn_check.py` and `xn_file.py` check the reading of X-notifier's file with made-up accounts.
+- **Updates:** the core of Thoron's own updater: it checks a signed update manifest before reading it and refuses a forged, older, expired or malformed one (`components/thoron_update`, tested against the reference tool).
 - **QA tools:** `identity_check.py` reads a build and its installer for every "Thorium" a person can still see.
 - **Legal:** each of the 6 patches without a licence has a written decision; 5 are carried out.
 - **Legal:** `unlicensed_patches.py check` fails when a patch without a licence is not withheld from `source/` or has no decision.

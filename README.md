@@ -6,7 +6,7 @@
 
 **A fast, secure and private browser for Windows, based on Thorium and Chromium.**
 
-[![Status](https://img.shields.io/badge/status-pre--release-F72F8E?style=flat-square)](#roadmap) <!-- progress-badge:start -->[![Roadmap progress](https://img.shields.io/badge/roadmap-57%25-7B2FF7?style=flat-square)](#roadmap)<!-- progress-badge:end --> [![Platforms](https://img.shields.io/badge/platforms-Windows%20first-24292f?style=flat-square)](#platforms) [![CPU](https://img.shields.io/badge/cpu-x64%20%7C%20ARM64-24292f?style=flat-square)](#platforms) [![License](https://img.shields.io/badge/license-BSD--3--Clause-24292f?style=flat-square)](LICENSE.md)
+[![Status](https://img.shields.io/badge/status-pre--release-F72F8E?style=flat-square)](#roadmap) <!-- progress-badge:start -->[![Roadmap progress](https://img.shields.io/badge/roadmap-58%25-7B2FF7?style=flat-square)](#roadmap)<!-- progress-badge:end --> [![Platforms](https://img.shields.io/badge/platforms-Windows%20first-24292f?style=flat-square)](#platforms) [![CPU](https://img.shields.io/badge/cpu-x64%20%7C%20ARM64-24292f?style=flat-square)](#platforms) [![License](https://img.shields.io/badge/license-BSD--3--Clause-24292f?style=flat-square)](LICENSE.md)
 
 [Why Thoron](#why-thoron) · [Features](#features) · [Install and update](#install-and-update) · [Versions](#versions) · [Roadmap](#roadmap) · [Platforms](#platforms) · [Verify](#verifying-downloads) · [Security](#security) · [Contributing](#contributing) · [Credits](#credits) · [Wiki](https://github.com/KuchiSofts/thoron/wiki)
 
@@ -78,7 +78,7 @@ changed in each version is in the [changelog](CHANGELOG.md), one line per change
 Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always current.
 
 <!-- roadmap:start -->
-**Overall:** `███████████░░░░░░░░░` 120 of 209 tasks done (57%) · roadmap updated 2026-11-12
+**Overall:** `████████████░░░░░░░░` 121 of 209 tasks done (58%) · roadmap updated 2026-11-12
 
 | Area | Progress | Done | Status |
 |---|---|---|---|
@@ -86,8 +86,8 @@ Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always curre
 | [P1 - Build environment](ROADMAP.md#p1---build-environment) | `██████████████████░░` | 9/10 | 🔄 In progress |
 | [P2 - First release](ROADMAP.md#p2---first-release) | `██████░░░░░░░░░░░░░░` | 8/26 | 🔄 In progress |
 | [P2b - ARM64](ROADMAP.md#p2b---arm64) | `░░░░░░░░░░░░░░░░░░░░` | 0/5 | 🔄 In progress |
-| [P3 - Updater v1 + Import](ROADMAP.md#p3---updater-v1--import) | `█░░░░░░░░░░░░░░░░░░░` | 1/21 | 🔄 In progress |
-| [P4 - Updater v2](ROADMAP.md#p4---updater-v2) | `░░░░░░░░░░░░░░░░░░░░` | 0/11 | ⬜ Not started |
+| [P3 - Updater v1 + Import](ROADMAP.md#p3---updater-v1--import) | `██░░░░░░░░░░░░░░░░░░` | 2/21 | 🔄 In progress |
+| [P4 - Updater v2](ROADMAP.md#p4---updater-v2) | `░░░░░░░░░░░░░░░░░░░░` | 0/11 | 🔄 In progress |
 | [P5 - Quality](ROADMAP.md#p5---quality) | `█████████████████░░░` | 67/80 | 🔄 In progress |
 | [Security (S)](ROADMAP.md#security-s) | `██████████████░░░░░░` | 11/16 | 🔄 In progress |
 | [Quality & performance (Q)](ROADMAP.md#quality--performance-q) | `███░░░░░░░░░░░░░░░░░` | 1/7 | 🔄 In progress |
@@ -175,7 +175,7 @@ Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always curre
 
 - [x] **P3.1** Update manifest schema v1 and spec `docs/update/MANIFEST.md` (channel, version, Chromium version, `critical`, `min_updater_version`, `expires`, per-variant full and delta entries)
 - [ ] **P3.2** Manifest signing in the release script (Ed25519, detached signature)
-- [ ] **P3.3** Updater core (C++, in-tree, BoringSSL): fetch over HTTPS, **verify the signature before parsing**, anti-downgrade, expiry handling
+- [x] **P3.3** Updater core (C++, in-tree, BoringSSL): fetch over HTTPS, **verify the signature before parsing**, anti-downgrade, expiry handling
 - [ ] **P3.4** Download and verify (size plus SHA-256) for full packages
 - [ ] **P3.5** Staging and atomic swap: `<new>.staging` → verify every file → rename; keep N-1
 - [ ] **P3.6** In-use update: Chromium's `new_thoron.exe` rename on Windows, and the launcher swap on Linux per-user and portable installs; relaunch badge

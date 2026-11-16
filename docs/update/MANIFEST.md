@@ -371,8 +371,36 @@ does not.
 
 ## 10. Making and signing a manifest
 
-A manifest is made by the tool's functions, which the release script will call: `file_entry` (the size
-and hash of a package on disk), `build` (the bytes of the manifest, with the next serial) and `sign`.
+The release script makes the manifest with the release.
+[`tools/release/release.py prepare`](../../tools/release/release.py) calls the tool's functions: `file_entry`
+(the size and hash of each package as it lies in the release folder), `build` (the bytes of the manifest,
+with the next serial) and `sign`.
+
+```
+py -3 -I tools/release/release.py prepare <the release's options> --manifest-key <private key file> --manifest-public-key <base64> --gh-repo KuchiSofts/thoron --previous-manifest <the last update.json>
+py -3 -I tools/release/release.py publish --dist <release folder> --version <Thoron version> --gh-repo KuchiSofts/thoron --manifest-public-key <base64>
+```
+
+- `prepare` takes the build version and Thoron's version from the build tree (`chrome/VERSION`), and
+  gives each package the address it will have as an asset of the release tagged `v<Thoron version>`.
+  `--critical` marks a security release; `--channel` and `--manifest-days` change `stable` and 30 days.
+- `--previous-manifest` is the manifest this one replaces. The first manifest of a channel is made with
+  `--first-manifest --min-updater-version <build version>` instead. Later manifests keep the
+  `min_updater_version` of the one before; giving the option again changes it.
+- What would stop the manifest is found before anything is packaged: a private key that is not the other
+  half of `--manifest-public-key`, a version that does not follow the manifest before, a variant this
+  schema does not know, a build without Thoron's version.
+- Without `--manifest-key` there is no manifest, and `prepare` says so; it never writes an unsigned one.
+  The key is read from the file named and from nowhere else, and a key file inside the repository, the
+  build tree or the release folder is refused unread.
+- `prepare` reads back the two files it wrote and verifies them with the public key.
+- `publish` makes no draft of a release folder whose manifest is missing, unsigned, does not verify
+  with `--manifest-public-key`, would be refused by a copy today for its dates, or names a file whose
+  address, size or SHA-256 is not that of the file in the folder under the draft's tag. So the draft is
+  made with `--version <Thoron version>`.
+- `update.json` is not listed in `SHA256SUMS`. It carries its own signature, and it is replaced by a
+  newer one while its release is still the newest.
+
 For signing and for checking by hand there is a command line:
 
 ```
@@ -411,7 +439,9 @@ py -3 -I tools/update/manifest.py example --out example.json
 
 - **P3.3, P3.19:** the C++ reader. It keeps the highest accepted serial per channel outside the profile,
   caps the fetch, and sends no cookies or identifiers.
-- **P3.2, the last step:** `tools/release/release.py` does not call `build` and `sign` yet.
+- **P3.2, P2.12:** `release.py prepare` packages one variant at a time, so its manifest names one variant.
+  A release of several variants needs the build matrix of P2.12 first. Signing the manifest of the same
+  release again before it expires (section 10) has no command of its own yet.
 - **P4.2:** schema 1 lists deltas that lead straight to `version`. A chain over releases in between
   would need their deltas too.
 - **P4.4:** the reference looks up one variant. A processor with AVX2 can also run `sse4`; whether the

@@ -1,5 +1,7 @@
 # Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be found in the LICENSE file.
 """Release notes generator (ROADMAP P2.13)."""
+import contextlib
+import io
 import json
 import subprocess
 import tempfile
@@ -63,6 +65,39 @@ class SecurityTests(unittest.TestCase):
     def test_unknown_severity_is_refused(self):
         with self.assertRaises(cl.NotesError):
             cl.sort_security([{"cve": "CVE-1", "severity": "Spicy", "title": "x"}])
+
+    def test_every_problem_of_a_security_list_is_named(self):
+        fix = {"cve": "CVE-2026-1", "severity": "High", "title": "Use after free in V8"}
+        self.assertEqual(cl.security_problems([fix, dict(fix, exploited=True)]), [])
+        for wrong in ([], {}, None, "CVE-2026-1", fix):
+            with self.subTest(wrong):
+                self.assertEqual(cl.security_problems(wrong),
+                                 ["a security list is a JSON list of at least one fix (leave it out when there is "
+                                  "none)"])
+        self.assertEqual(cl.security_problems([fix, "CVE-2026-2", {"cve": "", "severity": "Spicy"},
+                                               dict(fix, title="two\nlines", severity=3)]),
+                         ["fix 2: must be an object with cve, severity and title",
+                          "fix 3: cve must be one line of text",
+                          "fix 3: severity must be one of Critical, High, Medium, Low",
+                          "fix 3: title must be one line of text",
+                          "fix 4: severity must be one line of text",
+                          "fix 4: title must be one line of text"])
+
+    def test_a_security_list_is_read_from_its_file_or_refused_as_a_whole(self):
+        fixes = [{"cve": "CVE-2026-1", "severity": "High", "title": "Use after free in V8"}]
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "security.json"
+            for encoding in ("utf-8", "utf-8-sig"):                 # with or without a byte order mark
+                path.write_text(json.dumps(fixes), encoding=encoding)
+                self.assertEqual(cl.read_security(path), fixes)
+            for content, says in (("[", "security.json is not JSON"),
+                                  ("[]", "security.json: a security list is a JSON list of at least one fix"),
+                                  (json.dumps([{"cve": "CVE-2026-1"}]),
+                                   "security.json: fix 1: severity must be one line of text; fix 1: title must be")):
+                with self.subTest(content), self.assertRaises(cl.NotesError) as refused:
+                    path.write_text(content, encoding="utf-8")
+                    cl.read_security(path)
+                self.assertIn(says, str(refused.exception))
 
 
 class RenderTests(unittest.TestCase):
@@ -133,6 +168,19 @@ class RenderTests(unittest.TestCase):
                       "--out", str(out)])
         self.assertEqual(rc, 0)
         self.assertIn("CVE-2026-9", out.read_text(encoding="utf-8"))
+
+    def test_cli_refuses_a_security_list_that_is_none(self):
+        sec = Path(self.tmp.name) / "security.json"
+        sec.write_text(json.dumps([{"cve": "CVE-2026-9", "severity": "High"}]), encoding="utf-8")
+        out = Path(self.tmp.name) / "NOTES.md"
+        said = io.StringIO()
+        with contextlib.redirect_stderr(said):
+            rc = cl.main(["--version", "158.0.8127.3000", "--chromium-old", "156.0.8078.80", "--chromium-new",
+                          "158.0.8127.30", "--repo", str(self.repo), "--since", self.base, "--security", str(sec),
+                          "--out", str(out)])
+        self.assertEqual(rc, 2)
+        self.assertIn("changelog: security.json: fix 1: title must be one line of text", said.getvalue())
+        self.assertFalse(out.exists())
 
 
 if __name__ == "__main__":

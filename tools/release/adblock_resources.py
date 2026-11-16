@@ -23,6 +23,8 @@ enters the repository, the build machine's tree or any log.
     sign    --resources <json> --serial N --key <private key file> --out <file>
     verify  <file> --public-key <base64>   prints the serial when the signature holds
 
+With a release, tools/release/release.py prepare --adblock-key signs the resources of the build it packages.
+
     py -3 -I tools/release/adblock_resources.py sign --resources thoron_adblock_resources.json \\
         --serial 2026120100 --key <private key file> --out thoron_adblock_resources.signed
 """

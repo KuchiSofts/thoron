@@ -2179,6 +2179,11 @@ response's body. Thoron is the browser, so it does it for every page:
 - **Making one:** `tools/release/adblock_resources.py keygen` makes the key (offline; the private key goes to a
   file outside the repository, the public key is printed as the C++ array), `sign` signs a resource list with
   a serial, `verify` checks a file as the browser does.
+- **With a release:** `tools/release/release.py prepare --adblock-key <private key file> --adblock-public-key
+  <base64> --adblock-serial <YYYYMMDDNN>` signs the `thoron_adblock_resources.json` of the build it packages
+  and writes `thoron_adblock_resources.signed` into the release folder, once it verifies with the key copies
+  hold. Without the key the step is left out. The file is not part of the draft: copies ask the release tagged
+  `adblock-resources` for it, and the owner uploads it there.
 - **Checked** by `tools/qa/adblock_resources_check.py`: no update, a forged update (changed after signing),
   a signed newer one (in use at once), an older one (refused), a restart (the stored copy is checked again
   and used), another key and no key (the shipped copy; with no key nothing is asked for).

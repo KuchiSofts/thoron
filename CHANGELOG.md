@@ -123,6 +123,9 @@ Explanations live in the design docs under `docs/design/`.
 - **Release tools:** `portable.py` makes the portable folder and a reproducible `.zip`; it refuses a build that fails the package audit or holds profile data.
 - **QA tools:** `portable_check.py` starts the portable package for real from folders with spaces, non-Latin names and `& % !`, moved, and from a drive root.
 - **Docs:** `docs/release/PORTABLE.md`: the portable package, its launcher, what it leaves on a PC and what is not there yet.
+- **Privacy:** `docs/security/NETWORK.md` lists what a fresh Thoron 158 profile contacts request by request: who asks, when, and how to switch it off.
+- **Privacy:** `docs/security/NETWORK_REDUCTION.md`: the work order for removing the Google contacts a fresh profile does not need, each with its cause and a tested stop.
+- **QA tools:** `netlog_hosts.py` names the caller, time and answer of every request and fails when a host that must stay away is contacted.
 - **Release tools:** `tools/update/manifest.py` builds and checks the update manifest, schema 1; the format is in `docs/update/MANIFEST.md`.
 - **Release tools:** `manifest.py sign` signs the update manifest with Thoron's Ed25519 key; `verify` refuses a change of any bit.
 - **Security:** `docs/security/THREAT_MODEL.md` lists the threats to the updater, the import and portable encryption, each with its mitigation and test.

@@ -110,7 +110,27 @@ installed Thoron has no `thoron_update.exe`, so it stays in `auto` until the swi
 
 ## 5. Update a portable copy by hand
 
-A portable copy does not update itself yet (ROADMAP P3.12, P3.20). By hand:
+A portable copy does not update itself yet: its browser does it once releases are signed (ROADMAP P2.11,
+P3.20). Until then there are two ways.
+
+### With Thoron's updater (keeps the version before)
+
+1. Download the new `thoron-<version>-<variant>-portable.zip` for the **same variant** as your copy (the
+   file `variant` in your folder names it) and **check it**
+   ([Verifying downloads](../../README.md#verifying-downloads)). The updater takes the file as it is given:
+   checking it is your part here, as checking the signed manifest is the browser's later.
+2. Close Thoron: every window.
+3. In a command prompt, run the updater of the version you have (the folder `current` names), with the
+   new version's number:
+
+       "<folder>\Application\<your version>\thoron_update.exe" --root "<folder>\Application" --apply-package "<download>\thoron-<version>-<variant>-portable.zip" --version <version>
+
+   It unpacks only the new version beside yours, puts it in place and refreshes `Thoron.exe`. The last
+   lines say `done` and `launcher: current`. Exit code 0 means it worked; anything else means nothing was
+   switched.
+4. Start `Thoron.exe`. The About page shows the new version, and section 6 can go back to the old one.
+
+### By copying the files
 
 1. **Back up first.** Close Thoron and copy the whole `ThoronPortable` folder, with `User Data`, to
    another place. This copy is your way back ([section 6](#6-roll-back)).
@@ -133,8 +153,8 @@ go back to: your backup from step 1 is the way back.
 
 A portable copy's `Application` folder can hold two versions: the one that starts and the one before it.
 The file `Application\current` names both. The version before is kept when Thoron's updater put the
-update in place; the browser does not do that by itself yet (ROADMAP P3.12, P3.20), and an update by hand
-(section 5) keeps no version before.
+update in place (section 5, with Thoron's updater); an update by copying the files keeps no version
+before.
 
 Close Thoron, then see what the folder holds. Use the `thoron_update.exe` of any version folder in
 `Application`:

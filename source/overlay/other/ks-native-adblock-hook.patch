@@ -1958,6 +1958,49 @@ index 30d062911dfcfc6f7c3b1b1ae9d7980c3f87c9b8..0b4b520498817c06ff86a754e456513f
  }
  
  }  // namespace extensions
+diff --git a/chrome/browser/first_run/BUILD.gn b/chrome/browser/first_run/BUILD.gn
+index 916effd38d92ccd1541c0d26dbbc4f09f8b6734f..7ef8aa7ac79aa185e7db8a933c0d11ded8d5715d 100644
+--- a/chrome/browser/first_run/BUILD.gn
++++ b/chrome/browser/first_run/BUILD.gn
+@@ -101,6 +101,7 @@ source_set("impl") {
+       deps += [
+         "//chrome/browser:chrome_process_singleton",
+         "//chrome/browser/win",
++        "//components/thoron_update",
+         "//chrome/updater/app/server/win:updater_legacy_idl",
+         "//components/app_launch_prefetch",
+       ]
+diff --git a/chrome/browser/first_run/upgrade_util_win.cc b/chrome/browser/first_run/upgrade_util_win.cc
+index ca023f969a563fe21113a7b7722c0fba43cc0f06..ec72e5b045277c3eb21ee4c2db4e1c48cacf3cf0 100644
+--- a/chrome/browser/first_run/upgrade_util_win.cc
++++ b/chrome/browser/first_run/upgrade_util_win.cc
+@@ -47,6 +47,7 @@
+ #include "base/win/scoped_variant.h"
+ #include "base/win/windows_version.h"
+ #include "build/branding_buildflags.h"
++#include "components/thoron_update/swap.h"
+ #include "chrome/browser/browser_process.h"
+ #include "chrome/browser/chrome_process_singleton.h"
+ #include "chrome/browser/first_run/upgrade_util.h"
+@@ -441,11 +442,17 @@ bool RelaunchChromeBrowserImpl(const base::CommandLine& command_line,
+   base::CommandLine chrome_exe_command_line = command_line;
+   chrome_exe_command_line.SetProgram(
+       chrome_exe.DirName().Append(installer::kChromeExe));
++  // Thoron (P3.20): a portable copy runs from its version's folder; after an
++  // update the relaunch starts the version Application\current names.
++  base::FilePath thoron_current_exe;
++  if (thoron_update::BrowserOfCurrentVersion(chrome_exe, &thoron_current_exe)) {
++    chrome_exe_command_line.SetProgram(thoron_current_exe);
++  }
+ 
+   // Set the working directory to the exe's directory. This avoids a handle to
+   // the version directory being kept open in the relaunched child process.
+   base::LaunchOptions launch_options;
+-  launch_options.current_directory = chrome_exe.DirName();
++  launch_options.current_directory = chrome_exe_command_line.GetProgram().DirName();
+   // Give the new process the right to bring its windows to the foreground.
+   launch_options.grant_foreground_privilege = true;
+   launch_options.force_breakaway_from_job_ = force_breakaway_from_job;
 diff --git a/chrome/browser/navigation_predictor/search_engine_preconnector.cc b/chrome/browser/navigation_predictor/search_engine_preconnector.cc
 index 0b665fddd4da7e9b28b5a4ce98a1d01cc5631952..74a1e2ce9bb08b7095914876f045fb2d6fa5211a 100644
 --- a/chrome/browser/navigation_predictor/search_engine_preconnector.cc
@@ -2385,10 +2428,10 @@ index 0000000000000000000000000000000000000000..42848a8361f4249d1e59019e014a758c
 +}
 diff --git a/chrome/browser/thoron_update/thoron_update_win.cc b/chrome/browser/thoron_update/thoron_update_win.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..b688a8221e28fad9ebc2f5d12ba2e17e1b75ab91
+index 0000000000000000000000000000000000000000..2acfc2098da0333e3847f1cc5da7599e2a38cc03
 --- /dev/null
 +++ b/chrome/browser/thoron_update/thoron_update_win.cc
-@@ -0,0 +1,150 @@
+@@ -0,0 +1,180 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -2451,8 +2494,7 @@ index 0000000000000000000000000000000000000000..b688a8221e28fad9ebc2f5d12ba2e17e
 +  bool portable = false;
 +  const thoron_update::UpdateMode mode = thoron_update::ReadUpdateMode(ProgramFolder(&portable));
 +  if (mode == thoron_update::UpdateMode::kAuto) {
-+    // A portable copy only looks: its update by itself is later work.
-+    Client()->Check(/*install=*/!portable, base::DoNothing());
++    Client()->Check(/*install=*/true, base::DoNothing());
 +  }
 +  base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
 +      FROM_HERE, base::BindOnce(&ScheduledLook), kBetweenLooks);
@@ -2469,7 +2511,37 @@ index 0000000000000000000000000000000000000000..b688a8221e28fad9ebc2f5d12ba2e17e
 +  return false;
 +}
 +
-+bool RunInstaller(const base::FilePath& package, bool delta) {
++bool RunPortableUpdate(const base::FilePath& package, bool delta, const std::string& version) {
++  if (delta) {
++    // A portable release has no deltas (P4.1).
++    return false;
++  }
++  base::FilePath exe;
++  base::PathService::Get(base::DIR_EXE, &exe);
++  bool portable = false;
++  const base::FilePath root = ProgramFolder(&portable);
++  if (!portable) {
++    return false;
++  }
++  base::CommandLine command(exe.Append(FILE_PATH_LITERAL("thoron_update.exe")));
++  command.AppendSwitchPath("root", root);
++  command.AppendSwitchPath("apply-package", package);
++  command.AppendSwitchASCII("version", version);
++  base::LaunchOptions options;
++  options.start_hidden = true;
++  base::Process process = base::LaunchProcess(command, options);
++  if (!process.IsValid()) {
++    return false;
++  }
++  int exit_code = -1;
++  if (!process.WaitForExitWithTimeout(kMostInstallerTime, &exit_code)) {
++    process.Terminate(/*exit_code=*/1, /*wait=*/false);
++    return false;
++  }
++  return exit_code == 0;
++}
++
++bool RunInstaller(const base::FilePath& package, bool delta, const std::string& version) {
 +  base::CommandLine command(package);
 +  // The running browser stays as it is; the new version starts at the relaunch.
 +  command.AppendSwitch("do-not-launch-chrome");
@@ -2510,6 +2582,7 @@ index 0000000000000000000000000000000000000000..b688a8221e28fad9ebc2f5d12ba2e17e
 +  if (portable) {
 +    // Beside the version folders, never in the package's User Data.
 +    config.download_dir = program.AppendASCII("Update");
++    config.install = base::BindRepeating(&RunPortableUpdate);
 +  } else {
 +    // %LOCALAPPDATA%\Thoron\Update, beside Application and User Data.
 +    config.download_dir = program.DirName().AppendASCII("Update");
@@ -2541,10 +2614,10 @@ index 0000000000000000000000000000000000000000..b688a8221e28fad9ebc2f5d12ba2e17e
 +}  // namespace thoron_update_win
 diff --git a/chrome/browser/thoron_update/thoron_update_win.h b/chrome/browser/thoron_update/thoron_update_win.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..8fc2dc53c4f6a768dc6934f29ab0a0a49705289e
+index 0000000000000000000000000000000000000000..9f6798328675ac90fbefe1fc2ba923f8f529ac04
 --- /dev/null
 +++ b/chrome/browser/thoron_update/thoron_update_win.h
-@@ -0,0 +1,43 @@
+@@ -0,0 +1,48 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -2580,7 +2653,12 @@ index 0000000000000000000000000000000000000000..8fc2dc53c4f6a768dc6934f29ab0a0a4
 +// Runs a checked installer of an installed copy and waits for it: true when it
 +// installed (a new version, or the same one repaired). Never with a profile:
 +// the installer gets no profile path and Thoron's installer opens none.
-+bool RunInstaller(const base::FilePath& package, bool delta);
++bool RunInstaller(const base::FilePath& package, bool delta, const std::string& version);
++
++// The update of a portable copy: its own updater unpacks the version's folder
++// of the checked package and puts it in place (thoron_update --apply-package),
++// and the next start, or the relaunch, runs it.
++bool RunPortableUpdate(const base::FilePath& package, bool delta, const std::string& version);
 +
 +// Whether the installer's exit code means it installed.
 +bool InstallerSucceeded(int exit_code);
@@ -12335,10 +12413,10 @@ index 0000000000000000000000000000000000000000..3e4c28764458836945e8dccad2197a69
 +#endif  // COMPONENTS_THORON_MAIL_MAIL_SERVICE_H_
 diff --git a/components/thoron_update/BUILD.gn b/components/thoron_update/BUILD.gn
 new file mode 100644
-index 0000000000000000000000000000000000000000..cd1359d26ea697d9fd2745fba76cb4c8da3c5033
+index 0000000000000000000000000000000000000000..c307107d9be2a77b7cf786f0fd417dd9e8ea2c75
 --- /dev/null
 +++ b/components/thoron_update/BUILD.gn
-@@ -0,0 +1,110 @@
+@@ -0,0 +1,117 @@
 +# Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +# found in the LICENSE file.
 +
@@ -12355,6 +12433,8 @@ index 0000000000000000000000000000000000000000..cd1359d26ea697d9fd2745fba76cb4c8
 +    "manifest.h",
 +    "package.cc",
 +    "package.h",
++    "portable_package.cc",
++    "portable_package.h",
 +    "snapshot.cc",
 +    "snapshot.h",
 +    "swap.cc",
@@ -12365,6 +12445,8 @@ index 0000000000000000000000000000000000000000..cd1359d26ea697d9fd2745fba76cb4c8
 +    "//crypto",
 +    "//third_party/boringssl",
 +    "//third_party/sqlite",
++    "//third_party/zlib",
++    "//third_party/zlib/google:zip",
 +  ]
 +}
 +
@@ -12396,6 +12478,7 @@ index 0000000000000000000000000000000000000000..cd1359d26ea697d9fd2745fba76cb4c8
 +    "manifest_test_vectors.h",
 +    "manifest_unittest.cc",
 +    "package_unittest.cc",
++    "portable_package_unittest.cc",
 +    "snapshot_unittest.cc",
 +    "swap_unittest.cc",
 +    "update_client_test_data.h",
@@ -12413,6 +12496,8 @@ index 0000000000000000000000000000000000000000..cd1359d26ea697d9fd2745fba76cb4c8
 +    "//services/network/public/cpp",
 +    "//testing/gtest",
 +    "//third_party/sqlite",
++    "//third_party/zlib",
++    "//third_party/zlib/google:zip",
 +  ]
 +}
 +
@@ -12451,11 +12536,12 @@ index 0000000000000000000000000000000000000000..cd1359d26ea697d9fd2745fba76cb4c8
 +}
 diff --git a/components/thoron_update/DEPS b/components/thoron_update/DEPS
 new file mode 100644
-index 0000000000000000000000000000000000000000..c68b62e0be5178506a4678f869110fd7d28f4f91
+index 0000000000000000000000000000000000000000..beb8343f22d0c2666b6fdae1536e9d29de8f10d2
 --- /dev/null
 +++ b/components/thoron_update/DEPS
-@@ -0,0 +1,9 @@
+@@ -0,0 +1,10 @@
 +include_rules = [
++  "+third_party/zlib/google",
 +  "+url",
 +  "+services/network/public",
 +  "+net",
@@ -12466,10 +12552,10 @@ index 0000000000000000000000000000000000000000..c68b62e0be5178506a4678f869110fd7
 +]
 diff --git a/components/thoron_update/README.md b/components/thoron_update/README.md
 new file mode 100644
-index 0000000000000000000000000000000000000000..ab9c3b1bf148c1db39d2da27859134fe05b48822
+index 0000000000000000000000000000000000000000..9c7c65fe550ea65b8d36a93d935c14444fb5b72b
 --- /dev/null
 +++ b/components/thoron_update/README.md
-@@ -0,0 +1,162 @@
+@@ -0,0 +1,173 @@
 +# thoron_update
 +
 +The core of Thoron's updater (ROADMAP P3.3): what a copy of Thoron makes of the two files a release
@@ -12551,6 +12637,7 @@ index 0000000000000000000000000000000000000000..ab9c3b1bf148c1db39d2da27859134fe
 +    thoron_update --root <program folder> --status
 +    thoron_update --root <program folder> --apply <staged folder> --version <v> --files <files.json>
 +        [--handed-off]
++    thoron_update --root <program folder> --apply-package <portable .zip> --version <v>
 +    thoron_update --root <program folder> --rollback
 +    thoron_update --root <program folder> --mode [auto|notify|off]
 +    thoron_update --check --manifest <update.json> --signature <update.json.sig> --public-key <base64>
@@ -12569,6 +12656,16 @@ index 0000000000000000000000000000000000000000..ab9c3b1bf148c1db39d2da27859134fe
 +updater below a release's `min_updater_version` only fetches, checks and unpacks the package (`--check`
 +then names its full package, never a delta), and never runs the swap of a release it may not apply.
 +`tools/qa/updater_handoff_check.py` checks this with the real program.
++
++**A portable copy's update (P3.20).** `--apply-package` takes the release's portable `.zip`
++(`tools/release/portable.py`), already checked against the signed manifest, and unpacks only
++`ThoronPortable/Application/<v>/` into `<v>.staging` of the program folder (`portable_package.h`: a link, an
++encrypted entry, a name that cannot be made safe, another top folder, over 4 GiB or 20000 files refuse the
++whole package and leave nothing), lists what it wrote and applies it as `--apply` does, through the updater in
++it. Then it puts the package's `Thoron.exe` over the launcher beside the program folder when it differs
++(written beside it, then moved over it). The browser of a portable copy runs this as its installer
++(`chrome/browser/thoron_update/`), and its relaunch starts the version `current` names
++(`BrowserOfCurrentVersion` in `swap.h`). `tools/qa/portable_update_check.py` checks it with a real package.
 +
 +| Exit code | Meaning |
 +|---|---|
@@ -12634,10 +12731,10 @@ index 0000000000000000000000000000000000000000..ab9c3b1bf148c1db39d2da27859134fe
 +of the spec ("A signature to test against") is among them, under its own throwaway key.
 diff --git a/components/thoron_update/cli.cc b/components/thoron_update/cli.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..face74bf1417726dd73424964f122ff9950a14b7
+index 0000000000000000000000000000000000000000..e83b83abafa5687398a25cb3cfed25517426d707
 --- /dev/null
 +++ b/components/thoron_update/cli.cc
-@@ -0,0 +1,328 @@
+@@ -0,0 +1,393 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -12653,6 +12750,7 @@ index 0000000000000000000000000000000000000000..face74bf1417726dd73424964f122ff9
 +#include "base/files/file_util.h"
 +#include "base/files/important_file_writer.h"
 +#include "base/json/json_reader.h"
++#include "base/json/json_writer.h"
 +#include "base/process/launch.h"
 +#include "base/strings/string_number_conversions.h"
 +#include "base/strings/string_util.h"
@@ -12660,6 +12758,7 @@ index 0000000000000000000000000000000000000000..face74bf1417726dd73424964f122ff9
 +#include "base/values.h"
 +#include "build/build_config.h"
 +#include "components/thoron_update/package.h"
++#include "components/thoron_update/portable_package.h"
 +#include "components/thoron_update/swap.h"
 +
 +namespace thoron_update {
@@ -12802,32 +12901,33 @@ index 0000000000000000000000000000000000000000..face74bf1417726dd73424964f122ff9
 +}
 +
 +// --apply, by the updater of the release when the staged folder has one.
-+int Apply(const base::CommandLine& command, const base::FilePath& root, std::string* out) {
-+  const std::optional<BuildVersion> version = ParseBuildVersion(Arg(command, "version"));
-+  const std::optional<std::vector<VersionFile>> files =
-+      ReadFiles(command.GetSwitchValuePath("files"));
-+  if (!version || !files) {
-+    *out += "--version or --files is missing or wrong\n";
-+    return kExitUsage;
-+  }
-+  const base::FilePath staged = command.GetSwitchValuePath("apply");
-+  const std::optional<VersionFile> updater = UpdaterEntry(*files);
-+  if (updater && !command.HasSwitch("handed-off")) {
++// Puts the staged folder in place, through the updater in it when it has one.
++// `files_path` is the file that lists `files`, for the updater handed the apply.
++int ApplyStaged(const base::FilePath& root,
++                const base::FilePath& staged,
++                const BuildVersion& version,
++                const std::vector<VersionFile>& files,
++                const base::FilePath& files_path,
++                bool handed_off,
++                std::string* out) {
++  const std::optional<VersionFile> updater = UpdaterEntry(files);
++  if (updater && !handed_off) {
 +    const base::FilePath copy = root.AppendASCII(kHandOffFile);
 +    base::DeleteFile(copy);
 +    if (!CopyCheckedUpdater(staged, *updater, copy)) {
 +      // As for any other bad files: the staged folder goes (when a version
 +      // starts in the folder; see CleanUp).
 +      CleanUp(root);
-+      *out += "the updater of " + ToString(*version) + " is not the one its files name\n";
++      *out += "the updater of " + ToString(version) + " is not the one its files name\n";
 +      return FromSwap(SwapResult::kBadFiles, out);
 +    }
 +    base::CommandLine next(copy);
-+    for (const auto& [name, value] : command.GetSwitches()) {
-+      next.AppendSwitchNative(name, value);
-+    }
++    next.AppendSwitchPath("root", root);
++    next.AppendSwitchPath("apply", staged);
++    next.AppendSwitchASCII("version", ToString(version));
++    next.AppendSwitchPath("files", files_path);
 +    next.AppendSwitch("handed-off");
-+    *out += "handed off to the updater of " + ToString(*version) + "\n";
++    *out += "handed off to the updater of " + ToString(version) + "\n";
 +    std::string said;
 +    int code = kExitIoError;
 +    const bool ran = base::GetAppOutputWithExitCode(next, &said, &code);
@@ -12835,7 +12935,66 @@ index 0000000000000000000000000000000000000000..face74bf1417726dd73424964f122ff9
 +    *out += said;
 +    return ran ? code : kExitIoError;
 +  }
-+  return FromSwap(InstallVersion(root, staged, *version, *files), out);
++  return FromSwap(InstallVersion(root, staged, version, files), out);
++}
++
++// --apply, by the updater of the release when the staged folder has one.
++int Apply(const base::CommandLine& command, const base::FilePath& root, std::string* out) {
++  const std::optional<BuildVersion> version = ParseBuildVersion(Arg(command, "version"));
++  const base::FilePath files_path = command.GetSwitchValuePath("files");
++  const std::optional<std::vector<VersionFile>> files = ReadFiles(files_path);
++  if (!version || !files) {
++    *out += "--version or --files is missing or wrong\n";
++    return kExitUsage;
++  }
++  return ApplyStaged(root, command.GetSwitchValuePath("apply"), *version, *files, files_path,
++                     command.HasSwitch("handed-off"), out);
++}
++
++// --apply-package: a portable copy's update from its release's package.
++int ApplyPackage(const base::CommandLine& command, const base::FilePath& root, std::string* out) {
++  const std::optional<BuildVersion> version = ParseBuildVersion(Arg(command, "version"));
++  const base::FilePath package = command.GetSwitchValuePath("apply-package");
++  if (!version || package.empty()) {
++    *out += "--version or --apply-package is missing or wrong\n";
++    return kExitUsage;
++  }
++  if (CurrentVersion(root) == *version) {
++    return FromSwap(SwapResult::kAlreadyCurrent, out);
++  }
++  const base::FilePath staged = root.AppendASCII(ToString(*version) + ".staging");
++  // What a run that was stopped left; never a version in use (CleanUp).
++  base::DeletePathRecursively(staged);
++  std::vector<VersionFile> files;
++  const UnpackResult unpacked = UnpackVersion(package, *version, staged, &files);
++  if (unpacked != UnpackResult::kDone) {
++    *out += std::string(UnpackResultName(unpacked)) + "\n";
++    return unpacked == UnpackResult::kIoError ? kExitIoError : kExitBadFiles;
++  }
++  const base::FilePath files_path = root.AppendASCII(ToString(*version) + ".files.json");
++  base::ListValue list;
++  for (const VersionFile& file : files) {
++    base::DictValue entry;
++    entry.Set("path", file.path);
++    entry.Set("size", static_cast<double>(file.size));
++    entry.Set("sha256", file.sha256);
++    list.Append(std::move(entry));
++  }
++  std::string json;
++  if (!base::JSONWriter::Write(list, &json) ||
++      !base::ImportantFileWriter::WriteFileAtomically(files_path, json)) {
++    base::DeletePathRecursively(staged);
++    return kExitIoError;
++  }
++  const int code = ApplyStaged(root, staged, *version, files, files_path,
++                               command.HasSwitch("handed-off"), out);
++  base::DeleteFile(files_path);
++  // The launcher of a portable copy sits beside its program folder.
++  const base::FilePath launcher = root.DirName().AppendASCII("Thoron.exe");
++  if (code == kExitOk && base::PathExists(launcher)) {
++    *out += ReplaceLauncher(package, launcher) ? "launcher: current\n" : "launcher: kept\n";
++  }
++  return code;
 +}
 +
 +}  // namespace
@@ -12939,6 +13098,9 @@ index 0000000000000000000000000000000000000000..face74bf1417726dd73424964f122ff9
 +  if (command.HasSwitch("rollback")) {
 +    return FromSwap(RollBack(root), out);
 +  }
++  if (command.HasSwitch("apply-package")) {
++    return ApplyPackage(command, root, out);
++  }
 +  if (command.HasSwitch("apply")) {
 +    return Apply(command, root, out);
 +  }
@@ -12968,10 +13130,10 @@ index 0000000000000000000000000000000000000000..face74bf1417726dd73424964f122ff9
 +}  // namespace thoron_update
 diff --git a/components/thoron_update/cli.h b/components/thoron_update/cli.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..39990ebaae87f775d333e61597e345944cbec624
+index 0000000000000000000000000000000000000000..bd3cc2de0edf455aa98351d96920e52fc2a7dba9
 --- /dev/null
 +++ b/components/thoron_update/cli.h
-@@ -0,0 +1,109 @@
+@@ -0,0 +1,110 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -12995,6 +13157,7 @@ index 0000000000000000000000000000000000000000..39990ebaae87f775d333e61597e34594
 +//   thoron_update --root <program folder> --status
 +//   thoron_update --root <program folder> --apply <staged folder> --version <v> --files <files.json>
 +//       [--handed-off]
++//   thoron_update --root <program folder> --apply-package <portable .zip> --version <v>
 +//   thoron_update --root <program folder> --rollback
 +//   thoron_update --check --manifest <update.json> --signature <update.json.sig> --public-key <base64>
 +//       --channel <channel> --installed <v> --updater <v> --variant <name> --kind installed|portable
@@ -20477,6 +20640,433 @@ index 0000000000000000000000000000000000000000..55fa69087629432220f8190288ee407a
 +
 +}  // namespace
 +}  // namespace thoron_update
+diff --git a/components/thoron_update/portable_package.cc b/components/thoron_update/portable_package.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..d6752665f8724132fbb76d1f38ba6940bd524089
+--- /dev/null
++++ b/components/thoron_update/portable_package.cc
+@@ -0,0 +1,208 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "components/thoron_update/portable_package.h"
++
++#include <array>
++#include <string>
++#include <utility>
++
++#include "base/containers/span.h"
++#include "base/files/file.h"
++#include "base/files/file_path.h"
++#include "base/files/file_util.h"
++#include "base/strings/string_number_conversions.h"
++#include "base/strings/string_util.h"
++#include "crypto/hash.h"
++#include "third_party/zlib/google/zip_reader.h"
++
++namespace thoron_update {
++
++namespace {
++
++// The SHA-256 of a file, read in blocks; empty when it cannot be read.
++std::string Sha256Of(const base::FilePath& path) {
++  base::File file(path, base::File::FLAG_OPEN | base::File::FLAG_READ);
++  if (!file.IsValid()) {
++    return std::string();
++  }
++  crypto::hash::Hasher hasher(crypto::hash::kSha256);
++  std::array<uint8_t, 64 * 1024> block;
++  while (true) {
++    const std::optional<size_t> read = file.ReadAtCurrentPos(block);
++    if (!read) {
++      return std::string();
++    }
++    if (*read == 0) {
++      break;
++    }
++    hasher.Update(base::span(block).first(*read));
++  }
++  std::array<uint8_t, crypto::hash::kSha256Size> digest;
++  hasher.Finish(digest);
++  return base::HexEncodeLower(digest);
++}
++
++// The parts of an entry's path, as the reader made it safe.
++std::vector<std::string> Parts(const base::FilePath& path) {
++  std::vector<std::string> out;
++  for (const base::FilePath::StringType& part : path.GetComponents()) {
++    out.push_back(base::FilePath(part).AsUTF8Unsafe());
++  }
++  return out;
++}
++
++UnpackResult Abandon(const base::FilePath& staged, UnpackResult result) {
++  base::DeletePathRecursively(staged);
++  return result;
++}
++
++}  // namespace
++
++std::string_view UnpackResultName(UnpackResult result) {
++  switch (result) {
++    case UnpackResult::kDone:
++      return "done";
++    case UnpackResult::kNotAPackage:
++      return "not_a_package";
++    case UnpackResult::kNoSuchVersion:
++      return "no_such_version";
++    case UnpackResult::kUnsafeEntry:
++      return "unsafe_entry";
++    case UnpackResult::kTooLarge:
++      return "too_large";
++    case UnpackResult::kIoError:
++      return "io_error";
++  }
++  return "io_error";
++}
++
++UnpackResult UnpackVersion(const base::FilePath& package,
++                           const BuildVersion& version,
++                           const base::FilePath& staged,
++                           std::vector<VersionFile>* files) {
++  files->clear();
++  if (base::PathExists(staged)) {
++    return UnpackResult::kIoError;
++  }
++  zip::ZipReader reader;
++  if (!reader.Open(package)) {
++    return UnpackResult::kNotAPackage;
++  }
++  const std::string version_name = ToString(version);
++  if (!base::CreateDirectory(staged)) {
++    return UnpackResult::kIoError;
++  }
++  int64_t written = 0;
++  bool any_other_folder = false;
++  while (const zip::ZipReader::Entry* entry = reader.Next()) {
++    if (entry->is_unsafe || entry->is_encrypted || entry->is_symbolic_link) {
++      return Abandon(staged, UnpackResult::kUnsafeEntry);
++    }
++    const std::vector<std::string> parts = Parts(entry->path);
++    if (parts.empty() || parts[0] != kPortableFolder) {
++      any_other_folder = true;
++      continue;
++    }
++    // ThoronPortable/Application/<version>/<the rest>
++    if (parts.size() < 4 || parts[1] != "Application" || parts[2] != version_name) {
++      continue;
++    }
++    std::string inside;
++    base::FilePath target = staged;
++    for (size_t i = 3; i < parts.size(); ++i) {
++      if (parts[i].empty() || parts[i] == "." || parts[i] == "..") {
++        return Abandon(staged, UnpackResult::kUnsafeEntry);
++      }
++      inside += (inside.empty() ? "" : "/") + parts[i];
++      target = target.Append(base::FilePath::FromUTF8Unsafe(parts[i]));
++    }
++    if (entry->is_directory) {
++      if (!base::CreateDirectory(target)) {
++        return Abandon(staged, UnpackResult::kIoError);
++      }
++      continue;
++    }
++    if (files->size() >= kMostUnpackedFiles) {
++      return Abandon(staged, UnpackResult::kTooLarge);
++    }
++    if (!base::CreateDirectory(target.DirName())) {
++      return Abandon(staged, UnpackResult::kIoError);
++    }
++    // One byte more than what is left is enough to tell an entry that is too big.
++    const uint64_t room = static_cast<uint64_t>(kMostUnpackedBytes - written) + 1;
++    bool extracted = false;
++    {
++      // Closed before the file is measured and read.
++      zip::FilePathWriterDelegate writer(target);
++      extracted = reader.ExtractCurrentEntry(&writer, room);
++    }
++    if (!extracted) {
++      return Abandon(staged, base::PathExists(target) && base::GetFileSize(target).value_or(0) >=
++                                                             static_cast<int64_t>(room)
++                                 ? UnpackResult::kTooLarge
++                                 : UnpackResult::kIoError);
++    }
++    const std::optional<int64_t> size = base::GetFileSize(target);
++    if (!size) {
++      return Abandon(staged, UnpackResult::kIoError);
++    }
++    written += *size;
++    if (written > kMostUnpackedBytes) {
++      return Abandon(staged, UnpackResult::kTooLarge);
++    }
++    const std::string sha256 = Sha256Of(target);
++    if (sha256.empty()) {
++      return Abandon(staged, UnpackResult::kIoError);
++    }
++    files->push_back({inside, *size, sha256});
++  }
++  if (!reader.ok() || any_other_folder) {
++    files->clear();
++    return Abandon(staged, any_other_folder ? UnpackResult::kNotAPackage : UnpackResult::kIoError);
++  }
++  if (files->empty()) {
++    return Abandon(staged, UnpackResult::kNoSuchVersion);
++  }
++  return UnpackResult::kDone;
++}
++
++bool ReplaceLauncher(const base::FilePath& package, const base::FilePath& launcher) {
++  zip::ZipReader reader;
++  if (!reader.Open(package)) {
++    return false;
++  }
++  while (const zip::ZipReader::Entry* entry = reader.Next()) {
++    const std::vector<std::string> parts = Parts(entry->path);
++    if (entry->is_directory || entry->is_unsafe || entry->is_encrypted ||
++        entry->is_symbolic_link || parts.size() != 2 || parts[0] != kPortableFolder ||
++        parts[1] != "Thoron.exe") {
++      continue;
++    }
++    const base::FilePath beside = launcher.AddExtensionASCII("new");
++    base::DeleteFile(beside);
++    bool extracted = false;
++    {
++      // Closed before the file is compared and moved.
++      zip::FilePathWriterDelegate writer(beside);
++      // A launcher is small; anything over 16 MiB is not one.
++      extracted = reader.ExtractCurrentEntry(&writer, 16 * 1024 * 1024);
++    }
++    if (!extracted) {
++      base::DeleteFile(beside);
++      return false;
++    }
++    if (base::PathExists(launcher) && Sha256Of(beside) == Sha256Of(launcher)) {
++      base::DeleteFile(beside);
++      return true;
++    }
++    if (!base::ReplaceFile(beside, launcher, nullptr)) {
++      base::DeleteFile(beside);
++      return false;
++    }
++    return true;
++  }
++  return false;
++}
++
++}  // namespace thoron_update
+diff --git a/components/thoron_update/portable_package.h b/components/thoron_update/portable_package.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..d09b33de77b94566d46fe0cfbb563ed78d834027
+--- /dev/null
++++ b/components/thoron_update/portable_package.h
+@@ -0,0 +1,66 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef COMPONENTS_THORON_UPDATE_PORTABLE_PACKAGE_H_
++#define COMPONENTS_THORON_UPDATE_PORTABLE_PACKAGE_H_
++
++#include <stdint.h>
++
++#include <string_view>
++#include <vector>
++
++#include "components/thoron_update/manifest.h"
++#include "components/thoron_update/swap.h"
++
++namespace base {
++class FilePath;
++}  // namespace base
++
++// Updating a portable copy from its release's package (ROADMAP P3.20, P3.12).
++// The package is the .zip of tools/release/portable.py: one folder,
++// ThoronPortable, with Thoron.exe, README.txt, variant, Application/current and
++// Application/<version>/. Only the version's folder is unpacked, into a staging
++// folder of the copy's program folder, and then put in place by InstallVersion
++// (swap.h) through the release's own updater (cli.h). The package was checked
++// against the signed manifest before it gets here; what is unpacked from it is
++// still held to limits, since a mistake in a release must not fill a USB drive.
++namespace thoron_update {
++
++inline constexpr char kPortableFolder[] = "ThoronPortable";
++inline constexpr int64_t kMostUnpackedBytes = int64_t{4} * 1024 * 1024 * 1024;
++inline constexpr size_t kMostUnpackedFiles = 20000;
++
++enum class UnpackResult {
++  kDone,
++  // Not a .zip, or not one ThoronPortable folder.
++  kNotAPackage,
++  // The package has no folder for that version.
++  kNoSuchVersion,
++  // An entry that is a link, encrypted, or a name that cannot be made safe.
++  kUnsafeEntry,
++  // More than kMostUnpackedBytes or kMostUnpackedFiles.
++  kTooLarge,
++  // The staging folder is there already, or writing failed.
++  kIoError,
++};
++
++std::string_view UnpackResultName(UnpackResult result);
++
++// Unpacks the folder of `version` from `package` into `staged`, which must not
++// exist, and lists its files in `files`: each path inside the version's folder,
++// its length and the SHA-256 of what was written. Everything else in the
++// package is left out. With anything but kDone, nothing is left at `staged`.
++UnpackResult UnpackVersion(const base::FilePath& package,
++                           const BuildVersion& version,
++                           const base::FilePath& staged,
++                           std::vector<VersionFile>* files);
++
++// Puts the package's launcher (ThoronPortable/Thoron.exe) at `launcher` when it
++// differs from what is there: written beside it, then moved over it in one
++// step, so a stop at any moment leaves a launcher that starts. False when the
++// package has none or it could not be placed; the one there then stays.
++bool ReplaceLauncher(const base::FilePath& package, const base::FilePath& launcher);
++
++}  // namespace thoron_update
++
++#endif  // COMPONENTS_THORON_UPDATE_PORTABLE_PACKAGE_H_
+diff --git a/components/thoron_update/portable_package_unittest.cc b/components/thoron_update/portable_package_unittest.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..27f891d13b10545dc2c188835a5306e2a3483e03
+--- /dev/null
++++ b/components/thoron_update/portable_package_unittest.cc
+@@ -0,0 +1,135 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "components/thoron_update/portable_package.h"
++
++#include <string>
++#include <vector>
++
++#include "base/files/file_path.h"
++#include "base/files/file_util.h"
++#include "base/files/scoped_temp_dir.h"
++#include "base/strings/string_number_conversions.h"
++#include "crypto/hash.h"
++#include "testing/gtest/include/gtest/gtest.h"
++#include "third_party/zlib/google/zip.h"
++
++namespace thoron_update {
++namespace {
++
++constexpr char kVersion[] = "158.0.8127.3010";
++
++class ThoronUpdatePortablePackageTest : public testing::Test {
++ protected:
++  void SetUp() override { ASSERT_TRUE(dir_.CreateUniqueTempDir()); }
++
++  base::FilePath Path(const std::string& name) { return dir_.GetPath().AppendASCII(name); }
++
++  void Put(const base::FilePath& root, const std::string& relative, const std::string& content) {
++    const base::FilePath path = root.Append(base::FilePath::FromUTF8Unsafe(relative));
++    ASSERT_TRUE(base::CreateDirectory(path.DirName()));
++    ASSERT_TRUE(base::WriteFile(path, content));
++  }
++
++  // A package as portable.py makes it, with `extra` files beside it in the zip.
++  base::FilePath Package(const std::string& name,
++                         const std::vector<std::pair<std::string, std::string>>& extra = {}) {
++    const base::FilePath tree = Path(name + ".tree");
++    Put(tree, "ThoronPortable/Thoron.exe", "launcher of " + name);
++    Put(tree, "ThoronPortable/README.txt", "readme");
++    Put(tree, "ThoronPortable/variant", "win-x64-avx2\n");
++    Put(tree, "ThoronPortable/Application/current", std::string(kVersion) + "\n");
++    Put(tree, std::string("ThoronPortable/Application/") + kVersion + "/thoron.exe", "browser");
++    Put(tree, std::string("ThoronPortable/Application/") + kVersion + "/" + kVersion + "/chrome.dll",
++        "engine");
++    Put(tree, std::string("ThoronPortable/Application/") + kVersion + "/thoron_update.exe", "updater");
++    Put(tree, "ThoronPortable/Application/158.0.8127.3000/thoron.exe", "an older browser");
++    for (const auto& [relative, content] : extra) {
++      Put(tree, relative, content);
++    }
++    const base::FilePath zip = Path(name + ".zip");
++    EXPECT_TRUE(zip::Zip(tree, zip, /*include_hidden_files=*/true));
++    return zip;
++  }
++
++  base::ScopedTempDir dir_;
++};
++
++TEST_F(ThoronUpdatePortablePackageTest, OnlyTheVersionsFolderIsUnpackedAndListed) {
++  const base::FilePath zip = Package("p");
++  const base::FilePath staged = Path("Application/158.0.8127.3010.staging");
++  std::vector<VersionFile> files;
++  ASSERT_EQ(UnpackVersion(zip, *ParseBuildVersion(kVersion), staged, &files), UnpackResult::kDone);
++  std::vector<std::string> paths;
++  for (const VersionFile& file : files) {
++    paths.push_back(file.path);
++    std::string read;
++    ASSERT_TRUE(base::ReadFileToString(staged.Append(base::FilePath::FromUTF8Unsafe(file.path)), &read));
++    EXPECT_EQ(file.size, static_cast<int64_t>(read.size()));
++    EXPECT_EQ(file.sha256, base::HexEncodeLower(crypto::hash::Sha256(read)));
++  }
++  std::sort(paths.begin(), paths.end());
++  EXPECT_EQ(paths, (std::vector<std::string>{std::string(kVersion) + "/chrome.dll", "thoron.exe",
++                                             "thoron_update.exe"}));
++  // the older version and the rest of the package stay out (Thoron.exe cannot
++  // be asked for: Windows takes it for the browser's thoron.exe)
++  EXPECT_FALSE(base::PathExists(staged.AppendASCII("README.txt")));
++  EXPECT_FALSE(base::PathExists(staged.AppendASCII("variant")));
++  EXPECT_FALSE(base::PathExists(staged.AppendASCII("current")));
++  EXPECT_FALSE(base::PathExists(staged.AppendASCII("158.0.8127.3000")));
++}
++
++TEST_F(ThoronUpdatePortablePackageTest, AVersionThePackageDoesNotHaveIsSaid) {
++  const base::FilePath staged = Path("s");
++  std::vector<VersionFile> files;
++  EXPECT_EQ(UnpackVersion(Package("p"), *ParseBuildVersion("158.0.8127.3999"), staged, &files),
++            UnpackResult::kNoSuchVersion);
++  EXPECT_FALSE(base::PathExists(staged));
++  EXPECT_TRUE(files.empty());
++}
++
++TEST_F(ThoronUpdatePortablePackageTest, APackageWithAnotherTopFolderOrNoZipIsRefused) {
++  const base::FilePath staged = Path("s");
++  std::vector<VersionFile> files;
++  EXPECT_EQ(UnpackVersion(Package("p", {{"Elsewhere/x.txt", "x"}}), *ParseBuildVersion(kVersion), staged,
++                          &files),
++            UnpackResult::kNotAPackage);
++  EXPECT_FALSE(base::PathExists(staged));
++  ASSERT_TRUE(base::WriteFile(Path("not.zip"), "not a zip at all"));
++  EXPECT_EQ(UnpackVersion(Path("not.zip"), *ParseBuildVersion(kVersion), staged, &files),
++            UnpackResult::kNotAPackage);
++  EXPECT_FALSE(base::PathExists(staged));
++}
++
++TEST_F(ThoronUpdatePortablePackageTest, AStagingFolderThatIsThereIsNeverWrittenInto) {
++  const base::FilePath staged = Path("s");
++  ASSERT_TRUE(base::CreateDirectory(staged));
++  ASSERT_TRUE(base::WriteFile(staged.AppendASCII("keep"), "keep"));
++  std::vector<VersionFile> files;
++  EXPECT_EQ(UnpackVersion(Package("p"), *ParseBuildVersion(kVersion), staged, &files),
++            UnpackResult::kIoError);
++  EXPECT_TRUE(base::PathExists(staged.AppendASCII("keep")));
++}
++
++TEST_F(ThoronUpdatePortablePackageTest, TheLauncherIsReplacedOnlyWhenItDiffers) {
++  const base::FilePath launcher = Path("Thoron.exe");
++  ASSERT_TRUE(base::WriteFile(launcher, "an old launcher"));
++  const base::FilePath zip = Package("p");
++  EXPECT_TRUE(ReplaceLauncher(zip, launcher));
++  std::string read;
++  ASSERT_TRUE(base::ReadFileToString(launcher, &read));
++  EXPECT_EQ(read, "launcher of p");
++  EXPECT_FALSE(base::PathExists(launcher.AddExtensionASCII("new")));
++  // the same one again: nothing to do, and still true
++  EXPECT_TRUE(ReplaceLauncher(zip, launcher));
++  // a zip without a launcher changes nothing
++  const base::FilePath tree = Path("bare.tree");
++  Put(tree, "ThoronPortable/README.txt", "readme");
++  ASSERT_TRUE(zip::Zip(tree, Path("bare.zip"), true));
++  EXPECT_FALSE(ReplaceLauncher(Path("bare.zip"), launcher));
++  ASSERT_TRUE(base::ReadFileToString(launcher, &read));
++  EXPECT_EQ(read, "launcher of p");
++}
++
++}  // namespace
++}  // namespace thoron_update
 diff --git a/components/thoron_update/snapshot.cc b/components/thoron_update/snapshot.cc
 new file mode 100644
 index 0000000000000000000000000000000000000000..fbe92ef53f49c7c8338957d94a9a1308f62964d6
@@ -21062,10 +21652,10 @@ index 0000000000000000000000000000000000000000..2f5b859dac4db51d0df2007646fa94d7
 +}  // namespace thoron_update
 diff --git a/components/thoron_update/swap.cc b/components/thoron_update/swap.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..2ba749828e503e77abf77c1697881e333a1401f6
+index 0000000000000000000000000000000000000000..967927a537600128c6f53db618b5fd2cbf4b695d
 --- /dev/null
 +++ b/components/thoron_update/swap.cc
-@@ -0,0 +1,259 @@
+@@ -0,0 +1,278 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -21227,6 +21817,25 @@ index 0000000000000000000000000000000000000000..2ba749828e503e77abf77c1697881e33
 +  return base::DirectoryExists(folder) && HoldsExactly(folder, files);
 +}
 +
++bool BrowserOfCurrentVersion(const base::FilePath& running_exe, base::FilePath* browser) {
++  const base::FilePath folder = running_exe.DirName();
++  const std::optional<BuildVersion> running = ParseBuildVersion(folder.BaseName().MaybeAsASCII());
++  if (!running) {
++    return false;
++  }
++  const base::FilePath root = folder.DirName();
++  const std::optional<BuildVersion> current = CurrentVersion(root);
++  if (!current || *current == *running) {
++    return false;
++  }
++  const base::FilePath next = VersionFolder(root, *current).Append(running_exe.BaseName());
++  if (!base::PathExists(next)) {
++    return false;
++  }
++  *browser = next;
++  return true;
++}
++
 +void CleanUp(const base::FilePath& root) {
 +  const std::optional<BuildVersion> current = CurrentVersion(root);
 +  const std::optional<BuildVersion> previous = PreviousVersion(root);
@@ -21327,10 +21936,10 @@ index 0000000000000000000000000000000000000000..2ba749828e503e77abf77c1697881e33
 +}  // namespace thoron_update
 diff --git a/components/thoron_update/swap.h b/components/thoron_update/swap.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..00236b90da90f6329379ad797faac3b4a0fb2839
+index 0000000000000000000000000000000000000000..07ae8ead9d64e67f9fa7c8235235b1121c95b6bc
 --- /dev/null
 +++ b/components/thoron_update/swap.h
-@@ -0,0 +1,107 @@
+@@ -0,0 +1,113 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -21430,6 +22039,12 @@ index 0000000000000000000000000000000000000000..00236b90da90f6329379ad797faac3b4
 +// previous. Nothing is deleted, so it can be undone the same way.
 +SwapResult RollBack(const base::FilePath& root);
 +
++// For a browser that runs from a version's folder of a program folder
++// (root/<version>/thoron.exe, as a portable copy does): the same program of the
++// version `current` names, when that is another version and its program is
++// there. A relaunch after an update starts it (ROADMAP P3.20).
++bool BrowserOfCurrentVersion(const base::FilePath& running_exe, base::FilePath* browser);
++
 +// Removes what is neither the current nor the previous version: folders a
 +// killed update or rollback left. Run by InstallVersion; a launcher may run it
 +// at start.
@@ -21440,10 +22055,10 @@ index 0000000000000000000000000000000000000000..00236b90da90f6329379ad797faac3b4
 +#endif  // COMPONENTS_THORON_UPDATE_SWAP_H_
 diff --git a/components/thoron_update/swap_unittest.cc b/components/thoron_update/swap_unittest.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..88f7603b4ce4f177ac7c5f7ca33764c06e6f325e
+index 0000000000000000000000000000000000000000..37445ffb780b10977cd785a2f5dd2390a264221d
 --- /dev/null
 +++ b/components/thoron_update/swap_unittest.cc
-@@ -0,0 +1,215 @@
+@@ -0,0 +1,236 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -21657,11 +22272,32 @@ index 0000000000000000000000000000000000000000..88f7603b4ce4f177ac7c5f7ca33764c0
 +  }
 +}
 +
++TEST(ThoronUpdateSwapRelaunchTest, AfterAnUpdateTheRelaunchStartsTheCurrentVersion) {
++  base::ScopedTempDir dir;
++  ASSERT_TRUE(dir.CreateUniqueTempDir());
++  const base::FilePath root = dir.GetPath().AppendASCII("Application");
++  for (const char* version : {"158.0.8127.3000", "158.0.8127.3010"}) {
++    ASSERT_TRUE(base::CreateDirectory(root.AppendASCII(version)));
++    ASSERT_TRUE(base::WriteFile(root.AppendASCII(version).AppendASCII("thoron.exe"), version));
++  }
++  const base::FilePath old_exe = root.AppendASCII("158.0.8127.3000").AppendASCII("thoron.exe");
++  base::FilePath next;
++  // no `current`: nothing to change
++  EXPECT_FALSE(BrowserOfCurrentVersion(old_exe, &next));
++  ASSERT_TRUE(base::WriteFile(root.AppendASCII("current"), "158.0.8127.3000\n"));
++  EXPECT_FALSE(BrowserOfCurrentVersion(old_exe, &next));   // it is the current one
++  ASSERT_TRUE(base::WriteFile(root.AppendASCII("current"), "158.0.8127.3010\n158.0.8127.3000\n"));
++  ASSERT_TRUE(BrowserOfCurrentVersion(old_exe, &next));
++  EXPECT_EQ(next, root.AppendASCII("158.0.8127.3010").AppendASCII("thoron.exe"));
++  // an installed copy runs from Application\thoron.exe, not from a version folder
++  EXPECT_FALSE(BrowserOfCurrentVersion(root.AppendASCII("thoron.exe"), &next));
++}
++
 +}  // namespace
 +}  // namespace thoron_update
 diff --git a/components/thoron_update/update_client.cc b/components/thoron_update/update_client.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..1a63731829c9dbcf7367705837ac865fff7d1181
+index 0000000000000000000000000000000000000000..d15933f42b3c8465cca6f51e5ec88d887c24b6a9
 --- /dev/null
 +++ b/components/thoron_update/update_client.cc
 @@ -0,0 +1,524 @@
@@ -22159,12 +22795,12 @@ index 0000000000000000000000000000000000000000..1a63731829c9dbcf7367705837ac865f
 +  base::ThreadPool::PostTaskAndReplyWithResult(
 +      FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
 +      base::BindOnce(
-+          [](Installer install, base::FilePath package, bool delta) {
-+            const bool installed = install && install.Run(package, delta);
++          [](Installer install, base::FilePath package, bool delta, std::string version) {
++            const bool installed = install && install.Run(package, delta, version);
 +            base::DeleteFile(package);
 +            return installed;
 +          },
-+          config_.install, placed, delta),
++          config_.install, placed, delta, ToString(decision_->manifest->version)),
 +      base::BindOnce(&UpdateClient::OnInstalled, weak_factory_.GetWeakPtr()));
 +}
 +
@@ -22191,10 +22827,10 @@ index 0000000000000000000000000000000000000000..1a63731829c9dbcf7367705837ac865f
 +}  // namespace thoron_update
 diff --git a/components/thoron_update/update_client.h b/components/thoron_update/update_client.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..b5b85ccb6dfaa06b615ac52a80f224ba9a556753
+index 0000000000000000000000000000000000000000..fc4f2d30ca1a0faad042d0f1c7d2dd83124194ad
 --- /dev/null
 +++ b/components/thoron_update/update_client.h
-@@ -0,0 +1,210 @@
+@@ -0,0 +1,211 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -22284,10 +22920,11 @@ index 0000000000000000000000000000000000000000..b5b85ccb6dfaa06b615ac52a80f224ba
 +  };
 +  using StatusCallback = base::RepeatingCallback<void(const Status&)>;
 +
-+  // Runs a checked package: an installer, or a delta installer when `delta`.
-+  // True when it installed. Called on a thread that may block.
-+  using Installer =
-+      base::RepeatingCallback<bool(const base::FilePath& package, bool delta)>;
++  // Runs a checked package of the release `version`: an installer, or a delta
++  // installer when `delta`, or a portable copy's package. True when it
++  // installed. Called on a thread that may block.
++  using Installer = base::RepeatingCallback<
++      bool(const base::FilePath& package, bool delta, const std::string& version)>;
 +
 +  struct Config {
 +    Config();
@@ -22697,10 +23334,10 @@ index 0000000000000000000000000000000000000000..523d58db6e2a1b6f60e8f55bfb651424
 +#endif  // COMPONENTS_THORON_UPDATE_UPDATE_CLIENT_TEST_DATA_H_
 diff --git a/components/thoron_update/update_client_unittest.cc b/components/thoron_update/update_client_unittest.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..facf2e16ee2a10425e82fea014ac5c4208bd6f1c
+index 0000000000000000000000000000000000000000..873b0a839ef201c9d4af0588c0e8a994fb1a0fb8
 --- /dev/null
 +++ b/components/thoron_update/update_client_unittest.cc
-@@ -0,0 +1,377 @@
+@@ -0,0 +1,378 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -22772,7 +23409,8 @@ index 0000000000000000000000000000000000000000..facf2e16ee2a10425e82fea014ac5c42
 +  }
 +
 +  // The installer the client hands a package to: it reads what it was given.
-+  bool Install(const base::FilePath& package, bool delta) {
++  bool Install(const base::FilePath& package, bool delta, const std::string& version) {
++    EXPECT_EQ(version, data::kNewest);
 +    std::string read;
 +    base::ReadFileToString(package, &read);
 +    base::AutoLock hold(lock_);

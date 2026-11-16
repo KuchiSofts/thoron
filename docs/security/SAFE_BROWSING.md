@@ -339,7 +339,7 @@ build without a key, and every new profile's first minutes, with nothing. B is n
 
 ## 7. Work order
 
-Built on 2026-11-16: 7.3 without the wording in Settings (measured with the placeholder keys: the test downloads are kept back for their file type again, the list request is no longer made) and, of 7.1, the reading of lines that only name a host (`tools/qa/adblock_hosts_check.py`). The rest is not built yet. Files of Chromium are named from the public source at tag 158.0.8127.30,
+Built on 2026-11-16: 7.3 without the wording in Settings (measured with the placeholder keys: the test downloads are kept back for their file type again, the list request is no longer made) and, of 7.1, the reading of lines that only name a host (`tools/qa/adblock_hosts_check.py`) and the Phishing URL Blocklist as a default list, in its form of page rules, fetched and not bundled (a new profile had it two minutes after its first start; a host of the list, opened with no name resolvable, was stopped without being contacted). Not built: the two rules for Google's test addresses, the wording in Settings, the key. Files of Chromium are named from the public source at tag 158.0.8127.30,
 files of Thoron adblock from `source/overlay/other/ks-native-adblock-engine.patch`.
 
 **7.1 Thoron adblock: the phishing list by default** (needs nobody)

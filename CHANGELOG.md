@@ -259,6 +259,7 @@ Explanations live in the design docs under `docs/design/`.
 
 ### Security
 
+- **Ad blocking:** a phishing list (Phishing URL Blocklist) is among Thoron adblock's default lists, so pages that steal passwords are stopped in every build.
 - **Safe Browsing:** without a Google API key it counts as off instead of being a switch that protects nothing, and the browser asks again before a program is saved.
 - **Ad blocking:** pages the lists name as harmful (malware, phishing) or as ad sites are not opened, as in uBlock Origin; the page shown instead has no scripts and escapes every address.
 - **Ad blocking:** a list update is recorded before it is read, so a bad list cannot close the browser at every start.

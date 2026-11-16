@@ -10,6 +10,8 @@ it keeps.
 
 - **Same lists as uBlock Origin.** EasyList, EasyPrivacy, the uBlock filter lists (ads, privacy, badware,
   quick fixes, unbreak), Peter Lowe's list and a list of malware sites.
+- **Harmful pages are not opened.** Among the default lists are one of sites that spread malware and one of
+  pages that steal passwords (phishing). Such a page is not opened; a page that says why is shown instead.
 - **Works from the first page.** The lists come with the browser, already prepared, so nothing has to be
   downloaded before it blocks.
 - **Keeps itself current.** It fetches newer lists at most every 4 days, over HTTPS, without cookies or

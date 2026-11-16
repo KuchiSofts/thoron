@@ -11998,10 +11998,10 @@ index 0000000000000000000000000000000000000000..eed875cd4da34b0f151586a64b5700ff
 +#endif  // COMPONENTS_THORON_ADBLOCK_LIST_FETCH_H_
 diff --git a/components/thoron_adblock/list_store.cc b/components/thoron_adblock/list_store.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..7803ae93407fc6edbf88200a93e5e7e4158b8543
+index 0000000000000000000000000000000000000000..8772fa3e3df4906f4d28071c9840236aaf1c4a0b
 --- /dev/null
 +++ b/components/thoron_adblock/list_store.cc
-@@ -0,0 +1,1199 @@
+@@ -0,0 +1,1204 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -12096,6 +12096,11 @@ index 0000000000000000000000000000000000000000..7803ae93407fc6edbf88200a93e5e7e4
 +    {"urlhaus-1", "Online Malicious URL Blocklist",
 +     "https://malware-filter.gitlab.io/urlhaus-filter/urlhaus-filter-ag-online.txt",
 +     "https://curbengh.github.io/malware-filter/urlhaus-filter-ag-online.txt"},
++    // S.14: pages that steal passwords. Not bundled: the first copy comes with
++    // the first look for updates.
++    {"phishing-1", "Phishing URL Blocklist",
++     "https://malware-filter.gitlab.io/phishing-filter/phishing-filter-ag.txt",
++     "https://curbengh.github.io/malware-filter/phishing-filter-ag.txt"},
 +});
 +
 +constexpr auto kProbes = std::to_array<Probe>({
@@ -20251,10 +20256,10 @@ index 0000000000000000000000000000000000000000..15908f4d5dd6ac761966c367fedf08e5
 +</html>
 diff --git a/components/thoron_adblock/settings_page.js b/components/thoron_adblock/settings_page.js
 new file mode 100644
-index 0000000000000000000000000000000000000000..63e04888ea0cfa66b3ba6e6b66af53d77bb1c949
+index 0000000000000000000000000000000000000000..e8a8e5acca69eef311e3897aac22cfa64da047d2
 --- /dev/null
 +++ b/components/thoron_adblock/settings_page.js
-@@ -0,0 +1,2336 @@
+@@ -0,0 +1,2335 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -20708,7 +20713,6 @@ index 0000000000000000000000000000000000000000..63e04888ea0cfa66b3ba6e6b66af53d7
 +  {"group": "Ads", "title": "AdGuard - Mobile Ads", "url": "https://filters.adtidy.org/extension/ublock/filters/11.txt"},
 +  {"group": "Privacy", "title": "AdGuard/uBO - URL Tracking Protection", "url": "https://ublockorigin.github.io/uAssets/filters/privacy-removeparam.txt"},
 +  {"group": "Privacy", "title": "Block Outsider Intrusion into LAN", "url": "https://ublockorigin.github.io/uAssets/filters/lan-block.txt"},
-+  {"group": "Malware and phishing", "title": "Phishing URL Blocklist", "url": "https://malware-filter.gitlab.io/phishing-filter/phishing-filter.txt"},
 +  {"group": "Annoyances and cookie notices", "title": "AdGuard - Cookie Notices", "url": "https://filters.adtidy.org/extension/ublock/filters/18.txt"},
 +  {"group": "Annoyances and cookie notices", "title": "AdGuard - Mobile App Banners", "url": "https://filters.adtidy.org/extension/ublock/filters/20.txt"},
 +  {"group": "Annoyances and cookie notices", "title": "AdGuard - Other Annoyances", "url": "https://filters.adtidy.org/extension/ublock/filters/21.txt"},
@@ -24790,10 +24794,10 @@ index 0000000000000000000000000000000000000000..cf7536f6d8f26308f2473345bc5157a9
 +OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 diff --git a/third_party/thoron_notices/NOTICE.filter_lists b/third_party/thoron_notices/NOTICE.filter_lists
 new file mode 100644
-index 0000000000000000000000000000000000000000..ffb64c44b4ce833a6802309c6058a605d610204c
+index 0000000000000000000000000000000000000000..8a2797c6d8741e4cbb3cc74bbafbdf8d3213f647
 --- /dev/null
 +++ b/third_party/thoron_notices/NOTICE.filter_lists
-@@ -0,0 +1,32 @@
+@@ -0,0 +1,41 @@
 +Filter lists shipped with Thoron adblock
 +========================================
 +
@@ -24822,6 +24826,15 @@ index 0000000000000000000000000000000000000000..ffb64c44b4ce833a6802309c6058a605
 +            (https://gitlab.com/malware-filter/urlhaus-filter#license)
 +  Data:     URLhaus by abuse.ch (https://urlhaus.abuse.ch/), CC0. The list is
 +            not endorsed by abuse.ch.
++
++Phishing URL Blocklist (not bundled: each browser fetches it from the
++project's own address)
++  By:       the malware-filter project
++            (https://gitlab.com/malware-filter/phishing-filter)
++  Licence:  Creative Commons Attribution-ShareAlike 4.0 International
++            (https://gitlab.com/malware-filter/phishing-filter#license)
++  Data:     OpenPhish, PhishTank and IPThreat, as the project names them. The
++            list is not endorsed by them.
 +
 +The text of the GNU General Public License version 3 follows this notice on
 +chrome://credits. Creative Commons Attribution-ShareAlike 3.0 Unported:

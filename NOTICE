@@ -85,6 +85,10 @@ Component: Filter lists shipped with Thoron adblock (thoron_adblock_lists.txt an
              contributors; GPL-3.0 (https://github.com/uBlockOrigin/uAssets)
   Online Malicious URL Blocklist: the malware-filter project; Creative Commons Zero v1.0 Universal and MIT
              License (https://gitlab.com/malware-filter/urlhaus-filter); data from URLhaus by abuse.ch, CC0
+  Phishing URL Blocklist (a default list that is not bundled: each browser fetches it from the project's
+             own address): the malware-filter project; Creative Commons Attribution-ShareAlike 4.0
+             International (https://gitlab.com/malware-filter/phishing-filter); data from OpenPhish,
+             PhishTank and IPThreat
   In the browser: chrome://credits lists these, Thorium, uBlock Origin's scriptlets and the patch sources.
 
 Component: pak tool (pak_src/ in upstream Thorium; not part of Thoron releases)

@@ -369,6 +369,16 @@ The installer, and later Settings, shows **"Import from…"** with:
 - On first start, the windows open exactly as they were: tab order, groups, pinned tabs, and the
   active tab.
 - Parser requirements: fuzzing, plus golden test files from each supported browser.
+- Status 2026-11-16 (P3.15, command-line version `tools/migrate/sessions.py`): the parser replays the
+  SNSS commands as Chromium does and trusts no byte (sizes, counts and work capped; an unknown or
+  damaged command is skipped and counted). The import writes the source's session file with two
+  changes, and the copy must read exactly as the source: commands Thoron cannot use are left out,
+  because Chromium stops reading a session at the first one and loses the rest; and each group's
+  link to the source profile's saved groups is taken out, because Thoron closes a restored group
+  linked to a saved group it does not know (`TabGroupSyncService::ConnectLocalTabGroup`: "deleted
+  remotely"), with its tabs. Unlinked, the group is restored and saved as Thoron's own. Found on the
+  way: a minimized window opens as a normal one when Chromium restores a session on Windows, its own
+  included.
 
 **What can and cannot be copied (stated honestly in the UI)**
 

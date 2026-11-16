@@ -126,6 +126,19 @@ Explanations live in the design docs under `docs/design/`.
 - **Privacy:** `docs/security/NETWORK.md` lists what a fresh Thoron 158 profile contacts request by request: who asks, when, and how to switch it off.
 - **Privacy:** `docs/security/NETWORK_REDUCTION.md`: the work order for removing the Google contacts a fresh profile does not need, each with its cause and a tested stop.
 - **QA tools:** `netlog_hosts.py` names the caller, time and answer of every request and fails when a host that must stay away is contacted.
+- **QA tools:** `mail_signin_check.py` checks that Thoron M-Notifier asks Gmail with a Google sign-in in the profile and not without.
+- **QA tools:** `language_detect_check.py` checks that a page's language is found with no downloaded model.
+- **Security:** `docs/security/UPSTREAM_AUDIT_M158.md` reviews every finding in upstream's 18 commits behind the 158 series.
+- **Security:** `audit_diff` also reports extension-install, sandbox, encryption and installer changes, new flags and CI workflows.
+- **Security:** `patch_delta.py` tells a refreshed upstream patch from one that changes what it does.
+- **Security:** `docs/security/SAFE_BROWSING.md`: what stops phishing and malware pages today, what is left without Google's API keys, the choice and its work order.
+- **QA tools:** `safe_browsing_check.py` (online) opens Google's phishing and malware test pages and says what stopped each.
+- **Release:** `release.py prepare` refuses a Thoron version that is not the next one after the newest release tag; `version.py next` prints it.
+- **Release:** `prepare` refuses a build record without the source tag, its commit and the Chromium tag, and a build tree without the GPL text.
+- **Release:** every release holds the portable `.zip` and a licence bundle with the GPL text, both in `SHA256SUMS`; the manifest names the portable package.
+- **Release:** `prepare` refuses a contributor list, `CREDITS.md` or `NOTICE` that is out of date, and never rewrites them.
+- **Release:** `prepare` lints the wiki pages; `publish` prints the command that publishes them and never runs it.
+- **Docs:** `check_docs` checks the short form of `CHANGELOG.md` and the links between wiki pages.
 - **Release tools:** `tools/update/manifest.py` builds and checks the update manifest, schema 1; the format is in `docs/update/MANIFEST.md`.
 - **Release tools:** `manifest.py sign` signs the update manifest with Thoron's Ed25519 key; `verify` refuses a change of any bit.
 - **Security:** `docs/security/THREAT_MODEL.md` lists the threats to the updater, the import and portable encryption, each with its mitigation and test.
@@ -193,6 +206,15 @@ Explanations live in the design docs under `docs/design/`.
 
 ### Changed
 
+- **Privacy:** a profile nobody signed in to Google with no longer contacts Google's optimization guide, sign-in check, time service or search engine at start.
+- **Privacy:** the New Tab page's Google bar and doodle, suggestions fetched ahead and the "AI Mode" question are asked for only while somebody is signed in to Google.
+- **Mail:** Thoron M-Notifier looks at Gmail only while somebody is signed in to Google in the profile; other mailboxes are looked at as before.
+- **Privacy:** a page's language is found by the built-in detector; no model is downloaded for it.
+- **Privacy:** the list of Google's on-device AI models is fetched only once on-device AI is switched on.
+- **Security:** client-side phishing detection, which needs a model from Google's optimization guide, is off; Safe Browsing's lists and Thoron adblock's lists work as before.
+- **Release:** release notes take Thoron's changes from `CHANGELOG.md` and name the source tag, its commit and the Chromium tag.
+- **Release:** the draft's tag is put on the commit the build was made from.
+- **Build:** `BUILDINFO.json` names the source tag and the Chromium tag.
 - **Ad blocking:** the built-in blocker is to replace uBlock Origin; an installed uBlock Origin is never touched.
 - **Brand:** new icon "Vortex", three turning violet blades around a core, replaces "Radiant Core" everywhere.
 - **Install:** the Windows program file is now `thoron.exe` and the installer `thoron_<variant>_mini_installer.exe`.

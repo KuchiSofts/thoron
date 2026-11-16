@@ -1841,6 +1841,262 @@ index 6018748f094dd3a1977e5f85c0ac1da95d590c5e..1ecc08f18b241060af0a98016721ac30
  #if BUILDFLAG(IS_ANDROID)
      {language::prefs::kAppLanguagePromptShown,
       {syncable_prefs_ids::kAppLanguagePromptShown, syncer::PREFERENCES,
+diff --git a/chrome/browser/component_updater/optimization_guide_on_device_model_installer.cc b/chrome/browser/component_updater/optimization_guide_on_device_model_installer.cc
+index ee59bb3290f824d9850e4869d4081d0f470c4200..197ac9ccf70e902ae1174051862861785ac195db 100644
+--- a/chrome/browser/component_updater/optimization_guide_on_device_model_installer.cc
++++ b/chrome/browser/component_updater/optimization_guide_on_device_model_installer.cc
+@@ -44,6 +44,9 @@
+ #include "components/crx_file/id_util.h"
+ #include "components/optimization_guide/core/model_execution/manifest_broker/manifest.h"
+ #include "components/optimization_guide/core/model_execution/manifest_broker/manifest_asset_manager_delegate.h"
++#include "components/optimization_guide/core/model_execution/on_device_prefs.h"
++#include "components/prefs/pref_change_registrar.h"
++#include "components/prefs/pref_service.h"
+ #include "components/update_client/crx_update_item.h"
+ #include "components/update_client/update_client.h"
+ #include "components/update_client/update_client_errors.h"
+@@ -532,6 +535,24 @@ class ManifestAssetManagerDelegateImpl final
+     if (manifest_registered_) {
+       return;
+     }
++    // Thoron (S.15): the list of Google's on-device AI models is asked for
++    // only once on-device AI is switched on (its setting, which is also on
++    // when a model is installed already). Until then the setting is watched.
++    if (g_browser_process && g_browser_process->local_state() &&
++        !g_browser_process->local_state()->GetBoolean(
++            optimization_guide::model_execution::prefs::localstate::
++                kOnDeviceAiUserSettingsEnabled)) {
++      if (thoron_setting_watch_.IsEmpty()) {
++        thoron_setting_watch_.Init(g_browser_process->local_state());
++        thoron_setting_watch_.Add(
++            optimization_guide::model_execution::prefs::localstate::
++                kOnDeviceAiUserSettingsEnabled,
++            base::BindRepeating(&ManifestAssetManagerDelegateImpl::
++                                    MaybeRegisterManifestComponent,
++                                weak_ptr_factory_.GetWeakPtr()));
++      }
++      return;
++    }
+     manifest_registered_ = true;
+     if (!g_browser_process) {
+       return;
+@@ -561,6 +582,8 @@ class ManifestAssetManagerDelegateImpl final
+ 
+   base::FilePath manifest_dir_;
+   bool manifest_registered_ = false;
++  // Thoron (S.15): see MaybeRegisterManifestComponent().
++  PrefChangeRegistrar thoron_setting_watch_;
+   base::RepeatingCallbackList<void(base::FilePath)> manifest_ready_callbacks_;
+   base::WeakPtrFactory<ManifestAssetManagerDelegateImpl> weak_ptr_factory_{
+       this};
+diff --git a/chrome/browser/navigation_predictor/search_engine_preconnector.cc b/chrome/browser/navigation_predictor/search_engine_preconnector.cc
+index 0b665fddd4da7e9b28b5a4ce98a1d01cc5631952..74a1e2ce9bb08b7095914876f045fb2d6fa5211a 100644
+--- a/chrome/browser/navigation_predictor/search_engine_preconnector.cc
++++ b/chrome/browser/navigation_predictor/search_engine_preconnector.cc
+@@ -144,7 +144,9 @@ namespace features {
+ // Feature to control preconnect to search.
+ 
+ BASE_FEATURE(kPreconnectFromKeyedService, base::FEATURE_ENABLED_BY_DEFAULT);
+-BASE_FEATURE(kPreconnectToSearch, base::FEATURE_ENABLED_BY_DEFAULT);
++// Thoron (S.15): off. The browser does not connect to the search engine
++// before somebody searches.
++BASE_FEATURE(kPreconnectToSearch, base::FEATURE_DISABLED_BY_DEFAULT);
+ 
+ // Feature to control binding the receivers every time we attempt to
+ // preconnect. This will trigger the destruction of the previous receiver
+diff --git a/chrome/browser/new_tab_page/one_google_bar/one_google_bar_service.cc b/chrome/browser/new_tab_page/one_google_bar/one_google_bar_service.cc
+index fac481f41cb67c95950bea9647f18d7c13f9d2e6..ae10ea009b385832fdcd61a157b5c34b54577bc7 100644
+--- a/chrome/browser/new_tab_page/one_google_bar/one_google_bar_service.cc
++++ b/chrome/browser/new_tab_page/one_google_bar/one_google_bar_service.cc
+@@ -11,6 +11,7 @@
+ #include "base/memory/raw_ptr.h"
+ #include "base/observer_list.h"
+ #include "chrome/browser/new_tab_page/one_google_bar/one_google_bar_loader.h"
++#include "components/signin/public/identity_manager/accounts_in_cookie_jar_info.h"
+ #include "components/signin/public/identity_manager/identity_manager.h"
+ 
+ class OneGoogleBarService::SigninObserver
+@@ -26,6 +27,13 @@ class OneGoogleBarService::SigninObserver
+ 
+   ~SigninObserver() override { identity_manager_->RemoveObserver(this); }
+ 
++  // Thoron (S.15): whether somebody is signed in to Google in this profile.
++  bool SignedIn() const {
++    return !identity_manager_->GetAccountsInCookieJar()
++                .GetPotentiallyInvalidSignedInAccounts()
++                .empty();
++  }
++
+  private:
+   // IdentityManager::Observer implementation.
+   void OnAccountsInCookieUpdated(
+@@ -59,6 +67,14 @@ void OneGoogleBarService::Shutdown() {
+ }
+ 
+ void OneGoogleBarService::Refresh() {
++  // Thoron (S.15): Google's bar for the New Tab page is asked for only while
++  // somebody is signed in to Google in this profile. Without a sign-in the
++  // page has no bar and Google is not contacted.
++  if (signin_observer_ && !signin_observer_->SignedIn()) {
++    OneGoogleBarDataLoaded(OneGoogleBarLoader::Status::FATAL_ERROR,
++                           std::nullopt);
++    return;
++  }
+   loader_->Load(base::BindOnce(&OneGoogleBarService::OneGoogleBarDataLoaded,
+                                base::Unretained(this)));
+ }
+diff --git a/chrome/browser/ui/webui/new_tab_page/new_tab_page_handler.cc b/chrome/browser/ui/webui/new_tab_page/new_tab_page_handler.cc
+index b57d6384773d0cb86893859066b219dec90c6d70..79f4f51a573f145e90604d3ee56549a771cbe63f 100644
+--- a/chrome/browser/ui/webui/new_tab_page/new_tab_page_handler.cc
++++ b/chrome/browser/ui/webui/new_tab_page/new_tab_page_handler.cc
+@@ -52,6 +52,8 @@
+ #include "chrome/browser/search/background/ntp_custom_background_service.h"
+ #include "chrome/browser/search/background/ntp_custom_background_service_factory.h"
+ #include "chrome/browser/search_engines/template_url_service_factory.h"
++#include "chrome/browser/signin/identity_manager_factory.h"
++#include "components/signin/public/identity_manager/identity_manager.h"
+ #include "chrome/browser/themes/custom_theme_supplier.h"
+ #include "chrome/browser/themes/theme_properties.h"
+ #include "chrome/browser/ui/actions/chrome_action_id.h"
+@@ -86,6 +88,7 @@
+ #include "components/search_engines/template_url_service.h"
+ #include "components/search_provider_logos/logo_service.h"
+ #include "components/search_provider_logos/switches.h"
++#include "components/signin/public/identity_manager/accounts_in_cookie_jar_info.h"
+ #include "components/segmentation_platform/public/constants.h"
+ #include "components/segmentation_platform/public/input_context.h"
+ #include "components/segmentation_platform/public/prediction_options.h"
+@@ -615,6 +618,17 @@ void NewTabPageHandler::GetMostVisitedSettings(
+ }
+ 
+ void NewTabPageHandler::GetDoodle(GetDoodleCallback callback) {
++  // Thoron (S.15): the search engine's doodle is asked for only while
++  // somebody is signed in to Google in this profile. Without a sign-in the
++  // page shows the plain logo and Google is not contacted.
++  if (signin::IdentityManager* identity =
++          IdentityManagerFactory::GetForProfile(profile_);
++      !identity || identity->GetAccountsInCookieJar()
++                       .GetPotentiallyInvalidSignedInAccounts()
++                       .empty()) {
++    std::move(callback).Run(nullptr);
++    return;
++  }
+   bool enable_animated_logo =
+       base::FeatureList::IsEnabled(ntp_features::kNtpAnimatedDoodles) &&
+       !gfx::Animation::PrefersReducedMotion();
+diff --git a/components/network_time/network_time_tracker.cc b/components/network_time/network_time_tracker.cc
+index 3bb0f02378021fc2703be508d95af77c65bdaa23..c25ed8a13a85c1ab9ae240ad79e53d76f68ee28c 100644
+--- a/components/network_time/network_time_tracker.cc
++++ b/components/network_time/network_time_tracker.cc
+@@ -115,7 +115,9 @@ constexpr base::FeatureParam<NetworkTimeTracker::FetchBehavior>::Option
+ };
+ constexpr base::FeatureParam<NetworkTimeTracker::FetchBehavior> kFetchBehavior{
+     &kNetworkTimeServiceQuerying, "FetchBehavior",
+-    NetworkTimeTracker::FETCHES_IN_BACKGROUND_AND_ON_DEMAND,
++    // Thoron (S.15): Google's time service is asked only when a certificate's
++    // date looks wrong, not in the background at every start.
++    NetworkTimeTracker::FETCHES_ON_DEMAND_ONLY,
+     &kFetchBehaviorOptions};
+ 
+ // Number of time measurements performed in a given network time calculation.
+diff --git a/components/omnibox/browser/aim_eligibility_service.cc b/components/omnibox/browser/aim_eligibility_service.cc
+index 1337973db070b66a4310a0bfa7c99ead4c8692c1..2a656c7b6dd560b1c125556080365f47d2472203 100644
+--- a/components/omnibox/browser/aim_eligibility_service.cc
++++ b/components/omnibox/browser/aim_eligibility_service.cc
+@@ -1111,6 +1111,15 @@ void AimEligibilityService::ScheduleServerEligibilityRequest(
+ void AimEligibilityService::StartServerEligibilityRequest(
+     RequestSource request_source,
+     const std::string& locale) {
++  // Thoron (S.15): Google is not asked about "AI Mode" while nobody is
++  // signed in to Google in this profile. After a sign-in it is asked when
++  // the accounts in the cookies change, at the latest at the next start.
++  if (identity_manager_ && request_source != RequestSource::kUser &&
++      identity_manager_->GetAccountsInCookieJar()
++          .GetPotentiallyInvalidSignedInAccounts()
++          .empty()) {
++    return;
++  }
+   if (IsManualOverrideActive() && request_source != RequestSource::kUser) {
+     return;
+   }
+diff --git a/components/omnibox/browser/zero_suggest_provider.cc b/components/omnibox/browser/zero_suggest_provider.cc
+index 76d90826062862f94fbbdae8408c7700f2ebbc6f..0a252929dfb0dd0822d2f835bb872534e60d2181 100644
+--- a/components/omnibox/browser/zero_suggest_provider.cc
++++ b/components/omnibox/browser/zero_suggest_provider.cc
+@@ -46,7 +46,9 @@
+ #include "components/prefs/pref_service.h"
+ #include "components/search/ntp_features.h"
+ #include "components/search_engines/search_engine_type.h"
++#include "components/signin/public/identity_manager/accounts_in_cookie_jar_info.h"
+ #include "components/search_engines/template_url_service.h"
++#include "components/signin/public/identity_manager/identity_manager.h"
+ #include "components/url_formatter/url_formatter.h"
+ #include "services/network/public/cpp/simple_url_loader.h"
+ #include "services/network/public/mojom/url_response_head.mojom.h"
+@@ -527,6 +529,16 @@ void ZeroSuggestProvider::StartPrefetch(const AutocompleteInput& input) {
+ 
+   TRACE_EVENT0("omnibox", "ZeroSuggestProvider::StartPrefetch");
+ 
++  // Thoron (S.15): suggestions for the empty box are fetched ahead of time
++  // only while somebody is signed in to Google in this profile. Without a
++  // sign-in they are asked for when the box is used, not when a page opens.
++  if (signin::IdentityManager* identity = client()->GetIdentityManager();
++      !identity || identity->GetAccountsInCookieJar()
++                       .GetPotentiallyInvalidSignedInAccounts()
++                       .empty()) {
++    return;
++  }
++
+   if (!OmniboxFieldTrial::IsZeroSuggestPrefetchingEnabledInContext(
+           input.current_page_classification()) &&
+       !omnibox_feature_configs::ContextualSearch::Get()
+diff --git a/components/optimization_guide/core/optimization_guide_features.cc b/components/optimization_guide/core/optimization_guide_features.cc
+index e3c4e6e900020c5ad7b1073a260210d33395eb45..b3761eaa43b4ee928a1703e618712054c7824117 100644
+--- a/components/optimization_guide/core/optimization_guide_features.cc
++++ b/components/optimization_guide/core/optimization_guide_features.cc
+@@ -57,7 +57,9 @@ constexpr auto enabled_by_default_mobile_only =
+ 
+ // Enables the syncing of the Optimization Hints component, which provides
+ // hints for what optimizations can be applied on a page load.
+-BASE_FEATURE(kOptimizationHints, base::FEATURE_ENABLED_BY_DEFAULT);
++// Thoron (S.15): off. With it the browser asks Google's optimization guide
++// for hints and models at every start, for features Thoron does not offer.
++BASE_FEATURE(kOptimizationHints, base::FEATURE_DISABLED_BY_DEFAULT);
+ 
+ // Enables the prediction of optimization targets.
+ BASE_FEATURE(kOptimizationTargetPrediction, base::FEATURE_ENABLED_BY_DEFAULT);
+diff --git a/components/signin/public/base/signin_switches.cc b/components/signin/public/base/signin_switches.cc
+index 70bc2b4b6ff3e5226378bd77c5eeeca98a7aa0e9..186bb7da115063740c8c21541f327a6da76dd57e 100644
+--- a/components/signin/public/base/signin_switches.cc
++++ b/components/signin/public/base/signin_switches.cc
+@@ -940,8 +940,10 @@ BASE_FEATURE(kSkipCheckForAccountManagementOnSignin,
+              base::FEATURE_ENABLED_BY_DEFAULT);
+ #endif  // BUILDFLAG(IS_ANDROID)
+ 
++// Thoron (S.15): on. A profile without Google's sign-in cookies does not ask
++// Google which accounts are signed in.
+ BASE_FEATURE(kSkipListAccountsWithoutGaiaCookies,
+-             base::FEATURE_DISABLED_BY_DEFAULT);
++             base::FEATURE_ENABLED_BY_DEFAULT);
+ 
+ BASE_FEATURE(kSkipRefreshTokenCheckInIdentityManager,
+              base::FEATURE_ENABLED_BY_DEFAULT);
+diff --git a/components/translate/core/common/translate_util.cc b/components/translate/core/common/translate_util.cc
+index 7763bae3c566545562debf4c5cfeedc396ec277c..52677308df233122a12125298d8a2f2cba385b88 100644
+--- a/components/translate/core/common/translate_util.cc
++++ b/components/translate/core/common/translate_util.cc
+@@ -45,7 +45,10 @@ bool IsTFLiteLanguageDetectionEnabled() {
+ // TODO(crbug.com/40819484): Enable the feature on WebView.
+ #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_WIN) || \
+     BUILDFLAG(IS_MAC) || BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
+-  return true;
++  // Thoron (S.15): a page's language is found by the detector that is built
++  // in (CLD3). The other one needs a model that the browser downloads from
++  // Google's optimization guide, which Thoron does not ask.
++  return false;
+ #else
+   return false;
+ #endif
 diff --git a/chrome/browser/ui/browser_web_contents_delegate/thoron_adblock_shortcuts.cc b/chrome/browser/ui/browser_web_contents_delegate/thoron_adblock_shortcuts.cc
 new file mode 100644
 index 0000000000000000000000000000000000000000..52f923f2dd238ef331e1580340a0190ee507a235
@@ -6005,10 +6261,10 @@ index 0000000000000000000000000000000000000000..d0fafbafa75adc4e08b11c75f203035c
 +#endif  // CHROME_BROWSER_UI_WEBUI_THORON_ADBLOCK_UI_H_
 diff --git a/chrome/browser/ui/webui/thoron_mail_ui.cc b/chrome/browser/ui/webui/thoron_mail_ui.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..1cba513de56c542834d87514b7d86ca8e87cde4d
+index 0000000000000000000000000000000000000000..920b75ec00c86e2bccdd5fba373d10df35004fa9
 --- /dev/null
 +++ b/chrome/browser/ui/webui/thoron_mail_ui.cc
-@@ -0,0 +1,1053 @@
+@@ -0,0 +1,1107 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -6034,6 +6290,9 @@ index 0000000000000000000000000000000000000000..1cba513de56c542834d87514b7d86ca8
 +#include "chrome/browser/notifications/notification_display_service_factory.h"
 +#include "chrome/browser/notifications/notification_handler.h"
 +#include "chrome/browser/profiles/profile.h"
++#include "chrome/browser/signin/identity_manager_factory.h"
++#include "components/signin/public/identity_manager/accounts_in_cookie_jar_info.h"
++#include "components/signin/public/identity_manager/identity_manager.h"
 +#include "chrome/browser/ui/navigator/browser_navigator.h"
 +#include "chrome/browser/ui/navigator/browser_navigator_params.h"
 +#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
@@ -6397,6 +6656,52 @@ index 0000000000000000000000000000000000000000..1cba513de56c542834d87514b7d86ca8
 +
 +}  // namespace
 +
++// S.15: whether somebody is signed in to Google in the profile, from the
++// browser's own list of the accounts in its cookies (kept between starts, and
++// made without a request while there is no Google cookie). The service looks
++// again when somebody signs in or out.
++class ThoronMailCenter::GoogleSignIn
++    : public signin::IdentityManager::Observer {
++ public:
++  GoogleSignIn(Profile* profile, thoron_mail::MailService* service)
++      : identity_(IdentityManagerFactory::GetForProfile(profile)),
++        service_(service) {
++    if (identity_) {
++      observation_.Observe(identity_);
++      signed_in_ = SignedIn();
++    }
++  }
++
++  bool SignedIn() const {
++    return identity_ && !identity_->GetAccountsInCookieJar()
++                             .GetPotentiallyInvalidSignedInAccounts()
++                             .empty();
++  }
++
++ private:
++  // signin::IdentityManager::Observer:
++  void OnAccountsInCookieUpdated(
++      const signin::AccountsInCookieJarInfo& accounts,
++      const GoogleServiceAuthError& error) override {
++    const bool now = !accounts.GetPotentiallyInvalidSignedInAccounts().empty();
++    if (now != signed_in_) {
++      signed_in_ = now;
++      service_->CheckNow();
++    }
++  }
++  void OnIdentityManagerShutdown(signin::IdentityManager* identity) override {
++    observation_.Reset();
++    identity_ = nullptr;
++  }
++
++  raw_ptr<signin::IdentityManager> identity_;
++  const raw_ptr<thoron_mail::MailService> service_;
++  bool signed_in_ = false;
++  base::ScopedObservation<signin::IdentityManager,
++                          signin::IdentityManager::Observer>
++      observation_{this};
++};
++
 +// static
 +ThoronMailCenter& ThoronMailCenter::For(Profile* profile) {
 +  auto* center = static_cast<ThoronMailCenter*>(profile->GetUserData(kCenterKey));
@@ -6423,6 +6728,11 @@ index 0000000000000000000000000000000000000000..1cba513de56c542834d87514b7d86ca8
 +              // profile's own (user data): it ends before the profile.
 +              base::Unretained(profile)))) {
 +  service_->AddObserver(this);
++  // S.15: Gmail is asked only while somebody is signed in to Google here.
++  // Unretained: `google_sign_in_` is this object's, as the service is.
++  google_sign_in_ = std::make_unique<GoogleSignIn>(profile, service_.get());
++  service_->SetGoogleSignedIn(base::BindRepeating(
++      &GoogleSignIn::SignedIn, base::Unretained(google_sign_in_.get())));
 +  // The mailboxes added by address and password (P5.77): looked at through
 +  // the profile's network context, once their passwords can be decrypted.
 +  // Unretained: the service is owned by this, which is the profile's own.
@@ -7064,10 +7374,10 @@ index 0000000000000000000000000000000000000000..1cba513de56c542834d87514b7d86ca8
 +WEB_UI_CONTROLLER_TYPE_IMPL(ThoronMailMenuUI)
 diff --git a/chrome/browser/ui/webui/thoron_mail_ui.h b/chrome/browser/ui/webui/thoron_mail_ui.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..6651d7d1c15d45fc24900b7e28cbaf9f390ff108
+index 0000000000000000000000000000000000000000..1cd0ce6112acb6bab698b0419d5d4984400dd932
 --- /dev/null
 +++ b/chrome/browser/ui/webui/thoron_mail_ui.h
-@@ -0,0 +1,157 @@
+@@ -0,0 +1,161 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -7180,6 +7490,10 @@ index 0000000000000000000000000000000000000000..6651d7d1c15d45fc24900b7e28cbaf9f
 +
 +  const raw_ptr<Profile> profile_;
 +  std::unique_ptr<thoron_mail::MailService> service_;
++  // S.15: tells the service whether somebody is signed in to Google in the
++  // profile, and has it look again when that changes.
++  class GoogleSignIn;
++  std::unique_ptr<GoogleSignIn> google_sign_in_;
 +  int sounds_played_ = 0;
 +  int notices_shown_ = 0;
 +  scoped_refptr<os_crypt_async::Encryptor> encryptor_;
@@ -10048,10 +10362,10 @@ index 0000000000000000000000000000000000000000..529372e73e8bc78edd93e438e343ad21
 +#endif  // COMPONENTS_THORON_MAIL_MAIL_PAGE_H_
 diff --git a/components/thoron_mail/mail_service.cc b/components/thoron_mail/mail_service.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..11da171978792276f2c344624d42389c9958c900
+index 0000000000000000000000000000000000000000..df8b7fb45b66767f0da74171e198cad19a9dcbc3
 --- /dev/null
 +++ b/components/thoron_mail/mail_service.cc
-@@ -0,0 +1,580 @@
+@@ -0,0 +1,598 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -10336,6 +10650,18 @@ index 0000000000000000000000000000000000000000..11da171978792276f2c344624d42389c
 +  context_ = std::move(context);
 +}
 +
++void MailService::SetGoogleSignedIn(GoogleSignedIn signed_in) {
++  google_signed_in_ = std::move(signed_in);
++}
++
++bool MailService::AsksGmail() const {
++  // a local server that stands in for Gmail (the checks) is always asked
++  if (FeedUrl(0, /*spam=*/false).host() != "mail.google.com") {
++    return true;
++  }
++  return !google_signed_in_ || google_signed_in_.Run();
++}
++
 +void MailService::SetImapAccounts(std::vector<ImapAccount> accounts) {
 +  if (accounts.size() > kMostImapAccounts) {
 +    accounts.resize(kMostImapAccounts);
@@ -10387,6 +10713,12 @@ index 0000000000000000000000000000000000000000..11da171978792276f2c344624d42389c
 +  primary_refused_ = false;
 +  next_.clear();
 +  observers_.Notify(&Observer::OnMailChanged);
++  if (!AsksGmail()) {
++    // S.15: nobody is signed in to Google here, so Gmail is not asked: it
++    // would only answer that nobody is.
++    CheckImap(0, "signed-out");
++    return;
++  }
 +  Fetch(0, /*spam=*/false);
 +}
 +
@@ -10634,10 +10966,10 @@ index 0000000000000000000000000000000000000000..11da171978792276f2c344624d42389c
 +}  // namespace thoron_mail
 diff --git a/components/thoron_mail/mail_service.h b/components/thoron_mail/mail_service.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..e086ff248354b26a39e5a4f3b3ea8046619e85be
+index 0000000000000000000000000000000000000000..8f9275f25b5719e14a4a6d2bd35b6851c9461900
 --- /dev/null
 +++ b/components/thoron_mail/mail_service.h
-@@ -0,0 +1,188 @@
+@@ -0,0 +1,197 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -10728,6 +11060,12 @@ index 0000000000000000000000000000000000000000..e086ff248354b26a39e5a4f3b3ea8046
 +  void SetImapAccounts(std::vector<ImapAccount> accounts);
 +  const std::vector<ImapAccount>& imap_accounts() const { return imap_; }
 +
++  // S.15: whether somebody is signed in to Google in this profile. While
++  // nobody is, Gmail is not asked at all (the mailboxes still are). Not set:
++  // Gmail is always asked.
++  using GoogleSignedIn = base::RepeatingCallback<bool()>;
++  void SetGoogleSignedIn(GoogleSignedIn signed_in);
++
 +  const std::vector<MailAccount>& accounts() const { return accounts_; }
 +  // The unread messages of every watched account.
 +  int total_unread() const;
@@ -10794,6 +11132,8 @@ index 0000000000000000000000000000000000000000..e086ff248354b26a39e5a4f3b3ea8046
 +  void OnImapChecked(size_t at, std::string problem, ImapCheck::Result result);
 +  void Finish(std::string problem);
 +  void Reschedule();
++  // S.15: whether a look asks Gmail (see SetGoogleSignedIn).
++  bool AsksGmail() const;
 +  // when the person last looked at `email` (the first look's time until then)
 +  base::Time Looked(const std::string& email) const;
 +
@@ -10812,6 +11152,7 @@ index 0000000000000000000000000000000000000000..e086ff248354b26a39e5a4f3b3ea8046
 +  std::string problem_;
 +  std::unique_ptr<network::SimpleURLLoader> loader_;
 +  ContextGetter context_;
++  GoogleSignedIn google_signed_in_;
 +  std::vector<ImapAccount> imap_;
 +  std::unique_ptr<ImapCheck> imap_check_;
 +  // Gmail refused the feed of the Primary tab in this look: the inbox's is

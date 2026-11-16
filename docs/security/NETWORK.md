@@ -5,6 +5,13 @@ often, whether a fresh profile needs it, how it can be switched off, and what Th
 Hosts a person reaches by browsing are not listed. The requests to Google that nobody needs are worked
 out one by one in [NETWORK_REDUCTION.md](NETWORK_REDUCTION.md) (ROADMAP **S.15**).
 
+**Since the build of 2026-11-16** a fresh profile no longer contacts
+`optimizationguide-pa.googleapis.com`, `accounts.google.com`, `www.google.com` or `mail.google.com`, makes
+no time request on `clients2.google.com`, and its New Tab page contacts neither `www.gstatic.com` nor
+`ogads-pa.clients6.google.com` (measured, one run with the local page and one with the New Tab page;
+NETWORK_REDUCTION.md, section 7). The tables below are those of the build before these changes and are
+measured again before the first release.
+
 ## 1. What was measured, and what was not
 
 - **Build.** Thoron build 158.0.8127.3010 (Chromium 158.0.8127.30), Windows x64, on 2026-11-16.

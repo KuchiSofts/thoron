@@ -5,8 +5,9 @@ without need, what in Chromium causes each one, and the smallest change that sto
 itself, with every host and what Thoron keeps, is in [NETWORK.md](NETWORK.md) (ROADMAP **S.10**).
 
 Status: measured 2026-11-16 on Thoron build 158.0.8127.3010 (Chromium 158.0.8127.30, Windows x64) with
-[`tools/qa/netlog_hosts.py`](../../tools/qa/netlog_hosts.py). No source change has been made yet; this
-page says what to change and how each change was tried.
+[`tools/qa/netlog_hosts.py`](../../tools/qa/netlog_hosts.py). The changes were built on 2026-11-16 and
+measured on that build ([section 7](#7-what-was-built-2026-11-16)); the sections before it say what was
+found and how each change was tried.
 
 How to read it:
 
@@ -343,6 +344,8 @@ py -3 -I tools/qa/netlog_hosts.py --browser <out dir>\thoron.exe --work <scratch
 
 ## 6. Open points
 
+Points 1 to 3 were settled with the build ([section 7](#7-what-was-built-2026-11-16)).
+
 1. **Three decisions for the owner:** the connection to the search engine ahead of a search (2.5),
    what the M-Notifier does while nobody is signed in to Google (2.7), and whether "Improve search
    suggestions" starts off (2.9).
@@ -355,3 +358,41 @@ py -3 -I tools/qa/netlog_hosts.py --browser <out dir>\thoron.exe --work <scratch
 5. **Not measured:** policies, a visible window with the first-run page, and later starts of the same
    profile. The changes are measured again on the built browser (section 5).
 6. **Extensions from Google Chrome's registry key** (2.8) wait for ROADMAP **P2.16**.
+
+## 7. What was built (2026-11-16)
+
+The changes are in the browser's source (`source/`, patch `other/ks-native-adblock-hook.patch`) and were
+measured on the build that holds them, with the commands of section 5.
+
+| Contact | What was built | Differs from the proposal |
+|---|---|---|
+| Optimization guide models (2.1) | `OptimizationHints` is off | A page's language is found by the built-in detector (CLD3): the other detector needs a model from this service, and without it only the language a page declares was used. Client-side phishing detection ends with its model ([SAFE_BROWSING.md](SAFE_BROWSING.md), 3.5) |
+| On-device AI model manifest (2.2) | The component is registered only once on-device AI is switched on (the local setting, which is also on when a model is installed); until then the setting is watched | A patch, not the build argument |
+| Sign-in check (2.3) | `SkipListAccountsWithoutGaiaCookies` is on | No |
+| "AI Mode" (2.4) | The request is not made while nobody is signed in to Google in the profile | The feature stays on for a signed-in profile |
+| Search preconnect (2.5) | `PreconnectToSearch` is off | No |
+| Time service (2.6) | On demand only | No |
+| Thoron's mail check (2.7) | Gmail is asked only while the browser's list of signed-in Google accounts has an entry, and at once when one appears; other mailboxes are looked at as before | Choice 1 of the proposal |
+| Google's bar on the New Tab page (2.9) | Asked for only while somebody is signed in to Google | The bar stays for a signed-in profile; `NtpOneGoogleBar` stays on |
+| Suggestions for the empty box (2.9) | Not fetched ahead while nobody is signed in to Google; asked for when the box is used | "Improve search suggestions" stays on |
+| Doodle (2.9) | Not asked for while nobody is signed in to Google | No |
+
+"Signed in to Google" is read from the browser's own list of the Google accounts in its cookies. The
+browser keeps that list between starts and, with the sign-in check's change, makes it without a request
+while there is no Google cookie. So a person who is signed in to Google loses nothing, and a profile
+nobody signed in with asks Google nothing on its own account.
+
+Measured on the build, one run each:
+
+- **Local page, 240 s:** the log names none of `optimizationguide-pa.googleapis.com`,
+  `accounts.google.com`, `www.google.com` and `mail.google.com`. There is no time request and no
+  connection ahead of a request, and the component updater's first request comes at 60 s.
+- **New Tab page, 150 s:** none of those four, `www.gstatic.com` or `ogads-pa.clients6.google.com`.
+- **Left:** the extensions other programs register (2.8, ROADMAP **P2.16**), the component updater,
+  Safe Browsing's list (ROADMAP **S.14**) and Thoron adblock's lists.
+
+Two offline checks hold what a log of a fresh profile cannot show:
+[`mail_signin_check.py`](../../tools/qa/mail_signin_check.py) (Gmail is asked with a Google account in the
+browser's list and not without) and [`language_detect_check.py`](../../tools/qa/language_detect_check.py)
+(a page's language is found with no model). Not checked by a run: the bar, the doodle and "AI Mode" of a
+profile that is signed in to Google.

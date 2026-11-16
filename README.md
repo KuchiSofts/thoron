@@ -6,7 +6,7 @@
 
 **A fast, secure and private browser for Windows, based on Thorium and Chromium.**
 
-[![Status](https://img.shields.io/badge/status-pre--release-F72F8E?style=flat-square)](#roadmap) <!-- progress-badge:start -->[![Roadmap progress](https://img.shields.io/badge/roadmap-52%25-7B2FF7?style=flat-square)](#roadmap)<!-- progress-badge:end --> [![Platforms](https://img.shields.io/badge/platforms-Windows%20first-24292f?style=flat-square)](#platforms) [![CPU](https://img.shields.io/badge/cpu-x64%20%7C%20ARM64-24292f?style=flat-square)](#platforms) [![License](https://img.shields.io/badge/license-BSD--3--Clause-24292f?style=flat-square)](LICENSE.md)
+[![Status](https://img.shields.io/badge/status-pre--release-F72F8E?style=flat-square)](#roadmap) <!-- progress-badge:start -->[![Roadmap progress](https://img.shields.io/badge/roadmap-55%25-7B2FF7?style=flat-square)](#roadmap)<!-- progress-badge:end --> [![Platforms](https://img.shields.io/badge/platforms-Windows%20first-24292f?style=flat-square)](#platforms) [![CPU](https://img.shields.io/badge/cpu-x64%20%7C%20ARM64-24292f?style=flat-square)](#platforms) [![License](https://img.shields.io/badge/license-BSD--3--Clause-24292f?style=flat-square)](LICENSE.md)
 
 [Why Thoron](#why-thoron) · [Features](#features) · [Install and update](#install-and-update) · [Versions](#versions) · [Roadmap](#roadmap) · [Platforms](#platforms) · [Verify](#verifying-downloads) · [Security](#security) · [Contributing](#contributing) · [Credits](#credits) · [Wiki](https://github.com/KuchiSofts/thoron/wiki)
 
@@ -78,31 +78,31 @@ changed in each version is in the [changelog](CHANGELOG.md), one line per change
 Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always current.
 
 <!-- roadmap:start -->
-**Overall:** `██████████░░░░░░░░░░` 109 of 208 tasks done (52%) · roadmap updated 2026-11-12
+**Overall:** `███████████░░░░░░░░░` 115 of 208 tasks done (55%) · roadmap updated 2026-11-12
 
 | Area | Progress | Done | Status |
 |---|---|---|---|
 | [P0 - Foundation](ROADMAP.md#p0---foundation) | `████████████████████` | 11/11 | ✅ Done |
 | [P1 - Build environment](ROADMAP.md#p1---build-environment) | `██████████████████░░` | 9/10 | 🔄 In progress |
-| [P2 - First release](ROADMAP.md#p2---first-release) | `█████░░░░░░░░░░░░░░░` | 6/26 | 🔄 In progress |
+| [P2 - First release](ROADMAP.md#p2---first-release) | `█████░░░░░░░░░░░░░░░` | 7/26 | 🔄 In progress |
 | [P2b - ARM64](ROADMAP.md#p2b---arm64) | `░░░░░░░░░░░░░░░░░░░░` | 0/5 | 🔄 In progress |
 | [P3 - Updater v1 + Import](ROADMAP.md#p3---updater-v1--import) | `█░░░░░░░░░░░░░░░░░░░` | 1/21 | 🔄 In progress |
 | [P4 - Updater v2](ROADMAP.md#p4---updater-v2) | `░░░░░░░░░░░░░░░░░░░░` | 0/11 | ⬜ Not started |
 | [P5 - Quality](ROADMAP.md#p5---quality) | `█████████████████░░░` | 66/79 | 🔄 In progress |
-| [Security (S)](ROADMAP.md#security-s) | `██████████░░░░░░░░░░` | 8/16 | 🔄 In progress |
+| [Security (S)](ROADMAP.md#security-s) | `███████████░░░░░░░░░` | 9/16 | 🔄 In progress |
 | [Quality & performance (Q)](ROADMAP.md#quality--performance-q) | `███░░░░░░░░░░░░░░░░░` | 1/7 | 🔄 In progress |
-| [Docs (D)](ROADMAP.md#docs-d) | `████████░░░░░░░░░░░░` | 4/10 | 🔄 In progress |
-| [Legal & licensing (L)](ROADMAP.md#legal--licensing-l) | `██░░░░░░░░░░░░░░░░░░` | 1/8 | 🔄 In progress |
+| [Docs (D)](ROADMAP.md#docs-d) | `████████████░░░░░░░░` | 6/10 | 🔄 In progress |
+| [Legal & licensing (L)](ROADMAP.md#legal--licensing-l) | `████████░░░░░░░░░░░░` | 3/8 | 🔄 In progress |
 | [Branding (B)](ROADMAP.md#branding-b) | `██████████░░░░░░░░░░` | 2/4 | 🔄 In progress |
 
 **What's next**
 
 - 🔄 **P1.9** Thoron build docs written from scratch and followed end-to-end
+- 🔄 **P2.2** Audit all upstream changes since `de9a1bc6` with `tools/audit` (S.1)
 - 🔄 **P2.4** Identity patch, Linux: package `thoron-browser`, `.desktop` file, `~/.config/thoron`; the keyring entry stays `Chromium Safe Storage` (shared with Thorium, so imported passwords stay readable)
 - 🔄 **P2.6** Widevine not bundled; fetched by Chromium's component updater at runtime
 - 🔄 **P2.8** Windows packaging: Thoron mini_installer, portable `.zip` with launcher
 - 🔄 **P2.12** Release script `tools/release/release.py`: build matrix → package → `SHA256SUMS` → sign → `BUILDINFO` → **draft** GitHub release; sets the version and refuses a non-increasing one with `tools/release/version.py` (P2.14)
-- 🔄 **P2.13** `tools/release/changelog.py`: release notes generated from commit prefixes, upstream merges (author-credited), the Chromium version diff and security fixes (CVE and severity), patch changes, and issues
 
 <details>
 <summary><b>Full task list</b> (generated from <a href="ROADMAP.md">ROADMAP.md</a>)</summary>
@@ -159,7 +159,7 @@ Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always curre
 - [ ] **P2.21** Linux program and package names: `thoron` instead of `thorium` for the binary, the `.deb`/`.rpm` packages, the `.desktop` file and the icons; the developer test shell and the prebuilt `pak` tool are not packaged
 - [ ] **P2.22** Linux dark mode on 158: check whether Chromium 158 follows a GTK theme switch on its own; if not, write Thoron's own fix (the Thorium patch was not carried over, see `docs/build/M158_REBASE.md`)
 - [ ] **P2.23** Check the hand-ported UI patches in a running 158 build: tab search button on the right (default) and on the left (flag), Thorium 2024 UI, classic omnibox, rectangular tabs, custom tab width, open link in this tab
-- [ ] **P2.24** Thoron's own version: `0.MINOR.PATCH`, starting at 0.1.1, shown on the About page, in `chrome://version`, in the installer and as the release tag (`v0.1.1`); the release script gives every release the next number by itself; the four-part build version stays Chromium-based (`158.0.8127.<n>`), because websites, extensions, Chromium's component updates and the installer's upgrade order rely on it
+- [x] **P2.24** Thoron's own version: `0.MINOR.PATCH`, starting at 0.1.1, shown on the About page, in `chrome://version`, in the installer and as the release tag (`v0.1.1`); the release script gives every release the next number by itself; the four-part build version stays Chromium-based (`158.0.8127.<n>`), because websites, extensions, Chromium's component updates and the installer's upgrade order rely on it
 - [ ] **P2.25** The browser's source in `main`: the patch series for Chromium 158 was only on the build machine; publish it as an overlay on a pinned upstream commit, so that `main` holds everything a release is built from and nothing else
 - [ ] **P2.26** Repository hygiene and protection
 
@@ -307,7 +307,7 @@ Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always curre
 - [x] **S.12** Content standards: written policy in `CONTRIBUTING.md`, plus an automatic `adult_content` check in `tools/audit` (added text and file names, `--strict`)
 - [x] **S.13** Inherited history cleaned: three inappropriate image files that upstream added in 2023 and later deleted were purged from every commit; the current tree is unchanged; they were verified absent from the M150 browser build
 - [ ] **S.14** Safe Browsing decision: without Google API keys the built-in Safe Browsing cannot query Google; choose between a key-free setup, another provider, or Google's service with the user's consent, and measure what it contacts
-- [ ] **S.15** Turn off the Google contacts a fresh profile makes without need: optimization guide models (`optimizationguide-pa.googleapis.com`), Google sign-in checks (`accounts.google.com`), the `www.google.com` requests and connections, Google's time service, and the manifest of Google's on-device AI models, measured in `docs/security/NETWORK.md`
+- [x] **S.15** Turn off the Google contacts a fresh profile makes without need: optimization guide models (`optimizationguide-pa.googleapis.com`), Google sign-in checks (`accounts.google.com`), the `www.google.com` requests and connections, Google's time service, and the manifest of Google's on-device AI models, measured in `docs/security/NETWORK.md`
 - [ ] **S.16** Chromium's Gemini plumbing ("Glic") in a browser that cannot use it: Chromium 158 registers its internal "Gemini in Chrome" component extension in every profile it opens and shows "AI innovations" in Settings, a feature Thoron does not want: Gemini works for a Google account signed in to the browser, which the Google credentials inherited from upstream still allow (L.8); turn the feature and its component off by default, so that nothing of it is loaded or shown
 
 **Quality & performance (Q)**
@@ -330,14 +330,14 @@ Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always curre
 - [ ] **D.6** Repository identity: renamed to `KuchiSofts/thoron` with Thoron description and topics; the owner asks GitHub Support to detach it from the Thorium fork network and to remove cached views and old pull-request references to purged history
 - [x] **D.7** README shows the live roadmap: overall progress, per-phase bars, what's next and the full task list, generated from this file by `tools/docs/roadmap_progress.py`; `check_docs` fails if it is stale, and validates every heading anchor
 - [x] **D.8** Repository cleanup: remove the unused upstream Thorium M138 tree from `main` (sources, logos, infra, old build scripts, submodules, old docs, about 1,500 files) so `main` holds only Thoron's own work; keep Thorium's M138 `PATCHES.md` and README as licence evidence; drop the upstream Sponsor button; Thoron issue templates
-- [ ] **D.9** Project wiki: what Thoron is, install, update, import, privacy and security, versions, building, questions and answers; updated with every release
-- [ ] **D.10** Short changelog: one line per change under Added, Changed, Fixed, Removed and Security, per Thoron version; the long explanations stay in the design docs
+- [x] **D.9** Project wiki: what Thoron is, install, update, import, privacy and security, versions, building, questions and answers; updated with every release
+- [x] **D.10** Short changelog: one line per change under Added, Changed, Fixed, Removed and Security, per Thoron version; the long explanations stay in the design docs
 
 **Legal & licensing (L)**
 
 - [ ] **L.1** Licence inventory of every patch (origin, author, licence); resolve pending sources (Debian, chromium-ubuntu-build, Vanadium, Supermium); rewrite or drop anything incompatible
-- [ ] **L.2** GPL compliance per release: source tag and Chromium tag in `BUILDINFO`, GPL text in the licence bundle, notes in the release
-- [ ] **L.3** Regenerate contributors and update `NOTICE` and `CREDITS` every release
+- [x] **L.2** GPL compliance per release: source tag and Chromium tag in `BUILDINFO`, GPL text in the licence bundle, notes in the release
+- [x] **L.3** Regenerate contributors and update `NOTICE` and `CREDITS` every release
 - [ ] **L.4** Courtesy note to Alex313031 and gz83 introducing Thoron and its credits
 - [ ] **L.5** Name and logo check: "Thoron" in trademark registries and existing software in target markets; logo similarity to other browser marks (for example Chrome's three-segment logo)
 - [x] **L.6** No prebuilt or proprietary binaries in the repository: removed the Widevine CDM (Google proprietary, no redistribution right), Flash Player (Adobe, end-of-life), `shc`-compiled launchers whose embedded script cannot be verified, and prebuilt tools and packages; `tools/audit/binary_policy.py` enforces it

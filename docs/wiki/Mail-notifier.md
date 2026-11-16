@@ -10,6 +10,8 @@ account you are signed in to in Thoron (Gmail and Google Workspace).
   account** in its menu and sign in on Google's own page; the account is found from then on.
 - **Every account.** Each Google account you are signed in to (the ones you switch between in Gmail) is found by
   itself.
+- **Quiet without a sign-in.** While nobody is signed in to Google in the profile, Gmail is not asked at all;
+  the first look comes as soon as you sign in. Mailboxes added by address and password are looked at either way.
 - **New since you looked.** The count is the mail that came since you last opened that account's inbox from
   the M-Notifier. Click the account's address (or **Open inbox**) and its count starts again from 0; its unread
   mail is still listed. You can count all unread mail instead.

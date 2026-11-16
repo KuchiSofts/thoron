@@ -216,7 +216,7 @@ class CaptureTests(unittest.TestCase):
             seen["prefs"] = json.loads((profile / "Default" / "Preferences").read_text(encoding="utf-8"))
             written = Path(next(a for a in args if a.startswith("--log-net-log=")).split("=", 1)[1])
             written.write_text(log(*REQUESTS), encoding="utf-8")
-            (profile / "OriginTrials" / "1.0").mkdir(parents=True)
+            (profile / "OriginTrials" / "1.0").mkdir(parents=True, exist_ok=True)
             (profile / "OriginTrials" / "1.0" / "manifest.json").write_text('{"version": "1.0"}', encoding="utf-8")
             return mock.Mock(pid=4242)
 
@@ -252,6 +252,23 @@ class CaptureTests(unittest.TestCase):
             _, seen = self._capture(Path(tmp) / "work", page="chrome://newtab/")
         self.assertEqual(seen["args"][-1], "chrome://newtab/")
         self.assertFalse(any(arg.startswith("http://127.0.0.1") for arg in seen["args"]))
+
+    def test_a_later_start_of_the_same_profile_is_measured_on_its_own(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run, seen = self._capture(Path(tmp) / "work", again=True)
+            self.assertEqual(list((Path(tmp) / "work").iterdir()), [])
+        self.assertIn("again", run)
+        self.assertEqual(len(run["again"]["requests"]), 3)
+        self.assertNotIn("again", run["again"])
+
+    def test_a_visible_start_is_a_persons_first_start(self):
+        visible = nh.start_args(Path("prof"), True)
+        self.assertNotIn("--headless=new", visible)
+        self.assertNotIn("--no-first-run", visible)        # the first-run page is what is measured
+        self.assertIn("--user-data-dir=prof", visible)
+        headless = nh.start_args(Path("prof"), False)
+        self.assertIn("--headless=new", headless)
+        self.assertIn("--no-first-run", headless)
 
     def test_no_log_is_an_error(self):
         with tempfile.TemporaryDirectory() as tmp, mock.patch.object(nh, "_launch", return_value=mock.Mock(pid=1)), \

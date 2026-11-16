@@ -156,6 +156,25 @@ NETWORK_REDUCTION.md:
 - The doodle question stayed in both runs: `--disable-features=NtpLogo` does not stop it. With the New
   Tab page open, `www.google.com` is therefore still asked once after every switch of this page.
 
+### 4.1 A person's first start, and the start after it (2026-11-17)
+
+Measured with `tools/qa/netlog_hosts.py --visible --again` on a build of 158 from 2026-11-17: a real window
+on the screen as a person's first start (no `--no-first-run`, so the first-run page is shown), 180 s, then
+the same profile started once more for 180 s. Online, one run, the PC in use.
+
+| Host | First start | Later start | What asks |
+|---|---|---|---|
+| `clients2.google.com`, `clients2.googleusercontent.com`, `chromewebstore.googleapis.com` | at 1 s | at 1 s | extensions other programs registered for Google Chrome on this PC (section 2): checked, downloaded and described again at each start, since they stay off until a person approves them |
+| `update.googleapis.com`, `edgedl.me.gvt1.com` | from 61 s: 18 checks, 17 downloads | at 61 s: 1 check, 1 download | the component updater (section 2), which fills the new profile's components once |
+| `ublockorigin.github.io`, `malware-filter.gitlab.io` | at 121 s: 9 lists | at 121 s: 1 list | Thoron adblock's list check (section 7) |
+| `safebrowsing.googleapis.com` | at 124 s | none | Safe Browsing's list update |
+
+The first-run page itself asks no host: every host above is one the headless runs of section 2 list too, at
+the same moments. No time request (`clients2.google.com/time`) was made (S.15). The only other name looked up
+is `wpad`, Windows' automatic proxy discovery on the local network, which asks no outside host. On the later
+start one filter list was fetched again because the first start was stopped by force (as the tool does) before
+it wrote down that it had the list; a normal exit keeps that.
+
 ## 5. Switches that were tried
 
 One run each on a fresh profile, compared with the runs of section 2. The switches that remove the

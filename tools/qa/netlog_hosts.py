@@ -33,6 +33,7 @@ local network is not shown. Read a report once before it is published all the sa
 import argparse
 import ipaddress
 import json
+import os
 import re
 import shutil
 import statistics
@@ -262,28 +263,30 @@ def seed_prefs(profile: Path, prefs: dict) -> None:
     (profile / "Default" / "Preferences").write_text(json.dumps(tree), encoding="utf-8")
 
 
-def capture(browser: Path, work: Path, seconds: float, switches: tuple[str, ...] = (), prefs: dict | None = None,
-            names: dict[int, str] | None = None, keep_log: bool = False, page: str | None = None) -> dict:
-    work.mkdir(parents=True, exist_ok=True)
-    profile = Path(tempfile.mkdtemp(prefix="netlog-", dir=work))
-    log = profile.parent / f"{profile.name}.json"
-    if prefs:
-        seed_prefs(profile, prefs)
+def start_args(profile: Path, visible: bool) -> list[str]:
+    """How the browser is started: headless and past the first run (the default), or (visible) as a person's
+    first start, in a real window with the first-run page."""
+    if visible:
+        return [f"--user-data-dir={profile}", "--window-position=40,40", "--window-size=1100,750"]
+    return ["--headless=new", f"--user-data-dir={profile}", "--no-first-run", "--no-default-browser-check"]
+
+
+def _one(browser: Path, profile: Path, log: Path, seconds: float, extra: list[str], visible: bool,
+         names: dict[int, str] | None, keep_log: bool) -> dict:
     held = {}
-    with PingServer() as server:
-        launched = time.time()
-        proc = _launch(browser, profile, [f"--log-net-log={log}", "--net-log-capture-mode=Default", OWN_DOWNLOADS,
-                                          *switches, page or server.url("page")])
-        try:
-            time.sleep(seconds)
-            held = arrived(profile)
-        finally:
-            _stop(proc, profile)
-            for _ in range(10):                    # a file still held a moment after the stop: try again
-                if not profile.exists():
-                    break
-                time.sleep(1)
-                shutil.rmtree(profile, ignore_errors=True)
+    launched = time.time()
+    args = [f"--log-net-log={log}", "--net-log-capture-mode=Default", OWN_DOWNLOADS, *extra]
+    if visible:
+        proc = subprocess.Popen([str(browser), *start_args(profile, True), *args], stdout=subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL, start_new_session=os.name != "nt")
+    else:
+        proc = _launch(browser, profile, args)
+    try:
+        time.sleep(seconds)
+        held = arrived(profile)
+    finally:
+        _stop(proc, profile)
+        time.sleep(2)
     text = log.read_text(encoding="utf-8", errors="replace") if log.is_file() else ""
     if keep_log:
         print(f"netlog_hosts: raw log kept (never commit it): {log}", file=sys.stderr)
@@ -292,6 +295,31 @@ def capture(browser: Path, work: Path, seconds: float, switches: tuple[str, ...]
     if not text:
         raise RuntimeError("the browser wrote no network log")
     return {"hosts": hosts(text), **digest(text, names, launched), "arrived": held}
+
+
+def capture(browser: Path, work: Path, seconds: float, switches: tuple[str, ...] = (), prefs: dict | None = None,
+            names: dict[int, str] | None = None, keep_log: bool = False, page: str | None = None,
+            visible: bool = False, again: bool = False) -> dict:
+    """One fresh profile; with `again` also a later start of the same profile, under "again"."""
+    work.mkdir(parents=True, exist_ok=True)
+    profile = Path(tempfile.mkdtemp(prefix="netlog-", dir=work))
+    if prefs:
+        seed_prefs(profile, prefs)
+    try:
+        with PingServer() as server:
+            extra = [*switches, page or server.url("page")]
+            result = _one(browser, profile, profile.parent / f"{profile.name}.json", seconds, extra, visible, names,
+                          keep_log)
+            if again:
+                result["again"] = _one(browser, profile, profile.parent / f"{profile.name}-again.json", seconds,
+                                       extra, visible, names, keep_log)
+    finally:
+        for _ in range(10):                    # a file still held a moment after the stop: try again
+            shutil.rmtree(profile, ignore_errors=True)
+            if not profile.exists():
+                break
+            time.sleep(1)
+    return result
 
 
 def by_host(runs: list[dict]) -> dict[str, dict]:
@@ -404,6 +432,10 @@ def main(argv: list[str]) -> int:
     p.add_argument("--absent", action="append", default=[], metavar="HOST",
                    help="a host that must not be contacted; may be repeated")
     p.add_argument("--keep-log", action="store_true", help="keep the raw logs in --work (never commit them)")
+    p.add_argument("--visible", action="store_true",
+                   help="a person's first start: a real window with the first-run page (not headless)")
+    p.add_argument("--again", action="store_true",
+                   help="also a later start of the same profile, measured on its own")
     p.add_argument("--md", type=Path)
     p.add_argument("--json", type=Path, help="what was measured, run by run")
     a = p.parse_args(argv)
@@ -411,7 +443,8 @@ def main(argv: list[str]) -> int:
         names = None
         if a.annotations:
             names = load_annotations(a.annotations.read_text(encoding="utf-8", errors="replace"))
-        runs = [capture(a.browser, a.work, a.seconds, tuple(a.switch), dict(a.pref), names, a.keep_log, a.page)
+        runs = [capture(a.browser, a.work, a.seconds, tuple(a.switch), dict(a.pref), names, a.keep_log, a.page,
+                        a.visible, a.again)
                 for _ in range(max(a.runs, 1))]
     except (RuntimeError, OSError, subprocess.SubprocessError) as exc:
         print(f"netlog_hosts: {exc}", file=sys.stderr)
@@ -420,7 +453,17 @@ def main(argv: list[str]) -> int:
     for run in runs:
         found.update(run["hosts"])
     opened = f"the page `{a.page}`" if a.page else "one local page"
+    if a.visible:
+        opened += ", in a real window as a person's first start (the first-run page)"
     md = to_markdown(dict(found), a.label, a.seconds, opened) + "\n" + detail_markdown(runs)
+    later = [run["again"] for run in runs if "again" in run]
+    if later:
+        found_later = Counter()
+        for run in later:
+            found_later.update(run["hosts"])
+        md += ("\n## A later start of the same profile\n\n"
+               + to_markdown(dict(found_later), a.label + " (later start)", a.seconds, opened) + "\n"
+               + detail_markdown(later))
     if a.md:
         a.md.parent.mkdir(parents=True, exist_ok=True)
         a.md.write_text(md, encoding="utf-8", newline="\n")

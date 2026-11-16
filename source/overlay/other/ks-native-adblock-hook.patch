@@ -11930,10 +11930,10 @@ index 0000000000000000000000000000000000000000..3e4c28764458836945e8dccad2197a69
 +#endif  // COMPONENTS_THORON_MAIL_MAIL_SERVICE_H_
 diff --git a/components/thoron_update/BUILD.gn b/components/thoron_update/BUILD.gn
 new file mode 100644
-index 0000000000000000000000000000000000000000..fe4b4580acb671d6fba2d82eb84d80242f0abd4e
+index 0000000000000000000000000000000000000000..30592aa2a2bff3234989b9fec8c881217b9e6082
 --- /dev/null
 +++ b/components/thoron_update/BUILD.gn
-@@ -0,0 +1,43 @@
+@@ -0,0 +1,48 @@
 +# Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +# found in the LICENSE file.
 +
@@ -11946,9 +11946,12 @@ index 0000000000000000000000000000000000000000..fe4b4580acb671d6fba2d82eb84d8024
 +  sources = [
 +    "manifest.cc",
 +    "manifest.h",
++    "package.cc",
++    "package.h",
 +  ]
 +  deps = [
 +    "//base",
++    "//crypto",
 +    "//third_party/boringssl",
 +  ]
 +}
@@ -11960,10 +11963,12 @@ index 0000000000000000000000000000000000000000..fe4b4580acb671d6fba2d82eb84d8024
 +  sources = [
 +    "manifest_test_vectors.h",
 +    "manifest_unittest.cc",
++    "package_unittest.cc",
 +  ]
 +  deps = [
 +    ":thoron_update",
 +    "//base",
++    "//crypto",
 +    "//testing/gtest",
 +  ]
 +}
@@ -11979,11 +11984,12 @@ index 0000000000000000000000000000000000000000..fe4b4580acb671d6fba2d82eb84d8024
 +}
 diff --git a/components/thoron_update/DEPS b/components/thoron_update/DEPS
 new file mode 100644
-index 0000000000000000000000000000000000000000..4583e11ee75f20d118d262aeee569ae442f1ee8f
+index 0000000000000000000000000000000000000000..425f66c8c89f128650954c2a7e6587079d0e57fe
 --- /dev/null
 +++ b/components/thoron_update/DEPS
-@@ -0,0 +1,3 @@
+@@ -0,0 +1,4 @@
 +include_rules = [
++  "+crypto",
 +  "+third_party/boringssl/src/include/openssl",
 +]
 diff --git a/components/thoron_update/README.md b/components/thoron_update/README.md
@@ -17784,4 +17790,596 @@ index 0000000000000000000000000000000000000000..7f4de937f11c9753b4b0028885ba8f53
 +
 +}  // namespace
 +
++}  // namespace thoron_update
+diff --git a/components/thoron_update/package.cc b/components/thoron_update/package.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..814b037f664ec303273d76e96e26ad9f38de4bad
+--- /dev/null
++++ b/components/thoron_update/package.cc
+@@ -0,0 +1,195 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "components/thoron_update/package.h"
++
++#include <stdint.h>
++
++#include <algorithm>
++#include <array>
++#include <optional>
++#include <string>
++#include <vector>
++
++#include "base/cpu.h"
++#include "base/files/file.h"
++#include "base/files/file_path.h"
++#include "base/files/file_util.h"
++#include "base/strings/string_number_conversions.h"
++#include "build/build_config.h"
++#include "crypto/hash.h"
++
++namespace thoron_update {
++
++namespace {
++
++constexpr size_t kReadChunk = 1024 * 1024;
++constexpr int64_t kMostBytes = 2147483647;
++
++bool IsLowerHex64(std::string_view text) {
++  return text.size() == 64 && std::ranges::all_of(text, [](char c) {
++           return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
++         });
++}
++
++}  // namespace
++
++std::string_view FileCheckName(FileCheck check) {
++  switch (check) {
++    case FileCheck::kOk:
++      return "ok";
++    case FileCheck::kMissing:
++      return "missing";
++    case FileCheck::kTruncated:
++      return "truncated";
++    case FileCheck::kTooLong:
++      return "too_long";
++    case FileCheck::kCorrupted:
++      return "corrupted";
++    case FileCheck::kUnreadable:
++      return "unreadable";
++    case FileCheck::kNotPlaced:
++      return "not_placed";
++    case FileCheck::kBadExpectation:
++      return "bad_expectation";
++  }
++  return "unknown";
++}
++
++FileCheck CheckFile(const base::FilePath& path, const PackageFile& expected) {
++  if (expected.size < 1 || expected.size > kMostBytes ||
++      !IsLowerHex64(expected.sha256)) {
++    return FileCheck::kBadExpectation;
++  }
++  // Read only, and nobody may write to it while it is read.
++  base::File file(path, base::File::FLAG_OPEN | base::File::FLAG_READ |
++                            base::File::FLAG_WIN_EXCLUSIVE_WRITE);
++  if (!file.IsValid()) {
++    return FileCheck::kMissing;
++  }
++  const int64_t length = file.GetLength();
++  if (length < 0) {
++    return FileCheck::kUnreadable;
++  }
++  if (length < expected.size) {
++    return FileCheck::kTruncated;
++  }
++  if (length > expected.size) {
++    return FileCheck::kTooLong;
++  }
++  crypto::hash::Hasher hasher(crypto::hash::kSha256);
++  std::vector<uint8_t> buffer(kReadChunk);
++  int64_t total = 0;
++  while (total < length) {
++    const std::optional<size_t> read = file.ReadAtCurrentPos(buffer);
++    if (!read || *read == 0) {
++      return FileCheck::kUnreadable;
++    }
++    hasher.Update(base::span(buffer).first(*read));
++    total += static_cast<int64_t>(*read);
++  }
++  if (total != length) {
++    return FileCheck::kUnreadable;
++  }
++  std::array<uint8_t, crypto::hash::kSha256Size> digest;
++  hasher.Finish(digest);
++  return base::HexEncodeLower(digest) == expected.sha256 ? FileCheck::kOk
++                                                         : FileCheck::kCorrupted;
++}
++
++FileCheck PlaceVerifiedFile(const base::FilePath& downloaded,
++                            const PackageFile& expected,
++                            const base::FilePath& destination) {
++  const FileCheck first = CheckFile(downloaded, expected);
++  if (first != FileCheck::kOk) {
++    if (first != FileCheck::kBadExpectation) {
++      base::DeleteFile(downloaded);
++    }
++    return first;
++  }
++  if (!base::ReplaceFile(downloaded, destination, nullptr)) {
++    base::DeleteFile(downloaded);
++    return FileCheck::kNotPlaced;
++  }
++  // Once more where it is used: what changed it between the two checks is
++  // found here, and the file goes.
++  const FileCheck there = CheckFile(destination, expected);
++  if (there != FileCheck::kOk) {
++    base::DeleteFile(destination);
++  }
++  return there;
++}
++
++std::vector<DownloadStep> PlanDownloads(const Decision& decision) {
++  std::vector<DownloadStep> plan;
++  if (decision.outcome != Outcome::kUpdate || !decision.full) {
++    return plan;
++  }
++  if (decision.delta && decision.delta->size < decision.full->size) {
++    plan.push_back({*decision.delta, /*delta=*/true});
++  }
++  plan.push_back({*decision.full, /*delta=*/false});
++  return plan;
++}
++
++std::optional<DownloadStep> RunDownloadPlan(
++    const std::vector<DownloadStep>& plan,
++    base::FunctionRef<bool(const DownloadStep&)> attempt) {
++  for (const DownloadStep& step : plan) {
++    if (attempt(step)) {
++      return step;
++    }
++  }
++  return std::nullopt;
++}
++
++Processor ThisProcessor() {
++  Processor cpu;
++#if defined(ARCH_CPU_X86_64)
++  const base::CPU& features = base::CPU::GetInstanceNoAllocation();
++  cpu.x64 = true;
++  cpu.sse41 = features.has_sse41();
++  cpu.sse42 = features.has_sse42();
++  cpu.avx = features.has_avx();
++  cpu.avx2 = features.has_avx2();
++  cpu.fma3 = features.has_fma3();
++#elif defined(ARCH_CPU_ARM64)
++  cpu.arm64 = true;
++#endif
++  return cpu;
++}
++
++bool RunsOn(Variant variant, const Processor& cpu) {
++  const bool sse4 = cpu.x64 && cpu.sse41 && cpu.sse42;
++  switch (variant) {
++    case Variant::kWinX64Avx2:
++    case Variant::kLinuxX64Avx2:
++      return sse4 && cpu.avx && cpu.avx2 && cpu.fma3;
++    case Variant::kWinX64Sse4:
++    case Variant::kLinuxX64Sse4:
++      return sse4;
++    case Variant::kWinArm64Armv8:
++    case Variant::kLinuxArm64Armv8:
++      return cpu.arm64;
++  }
++  return false;
++}
++
++std::vector<Variant> VariantsFor(Os os, const Processor& cpu) {
++  const std::array<Variant, 3> order =
++      os == Os::kWindows
++          ? std::array<Variant, 3>{Variant::kWinX64Avx2, Variant::kWinX64Sse4,
++                                   Variant::kWinArm64Armv8}
++          : std::array<Variant, 3>{Variant::kLinuxX64Avx2,
++                                   Variant::kLinuxX64Sse4,
++                                   Variant::kLinuxArm64Armv8};
++  std::vector<Variant> out;
++  for (Variant variant : order) {
++    if (RunsOn(variant, cpu)) {
++      out.push_back(variant);
++    }
++  }
++  return out;
++}
++
++}  // namespace thoron_update
+diff --git a/components/thoron_update/package.h b/components/thoron_update/package.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..c28b06294bd8c7095b0bd06b80d8e08c3614b236
+--- /dev/null
++++ b/components/thoron_update/package.h
+@@ -0,0 +1,120 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef COMPONENTS_THORON_UPDATE_PACKAGE_H_
++#define COMPONENTS_THORON_UPDATE_PACKAGE_H_
++
++#include <stddef.h>
++
++#include <optional>
++#include <string_view>
++#include <vector>
++
++#include "base/functional/function_ref.h"
++#include "components/thoron_update/manifest.h"
++
++namespace base {
++class FilePath;
++}  // namespace base
++
++// What comes after the manifest's decision (manifest.h): checking a downloaded
++// file, choosing what to download, and which build fits this processor. No
++// network code here either; the caller downloads.
++
++namespace thoron_update {
++
++// --- A downloaded file (ROADMAP P3.4) ---------------------------------------
++
++enum class FileCheck {
++  // Exactly the length and the SHA-256 the manifest names.
++  kOk,
++  // There is no such file, or it cannot be opened.
++  kMissing,
++  // Shorter than the manifest says: a download that stopped.
++  kTruncated,
++  // Longer than the manifest says.
++  kTooLong,
++  // The right length and another SHA-256.
++  kCorrupted,
++  // Reading it failed partway.
++  kUnreadable,
++  // It verified, and could not be moved into place.
++  kNotPlaced,
++  // `expected` is no file of a manifest: its size or its SHA-256 is malformed.
++  kBadExpectation,
++};
++
++std::string_view FileCheckName(FileCheck check);
++
++// Whether the file at `path` is the one `expected` names. Its length is looked
++// at first, so a truncated download is told without reading it; then it is read
++// once, with others kept from writing to it meanwhile.
++FileCheck CheckFile(const base::FilePath& path, const PackageFile& expected);
++
++// Puts the file `downloaded` at `destination` only when it is the one
++// `expected` names, and checks it there once more. A file that does not verify
++// is deleted wherever it is, so an unverified file is never left where a
++// package is taken from. With anything but kOk, `destination` holds nothing new.
++FileCheck PlaceVerifiedFile(const base::FilePath& downloaded,
++                            const PackageFile& expected,
++                            const base::FilePath& destination);
++
++// --- What to download (ROADMAP P4.2) -----------------------------------------
++
++struct DownloadStep {
++  PackageFile file;
++  bool delta = false;
++
++  friend bool operator==(const DownloadStep&, const DownloadStep&) = default;
++};
++
++// The downloads to try for an update, in order: the delta first when the
++// manifest has one from the installed version and it is smaller than the full
++// package, then the full package. Schema 1 lists deltas that lead straight to
++// the new version, so the smallest total download is the smaller of the two.
++// Empty unless `decision` is kUpdate with its full package.
++std::vector<DownloadStep> PlanDownloads(const Decision& decision);
++
++// Tries `plan` in order. `attempt` downloads a step's file, checks it
++// (CheckFile) and, for a delta, checks what applying it made; it answers
++// whether all of that held. A step that fails falls back to the next one, so a
++// delta that does not apply ends in the full package. The step that held, or
++// nothing when none did.
++std::optional<DownloadStep> RunDownloadPlan(
++    const std::vector<DownloadStep>& plan,
++    base::FunctionRef<bool(const DownloadStep&)> attempt);
++
++// --- Which build fits this processor (ROADMAP P4.4) --------------------------
++
++enum class Os {
++  kWindows,
++  kLinux,
++};
++
++// What a build needs of a processor.
++struct Processor {
++  bool x64 = false;
++  bool arm64 = false;
++  bool sse41 = false;
++  bool sse42 = false;
++  bool avx = false;
++  bool avx2 = false;
++  bool fma3 = false;
++};
++
++// The processor this code runs on.
++Processor ThisProcessor();
++
++// Whether a build of `variant` runs on `cpu`. The AVX2 builds are made for
++// AVX, AVX2, FMA and F16C (every processor with AVX2 has F16C); the SSE4 builds
++// for SSE4.1 and SSE4.2; the ARM64 builds for ARMv8.
++bool RunsOn(Variant variant, const Processor& cpu);
++
++// The variants of `os` that run on `cpu`, the fastest first: a processor with
++// AVX2 can run the SSE4 build too, which an updater takes when a release has no
++// AVX2 package. Empty when no build of Thoron runs on `cpu`.
++std::vector<Variant> VariantsFor(Os os, const Processor& cpu);
++
++}  // namespace thoron_update
++
++#endif  // COMPONENTS_THORON_UPDATE_PACKAGE_H_
+diff --git a/components/thoron_update/package_unittest.cc b/components/thoron_update/package_unittest.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..8b4271f1d0784dfe774c24341cca2b93dd6fef45
+--- /dev/null
++++ b/components/thoron_update/package_unittest.cc
+@@ -0,0 +1,259 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "components/thoron_update/package.h"
++
++#include <string>
++#include <vector>
++
++#include "base/files/file_path.h"
++#include "base/files/file_util.h"
++#include "base/files/scoped_temp_dir.h"
++#include "base/strings/string_number_conversions.h"
++#include "base/strings/string_util.h"
++#include "crypto/hash.h"
++#include "testing/gtest/include/gtest/gtest.h"
++
++namespace thoron_update {
++namespace {
++
++PackageFile FileOf(const std::string& content) {
++  PackageFile file;
++  file.url = "https://github.com/KuchiSofts/thoron/releases/download/v0.1.2/p.exe";
++  file.size = static_cast<int64_t>(content.size());
++  file.sha256 = base::HexEncodeLower(crypto::hash::Sha256(content));
++  return file;
++}
++
++class ThoronUpdatePackageTest : public testing::Test {
++ protected:
++  void SetUp() override { ASSERT_TRUE(dir_.CreateUniqueTempDir()); }
++
++  base::FilePath Write(const std::string& name, const std::string& content) {
++    const base::FilePath path = dir_.GetPath().AppendASCII(name);
++    EXPECT_TRUE(base::WriteFile(path, content));
++    return path;
++  }
++
++  std::string Read(const base::FilePath& path) {
++    std::string out;
++    EXPECT_TRUE(base::ReadFileToString(path, &out));
++    return out;
++  }
++
++  base::ScopedTempDir dir_;
++  const std::string package_ = std::string(3 * 1024 * 1024 + 17, 'p') + "end";
++};
++
++// P3.4 -------------------------------------------------------------------------
++
++TEST_F(ThoronUpdatePackageTest, TheFileTheManifestNamesIsOk) {
++  EXPECT_EQ(CheckFile(Write("p", package_), FileOf(package_)), FileCheck::kOk);
++}
++
++TEST_F(ThoronUpdatePackageTest, RejectsATruncatedDownload) {
++  const base::FilePath path = Write("p", package_.substr(0, package_.size() - 1));
++  EXPECT_EQ(CheckFile(path, FileOf(package_)), FileCheck::kTruncated);
++  EXPECT_EQ(CheckFile(Write("empty", ""), FileOf(package_)), FileCheck::kTruncated);
++}
++
++TEST_F(ThoronUpdatePackageTest, RejectsAFileWithMoreInIt) {
++  EXPECT_EQ(CheckFile(Write("p", package_ + "x"), FileOf(package_)), FileCheck::kTooLong);
++}
++
++TEST_F(ThoronUpdatePackageTest, RejectsACorruptedDownload) {
++  std::string changed = package_;
++  changed[changed.size() / 2] ^= 1;  // one bit in the middle
++  EXPECT_EQ(CheckFile(Write("p", changed), FileOf(package_)), FileCheck::kCorrupted);
++  changed = package_;
++  changed[0] = 'q';  // the first byte
++  EXPECT_EQ(CheckFile(Write("q", changed), FileOf(package_)), FileCheck::kCorrupted);
++}
++
++TEST_F(ThoronUpdatePackageTest, AMissingFileIsMissing) {
++  EXPECT_EQ(CheckFile(dir_.GetPath().AppendASCII("none"), FileOf(package_)), FileCheck::kMissing);
++}
++
++TEST_F(ThoronUpdatePackageTest, AnExpectationThatIsNoManifestsIsRefused) {
++  const base::FilePath path = Write("p", package_);
++  PackageFile bad = FileOf(package_);
++  bad.sha256 = base::ToUpperASCII(bad.sha256);
++  EXPECT_EQ(CheckFile(path, bad), FileCheck::kBadExpectation);
++  bad = FileOf(package_);
++  bad.sha256.pop_back();
++  EXPECT_EQ(CheckFile(path, bad), FileCheck::kBadExpectation);
++  bad = FileOf(package_);
++  bad.size = 0;
++  EXPECT_EQ(CheckFile(path, bad), FileCheck::kBadExpectation);
++  // and the file itself is left alone
++  EXPECT_EQ(PlaceVerifiedFile(path, bad, dir_.GetPath().AppendASCII("dest")),
++            FileCheck::kBadExpectation);
++  EXPECT_TRUE(base::PathExists(path));
++}
++
++TEST_F(ThoronUpdatePackageTest, AVerifiedFileIsPlaced) {
++  const base::FilePath downloaded = Write("download.part", package_);
++  const base::FilePath destination = dir_.GetPath().AppendASCII("package.exe");
++  EXPECT_EQ(PlaceVerifiedFile(downloaded, FileOf(package_), destination), FileCheck::kOk);
++  EXPECT_FALSE(base::PathExists(downloaded));
++  EXPECT_EQ(Read(destination), package_);
++}
++
++TEST_F(ThoronUpdatePackageTest, NeverPlacesAnUnverifiedFile) {
++  const base::FilePath destination = Write("package.exe", "the package that was there");
++  std::string changed = package_;
++  changed[7] = '!';
++  for (const auto& [content, want] :
++       std::vector<std::pair<std::string, FileCheck>>{
++           {changed, FileCheck::kCorrupted},
++           {package_.substr(0, 100), FileCheck::kTruncated},
++           {package_ + "more", FileCheck::kTooLong}}) {
++    const base::FilePath downloaded = Write("download.part", content);
++    EXPECT_EQ(PlaceVerifiedFile(downloaded, FileOf(package_), destination), want);
++    // the download is gone, and what was at the destination is untouched
++    EXPECT_FALSE(base::PathExists(downloaded));
++    EXPECT_EQ(Read(destination), "the package that was there");
++  }
++  EXPECT_EQ(PlaceVerifiedFile(dir_.GetPath().AppendASCII("none"), FileOf(package_), destination),
++            FileCheck::kMissing);
++  EXPECT_EQ(Read(destination), "the package that was there");
++}
++
++// P4.2 -------------------------------------------------------------------------
++
++Decision UpdateWith(std::optional<int64_t> delta_size, int64_t full_size = 100) {
++  Decision decision;
++  decision.outcome = Outcome::kUpdate;
++  decision.full = PackageFile{"https://github.com/f", full_size, std::string(64, 'a')};
++  if (delta_size) {
++    decision.delta = PackageFile{"https://github.com/d", *delta_size, std::string(64, 'b')};
++  }
++  return decision;
++}
++
++TEST(ThoronUpdatePlanTest, TheSmallerDeltaComesFirstAndTheFullPackageAfterIt) {
++  const Decision decision = UpdateWith(30);
++  const std::vector<DownloadStep> plan = PlanDownloads(decision);
++  ASSERT_EQ(plan.size(), 2u);
++  EXPECT_TRUE(plan[0].delta);
++  EXPECT_EQ(plan[0].file, *decision.delta);
++  EXPECT_FALSE(plan[1].delta);
++  EXPECT_EQ(plan[1].file, *decision.full);
++}
++
++TEST(ThoronUpdatePlanTest, ADeltaThatIsNotSmallerIsNotDownloaded) {
++  for (int64_t size : {100, 150}) {
++    const std::vector<DownloadStep> plan = PlanDownloads(UpdateWith(size));
++    ASSERT_EQ(plan.size(), 1u);
++    EXPECT_FALSE(plan[0].delta);
++  }
++  const std::vector<DownloadStep> plan = PlanDownloads(UpdateWith(std::nullopt));
++  ASSERT_EQ(plan.size(), 1u);
++  EXPECT_FALSE(plan[0].delta);
++}
++
++TEST(ThoronUpdatePlanTest, NothingIsDownloadedWithoutAnUpdate) {
++  Decision decision = UpdateWith(30);
++  for (Outcome outcome : {Outcome::kUpToDate, Outcome::kBadSignature, Outcome::kExpired,
++                          Outcome::kDowngrade, Outcome::kNoPackage}) {
++    decision.outcome = outcome;
++    EXPECT_TRUE(PlanDownloads(decision).empty());
++  }
++  decision = UpdateWith(30);
++  decision.full.reset();
++  EXPECT_TRUE(PlanDownloads(decision).empty());
++}
++
++TEST(ThoronUpdatePlanTest, TheDeltaIsUsedWhenItHolds) {
++  std::vector<bool> tried;
++  const std::optional<DownloadStep> used =
++      RunDownloadPlan(PlanDownloads(UpdateWith(30)), [&](const DownloadStep& step) {
++        tried.push_back(step.delta);
++        return true;
++      });
++  ASSERT_TRUE(used);
++  EXPECT_TRUE(used->delta);
++  EXPECT_EQ(tried, (std::vector<bool>{true}));
++}
++
++TEST(ThoronUpdatePlanTest, ADeltaThatDoesNotMatchFallsBackToTheFullPackage) {
++  std::vector<bool> tried;
++  const std::optional<DownloadStep> used =
++      RunDownloadPlan(PlanDownloads(UpdateWith(30)), [&](const DownloadStep& step) {
++        tried.push_back(step.delta);
++        return !step.delta;  // the delta's result does not match
++      });
++  ASSERT_TRUE(used);
++  EXPECT_FALSE(used->delta);
++  EXPECT_EQ(tried, (std::vector<bool>{true, false}));
++}
++
++TEST(ThoronUpdatePlanTest, NothingHoldsNothingIsUsed) {
++  int tried = 0;
++  EXPECT_FALSE(RunDownloadPlan(PlanDownloads(UpdateWith(30)), [&](const DownloadStep&) {
++    ++tried;
++    return false;
++  }));
++  EXPECT_EQ(tried, 2);
++  EXPECT_FALSE(RunDownloadPlan({}, [](const DownloadStep&) { return true; }));
++}
++
++// P4.4 -------------------------------------------------------------------------
++
++Processor X64(bool sse41, bool sse42, bool avx, bool avx2, bool fma3) {
++  Processor cpu;
++  cpu.x64 = true;
++  cpu.sse41 = sse41;
++  cpu.sse42 = sse42;
++  cpu.avx = avx;
++  cpu.avx2 = avx2;
++  cpu.fma3 = fma3;
++  return cpu;
++}
++
++TEST(ThoronUpdateVariantTest, EachProcessorGetsTheFastestBuildThatRunsOnIt) {
++  const Processor haswell = X64(true, true, true, true, true);
++  const Processor excavator = haswell;                         // AMD, AVX2 and FMA
++  const Processor goldmont = X64(true, true, false, false, false);  // Celeron, Pentium Silver
++  const Processor sandy_bridge = X64(true, true, true, false, false);  // AVX, no AVX2
++  const Processor avx2_without_fma = X64(true, true, true, true, false);
++  const Processor penryn = X64(true, false, false, false, false);  // SSE4.1 only
++  const Processor merom = X64(false, false, false, false, false);
++  Processor arm;
++  arm.arm64 = true;
++
++  using V = std::vector<Variant>;
++  EXPECT_EQ(VariantsFor(Os::kWindows, haswell), (V{Variant::kWinX64Avx2, Variant::kWinX64Sse4}));
++  EXPECT_EQ(VariantsFor(Os::kLinux, excavator),
++            (V{Variant::kLinuxX64Avx2, Variant::kLinuxX64Sse4}));
++  EXPECT_EQ(VariantsFor(Os::kWindows, goldmont), (V{Variant::kWinX64Sse4}));
++  EXPECT_EQ(VariantsFor(Os::kWindows, sandy_bridge), (V{Variant::kWinX64Sse4}));
++  EXPECT_EQ(VariantsFor(Os::kWindows, avx2_without_fma), (V{Variant::kWinX64Sse4}));
++  EXPECT_TRUE(VariantsFor(Os::kWindows, penryn).empty());
++  EXPECT_TRUE(VariantsFor(Os::kLinux, merom).empty());
++  EXPECT_EQ(VariantsFor(Os::kWindows, arm), (V{Variant::kWinArm64Armv8}));
++  EXPECT_EQ(VariantsFor(Os::kLinux, arm), (V{Variant::kLinuxArm64Armv8}));
++}
++
++TEST(ThoronUpdateVariantTest, ACopyMovedToAnOlderProcessorIsToldApart) {
++  const Processor goldmont = X64(true, true, false, false, false);
++  EXPECT_FALSE(RunsOn(Variant::kWinX64Avx2, goldmont));
++  EXPECT_TRUE(RunsOn(Variant::kWinX64Sse4, goldmont));
++  Processor arm;
++  arm.arm64 = true;
++  EXPECT_FALSE(RunsOn(Variant::kWinX64Sse4, arm));
++  EXPECT_FALSE(RunsOn(Variant::kWinArm64Armv8, goldmont));
++}
++
++TEST(ThoronUpdateVariantTest, TheProcessorThisRunsOnRunsThisBuild) {
++  // The tests themselves are built like the browser, so their processor runs
++  // at least one variant of this system.
++#if BUILDFLAG(IS_WIN)
++  EXPECT_FALSE(VariantsFor(Os::kWindows, ThisProcessor()).empty());
++#elif BUILDFLAG(IS_LINUX)
++  EXPECT_FALSE(VariantsFor(Os::kLinux, ThisProcessor()).empty());
++#endif
++}
++
++}  // namespace
 +}  // namespace thoron_update

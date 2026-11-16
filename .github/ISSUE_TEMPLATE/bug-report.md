@@ -26,6 +26,7 @@ A clear description of the problem, and what you expected instead.
 
 **Does it also happen in a new profile?**
 Start Thoron with `--user-data-dir=<an empty folder>` and try again. Never attach files from your
-real profile: they can contain passwords, cookies and history.
+real profile or a crash dump (`.dmp`): they can contain passwords, cookies and history. For a crash,
+describe it in words (https://github.com/KuchiSofts/thoron/blob/main/docs/qa/CRASH_TRIAGE.md).
 
 **Does it also happen in Chromium or upstream Thorium of the same version?**

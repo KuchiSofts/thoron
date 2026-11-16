@@ -11,7 +11,9 @@ and every decision taken on the way. The starting point was the report in
 - **Audit:** the 18 upstream commits since the tag were checked with `tools/audit/audit_diff.py --strict`:
   no binaries, no submodule changes. The network endpoints and `--no-sandbox` hits are in macOS smoke-test
   scripts that Thoron does not use. The new `developer-crx-installation.patch` adds a developer-mode
-  "install a local CRX" button and leaves signature checks unchanged.
+  "install a local CRX" button and leaves signature checks unchanged. It also adds a switch, off by
+  default, for installing extensions downloaded from other sites. The full review of every finding is in
+  [`docs/security/UPSTREAM_AUDIT_M158.md`](../security/UPSTREAM_AUDIT_M158.md) (ROADMAP **P2.2**).
 - **Branch:** `ks/M158`, local only. Like the M156 audit ref, it holds the full upstream tree, which still
   carries files that must not be published (ROADMAP **L.6**, **L.7**), and the local push hook refuses it.
 

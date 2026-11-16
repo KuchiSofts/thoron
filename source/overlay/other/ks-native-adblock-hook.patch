@@ -11930,10 +11930,10 @@ index 0000000000000000000000000000000000000000..3e4c28764458836945e8dccad2197a69
 +#endif  // COMPONENTS_THORON_MAIL_MAIL_SERVICE_H_
 diff --git a/components/thoron_update/BUILD.gn b/components/thoron_update/BUILD.gn
 new file mode 100644
-index 0000000000000000000000000000000000000000..30592aa2a2bff3234989b9fec8c881217b9e6082
+index 0000000000000000000000000000000000000000..709a428d3f876e115b1e251e342b3ec9681ecc46
 --- /dev/null
 +++ b/components/thoron_update/BUILD.gn
-@@ -0,0 +1,48 @@
+@@ -0,0 +1,51 @@
 +# Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +# found in the LICENSE file.
 +
@@ -11948,6 +11948,8 @@ index 0000000000000000000000000000000000000000..30592aa2a2bff3234989b9fec8c88121
 +    "manifest.h",
 +    "package.cc",
 +    "package.h",
++    "swap.cc",
++    "swap.h",
 +  ]
 +  deps = [
 +    "//base",
@@ -11964,6 +11966,7 @@ index 0000000000000000000000000000000000000000..30592aa2a2bff3234989b9fec8c88121
 +    "manifest_test_vectors.h",
 +    "manifest_unittest.cc",
 +    "package_unittest.cc",
++    "swap_unittest.cc",
 +  ]
 +  deps = [
 +    ":thoron_update",
@@ -18379,6 +18382,597 @@ index 0000000000000000000000000000000000000000..8b4271f1d0784dfe774c24341cca2b93
 +#elif BUILDFLAG(IS_LINUX)
 +  EXPECT_FALSE(VariantsFor(Os::kLinux, ThisProcessor()).empty());
 +#endif
++}
++
++}  // namespace
++}  // namespace thoron_update
+diff --git a/components/thoron_update/swap.cc b/components/thoron_update/swap.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..e7f26e5d20aa8e08da6545145fc7a36a521e2656
+--- /dev/null
++++ b/components/thoron_update/swap.cc
+@@ -0,0 +1,251 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "components/thoron_update/swap.h"
++
++#include <set>
++#include <string>
++#include <vector>
++
++#include "base/files/file_enumerator.h"
++#include "base/files/file_path.h"
++#include "base/files/file_util.h"
++#include "base/files/important_file_writer.h"
++#include "base/strings/string_split.h"
++#include "base/strings/string_util.h"
++#include "components/thoron_update/package.h"
++
++namespace thoron_update {
++
++namespace {
++
++constexpr char kCurrentFile[] = "current";
++// The file is a few bytes; more is not it.
++constexpr int64_t kMostPointerBytes = 64;
++// A folder is renamed to this before it is deleted, so a folder that is half
++// deleted never looks like a version.
++constexpr char kRemovingSuffix[] = ".removing";
++
++// Line `line` (0: current, 1: previous) of the pointer file, when it names a
++// version whose folder is there.
++std::optional<BuildVersion> ReadPointer(const base::FilePath& root,
++                                        size_t line) {
++  std::string text;
++  if (!base::ReadFileToStringWithMaxSize(root.AppendASCII(kCurrentFile), &text,
++                                         kMostPointerBytes)) {
++    return std::nullopt;
++  }
++  const std::vector<std::string_view> lines = base::SplitStringPiece(
++      text, "\n", base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
++  if (line >= lines.size()) {
++    return std::nullopt;
++  }
++  std::optional<BuildVersion> version = ParseBuildVersion(lines[line]);
++  if (!version || !base::DirectoryExists(VersionFolder(root, *version))) {
++    return std::nullopt;
++  }
++  return version;
++}
++
++// Names `current` and, when there is one, `previous`, in one atomic step.
++bool WritePointer(const base::FilePath& root,
++                  const BuildVersion& current,
++                  const std::optional<BuildVersion>& previous) {
++  std::string text = ToString(current) + "\n";
++  if (previous && *previous != current) {
++    text += ToString(*previous) + "\n";
++  }
++  return base::ImportantFileWriter::WriteFileAtomically(
++      root.AppendASCII(kCurrentFile), text);
++}
++
++// The file of `file` inside `folder`, or nothing for a path that would leave it.
++std::optional<base::FilePath> Inside(const base::FilePath& folder,
++                                     const VersionFile& file) {
++  if (file.path.empty() || file.path.front() == '/' ||
++      file.path.find('\\') != std::string::npos ||
++      file.path.find(':') != std::string::npos) {
++    return std::nullopt;
++  }
++  const base::FilePath relative = base::FilePath::FromUTF8Unsafe(file.path);
++  if (relative.IsAbsolute() || relative.ReferencesParent()) {
++    return std::nullopt;
++  }
++  return folder.Append(relative.NormalizePathSeparators());
++}
++
++// Whether `folder` holds exactly `files`: each verifies, and there is no other.
++bool HoldsExactly(const base::FilePath& folder,
++                  const std::vector<VersionFile>& files) {
++  std::set<base::FilePath> wanted;
++  for (const VersionFile& file : files) {
++    const std::optional<base::FilePath> path = Inside(folder, file);
++    if (!path || !wanted.insert(*path).second) {
++      return false;
++    }
++    if (CheckFile(*path, PackageFile{std::string(), file.size, file.sha256}) !=
++        FileCheck::kOk) {
++      return false;
++    }
++  }
++  base::FileEnumerator found(folder, /*recursive=*/true,
++                             base::FileEnumerator::FILES);
++  for (base::FilePath path = found.Next(); !path.empty(); path = found.Next()) {
++    if (!wanted.contains(path)) {
++      return false;
++    }
++  }
++  return true;
++}
++
++bool Remove(const base::FilePath& folder) {
++  if (!base::PathExists(folder)) {
++    return true;
++  }
++  base::FilePath away = folder;
++  if (!folder.BaseName().MaybeAsASCII().ends_with(kRemovingSuffix)) {
++    const base::FilePath renamed = folder.AddExtensionASCII("removing");
++    if (base::Move(folder, renamed)) {
++      away = renamed;
++    }
++  }
++  return base::DeletePathRecursively(away);
++}
++
++bool Stop(std::optional<SwapStep> stop_after, SwapStep step) {
++  return stop_after && *stop_after == step;
++}
++
++}  // namespace
++
++std::string_view SwapResultName(SwapResult result) {
++  switch (result) {
++    case SwapResult::kDone:
++      return "done";
++    case SwapResult::kBadFiles:
++      return "bad_files";
++    case SwapResult::kBadRequest:
++      return "bad_request";
++    case SwapResult::kAlreadyCurrent:
++      return "already_current";
++    case SwapResult::kIoError:
++      return "io_error";
++    case SwapResult::kNothingToRollBack:
++      return "nothing_to_roll_back";
++    case SwapResult::kInterrupted:
++      return "interrupted";
++  }
++  return "unknown";
++}
++
++base::FilePath VersionFolder(const base::FilePath& root,
++                             const BuildVersion& version) {
++  return root.AppendASCII(ToString(version));
++}
++
++std::optional<BuildVersion> CurrentVersion(const base::FilePath& root) {
++  return ReadPointer(root, 0);
++}
++
++std::optional<BuildVersion> PreviousVersion(const base::FilePath& root) {
++  return ReadPointer(root, 1);
++}
++
++bool VersionIsComplete(const base::FilePath& root,
++                       const BuildVersion& version,
++                       const std::vector<VersionFile>& files) {
++  const base::FilePath folder = VersionFolder(root, version);
++  return base::DirectoryExists(folder) && HoldsExactly(folder, files);
++}
++
++void CleanUp(const base::FilePath& root) {
++  const std::optional<BuildVersion> current = CurrentVersion(root);
++  const std::optional<BuildVersion> previous = PreviousVersion(root);
++  if (!current) {
++    // Without a version that starts nothing is removed: what is there may be
++    // all there is.
++    return;
++  }
++  std::vector<base::FilePath> away;
++  base::FileEnumerator found(root, /*recursive=*/false,
++                             base::FileEnumerator::DIRECTORIES);
++  for (base::FilePath path = found.Next(); !path.empty(); path = found.Next()) {
++    const std::string name = path.BaseName().MaybeAsASCII();
++    const std::optional<BuildVersion> version = ParseBuildVersion(name);
++    if (version) {
++      if (*version != *current && (!previous || *version != *previous)) {
++        away.push_back(path);
++      }
++    } else if (name.ends_with(".staging") || name.ends_with(kRemovingSuffix)) {
++      away.push_back(path);
++    }
++  }
++  for (const base::FilePath& path : away) {
++    Remove(path);
++  }
++}
++
++SwapResult InstallVersion(const base::FilePath& root,
++                          const base::FilePath& staged,
++                          const BuildVersion& version,
++                          const std::vector<VersionFile>& files,
++                          std::optional<SwapStep> stop_after) {
++  if (version == BuildVersion() || files.empty() ||
++      std::ranges::any_of(files, [&](const VersionFile& file) {
++        return !Inside(root, file);
++      })) {
++    return SwapResult::kBadRequest;
++  }
++  const std::optional<BuildVersion> was = CurrentVersion(root);
++  if (was && *was == version) {
++    return SwapResult::kAlreadyCurrent;
++  }
++  const base::FilePath folder = VersionFolder(root, version);
++  if (!base::DirectoryExists(folder)) {
++    // Not yet moved: the staged folder is checked and becomes the version.
++    if (!HoldsExactly(staged, files)) {
++      Remove(staged);
++      return SwapResult::kBadFiles;
++    }
++    if (Stop(stop_after, SwapStep::kVerified)) {
++      return SwapResult::kInterrupted;
++    }
++    if (!base::Move(staged, folder)) {
++      return SwapResult::kIoError;
++    }
++  } else if (!HoldsExactly(folder, files)) {
++    // A folder of that name that is not the version: it goes, and the staged
++    // one is tried again on the next run.
++    Remove(folder);
++    return SwapResult::kIoError;
++  }
++  if (Stop(stop_after, SwapStep::kMoved)) {
++    return SwapResult::kInterrupted;
++  }
++  // The switch, in one step: from here on the new version starts.
++  if (!WritePointer(root, version, was)) {
++    return SwapResult::kIoError;
++  }
++  if (Stop(stop_after, SwapStep::kSwitched)) {
++    return SwapResult::kInterrupted;
++  }
++  CleanUp(root);
++  if (Stop(stop_after, SwapStep::kCleaned)) {
++    return SwapResult::kInterrupted;
++  }
++  return SwapResult::kDone;
++}
++
++SwapResult RollBack(const base::FilePath& root) {
++  const std::optional<BuildVersion> current = CurrentVersion(root);
++  const std::optional<BuildVersion> previous = PreviousVersion(root);
++  if (!current || !previous || *current == *previous) {
++    return SwapResult::kNothingToRollBack;
++  }
++  if (!WritePointer(root, *previous, *current)) {
++    return SwapResult::kIoError;
++  }
++  return SwapResult::kDone;
++}
++
++}  // namespace thoron_update
+diff --git a/components/thoron_update/swap.h b/components/thoron_update/swap.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..00236b90da90f6329379ad797faac3b4a0fb2839
+--- /dev/null
++++ b/components/thoron_update/swap.h
+@@ -0,0 +1,107 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef COMPONENTS_THORON_UPDATE_SWAP_H_
++#define COMPONENTS_THORON_UPDATE_SWAP_H_
++
++#include <stdint.h>
++
++#include <optional>
++#include <string>
++#include <string_view>
++#include <vector>
++
++#include "components/thoron_update/manifest.h"
++
++namespace base {
++class FilePath;
++}  // namespace base
++
++// Putting a new version in place without ever leaving a copy that cannot start
++// (ROADMAP P3.5), and going back to the one before it (P3.8, the program's half).
++//
++// The program folder ("root") holds one folder for each version it keeps, named
++// by the version (root/158.0.8127.3010/...), and one small file, `current`: its
++// first line names the version that is started, its second line the one before
++// it. A launcher reads the first line and starts that version. The file is only
++// ever replaced whole, in one step (written beside, then renamed over it), and
++// only ever names folders that are complete and verified, so a kill at any
++// moment leaves a version that starts, the old one until the switch and the new
++// one after it, and never a kept version that the file does not name.
++
++namespace thoron_update {
++
++// One file of a version: its path inside the version's folder ('/' between the
++// parts), its length and its SHA-256 (64 characters of 0-9a-f).
++struct VersionFile {
++  std::string path;
++  int64_t size = 0;
++  std::string sha256;
++};
++
++enum class SwapResult {
++  kDone,
++  // The staged folder is not exactly `files`: a file missing, different, or
++  // one more. Nothing was switched; the staged folder is removed.
++  kBadFiles,
++  // `files` names a path outside the version's folder, or `version` is zero.
++  kBadRequest,
++  // The version is already the current one.
++  kAlreadyCurrent,
++  // A rename or a write failed. What was current is still current.
++  kIoError,
++  // There is no version to go back to.
++  kNothingToRollBack,
++  // Stopped on purpose after a step (tests: a kill at that moment).
++  kInterrupted,
++};
++
++std::string_view SwapResultName(SwapResult result);
++
++// The steps of InstallVersion, in order. A test stops after one of them to see
++// what a kill there leaves.
++enum class SwapStep {
++  kVerified,         // every staged file checked
++  kMoved,            // the staged folder renamed to the version's name
++  kSwitched,         // `current` names the new version, then what was current
++  kCleaned,          // versions other than these two removed
++};
++
++// The version the first line of `root`/current names, when its folder is there.
++std::optional<BuildVersion> CurrentVersion(const base::FilePath& root);
++// The version its second line names, when its folder is there.
++std::optional<BuildVersion> PreviousVersion(const base::FilePath& root);
++// The folder of `version` in `root`.
++base::FilePath VersionFolder(const base::FilePath& root,
++                             const BuildVersion& version);
++
++// Whether the folder of `version` holds exactly `files`.
++bool VersionIsComplete(const base::FilePath& root,
++                       const BuildVersion& version,
++                       const std::vector<VersionFile>& files);
++
++// Puts `version` in place from `staged`, a folder in `root` the package was
++// unpacked into: it must hold exactly `files`. Then `current` names `version`
++// and, as the one before it, what was current; every version folder but these two,
++// and every folder a killed update left, is removed: N-1 is kept.
++//
++// Run again after a kill, it goes on where it stopped: a version folder that is
++// already there (it was renamed only after it verified) is used as it is.
++SwapResult InstallVersion(const base::FilePath& root,
++                          const base::FilePath& staged,
++                          const BuildVersion& version,
++                          const std::vector<VersionFile>& files,
++                          std::optional<SwapStep> stop_after = std::nullopt);
++
++// Makes the previous version the current one again, and the current one the
++// previous. Nothing is deleted, so it can be undone the same way.
++SwapResult RollBack(const base::FilePath& root);
++
++// Removes what is neither the current nor the previous version: folders a
++// killed update or rollback left. Run by InstallVersion; a launcher may run it
++// at start.
++void CleanUp(const base::FilePath& root);
++
++}  // namespace thoron_update
++
++#endif  // COMPONENTS_THORON_UPDATE_SWAP_H_
+diff --git a/components/thoron_update/swap_unittest.cc b/components/thoron_update/swap_unittest.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..88f7603b4ce4f177ac7c5f7ca33764c06e6f325e
+--- /dev/null
++++ b/components/thoron_update/swap_unittest.cc
+@@ -0,0 +1,215 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "components/thoron_update/swap.h"
++
++#include <map>
++#include <optional>
++#include <string>
++#include <vector>
++
++#include "base/files/file_path.h"
++#include "base/files/file_util.h"
++#include "base/files/scoped_temp_dir.h"
++#include "base/strings/string_number_conversions.h"
++#include "crypto/hash.h"
++#include "testing/gtest/include/gtest/gtest.h"
++
++namespace thoron_update {
++namespace {
++
++BuildVersion V(uint16_t build, uint16_t patch) {
++  return BuildVersion{{158, 0, build, patch}};
++}
++
++// The files of a made-up version: a program, a library and a file in a folder.
++std::map<std::string, std::string> Content(const BuildVersion& version) {
++  const std::string name = ToString(version);
++  return {{"thoron.exe", "program " + name},
++          {"chrome.dll", std::string(70000, 'd') + name},
++          {"locales/en-US.pak", "strings " + name}};
++}
++
++std::vector<VersionFile> FilesOf(const BuildVersion& version) {
++  std::vector<VersionFile> out;
++  for (const auto& [path, text] : Content(version)) {
++    out.push_back({path, static_cast<int64_t>(text.size()),
++                   base::HexEncodeLower(crypto::hash::Sha256(text))});
++  }
++  return out;
++}
++
++class ThoronUpdateSwapTest : public testing::Test {
++ protected:
++  void SetUp() override { ASSERT_TRUE(dir_.CreateUniqueTempDir()); }
++
++  const base::FilePath& root() { return dir_.GetPath(); }
++
++  // Unpacks a made-up package of `version` into a folder of `root`.
++  base::FilePath Stage(const BuildVersion& version,
++                       const std::map<std::string, std::string>& content) {
++    const base::FilePath staged = root().AppendASCII(ToString(version) + ".staging");
++    for (const auto& [path, text] : content) {
++      const base::FilePath file = staged.Append(base::FilePath::FromUTF8Unsafe(path))
++                                      .NormalizePathSeparators();
++      EXPECT_TRUE(base::CreateDirectory(file.DirName()));
++      EXPECT_TRUE(base::WriteFile(file, text));
++    }
++    return staged;
++  }
++
++  base::FilePath Stage(const BuildVersion& version) { return Stage(version, Content(version)); }
++
++  void Install(const BuildVersion& version) {
++    ASSERT_EQ(InstallVersion(root(), Stage(version), version, FilesOf(version)), SwapResult::kDone);
++  }
++
++  // What a launcher starts is a version whose folder is whole.
++  void ExpectLaunchable() {
++    const std::optional<BuildVersion> current = CurrentVersion(root());
++    ASSERT_TRUE(current);
++    EXPECT_TRUE(VersionIsComplete(root(), *current, FilesOf(*current))) << ToString(*current);
++  }
++
++  base::ScopedTempDir dir_;
++};
++
++TEST_F(ThoronUpdateSwapTest, AFirstVersionIsInstalled) {
++  EXPECT_FALSE(CurrentVersion(root()));
++  Install(V(8127, 3000));
++  EXPECT_EQ(CurrentVersion(root()), V(8127, 3000));
++  EXPECT_FALSE(PreviousVersion(root()));
++  ExpectLaunchable();
++  EXPECT_FALSE(base::PathExists(root().AppendASCII("158.0.8127.3000.staging")));
++}
++
++TEST_F(ThoronUpdateSwapTest, AnUpdateKeepsTheVersionBeforeItAndNoOther) {
++  Install(V(8127, 3000));
++  Install(V(8127, 3010));
++  Install(V(8127, 3020));
++  EXPECT_EQ(CurrentVersion(root()), V(8127, 3020));
++  EXPECT_EQ(PreviousVersion(root()), V(8127, 3010));
++  EXPECT_FALSE(base::PathExists(VersionFolder(root(), V(8127, 3000))));
++  EXPECT_TRUE(VersionIsComplete(root(), V(8127, 3010), FilesOf(V(8127, 3010))));
++  ExpectLaunchable();
++}
++
++TEST_F(ThoronUpdateSwapTest, AStagedFolderThatIsNotTheVersionIsNeverSwitchedTo) {
++  Install(V(8127, 3000));
++  const BuildVersion next = V(8127, 3010);
++  std::vector<std::map<std::string, std::string>> wrong(4, Content(next));
++  wrong[0]["chrome.dll"][5] = 'x';              // a byte changed
++  wrong[1].erase("locales/en-US.pak");          // a file missing
++  wrong[2]["extra.dll"] = "not in the package";  // a file more
++  wrong[3]["thoron.exe"].pop_back();             // a file cut short
++  for (const auto& content : wrong) {
++    EXPECT_EQ(InstallVersion(root(), Stage(next, content), next, FilesOf(next)),
++              SwapResult::kBadFiles);
++    EXPECT_EQ(CurrentVersion(root()), V(8127, 3000));
++    EXPECT_FALSE(base::PathExists(VersionFolder(root(), next)));
++    EXPECT_FALSE(base::PathExists(root().AppendASCII("158.0.8127.3010.staging")));
++    ExpectLaunchable();
++  }
++}
++
++TEST_F(ThoronUpdateSwapTest, APathThatLeavesTheFolderIsRefused) {
++  for (const std::string path : {"../thoron.exe", "/thoron.exe", "a\\b.dll", "c:x.dll", ""}) {
++    std::vector<VersionFile> files = FilesOf(V(8127, 3010));
++    files[0].path = path;
++    EXPECT_EQ(InstallVersion(root(), Stage(V(8127, 3010)), V(8127, 3010), files),
++              SwapResult::kBadRequest)
++        << path;
++  }
++  EXPECT_EQ(InstallVersion(root(), Stage(V(8127, 3010)), BuildVersion(), FilesOf(V(8127, 3010))),
++            SwapResult::kBadRequest);
++}
++
++// The stage's test: a kill after every step leaves a browser that starts, and
++// the next run finishes the update.
++TEST_F(ThoronUpdateSwapTest, AKillAtEveryStepLeavesAVersionThatStarts) {
++  for (SwapStep step : {SwapStep::kVerified, SwapStep::kMoved, SwapStep::kSwitched,
++                        SwapStep::kCleaned}) {
++    SCOPED_TRACE(static_cast<int>(step));
++    ASSERT_TRUE(base::DeletePathRecursively(root()));
++    ASSERT_TRUE(base::CreateDirectory(root()));
++    Install(V(8127, 3000));
++    Install(V(8127, 3010));
++    const BuildVersion next = V(8127, 3020);
++    EXPECT_EQ(InstallVersion(root(), Stage(next), next, FilesOf(next), step),
++              SwapResult::kInterrupted);
++    ExpectLaunchable();
++    // before the switch the old version starts, after it the new one
++    EXPECT_EQ(CurrentVersion(root()),
++              step == SwapStep::kSwitched || step == SwapStep::kCleaned ? next : V(8127, 3010));
++    // and the version before the current one is still there
++    ASSERT_TRUE(PreviousVersion(root()));
++    EXPECT_TRUE(VersionIsComplete(root(), *PreviousVersion(root()), FilesOf(*PreviousVersion(root()))));
++    // run again: it goes on where it stopped
++    const base::FilePath staged = root().AppendASCII("158.0.8127.3020.staging");
++    const SwapResult again = InstallVersion(root(), staged, next, FilesOf(next));
++    EXPECT_TRUE(again == SwapResult::kDone || again == SwapResult::kAlreadyCurrent)
++        << SwapResultName(again);
++    CleanUp(root());
++    EXPECT_EQ(CurrentVersion(root()), next);
++    EXPECT_EQ(PreviousVersion(root()), V(8127, 3010));
++    EXPECT_FALSE(base::PathExists(VersionFolder(root(), V(8127, 3000))));
++    EXPECT_FALSE(base::PathExists(staged));
++    ExpectLaunchable();
++  }
++}
++
++TEST_F(ThoronUpdateSwapTest, LeftoversOfAKilledRunAreRemovedButNeverAVersionInUse) {
++  Install(V(8127, 3000));
++  Install(V(8127, 3010));
++  Stage(V(8127, 3020));                                                // a staged folder
++  ASSERT_TRUE(base::CreateDirectory(root().AppendASCII("158.0.8127.2990.removing")));
++  ASSERT_TRUE(base::CreateDirectory(root().AppendASCII("158.0.8127.2000")));  // an old version
++  CleanUp(root());
++  EXPECT_FALSE(base::PathExists(root().AppendASCII("158.0.8127.3020.staging")));
++  EXPECT_FALSE(base::PathExists(root().AppendASCII("158.0.8127.2990.removing")));
++  EXPECT_FALSE(base::PathExists(root().AppendASCII("158.0.8127.2000")));
++  EXPECT_TRUE(VersionIsComplete(root(), V(8127, 3010), FilesOf(V(8127, 3010))));
++  EXPECT_TRUE(VersionIsComplete(root(), V(8127, 3000), FilesOf(V(8127, 3000))));
++}
++
++TEST_F(ThoronUpdateSwapTest, WithoutAVersionThatStartsNothingIsRemoved) {
++  Stage(V(8127, 3020));
++  ASSERT_TRUE(base::CreateDirectory(root().AppendASCII("158.0.8127.2000")));
++  CleanUp(root());
++  EXPECT_TRUE(base::PathExists(root().AppendASCII("158.0.8127.3020.staging")));
++  EXPECT_TRUE(base::PathExists(root().AppendASCII("158.0.8127.2000")));
++}
++
++// P3.8, the program's half: update, roll back, and the folders are as before.
++TEST_F(ThoronUpdateSwapTest, RollingBackStartsThePreviousVersionByteForByte) {
++  EXPECT_EQ(RollBack(root()), SwapResult::kNothingToRollBack);
++  Install(V(8127, 3000));
++  EXPECT_EQ(RollBack(root()), SwapResult::kNothingToRollBack);
++  Install(V(8127, 3010));
++  EXPECT_EQ(RollBack(root()), SwapResult::kDone);
++  EXPECT_EQ(CurrentVersion(root()), V(8127, 3000));
++  EXPECT_EQ(PreviousVersion(root()), V(8127, 3010));
++  ExpectLaunchable();
++  // the files of both are exactly the packages'
++  EXPECT_TRUE(VersionIsComplete(root(), V(8127, 3000), FilesOf(V(8127, 3000))));
++  EXPECT_TRUE(VersionIsComplete(root(), V(8127, 3010), FilesOf(V(8127, 3010))));
++  // and it can be undone
++  EXPECT_EQ(RollBack(root()), SwapResult::kDone);
++  EXPECT_EQ(CurrentVersion(root()), V(8127, 3010));
++  CleanUp(root());
++  EXPECT_TRUE(VersionIsComplete(root(), V(8127, 3000), FilesOf(V(8127, 3000))));
++}
++
++TEST_F(ThoronUpdateSwapTest, ThePointerFileIsReadStrictly) {
++  Install(V(8127, 3000));
++  const base::FilePath pointer = root().AppendASCII("current");
++  for (const std::string& text :
++       std::vector<std::string>{"", "158.0.8127\n", "158.0.8127.03000\n", "158.0.8127.9999\n",
++                                std::string(100, '1')}) {
++    ASSERT_TRUE(base::WriteFile(pointer, text));
++    EXPECT_FALSE(CurrentVersion(root())) << text;
++  }
 +}
 +
 +}  // namespace

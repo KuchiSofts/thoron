@@ -2143,6 +2143,20 @@ response's body. Thoron is the browser, so it does it for every page:
   of the mouse opens the page in a new tab, and with the blocker off the entry is hidden. The check found that
   the menu stopped every click but the one on "Extensions"; Thoron's is let through as well.
 
+### 12.68 The browser's own strings of Thoron adblock, translated (P5.16, 2026-11-16)
+
+- **What:** the strings Thoron adds to the browser's own pages (page info and site settings: "Ads and
+  trackers" and what it does; the shield's bubble; "Block element...", "Subscribe to filter list..." and
+  "Temporarily allow large media elements" in the context menu; the menus' names) in es, fr, de, pt-BR, pt-PT
+  and ru, as the pages of the blocker already are (`i18n.js`). Other languages show the English.
+- **How:** in the browser's translation files (`components/strings/components_strings_<lang>.xtb`), each under
+  the id grit gives the English text (computed with grit itself from the messages, so a changed English text
+  needs its translations again). Plurals in ICU form, with Russian's four forms. "ads.example (3)" reads the
+  same in every language and is not translated.
+- **Checked** by `tools/qa/adblock_strings_check.py`: the browser started in each language shows the
+  translated heading and description of the setting in Settings, not the English (a translation whose id
+  does not match is silently left out).
+
 ## 13. Credits
 
 The procedural operators and the rest of the filter syntax are uBlock Origin's (with forms from Adblock

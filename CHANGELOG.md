@@ -100,6 +100,8 @@ Explanations live in the design docs under `docs/design/`.
 - **QA tools:** `adblock_cname_check.py` checks CNAME uncloaking offline.
 - **Ad blocking:** Settings has "Thoron adblock" in its side menu, below "Extensions": it opens `chrome://adblock`.
 - **QA tools:** `adblock_settings_link_check.py` checks that entry.
+- **Ad blocking:** "Ads and trackers" in page info and Settings, the shield's bubble and "Block element..." speak Spanish, French, German, Portuguese and Russian.
+- **QA tools:** `adblock_strings_check.py` checks those translations in each language.
 - **Mail:** the mail notifier is now Thoron M-Notifier: next to the address bar or in it, where you choose.
 - **Mail:** Thoron M-Notifier counts new mail since you last opened the account's inbox, and never spam; it has its own settings (what it counts, how often, notices and their sound, where mail opens, which accounts).
 - **QA tools:** `mail_place_check.py` checks where the M-Notifier's envelope is and what it says.

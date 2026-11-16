@@ -576,6 +576,180 @@ index 56ff6c6fb5866a3ba5a43918ae41bfbf8c1f4a6f..4274d778b851986e4e180f89916d63c4
  }
  
  void AddStorageAccessStrings(content::WebUIDataSource* html_source) {
+diff --git a/components/strings/components_strings_es.xtb b/components/strings/components_strings_es.xtb
+index 1ffe9c9bc2cfa60b3c3737ba62392487a1dd5794..ddc18bd49d5a6862c766531f465b9965f7718b70 100644
+--- a/components/strings/components_strings_es.xtb
++++ b/components/strings/components_strings_es.xtb
+@@ -1,6 +1,24 @@
+ <?xml version="1.0" ?>
+ <!DOCTYPE translationbundle>
+ <translationbundle lang="es">
++<translation id="3831731009133380864">Anuncios y rastreadores</translation>
++<translation id="9211160394443186468">anuncios y rastreadores</translation>
++<translation id="5463797092562537630">Los anuncios y muchos rastreadores se bloquean antes de cargarse, así que las páginas cargan más rápido y menos empresas pueden seguirte de un sitio a otro. Si un sitio no funciona bien, permite los anuncios y los rastreadores en ese sitio.</translation>
++<translation id="4640859531193254284">Thoron los bloquea a menos que los permitas en este sitio</translation>
++<translation id="5161450407827121722">Los sitios pueden mostrar anuncios y usar rastreadores</translation>
++<translation id="6563782719181757479">Bloquear anuncios y rastreadores</translation>
++<translation id="1192592003089257147">Pueden mostrar anuncios y usar rastreadores</translation>
++<translation id="7264412424443189961">Anuncios y rastreadores bloqueados</translation>
++<translation id="6722516364813170775">{COUNT,plural, =1{1 anuncio o rastreador bloqueado en esta página}other{# anuncios y rastreadores bloqueados en esta página}}</translation>
++<translation id="6989696309123291799">Se detuvieron antes de cargarse. Si esta página no funciona bien, permite los anuncios y los rastreadores en este sitio.</translation>
++<translation id="1035294592206787230">{COUNT,plural, =1{y 1 sitio más}other{y # sitios más}}</translation>
++<translation id="307849327726092458">Menú de Thoron adblock</translation>
++<translation id="7219440289893104890">Menú de Thoron M-Notifier</translation>
++<translation id="5895327703893516140">Bloquear elemento...</translation>
++<translation id="5794149340321207729">Bloquear elemento en el marco...</translation>
++<translation id="5163327881626487994">Suscribirse a la lista de filtros...</translation>
++<translation id="3795222773985505375">Permitir temporalmente los elementos multimedia grandes</translation>
++<translation id="4839345821657082511">Permitir siempre anuncios y rastreadores en este sitio</translation>
+ <translation id="1008557486741366299">Ahora no</translation>
+ <translation id="100957008357583611">¿Usar tu ubicación?</translation>
+ <translation id="1010200102790553230">Cargar la página más tarde</translation>
+diff --git a/components/strings/components_strings_fr.xtb b/components/strings/components_strings_fr.xtb
+index 90168a03f4b1df0bf1fa071ce695d6f5348eb499..89d558ef017790ee6527c3d3c0056f30325de7a5 100644
+--- a/components/strings/components_strings_fr.xtb
++++ b/components/strings/components_strings_fr.xtb
+@@ -1,6 +1,24 @@
+ <?xml version="1.0" ?>
+ <!DOCTYPE translationbundle>
+ <translationbundle lang="fr">
++<translation id="3831731009133380864">Annonces et traqueurs</translation>
++<translation id="9211160394443186468">annonces et traqueurs</translation>
++<translation id="5463797092562537630">Les annonces et de nombreux traqueurs sont bloqués avant leur chargement : les pages se chargent plus vite et moins d'entreprises peuvent vous suivre d'un site à l'autre. Si un site ne fonctionne pas correctement, autorisez les annonces et les traqueurs sur ce site.</translation>
++<translation id="4640859531193254284">Thoron les bloque, sauf si vous les autorisez sur ce site</translation>
++<translation id="5161450407827121722">Les sites peuvent afficher des annonces et utiliser des traqueurs</translation>
++<translation id="6563782719181757479">Bloquer les annonces et les traqueurs</translation>
++<translation id="1192592003089257147">Autorisés à afficher des annonces et à utiliser des traqueurs</translation>
++<translation id="7264412424443189961">Annonces et traqueurs bloqués</translation>
++<translation id="6722516364813170775">{COUNT,plural, =1{1 annonce ou traqueur bloqué sur cette page}other{# annonces et traqueurs bloqués sur cette page}}</translation>
++<translation id="6989696309123291799">Ils ont été arrêtés avant leur chargement. Si cette page ne fonctionne pas correctement, autorisez les annonces et les traqueurs sur ce site.</translation>
++<translation id="1035294592206787230">{COUNT,plural, =1{et 1 autre site}other{et # autres sites}}</translation>
++<translation id="307849327726092458">Menu de Thoron adblock</translation>
++<translation id="7219440289893104890">Menu de Thoron M-Notifier</translation>
++<translation id="5895327703893516140">Bloquer l'élément...</translation>
++<translation id="5794149340321207729">Bloquer l'élément dans le cadre...</translation>
++<translation id="5163327881626487994">S'abonner à la liste de filtres...</translation>
++<translation id="3795222773985505375">Autoriser temporairement les éléments multimédias volumineux</translation>
++<translation id="4839345821657082511">Toujours autoriser les annonces et les traqueurs sur ce site</translation>
+ <translation id="1008557486741366299">Pas maintenant</translation>
+ <translation id="100957008357583611">Utiliser votre position ?</translation>
+ <translation id="1010200102790553230">Charger la page plus tard</translation>
+diff --git a/components/strings/components_strings_de.xtb b/components/strings/components_strings_de.xtb
+index c22f95771120e7bccd3dcdf1e47ca2ee1df0900f..cc7bc6b4f1415a5e10b1b9dae72cfcc746982bcd 100644
+--- a/components/strings/components_strings_de.xtb
++++ b/components/strings/components_strings_de.xtb
+@@ -1,6 +1,24 @@
+ <?xml version="1.0" ?>
+ <!DOCTYPE translationbundle>
+ <translationbundle lang="de">
++<translation id="3831731009133380864">Werbung und Tracker</translation>
++<translation id="9211160394443186468">Werbung und Tracker</translation>
++<translation id="5463797092562537630">Werbung und viele Tracker werden blockiert, bevor sie laden. So laden Seiten schneller und weniger Unternehmen können Ihnen über Websites hinweg folgen. Wenn eine Website nicht richtig funktioniert, erlauben Sie Werbung und Tracker auf dieser Website.</translation>
++<translation id="4640859531193254284">Thoron blockiert sie, außer Sie erlauben sie auf dieser Website</translation>
++<translation id="5161450407827121722">Websites dürfen Werbung anzeigen und Tracker verwenden</translation>
++<translation id="6563782719181757479">Werbung und Tracker blockieren</translation>
++<translation id="1192592003089257147">Dürfen Werbung anzeigen und Tracker verwenden</translation>
++<translation id="7264412424443189961">Werbung und Tracker blockiert</translation>
++<translation id="6722516364813170775">{COUNT,plural, =1{1 Werbeanzeige oder Tracker auf dieser Seite blockiert}other{# Werbeanzeigen und Tracker auf dieser Seite blockiert}}</translation>
++<translation id="6989696309123291799">Sie wurden gestoppt, bevor sie geladen wurden. Wenn diese Seite nicht richtig funktioniert, erlauben Sie Werbung und Tracker auf dieser Website.</translation>
++<translation id="1035294592206787230">{COUNT,plural, =1{und 1 weitere Website}other{und # weitere Websites}}</translation>
++<translation id="307849327726092458">Thoron adblock-Menü</translation>
++<translation id="7219440289893104890">Thoron M-Notifier-Menü</translation>
++<translation id="5895327703893516140">Element blockieren...</translation>
++<translation id="5794149340321207729">Element im Frame blockieren...</translation>
++<translation id="5163327881626487994">Filterliste abonnieren...</translation>
++<translation id="3795222773985505375">Große Medienelemente vorübergehend erlauben</translation>
++<translation id="4839345821657082511">Werbung und Tracker auf dieser Website immer erlauben</translation>
+ <translation id="1008557486741366299">Jetzt nicht</translation>
+ <translation id="100957008357583611">Standort verwenden?</translation>
+ <translation id="1010200102790553230">Seite später laden</translation>
+diff --git a/components/strings/components_strings_pt-BR.xtb b/components/strings/components_strings_pt-BR.xtb
+index 170456af3582531aaf6a535b0d41ae55383af05c..b80fcd0c8d1a816d7f0a1e2146e21fc6b3cb9f40 100644
+--- a/components/strings/components_strings_pt-BR.xtb
++++ b/components/strings/components_strings_pt-BR.xtb
+@@ -1,6 +1,24 @@
+ <?xml version="1.0" ?>
+ <!DOCTYPE translationbundle>
+ <translationbundle lang="pt-BR">
++<translation id="3831731009133380864">Anúncios e rastreadores</translation>
++<translation id="9211160394443186468">anúncios e rastreadores</translation>
++<translation id="5463797092562537630">Anúncios e muitos rastreadores são bloqueados antes de carregar, então as páginas carregam mais rápido e menos empresas podem seguir você de um site para outro. Se um site não funcionar direito, permita anúncios e rastreadores nesse site.</translation>
++<translation id="4640859531193254284">O Thoron os bloqueia, a menos que você os permita neste site</translation>
++<translation id="5161450407827121722">Os sites podem mostrar anúncios e usar rastreadores</translation>
++<translation id="6563782719181757479">Bloquear anúncios e rastreadores</translation>
++<translation id="1192592003089257147">Podem mostrar anúncios e usar rastreadores</translation>
++<translation id="7264412424443189961">Anúncios e rastreadores bloqueados</translation>
++<translation id="6722516364813170775">{COUNT,plural, =1{1 anúncio ou rastreador bloqueado nesta página}other{# anúncios e rastreadores bloqueados nesta página}}</translation>
++<translation id="6989696309123291799">Eles foram interrompidos antes de carregar. Se esta página não funcionar direito, permita anúncios e rastreadores neste site.</translation>
++<translation id="1035294592206787230">{COUNT,plural, =1{e mais 1 site}other{e mais # sites}}</translation>
++<translation id="307849327726092458">Menu do Thoron adblock</translation>
++<translation id="7219440289893104890">Menu do Thoron M-Notifier</translation>
++<translation id="5895327703893516140">Bloquear elemento...</translation>
++<translation id="5794149340321207729">Bloquear elemento no quadro...</translation>
++<translation id="5163327881626487994">Inscrever-se na lista de filtros...</translation>
++<translation id="3795222773985505375">Permitir temporariamente elementos de mídia grandes</translation>
++<translation id="4839345821657082511">Sempre permitir anúncios e rastreadores neste site</translation>
+ <translation id="1008557486741366299">Não agora</translation>
+ <translation id="100957008357583611">Usar sua localização?</translation>
+ <translation id="1010200102790553230">Carregar página mais tarde</translation>
+diff --git a/components/strings/components_strings_pt-PT.xtb b/components/strings/components_strings_pt-PT.xtb
+index 973a259548dc7d679d0438751dcab53811cb3cfb..39327ea070f667c1098a8e0b7a8e240045cd71ec 100644
+--- a/components/strings/components_strings_pt-PT.xtb
++++ b/components/strings/components_strings_pt-PT.xtb
+@@ -1,6 +1,24 @@
+ <?xml version="1.0" ?>
+ <!DOCTYPE translationbundle>
+ <translationbundle lang="pt-PT">
++<translation id="3831731009133380864">Anúncios e rastreadores</translation>
++<translation id="9211160394443186468">anúncios e rastreadores</translation>
++<translation id="5463797092562537630">Os anúncios e muitos rastreadores são bloqueados antes de serem carregados, pelo que as páginas carregam mais depressa e menos empresas o podem seguir de um site para outro. Se um site não funcionar bem, permita anúncios e rastreadores nesse site.</translation>
++<translation id="4640859531193254284">O Thoron bloqueia-os, a menos que os permita neste site</translation>
++<translation id="5161450407827121722">Os sites podem mostrar anúncios e utilizar rastreadores</translation>
++<translation id="6563782719181757479">Bloquear anúncios e rastreadores</translation>
++<translation id="1192592003089257147">Podem mostrar anúncios e utilizar rastreadores</translation>
++<translation id="7264412424443189961">Anúncios e rastreadores bloqueados</translation>
++<translation id="6722516364813170775">{COUNT,plural, =1{1 anúncio ou rastreador bloqueado nesta página}other{# anúncios e rastreadores bloqueados nesta página}}</translation>
++<translation id="6989696309123291799">Foram travados antes de serem carregados. Se esta página não funcionar bem, permita anúncios e rastreadores neste site.</translation>
++<translation id="1035294592206787230">{COUNT,plural, =1{e mais 1 site}other{e mais # sites}}</translation>
++<translation id="307849327726092458">Menu do Thoron adblock</translation>
++<translation id="7219440289893104890">Menu do Thoron M-Notifier</translation>
++<translation id="5895327703893516140">Bloquear elemento...</translation>
++<translation id="5794149340321207729">Bloquear elemento no quadro...</translation>
++<translation id="5163327881626487994">Subscrever a lista de filtros...</translation>
++<translation id="3795222773985505375">Permitir temporariamente elementos multimédia grandes</translation>
++<translation id="4839345821657082511">Permitir sempre anúncios e rastreadores neste site</translation>
+ <translation id="1008557486741366299">Agora não</translation>
+ <translation id="100957008357583611">Quer utilizar a sua localização?</translation>
+ <translation id="1010200102790553230">Carregar a página mais tarde</translation>
+diff --git a/components/strings/components_strings_ru.xtb b/components/strings/components_strings_ru.xtb
+index 91b93f99e097f7e739759abf4887cc70880adc27..65584126fb1b9075883b1b51dc04c6eb1395f056 100644
+--- a/components/strings/components_strings_ru.xtb
++++ b/components/strings/components_strings_ru.xtb
+@@ -1,6 +1,24 @@
+ <?xml version="1.0" ?>
+ <!DOCTYPE translationbundle>
+ <translationbundle lang="ru">
++<translation id="3831731009133380864">Реклама и трекеры</translation>
++<translation id="9211160394443186468">реклама и трекеры</translation>
++<translation id="5463797092562537630">Реклама и многие трекеры блокируются до загрузки, поэтому страницы загружаются быстрее и меньше компаний могут отслеживать вас на разных сайтах. Если сайт работает неправильно, разрешите на нём рекламу и трекеры.</translation>
++<translation id="4640859531193254284">Thoron блокирует их, если вы не разрешите их на этом сайте</translation>
++<translation id="5161450407827121722">Сайты могут показывать рекламу и использовать трекеры</translation>
++<translation id="6563782719181757479">Блокировать рекламу и трекеры</translation>
++<translation id="1192592003089257147">Разрешено показывать рекламу и использовать трекеры</translation>
++<translation id="7264412424443189961">Реклама и трекеры заблокированы</translation>
++<translation id="6722516364813170775">{COUNT,plural, =1{На этой странице заблокирован 1 рекламный элемент или трекер}one{На этой странице заблокирован # рекламный элемент или трекер}few{На этой странице заблокировано # рекламных элемента или трекера}many{На этой странице заблокировано # рекламных элементов или трекеров}other{На этой странице заблокировано # рекламного элемента или трекера}}</translation>
++<translation id="6989696309123291799">Они были остановлены до загрузки. Если страница работает неправильно, разрешите рекламу и трекеры на этом сайте.</translation>
++<translation id="1035294592206787230">{COUNT,plural, =1{и ещё 1 сайт}one{и ещё # сайт}few{и ещё # сайта}many{и ещё # сайтов}other{и ещё # сайта}}</translation>
++<translation id="307849327726092458">Меню Thoron adblock</translation>
++<translation id="7219440289893104890">Меню Thoron M-Notifier</translation>
++<translation id="5895327703893516140">Заблокировать элемент...</translation>
++<translation id="5794149340321207729">Заблокировать элемент во фрейме...</translation>
++<translation id="5163327881626487994">Подписаться на список фильтров...</translation>
++<translation id="3795222773985505375">Временно разрешить большие медиаэлементы</translation>
++<translation id="4839345821657082511">Всегда разрешать рекламу и трекеры на этом сайте</translation>
+ <translation id="1008557486741366299">Не сейчас</translation>
+ <translation id="100957008357583611">Использовать данные о местоположении?</translation>
+ <translation id="1010200102790553230">Загрузить страницу позже</translation>
 diff --git a/chrome/browser/resources/settings/settings_menu/settings_menu.html b/chrome/browser/resources/settings/settings_menu/settings_menu.html
 index c35c985ddf3447612e803fc595cdae2b514953a7..0ad9d7243f21a1ee3158c934a71fc39e36d720e4 100644
 --- a/chrome/browser/resources/settings/settings_menu/settings_menu.html

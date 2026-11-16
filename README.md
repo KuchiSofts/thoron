@@ -6,7 +6,7 @@
 
 **A fast, secure and private browser for Windows, based on Thorium and Chromium.**
 
-[![Status](https://img.shields.io/badge/status-pre--release-F72F8E?style=flat-square)](#roadmap) <!-- progress-badge:start -->[![Roadmap progress](https://img.shields.io/badge/roadmap-50%25-7B2FF7?style=flat-square)](#roadmap)<!-- progress-badge:end --> [![Platforms](https://img.shields.io/badge/platforms-Windows%20first-24292f?style=flat-square)](#platforms) [![CPU](https://img.shields.io/badge/cpu-x64%20%7C%20ARM64-24292f?style=flat-square)](#platforms) [![License](https://img.shields.io/badge/license-BSD--3--Clause-24292f?style=flat-square)](LICENSE.md)
+[![Status](https://img.shields.io/badge/status-pre--release-F72F8E?style=flat-square)](#roadmap) <!-- progress-badge:start -->[![Roadmap progress](https://img.shields.io/badge/roadmap-51%25-7B2FF7?style=flat-square)](#roadmap)<!-- progress-badge:end --> [![Platforms](https://img.shields.io/badge/platforms-Windows%20first-24292f?style=flat-square)](#platforms) [![CPU](https://img.shields.io/badge/cpu-x64%20%7C%20ARM64-24292f?style=flat-square)](#platforms) [![License](https://img.shields.io/badge/license-BSD--3--Clause-24292f?style=flat-square)](LICENSE.md)
 
 [Why Thoron](#why-thoron) · [Features](#features) · [Install and update](#install-and-update) · [Versions](#versions) · [Roadmap](#roadmap) · [Platforms](#platforms) · [Verify](#verifying-downloads) · [Security](#security) · [Contributing](#contributing) · [Credits](#credits) · [Wiki](https://github.com/KuchiSofts/thoron/wiki)
 
@@ -78,7 +78,7 @@ changed in each version is in the [changelog](CHANGELOG.md), one line per change
 Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always current.
 
 <!-- roadmap:start -->
-**Overall:** `██████████░░░░░░░░░░` 104 of 206 tasks done (50%) · roadmap updated 2026-11-12
+**Overall:** `██████████░░░░░░░░░░` 105 of 206 tasks done (51%) · roadmap updated 2026-11-12
 
 | Area | Progress | Done | Status |
 |---|---|---|---|
@@ -88,7 +88,7 @@ Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always curre
 | [P2b - ARM64](ROADMAP.md#p2b---arm64) | `░░░░░░░░░░░░░░░░░░░░` | 0/5 | ⬜ Not started |
 | [P3 - Updater v1 + Import](ROADMAP.md#p3---updater-v1--import) | `░░░░░░░░░░░░░░░░░░░░` | 0/21 | ⬜ Not started |
 | [P4 - Updater v2](ROADMAP.md#p4---updater-v2) | `░░░░░░░░░░░░░░░░░░░░` | 0/11 | ⬜ Not started |
-| [P5 - Quality](ROADMAP.md#p5---quality) | `████████████████░░░░` | 63/77 | 🔄 In progress |
+| [P5 - Quality](ROADMAP.md#p5---quality) | `█████████████████░░░` | 64/77 | 🔄 In progress |
 | [Security (S)](ROADMAP.md#security-s) | `██████████░░░░░░░░░░` | 8/16 | 🔄 In progress |
 | [Quality & performance (Q)](ROADMAP.md#quality--performance-q) | `███░░░░░░░░░░░░░░░░░` | 1/7 | 🔄 In progress |
 | [Docs (D)](ROADMAP.md#docs-d) | `████████░░░░░░░░░░░░` | 4/10 | 🔄 In progress |
@@ -226,7 +226,7 @@ Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always curre
 - [x] **P5.13** Native ad blocking, spike: link `adblock-rust` into a 158 build, block with EasyList, measure (throwaway)
 - [x] **P5.14** Native ad blocking, engine: vendored crates (licence-checked, credited), C++ bridge, request throttle, `ERR_BLOCKED_BY_CLIENT`, redirect resources, tests
 - [x] **P5.15** Native ad blocking, lists: compiled lists bundled in each release, safe background updates, validation that never falls back to "allow everything"
-- [ ] **P5.16** Native ad blocking, UI: per-site switch in page info and Settings; local blocked-count badge
+- [x] **P5.16** Native ad blocking, UI: per-site switch in page info and Settings; local blocked-count badge
 - [x] **P5.17** Native ad blocking, proof: the measurements in the design's section 9 (blocking, speed, CPU, memory, breakage) and fuzzing; on by default only when all pass
 - [x] **P5.18** Native ad blocking, later: CNAME uncloaking
 - [x] **P5.19** Native ad blocking, resources and stand-ins: uBlock Origin's scriptlets and redirect resources taken from the pinned package at build time; a blocked request with a `$redirect` or `redirect-rule` filter is answered with the harmless stand-in instead of an error

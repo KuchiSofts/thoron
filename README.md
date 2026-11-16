@@ -78,7 +78,7 @@ changed in each version is in the [changelog](CHANGELOG.md), one line per change
 Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always current.
 
 <!-- roadmap:start -->
-**Overall:** `█████████████░░░░░░░` 135 of 209 tasks done (65%) · roadmap updated 2026-11-12
+**Overall:** `█████████████░░░░░░░` 136 of 209 tasks done (65%) · roadmap updated 2026-11-12
 
 | Area | Progress | Done | Status |
 |---|---|---|---|
@@ -87,7 +87,7 @@ Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always curre
 | [P2 - First release](ROADMAP.md#p2---first-release) | `███████░░░░░░░░░░░░░` | 9/26 | 🔄 In progress |
 | [P2b - ARM64](ROADMAP.md#p2b---arm64) | `░░░░░░░░░░░░░░░░░░░░` | 0/5 | 🔄 In progress |
 | [P3 - Updater v1 + Import](ROADMAP.md#p3---updater-v1--import) | `████████░░░░░░░░░░░░` | 8/21 | 🔄 In progress |
-| [P4 - Updater v2](ROADMAP.md#p4---updater-v2) | `███████░░░░░░░░░░░░░` | 4/11 | 🔄 In progress |
+| [P4 - Updater v2](ROADMAP.md#p4---updater-v2) | `█████████░░░░░░░░░░░` | 5/11 | 🔄 In progress |
 | [P5 - Quality](ROADMAP.md#p5---quality) | `█████████████████░░░` | 68/80 | 🔄 In progress |
 | [Security (S)](ROADMAP.md#security-s) | `██████████████░░░░░░` | 11/16 | 🔄 In progress |
 | [Quality & performance (Q)](ROADMAP.md#quality--performance-q) | `█████████░░░░░░░░░░░` | 3/7 | 🔄 In progress |
@@ -201,7 +201,7 @@ Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always curre
 - [x] **P4.2** Delta-chain selection (smallest total download) with automatic fallback to the full package on any base-hash mismatch
 - [ ] **P4.3** Resumable downloads (HTTP range; Windows BITS optional), pause on metered connections, proxy support
 - [x] **P4.4** CPU variant auto-selection (AVX2 / SSE4 / ARM64), plus the portable "moved to another PC" check
-- [ ] **P4.5** Freeze and expiry protection with clock-skew tolerance
+- [x] **P4.5** Freeze and expiry protection with clock-skew tolerance
 - [x] **P4.6** Updater self-update via `min_updater_version`
 - [x] **P4.7** Signing-key rotation (the old key signs the new key's statement)
 - [ ] **P4.8** Firefox import: bookmarks, history and passwords via Chromium's importer; tabs and groups from `sessionstore.jsonlz4`

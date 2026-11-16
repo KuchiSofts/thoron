@@ -297,7 +297,7 @@ writes: `thoron_update.exe --root <package>\Application --status` answered `curr
 
 | What | Until then | Stage |
 |---|---|---|
-| Updates | A portable copy does not update itself: the updater is in the package, but nothing runs it yet (the in-browser updater and a swap at the start are later work). By hand: close Thoron and replace everything in the folder except `User Data` | P3.6, P3.12 |
+| Updates | The browser of a portable copy updates it from the release's package once releases are signed (P2.11): its own updater unpacks the new version beside the old one, puts it in place and refreshes the launcher, and the relaunch runs it (`tools/qa/portable_update_check.py` does the update with the real programs and a real package, offline). Until releases are signed, by hand: close Thoron and replace everything in the folder except `User Data` | P2.11, P3.20 |
 | A profile that opens on any PC | Saved passwords and sign-ins are locked to the Windows account they were saved with (measured: the profile's key is kept by DPAPI). On another PC or account they cannot be read and may be lost (known from how Chromium protects them; not measured). The browser's flag that stores them unprotected is deliberately not used | P4.9 |
 | Taking over an upstream Thorium portable folder | Not offered | P4.10 |
 | A portable copy that leaves no registry values | See section 4.1; it needs a change in the browser | no stage yet; upstream's report "Portable is not fully portable" (#592) is kept under P3.12 and P4.9 |

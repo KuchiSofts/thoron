@@ -7,6 +7,7 @@ Explanations live in the design docs under `docs/design/`.
 ## [Unreleased]
 
 ### Added
+- **Portable:** a portable copy can update itself from the release's package: the new version is unpacked beside the old one and the next start runs it, settings kept (from the browser once releases are signed).
 - **Updates:** the browser has its own updater: it checks the signed release on GitHub, downloads and checks the update, installs it and asks for a relaunch, with each step on the About page. It is switched on once releases are signed; until then it asks nothing.
 - **Import:** tabs and tab groups from Chrome, Thorium and Thoron come over with their order, pinned tabs, group names, colours and collapsed state, and each tab's history (command line for now).
 - **Portable:** the launcher refuses a package made for another kind of processor and says why, instead of starting a browser that cannot run.

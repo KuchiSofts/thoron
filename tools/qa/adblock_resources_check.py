@@ -159,8 +159,13 @@ class Session:
         (profile / "DevToolsActivePort").unlink(missing_ok=True)
         self.proc = _launch(browser, profile, port, key)
         self.profile = profile
-        self.port = _devtools_port(profile)
-        self.settings = WebSocket(_open(self.port, SETTINGS_URL)["webSocketDebuggerUrl"])
+        try:
+            self.port = _devtools_port(profile)
+            self.settings = WebSocket(_open(self.port, SETTINGS_URL)["webSocketDebuggerUrl"])
+        except (OSError, RuntimeError, ValueError, KeyError):
+            # a start that fails must not leave its browser running
+            bench._stop(self.proc, profile)
+            raise
         time.sleep(3)
 
     def call(self, name: str, *args) -> str:

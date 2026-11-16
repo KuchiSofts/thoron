@@ -76,6 +76,17 @@ Component: uBlock Origin scriptlets and redirect resources (thoron_adblock_resou
   Licence:   GPL-3.0 (unmodified, taken from the same pinned release at build time)
   Source:    https://github.com/gorhill/uBlock (src/js/resources, src/web_accessible_resources)
 
+Component: Filter lists shipped with Thoron adblock (thoron_adblock_lists.txt and the engine compiled
+           from them; newer copies are downloaded from the lists' own addresses)
+  EasyList and EasyPrivacy: The EasyList authors (https://easylist.to/); dual licensed under the GNU
+             General Public License version 3 or later and Creative Commons Attribution-ShareAlike 3.0
+             Unported or later (https://easylist.to/pages/licence.html)
+  uBlock filters (and its Privacy, Badware risks, Quick fixes and Unbreak lists): the uBlock Origin
+             contributors; GPL-3.0 (https://github.com/uBlockOrigin/uAssets)
+  Online Malicious URL Blocklist: the malware-filter project; Creative Commons Zero v1.0 Universal and MIT
+             License (https://gitlab.com/malware-filter/urlhaus-filter); data from URLhaus by abuse.ch, CC0
+  In the browser: chrome://credits lists these, Thorium, uBlock Origin's scriptlets and the patch sources.
+
 Component: pak tool (pak_src/ in upstream Thorium; not part of Thoron releases)
   Copyright: (c) 2018 myfreeer; (c) 2022 Alex313031
   Licence:   MIT, with parts under LGPL-2.1 (https://github.com/myfreeer/chrome-pak-customizer)

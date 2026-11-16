@@ -104,6 +104,8 @@ Explanations live in the design docs under `docs/design/`.
 - **QA tools:** `adblock_strings_check.py` checks those translations in each language.
 - **Ad blocking:** the scriptlets and stand-ins can be updated between releases, only with a copy signed with Thoron's key (off until that key exists); `tools/release/adblock_resources.py` signs one.
 - **QA tools:** `adblock_resources_check.py` checks signed scriptlet updates offline.
+- **About:** `chrome://credits` lists Thorium, uBlock Origin's scriptlets, the filter lists Thoron ships and the patch sources, each with its licence.
+- **QA tools:** `credits_check.py` checks those entries on the credits page.
 - **Mail:** the mail notifier is now Thoron M-Notifier: next to the address bar or in it, where you choose.
 - **Mail:** Thoron M-Notifier counts new mail since you last opened the account's inbox, and never spam; it has its own settings (what it counts, how often, notices and their sound, where mail opens, which accounts).
 - **QA tools:** `mail_place_check.py` checks where the M-Notifier's envelope is and what it says.

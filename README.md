@@ -78,13 +78,13 @@ changed in each version is in the [changelog](CHANGELOG.md), one line per change
 Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always current.
 
 <!-- roadmap:start -->
-**Overall:** `██████████░░░░░░░░░░` 105 of 206 tasks done (51%) · roadmap updated 2026-11-12
+**Overall:** `██████████░░░░░░░░░░` 106 of 206 tasks done (51%) · roadmap updated 2026-11-12
 
 | Area | Progress | Done | Status |
 |---|---|---|---|
 | [P0 - Foundation](ROADMAP.md#p0---foundation) | `████████████████████` | 11/11 | ✅ Done |
 | [P1 - Build environment](ROADMAP.md#p1---build-environment) | `██████████████████░░` | 9/10 | 🔄 In progress |
-| [P2 - First release](ROADMAP.md#p2---first-release) | `████░░░░░░░░░░░░░░░░` | 5/26 | 🔄 In progress |
+| [P2 - First release](ROADMAP.md#p2---first-release) | `█████░░░░░░░░░░░░░░░` | 6/26 | 🔄 In progress |
 | [P2b - ARM64](ROADMAP.md#p2b---arm64) | `░░░░░░░░░░░░░░░░░░░░` | 0/5 | ⬜ Not started |
 | [P3 - Updater v1 + Import](ROADMAP.md#p3---updater-v1--import) | `░░░░░░░░░░░░░░░░░░░░` | 0/21 | ⬜ Not started |
 | [P4 - Updater v2](ROADMAP.md#p4---updater-v2) | `░░░░░░░░░░░░░░░░░░░░` | 0/11 | ⬜ Not started |
@@ -99,10 +99,10 @@ Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always curre
 
 - 🔄 **P1.9** Thoron build docs written from scratch and followed end-to-end
 - 🔄 **P2.4** Identity patch, Linux: package `thoron-browser`, `.desktop` file, `~/.config/thoron`; the keyring entry stays `Chromium Safe Storage` (shared with Thorium, so imported passwords stay readable)
-- 🔄 **P2.5** About page: Thoron version, Chromium version, verbatim disclaimer, links to credits and changelog
 - 🔄 **P2.6** Widevine not bundled; fetched by Chromium's component updater at runtime
 - 🔄 **P2.12** Release script `tools/release/release.py`: build matrix → package → `SHA256SUMS` → sign → `BUILDINFO` → **draft** GitHub release; sets the version and refuses a non-increasing one with `tools/release/version.py` (P2.14)
 - 🔄 **P2.13** `tools/release/changelog.py`: release notes generated from commit prefixes, upstream merges (author-credited), the Chromium version diff and security fixes (CVE and severity), patch changes, and issues
+- 🔄 **P2.16** No silent Web Store installs: Thorium's default apps install uBlock Origin from the Chrome Web Store into every new profile, contacting Google when the profile is created; Thoron ships its bundled, SHA-256-pinned uBlock Origin instead and installs nothing from the network without the user's consent
 
 <details>
 <summary><b>Full task list</b> (generated from <a href="ROADMAP.md">ROADMAP.md</a>)</summary>
@@ -140,7 +140,7 @@ Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always curre
 - [ ] **P2.2** Audit all upstream changes since `de9a1bc6` with `tools/audit` (S.1)
 - [x] **P2.3** Identity patch, Windows: product name Thoron, `%LOCALAPPDATA%\Thoron`, `HKCU\Software\Thoron`, new app GUID in `chromium_install_modes.h`, ProgIDs, AppUserModelID
 - [ ] **P2.4** Identity patch, Linux: package `thoron-browser`, `.desktop` file, `~/.config/thoron`; the keyring entry stays `Chromium Safe Storage` (shared with Thorium, so imported passwords stay readable)
-- [ ] **P2.5** About page: Thoron version, Chromium version, verbatim disclaimer, links to credits and changelog
+- [x] **P2.5** About page: Thoron version, Chromium version, verbatim disclaimer, links to credits and changelog
 - [ ] **P2.6** Widevine not bundled; fetched by Chromium's component updater at runtime
 - [ ] **P2.7** Variants AVX2 and SSE4 for Windows x64 and Linux x64
 - [ ] **P2.8** Windows packaging: Thoron mini_installer, portable `.zip` with launcher

@@ -16,7 +16,8 @@ Chinese letters, and as the root of a drive letter that `subst` makes:
 
     start     Thoron.exe starts the version `current` names, with the profile beside it; a setting is changed
     update    `thoron_update --apply` puts the newer version in place; the next start runs it, the setting kept
-    rollback  `thoron_update --rollback`; the next start runs the older version again, the setting kept
+    rollback  `thoron_update --rollback --confirm`; the next start runs the older version again, the setting
+              kept
     status    `thoron_update --status` names both
 
 And once, in the first folder:
@@ -201,7 +202,7 @@ def check_place(package: Path, build: Path, launcher: Path, cli: Path, report) -
     code, text = _cli(cli, f"--root={app}", "--status")
     report("status", status_problems(text, NEWER, OLDER) if code == 0 else [f"status gave {code}"], text.strip())
 
-    code, text = _cli(cli, f"--root={app}", "--rollback")
+    code, text = _cli(cli, f"--root={app}", "--rollback", "--confirm")
     found = _one_start(package, change=None)
     problems = [] if code == 0 else [f"rollback: thoron_update --rollback gave {code}: {text.strip()}"]
     problems += started_problems("rollback", found, package, OLDER)

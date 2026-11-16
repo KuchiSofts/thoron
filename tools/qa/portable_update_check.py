@@ -14,6 +14,11 @@ letters:
     again     Thoron.exe starts the newer version, the setting kept
     status    thoron_update --status names the newer version as current and the older as the one before
     refused   a version the package does not have, and a file that is not a package, switch nothing
+    rollback  after a setting changed in the newer version: `--rollback` without `--confirm` only says what it
+              would do; with `--confirm --restore-profile` it puts the profile back from the snapshot the
+              update took (`--snapshot-profile`), byte for byte, and switches back; the older version's folder
+              is byte for byte what it was before the update, and the next start runs it with the setting
+              from before the update
 
 Nothing leaves the PC: the browser runs headless with every outside name unresolvable.
     py -3 -I tools/qa/portable_update_check.py --chrome-bin <Chrome-bin> --launcher <thoron_launcher.exe>
@@ -21,6 +26,7 @@ Nothing leaves the PC: the browser runs headless with every outside name unresol
 Exit status 0 only when every step passes.
 """
 import argparse
+import hashlib
 import shutil
 import subprocess
 import sys
@@ -44,6 +50,24 @@ def update_problems(code: int, text: str, newer: str) -> list[str]:
     for words in (f"handed off to the updater of {newer}", "done", "launcher: current"):
         if words not in text:
             out.append(f"update: the output does not say {words!r}")
+    return out
+
+
+def tree_hashes(folder: Path) -> dict[str, str]:
+    """Every file below `folder` with its SHA-256, by its path inside it."""
+    return {f.relative_to(folder).as_posix(): hashlib.sha256(f.read_bytes()).hexdigest()
+            for f in sorted(folder.rglob("*")) if f.is_file()}
+
+
+def restored_problems(snapshot: dict[str, str], profile: Path) -> list[str]:
+    """The snapshot's profile files that are not, byte for byte, what is in the profile after a restore."""
+    out = []
+    for name, digest in snapshot.items():
+        if name.endswith(".json") and "/" not in name:
+            continue        # the snapshot's own record of itself
+        target = profile / name
+        if not target.is_file() or hashlib.sha256(target.read_bytes()).hexdigest() != digest:
+            out.append(f"rollback: {name} is not what the snapshot holds")
     return out
 
 
@@ -74,11 +98,14 @@ def run(chrome_bin: Path, launcher: Path, updater: Path, work: Path) -> list[str
            ([] if found.get("setting") == pc.DEFAULT else [f"start: the setting is {found.get('setting')}"]),
            found.get("executable_path"))
 
+    old_before = tree_hashes(app / OLDER)
     old_updater = app / OLDER / "thoron_update.exe"
-    code, text = pl._cli(old_updater, f"--root={app}", f"--apply-package={archive}", f"--version={newer}")
+    snapshots = copy / "Snapshots"
+    code, text = pl._cli(old_updater, f"--root={app}", f"--apply-package={archive}", f"--version={newer}",
+                         f"--snapshot-profile={copy / 'User Data'}", f"--snapshots={snapshots}")
     report("update", update_problems(code, text, newer), text.strip().replace("\n", " | "))
 
-    found = pl._one_start(copy, change=None)
+    found = pl._one_start(copy, change=37)
     report("again", pl.started_problems("again", found, copy, newer) +
            ([] if found.get("setting") == 23 else [f"again: the setting is {found.get('setting')}, not 23"]),
            found.get("executable_path"))
@@ -105,6 +132,29 @@ def run(chrome_bin: Path, launcher: Path, updater: Path, work: Path) -> list[str
     if any(p.name.endswith(".staging") for p in app.iterdir()):
         found.append("refused: a staging folder was left")
     report("refused", found, f"{text.strip()} / {text2.strip()}")
+
+    tool = app / newer / "thoron_update.exe"
+    restore = [f"--root={app}", "--rollback", f"--restore-profile={copy / 'User Data'}", f"--snapshots={snapshots}"]
+    code, text = pl._cli(tool, *restore)
+    found = [] if code == 16 and "--confirm" in text and "is lost" in text else \
+        [f"rollback: without --confirm it gave {code} {text.strip()[:160]!r}"]
+    code_s, text_s = pl._cli(tool, f"--root={app}", "--status")
+    found += pl.status_problems(text_s, newer, OLDER)
+    snapshot = snapshots / f"before-{newer}"
+    held = tree_hashes(snapshot) if snapshot.is_dir() else {}
+    if not held:
+        found.append("rollback: the update took no snapshot")
+    code, text = pl._cli(tool, *restore, "--confirm")
+    if code != 0 or "profile: put back" not in text:
+        found.append(f"rollback: --confirm gave {code} {text.strip()[:160]!r}")
+    found += restored_problems(held, copy / "User Data")
+    if tree_hashes(app / OLDER) != old_before:
+        found.append(f"rollback: the folder of {OLDER} is not what it was before the update")
+    after = pl._one_start(copy, change=None)
+    found += pl.started_problems("rollback", after, copy, OLDER)
+    if after.get("setting") != 23:
+        found.append(f"rollback: the setting is {after.get('setting')}, not 23 from before the update")
+    report("rollback", found, f"{len(held)} files of the snapshot; {after.get('executable_path')}")
     return problems
 
 

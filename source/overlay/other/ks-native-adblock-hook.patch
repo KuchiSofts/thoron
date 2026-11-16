@@ -12552,10 +12552,10 @@ index 0000000000000000000000000000000000000000..beb8343f22d0c2666b6fdae1536e9d29
 +]
 diff --git a/components/thoron_update/README.md b/components/thoron_update/README.md
 new file mode 100644
-index 0000000000000000000000000000000000000000..9c7c65fe550ea65b8d36a93d935c14444fb5b72b
+index 0000000000000000000000000000000000000000..a359de2d0fcfe1eeed2cb03a3343eb1242efe310
 --- /dev/null
 +++ b/components/thoron_update/README.md
-@@ -0,0 +1,173 @@
+@@ -0,0 +1,183 @@
 +# thoron_update
 +
 +The core of Thoron's updater (ROADMAP P3.3): what a copy of Thoron makes of the two files a release
@@ -12667,6 +12667,14 @@ index 0000000000000000000000000000000000000000..9c7c65fe550ea65b8d36a93d935c1444
 +(`chrome/browser/thoron_update/`), and its relaunch starts the version `current` names
 +(`BrowserOfCurrentVersion` in `swap.h`). `tools/qa/portable_update_check.py` checks it with a real package.
 +
++**Rollback (P3.8).** `--rollback` says what it would do and does it only with `--confirm`. With
++`--restore-profile <User Data> --snapshots <folder>` it first puts the profile back from the snapshot taken
++before the current version (`before-<version>`, made by `--apply-package --snapshot-profile <User Data>
++--snapshots <folder>`; `snapshot.h`), all or nothing, and then switches the version back.
++`tools/qa/portable_update_check.py` does the round trip: update, a setting changed, rollback; the profile is
++byte for byte the snapshot, the older version's folder byte for byte what it was, and the setting the one
++from before the update.
++
 +| Exit code | Meaning |
 +|---|---|
 +| 0 | Done; with `--check`: up to date |
@@ -12677,6 +12685,8 @@ index 0000000000000000000000000000000000000000..9c7c65fe550ea65b8d36a93d935c1444
 +| 13 | `--apply`: the version is zero, or a path leaves the version's folder |
 +| 14 | A rename or a write failed; what was current still is |
 +| 15 | `--rollback`: there is no version before the current one |
++| 16 | `--rollback` without `--confirm`: what it would do was said, nothing was done |
++| 17 | `--rollback --restore-profile`: no snapshot from before the current version, or it does not verify; nothing changed |
 +| 20 | `--check`: a newer release for this copy; the downloads follow `full:` and `delta:` |
 +| 21 | `--check`: the release cannot be verified (signature, form, channel, replay, dates, downgrade) |
 +| 22 | `--check`: a newer release that this updater may not apply; `full:` names the package whose updater applies it, when there is one |
@@ -12731,10 +12741,10 @@ index 0000000000000000000000000000000000000000..9c7c65fe550ea65b8d36a93d935c1444
 +of the spec ("A signature to test against") is among them, under its own throwaway key.
 diff --git a/components/thoron_update/cli.cc b/components/thoron_update/cli.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..e83b83abafa5687398a25cb3cfed25517426d707
+index 0000000000000000000000000000000000000000..9b760e9d6a67261aa51fea65fc6cb367e1210b75
 --- /dev/null
 +++ b/components/thoron_update/cli.cc
-@@ -0,0 +1,393 @@
+@@ -0,0 +1,454 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -12759,6 +12769,7 @@ index 0000000000000000000000000000000000000000..e83b83abafa5687398a25cb3cfed2551
 +#include "build/build_config.h"
 +#include "components/thoron_update/package.h"
 +#include "components/thoron_update/portable_package.h"
++#include "components/thoron_update/snapshot.h"
 +#include "components/thoron_update/swap.h"
 +
 +namespace thoron_update {
@@ -12822,6 +12833,49 @@ index 0000000000000000000000000000000000000000..e83b83abafa5687398a25cb3cfed2551
 +      return kExitIoError;
 +  }
 +  return kExitIoError;
++}
++
++// --rollback: says what it would do, and does it with --confirm. With
++// --restore-profile the profile is first put back from the snapshot taken
++// before the current version, all or nothing; then the version is switched.
++int RollBackCommand(const base::CommandLine& command, const base::FilePath& root, std::string* out) {
++  const std::optional<BuildVersion> current = CurrentVersion(root);
++  const std::optional<BuildVersion> previous = PreviousVersion(root);
++  if (!current || !previous) {
++    return FromSwap(SwapResult::kNothingToRollBack, out);
++  }
++  const base::FilePath user_data = command.GetSwitchValuePath("restore-profile");
++  const base::FilePath snapshots = command.GetSwitchValuePath("snapshots");
++  const base::FilePath snapshot = snapshots.empty()
++                                      ? base::FilePath()
++                                      : snapshots.AppendASCII(SnapshotLabel(*current));
++  if (!user_data.empty() && (snapshots.empty() || !base::DirectoryExists(snapshot))) {
++    *out += "there is no snapshot of the profile from before " + ToString(*current) + "\n";
++    return kExitSnapshotBad;
++  }
++  if (!command.HasSwitch("confirm")) {
++    *out += "rolling back makes " + ToString(*previous) + " the version that starts instead of " +
++            ToString(*current) + "; it can be undone the same way.\n";
++    if (!user_data.empty()) {
++      *out += "the profile is put back as it was before " + ToString(*current) +
++              " was put in place: what changed since then in bookmarks, settings, saved passwords, "
++              "history, cookies, autofill and open tabs is lost.\n";
++    }
++    *out += "close Thoron first, then run this again with --confirm.\n";
++    return kExitNeedsConfirmation;
++  }
++  if (!user_data.empty()) {
++    std::vector<std::string> problems;
++    if (!RestoreSnapshot(snapshot, user_data, &problems)) {
++      for (const std::string& problem : problems) {
++        *out += "snapshot: " + problem + "\n";
++      }
++      *out += "the snapshot does not verify; nothing was changed\n";
++      return kExitSnapshotBad;
++    }
++    *out += "profile: put back from " + SnapshotLabel(*current) + "\n";
++  }
++  return FromSwap(RollBack(root), out);
 +}
 +
 +int Check(const base::CommandLine& command, std::string* out) {
@@ -12971,6 +13025,19 @@ index 0000000000000000000000000000000000000000..e83b83abafa5687398a25cb3cfed2551
 +    *out += std::string(UnpackResultName(unpacked)) + "\n";
 +    return unpacked == UnpackResult::kIoError ? kExitIoError : kExitBadFiles;
 +  }
++  // The profile as it is, before the version changes (P3.7), when asked for.
++  const base::FilePath user_data = command.GetSwitchValuePath("snapshot-profile");
++  const base::FilePath snapshots = command.GetSwitchValuePath("snapshots");
++  if (!user_data.empty() && !snapshots.empty()) {
++    const SnapshotReport report = TakeSnapshot(user_data, snapshots, SnapshotLabel(*version));
++    if (!report.ok && report.folder.empty()) {
++      base::DeletePathRecursively(staged);
++      *out += "the profile's snapshot could not be taken; nothing was changed\n";
++      return kExitIoError;
++    }
++    *out += "snapshot: " + SnapshotLabel(*version) + " (" + base::NumberToString(report.files) +
++            " files" + (report.ok ? "" : ", with problems") + ")\n";
++  }
 +  const base::FilePath files_path = root.AppendASCII(ToString(*version) + ".files.json");
 +  base::ListValue list;
 +  for (const VersionFile& file : files) {
@@ -13006,6 +13073,10 @@ index 0000000000000000000000000000000000000000..e83b83abafa5687398a25cb3cfed2551
 +const char kUpdaterFile[] = "thoron_update";
 +const char kHandOffFile[] = "thoron_update.handoff";
 +#endif
++
++std::string SnapshotLabel(const BuildVersion& version) {
++  return "before-" + ToString(version);
++}
 +
 +std::optional<VersionFile> UpdaterEntry(const std::vector<VersionFile>& files) {
 +  for (const VersionFile& file : files) {
@@ -13096,7 +13167,7 @@ index 0000000000000000000000000000000000000000..e83b83abafa5687398a25cb3cfed2551
 +    return Status(root, out);
 +  }
 +  if (command.HasSwitch("rollback")) {
-+    return FromSwap(RollBack(root), out);
++    return RollBackCommand(command, root, out);
 +  }
 +  if (command.HasSwitch("apply-package")) {
 +    return ApplyPackage(command, root, out);
@@ -13130,10 +13201,10 @@ index 0000000000000000000000000000000000000000..e83b83abafa5687398a25cb3cfed2551
 +}  // namespace thoron_update
 diff --git a/components/thoron_update/cli.h b/components/thoron_update/cli.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..bd3cc2de0edf455aa98351d96920e52fc2a7dba9
+index 0000000000000000000000000000000000000000..0543989c3b106754a21cf3d7bfa7f72b1456a401
 --- /dev/null
 +++ b/components/thoron_update/cli.h
-@@ -0,0 +1,110 @@
+@@ -0,0 +1,119 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -13158,7 +13229,9 @@ index 0000000000000000000000000000000000000000..bd3cc2de0edf455aa98351d96920e52f
 +//   thoron_update --root <program folder> --apply <staged folder> --version <v> --files <files.json>
 +//       [--handed-off]
 +//   thoron_update --root <program folder> --apply-package <portable .zip> --version <v>
-+//   thoron_update --root <program folder> --rollback
++//       [--snapshot-profile <User Data> --snapshots <folder>]
++//   thoron_update --root <program folder> --rollback [--confirm]
++//       [--restore-profile <User Data> --snapshots <folder>]
 +//   thoron_update --check --manifest <update.json> --signature <update.json.sig> --public-key <base64>
 +//       --channel <channel> --installed <v> --updater <v> --variant <name> --kind installed|portable
 +//       --allowed-host <host> [--last-serial <n>] [--now <seconds since 1970>]
@@ -13193,7 +13266,14 @@ index 0000000000000000000000000000000000000000..bd3cc2de0edf455aa98351d96920e52f
 +  kExitCannotVerify = 21,  // --check: bad signature, malformed, replayed, expired...
 +  kExitUpdaterTooOld = 22,
 +  kExitNoPackage = 23,
++  // --rollback without --confirm: what it would do was said, nothing was done.
++  kExitNeedsConfirmation = 16,
++  // --rollback --restore-profile: the snapshot did not verify; nothing changed.
++  kExitSnapshotBad = 17,
 +};
++
++// The name of the snapshot taken before `version` was put in place.
++std::string SnapshotLabel(const BuildVersion& version);
 +
 +// How a copy updates itself.
 +enum class UpdateMode {
@@ -13275,10 +13355,10 @@ index 0000000000000000000000000000000000000000..cba5f110a4048b3b56ed2d92c09e2f81
 +}
 diff --git a/components/thoron_update/cli_unittest.cc b/components/thoron_update/cli_unittest.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..543ec1c80e2b0d01b8d911474ef99c8f8ad0b833
+index 0000000000000000000000000000000000000000..f21ca483286d302bd276d12ce6060fd078b1f7e0
 --- /dev/null
 +++ b/components/thoron_update/cli_unittest.cc
-@@ -0,0 +1,248 @@
+@@ -0,0 +1,253 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -13357,13 +13437,18 @@ index 0000000000000000000000000000000000000000..543ec1c80e2b0d01b8d911474ef99c8f
 +  EXPECT_EQ(Apply("158.0.8127.3010"), kExitOk);
 +  EXPECT_EQ(Run({"--root=" + Root(), "--status"}), kExitOk);
 +  EXPECT_EQ(out_, "current: 158.0.8127.3010\nprevious: 158.0.8127.3000\nmode: auto\n");
-+  EXPECT_EQ(Run({"--root=" + Root(), "--rollback"}), kExitOk);
++  // without --confirm it only says what it would do
++  EXPECT_EQ(Run({"--root=" + Root(), "--rollback"}), kExitNeedsConfirmation);
++  EXPECT_NE(out_.find("rolling back makes 158.0.8127.3000 the version that starts"), std::string::npos);
++  Run({"--root=" + Root(), "--status"});
++  EXPECT_EQ(out_, "current: 158.0.8127.3010\nprevious: 158.0.8127.3000\nmode: auto\n");
++  EXPECT_EQ(Run({"--root=" + Root(), "--rollback", "--confirm"}), kExitOk);
 +  Run({"--root=" + Root(), "--status"});
 +  EXPECT_EQ(out_, "current: 158.0.8127.3000\nprevious: 158.0.8127.3010\nmode: auto\n");
 +}
 +
 +TEST_F(ThoronUpdateCliTest, WhatCannotBeDoneHasItsOwnExitCode) {
-+  EXPECT_EQ(Run({"--root=" + Root(), "--rollback"}), kExitNothingToRollBack);
++  EXPECT_EQ(Run({"--root=" + Root(), "--rollback", "--confirm"}), kExitNothingToRollBack);
 +  EXPECT_EQ(Apply("158.0.8127.3000"), kExitOk);
 +  // the staged folder is not the files list's
 +  std::string staged, files;

@@ -7,6 +7,7 @@ Explanations live in the design docs under `docs/design/`.
 ## [Unreleased]
 
 ### Added
+- **Updates:** going back to the version before asks for confirmation first, and can put the profile back as it was before the update, checked file by file.
 - **Docs:** user guides in `docs/user/`: install, import, updates and rollback, portable passphrase; the wiki links them.
 - **Portable:** a portable copy can update itself from the release's package: the new version is unpacked beside the old one and the next start runs it, settings kept (from the browser once releases are signed).
 - **Updates:** the browser has its own updater: it checks the signed release on GitHub, downloads and checks the update, installs it and asks for a relaunch, with each step on the About page. It is switched on once releases are signed; until then it asks nothing.

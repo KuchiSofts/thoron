@@ -17,5 +17,21 @@ class UpdateOutputTests(unittest.TestCase):
         self.assertGreaterEqual(len(pu.update_problems(12, "bad_files\n", "158.0.8127.3010")), 2)
 
 
+class RestoreTests(unittest.TestCase):
+    def test_a_restored_profile_is_the_snapshot_byte_for_byte(self):
+        import hashlib
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as d:
+            profile = Path(d)
+            (profile / "Default").mkdir()
+            (profile / "Default" / "Preferences").write_bytes(b"{}")
+            held = {"Default/Preferences": hashlib.sha256(b"{}").hexdigest(), "snapshot.json": "x"}
+            self.assertEqual(pu.restored_problems(held, profile), [])
+            (profile / "Default" / "Preferences").write_bytes(b"{ }")
+            self.assertEqual(len(pu.restored_problems(held, profile)), 1)
+            self.assertEqual(len(pu.restored_problems({"Default/History": "0" * 64}, profile)), 1)
+
+
 if __name__ == "__main__":
     unittest.main()

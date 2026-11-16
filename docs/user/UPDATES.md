@@ -170,8 +170,18 @@ and `mode:` the update mode. When there is a version before, roll back to it:
 & "<folder>\ThoronPortable\Application\<version>\thoron_update.exe" --root "<folder>\ThoronPortable\Application" --rollback
 ```
 
-It prints `done`, and the next start of `Thoron.exe` runs the version before. It deletes nothing: run
-`--rollback` again to go forward again. With `previous: none` it prints `nothing_to_roll_back`.
+The first time it only says what it would do (exit code 16). Close Thoron, then run it again with
+`--confirm` at the end. It prints `done`, and the next start of `Thoron.exe` runs the version before. It
+deletes nothing: roll back again to go forward again. With `previous: none` it prints
+`nothing_to_roll_back`.
+
+To put the profile back as well, as it was before the update, add
+`--restore-profile "<folder>\ThoronPortable\User Data" --snapshots "<folder>\ThoronPortable\Snapshots"`.
+That works when the update took a snapshot (section 5: add
+`--snapshot-profile "<folder>\ThoronPortable\User Data" --snapshots "<folder>\ThoronPortable\Snapshots"`
+to the `--apply-package` command). What changed in the profile since the update is then lost, and the
+command says so before it asks for `--confirm`. Every file of the snapshot is checked first: if one does
+not verify, nothing is changed (exit code 17).
 
 | Exit code | Meaning |
 |---|---|
@@ -180,6 +190,8 @@ It prints `done`, and the next start of `Thoron.exe` runs the version before. It
 | 10 | `--status`: no version starts in that folder (check the `--root` path) |
 | 14 | A rename or a write failed; the version that started before still does |
 | 15 | `--rollback`: there is no version before the current one |
+| 16 | `--rollback`: it said what it would do; run it again with `--confirm` |
+| 17 | `--rollback`: there is no snapshot from before the update, or it does not verify; nothing changed |
 
 PowerShell shows the exit code of the last command with `$LASTEXITCODE`.
 

@@ -38,6 +38,36 @@ account you are signed in to in Thoron (Gmail and Google Workspace).
   - **Accounts to watch**: one you untick is still listed but not counted, and you are not told of its mail.
 - To turn it off entirely, set "Thoron M-Notifier" to **Disabled** on `chrome://flags/#thoron-mail-notifier`.
 
+## Mailboxes by address and password
+
+You are not limited to the Google accounts Thoron is signed in to. In the menu choose **Add an account**, then
+**Add by address and password...**: Thoron M-Notifier's own page opens.
+
+- Type the address and the password, and **Add**. Thoron signs in over a secure connection, only reads, and
+  keeps the password encrypted by Windows. A wrong password is told at once.
+- Yahoo, AOL, iCloud, GMX, Mail.ru, Yandex, Zoho and Fastmail are known by name. For any other service, open
+  **Server** and type its IMAP server.
+- **Gmail** works this way too, but Google accepts only an *app password* here, not your normal password: you
+  make one in your Google Account under Security, 2-Step Verification, App passwords.
+- **Outlook, Hotmail and Live** cannot be added this way: Microsoft no longer lets mail programs sign in with a
+  password. **Proton Mail** needs its Bridge app, which Thoron does not use yet.
+- To take a mailbox out again: **Remove**, next to it under "Accounts to watch".
+
+## What is counted
+
+Under **Counting**, "Of Gmail, count": the whole inbox, only the Primary tab, or the inbox and spam. Spam is
+never counted unless you choose that.
+
+## Backup
+
+On Thoron M-Notifier's page, under **Backup**:
+
+- **Save a backup...** writes your mailboxes and settings to a file. With a passphrase the file is sealed and
+  holds the passwords safely. Without one it holds no passwords, unless you tick that you want them in it as
+  they are.
+- **Read a backup...** brings them back, on this PC or another.
+- Save the file into your Google Drive folder, or any folder that is synced, and it is in the cloud.
+
 ## Coming
 
-Outlook and Hotmail, Yahoo and Proton Mail are planned next.
+Outlook and Hotmail (with Microsoft's own sign-in) and Proton Mail are planned.

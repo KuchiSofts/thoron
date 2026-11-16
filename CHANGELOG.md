@@ -110,6 +110,10 @@ Explanations live in the design docs under `docs/design/`.
 - **Icons:** the shield and the envelope are moved with the mouse: to another place of the toolbar, and before or after each other.
 - **Mail:** Thoron M-Notifier only counts unless asked for more: a sound of its own for new mail (on), a notice (off) and the messages listed in the menu (off) are separate settings.
 - **Mail, Ad blocking:** the M-Notifier's menu and Thoron adblock's pages take the browser theme's colours.
+- **Mail:** Thoron M-Notifier takes mailboxes by address and password (IMAP: Yahoo, iCloud, GMX, Gmail with an app password and others), so it is not limited to the Google accounts the browser is signed in to; the password is kept encrypted by the system.
+- **Mail:** what of Gmail is counted is a setting: the whole inbox, only its Primary tab, or the inbox and spam.
+- **Mail:** Thoron M-Notifier has its own page (accounts, settings) and a backup of mailboxes and settings: as JSON, or sealed with a passphrase.
+- **QA tools:** `mail_imap_check.py` checks mailboxes by password and the backup against a local stand-in mail server.
 - **Release tools:** `tools/update/manifest.py` builds and checks the update manifest, schema 1; the format is in `docs/update/MANIFEST.md`.
 - **Release tools:** `manifest.py sign` signs the update manifest with Thoron's Ed25519 key; `verify` refuses a change of any bit.
 - **Security:** `docs/security/THREAT_MODEL.md` lists the threats to the updater, the import and portable encryption, each with its mitigation and test.

@@ -16,6 +16,9 @@ notifier's menu is opened as a tab and asked for what it shows. Steps:
               counted
     alerts    (P5.78) as it comes, the M-Notifier only counts: new mail made a sound and no notice; with the
               notice switched on and the sound off, the next new mail makes a notice and no sound
+    which     (P5.77) what of Gmail is counted: only the Primary tab (its own feed), the inbox and spam (the
+              spam's feed added, its messages marked), and the whole inbox again; where Gmail does not know
+              the Primary tab's feed, the inbox is counted
     links     a message whose link leads off Gmail is shown without the link
     out       an answer of 401 for the first account (no sign-in) is told as "signed-out", with no account
     broken    a feed that is not XML leaves the notifier working (no account, no crash), and it reads the next
@@ -32,6 +35,7 @@ import sys
 import tempfile
 import threading
 import time
+import urllib.parse
 from pathlib import Path
 
 if __package__ in (None, ""):  # running as a script under `py -3 -I`: make `tools` importable
@@ -42,8 +46,10 @@ from tools.qa.cdp import WebSocket  # noqa: E402
 
 MENU_URL = "chrome://mail-notifier.top-chrome/"
 LOOK_S = 4.0
-DEFAULT_CHOICES = {"sound": "on", "count": "new", "open": "reuse", "messages": "off", "place": "toolbar",
-                   "toolbar-position": "extensions", "address-position": "icons"}
+DEFAULT_CHOICES = {"sound": "on", "count": "new", "open": "reuse", "messages": "off", "which": "inbox",
+                   "place": "toolbar", "toolbar-position": "extensions", "address-position": "icons"}
+# Gmail's label of the inbox's Primary tab, as its feed's address names it
+PRIMARY = "^sq_ig_i_personal"
 
 
 def now_utc() -> str:
@@ -72,7 +78,9 @@ class Gmail:
 
     def __init__(self):
         self.answers: dict[int, tuple[int, str]] = {}
-        answers = self.answers
+        # the feeds of one label of an account: (index, label) -> answer; a label not here is not known (404)
+        self.labels: dict[tuple[int, str], tuple[int, str]] = {}
+        answers, labels = self.answers, self.labels
 
         class Handler(http.server.BaseHTTPRequestHandler):
             protocol_version = "HTTP/1.1"
@@ -85,7 +93,11 @@ class Gmail:
                 parts = self.path.split("/")
                 # /mail/u/<index>/feed/atom
                 if len(parts) >= 6 and parts[1:3] == ["mail", "u"] and parts[4:6] == ["feed", "atom"]:
-                    status, body = answers.get(int(parts[3]) if parts[3].isdigit() else -1, (401, "sign in"))
+                    index = int(parts[3]) if parts[3].isdigit() else -1
+                    if len(parts) > 6 and parts[6]:
+                        status, body = labels.get((index, urllib.parse.unquote(parts[6])), (404, "no such label"))
+                    else:
+                        status, body = answers.get(index, (401, "sign in"))
                 data = body.encode()
                 self.send_response(status)
                 self.send_header("Content-Type", "application/atom+xml" if status == 200 else "text/plain")
@@ -169,6 +181,25 @@ def settings_problems(changed: dict, refused: dict, unwatched: dict, back: dict)
                    f"{unwatched.get('total')}, not False and 0")
     if back.get("choices") != DEFAULT_CHOICES or back.get("total") != 4:
         out.append(f"settings: put back, they are {back.get('choices')} with {back.get('total')} unread")
+    return out
+
+
+def which_problems(primary: dict, everything: dict, unknown: dict, inbox: dict) -> list[str]:
+    """Alice's inbox has 5 unread, its Primary tab 1, her spam 2."""
+    def alice(state: dict) -> dict:
+        return next((a for a in state.get("accounts", []) if a["email"] == "alice@example.com"), {})
+    out = []
+    if alice(primary).get("unread") != 1:
+        out.append(f"which: only the Primary tab: {alice(primary).get('unread')} unread, not 1")
+    spam = [m.get("subject") for m in alice(everything).get("latest", []) if m.get("spam")]
+    if alice(everything).get("unread") != 7 or sorted(spam) != ["Prize", "Winner"]:
+        out.append(f"which: the inbox and spam: {alice(everything).get('unread')} unread with spam {spam}, not 7 "
+                   "with ['Prize', 'Winner']")
+    if alice(unknown).get("unread") != 5:
+        out.append(f"which: the Primary tab's feed not known: {alice(unknown).get('unread')} unread, not the "
+                   "inbox's 5")
+    if alice(inbox).get("unread") != 5 or any(m.get("spam") for m in alice(inbox).get("latest", [])):
+        out.append(f"which: the whole inbox again: {alice(inbox).get('unread')} unread, not 5 without spam")
     return out
 
 
@@ -273,6 +304,20 @@ def run(browser: Path, work: Path) -> list[str]:
             send("setNotify", False)
             send("setChoice", "sound", "on")
             step("alerts", alerts_problems(first_new, quiet, loud), loud)
+
+            def look_with(which: str) -> dict:
+                send("setChoice", "which", which)
+                return look()
+
+            gmail.labels[(0, PRIMARY)] = (200, feed("alice@example.com", 1, [entry(6, "Another")]))
+            gmail.labels[(1, PRIMARY)] = (200, feed("bob@example.com", 0, []))
+            gmail.labels[(0, "spam")] = (200, feed("alice@example.com", 2, [entry(7, "Winner"), entry(8, "Prize")]))
+            primary = look_with("primary")
+            everything = look_with("all")
+            gmail.labels.pop((0, PRIMARY))
+            unknown = look_with("primary")
+            inbox = look_with("inbox")
+            step("which", which_problems(primary, everything, unknown, inbox), inbox)
 
             gmail.answers[0] = (200, feed("alice@example.com", 1, [entry(4, "Elsewhere", "https://ads.example.test/x")]))
             state = look()

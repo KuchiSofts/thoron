@@ -1778,10 +1778,10 @@ index af9b6f1dc58174281ec64b74c578a3639888ce86..198ab30e882fb2fd51c0b88e79088925
                            /*edge_padding=*/trailing_decorations_edge_padding);
  
 diff --git a/chrome/browser/prefs/browser_prefs.cc b/chrome/browser/prefs/browser_prefs.cc
-index fdd05fad32252be538eef299e830625a6a3c96ba..2a23dc254c765e9b87427251ae5b6edb016f0e0f 100644
+index fdd05fad32252be538eef299e830625a6a3c96ba..aa5f98e99cf986671e5f42386ca0528819330251 100644
 --- a/chrome/browser/prefs/browser_prefs.cc
 +++ b/chrome/browser/prefs/browser_prefs.cc
-@@ -2049,6 +2049,29 @@ void RegisterLocalState(PrefRegistrySimple* registry) {
+@@ -2049,6 +2049,32 @@ void RegisterLocalState(PrefRegistrySimple* registry) {
  void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry,
                            const std::string& locale) {
    TRACE_EVENT0("browser", "chrome::RegisterProfilePrefs");
@@ -1798,12 +1798,15 @@ index fdd05fad32252be538eef299e830625a6a3c96ba..2a23dc254c765e9b87427251ae5b6edb
 +  // watched.
 +  for (const char* name :
 +       {"thoron_mail.sound", "thoron_mail.count", "thoron_mail.open",
-+        "thoron_mail.messages", "thoron_mail.place",
++        "thoron_mail.messages", "thoron_mail.which", "thoron_mail.place",
 +        "thoron_mail.toolbar-position", "thoron_mail.address-position"}) {
 +    registry->RegisterStringPref(name, std::string());
 +  }
 +  registry->RegisterDictionaryPref("thoron_mail.looked");
 +  registry->RegisterListPref("thoron_mail.ignored");
++  // P5.77: the mailboxes added by address and password (each password
++  // encrypted by the system).
++  registry->RegisterListPref("thoron_mail.imap_accounts");
 +  // Thoron's own toolbar buttons (P5.78): their order, left to right, where
 +  // they are next to each other ("mail,adblock"; "" is that default). A
 +  // person changes it by moving a button with the mouse.
@@ -6002,16 +6005,19 @@ index 0000000000000000000000000000000000000000..d0fafbafa75adc4e08b11c75f203035c
 +#endif  // CHROME_BROWSER_UI_WEBUI_THORON_ADBLOCK_UI_H_
 diff --git a/chrome/browser/ui/webui/thoron_mail_ui.cc b/chrome/browser/ui/webui/thoron_mail_ui.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..e3d5c078323404b3c3abbee2c8d3d6066c17551b
+index 0000000000000000000000000000000000000000..1cba513de56c542834d87514b7d86ca8e87cde4d
 --- /dev/null
 +++ b/chrome/browser/ui/webui/thoron_mail_ui.cc
-@@ -0,0 +1,500 @@
+@@ -0,0 +1,1053 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
 +#include "chrome/browser/ui/webui/thoron_mail_ui.h"
 +
++#include <algorithm>
++#include <optional>
 +#include <string>
++#include <vector>
 +#include <utility>
 +
 +#include "base/command_line.h"
@@ -6034,6 +6040,17 @@ index 0000000000000000000000000000000000000000..e3d5c078323404b3c3abbee2c8d3d606
 +#include "chrome/browser/ui/browser_window/public/browser_window_interface_iterator.h"
 +#include "chrome/browser/ui/tabs/tab_strip_model.h"
 +#include "chrome/browser/ui/webui/theme_source.h"
++#include "base/base64.h"
++#include "base/json/json_reader.h"
++#include "base/json/json_writer.h"
++#include "base/task/sequenced_task_runner.h"
++#include "base/task/thread_pool.h"
++#include "chrome/browser/browser_process.h"
++#include "components/os_crypt/async/browser/os_crypt_async.h"
++#include "components/prefs/pref_service.h"
++#include "components/thoron_mail/imap_check.h"
++#include "components/thoron_mail/mail_backup.h"
++#include "services/network/public/mojom/network_context.mojom.h"
 +#include "components/thoron_mail/features.h"
 +#include "components/thoron_mail/mail_page.h"
 +#include "content/public/browser/navigation_controller.h"
@@ -6125,6 +6142,11 @@ index 0000000000000000000000000000000000000000..e3d5c078323404b3c3abbee2c8d3d606
 +    Register("setInterval", &MailHandler::SetInterval);
 +    Register("setChoice", &MailHandler::SetChoice);
 +    Register("setWatched", &MailHandler::SetWatched);
++    Register("addImapAccount", &MailHandler::AddImapAccount);
++    Register("removeImapAccount", &MailHandler::RemoveImapAccount);
++    Register("exportBackup", &MailHandler::ExportBackup);
++    Register("importBackup", &MailHandler::ImportBackup);
++    Register("openManage", &MailHandler::OpenManage);
 +    Register("menuReady", &MailHandler::MenuReady);
 +    Register("closeMenu", &MailHandler::CloseMenu);
 +  }
@@ -6169,6 +6191,7 @@ index 0000000000000000000000000000000000000000..e3d5c078323404b3c3abbee2c8d3d606
 +                          .Set("fromEmail", message.from_email)
 +                          .Set("snippet", message.snippet)
 +                          .Set("link", message.link)
++                          .Set("spam", message.spam)
 +                          .Set("isNew", service.is_new(account, message))
 +                          .Set("issued", JsTime(message.issued)));
 +      }
@@ -6178,6 +6201,10 @@ index 0000000000000000000000000000000000000000..e3d5c078323404b3c3abbee2c8d3d606
 +                          .Set("unread", account.unread)
 +                          .Set("new", service.new_count(account))
 +                          .Set("watched", service.watched(account.email))
++                          // a mailbox added by address and password, and
++                          // why the last look at it failed ("" when not)
++                          .Set("imap", account.imap)
++                          .Set("problem", account.problem)
 +                          .Set("latest", std::move(latest)));
 +    }
 +    base::ListValue intervals;
@@ -6185,8 +6212,9 @@ index 0000000000000000000000000000000000000000..e3d5c078323404b3c3abbee2c8d3d606
 +      intervals.Append(minutes);
 +    }
 +    base::DictValue choices;
-+    for (const char* name : {"sound", "count", "open", "messages", "place",
-+                             "toolbar-position", "address-position"}) {
++    for (const char* name :
++         {"sound", "count", "open", "messages", "which", "place",
++          "toolbar-position", "address-position"}) {
 +      choices.Set(name, service.Choice(name));
 +    }
 +    ResolveJavascriptCallback(
@@ -6198,6 +6226,8 @@ index 0000000000000000000000000000000000000000..e3d5c078323404b3c3abbee2c8d3d606
 +                     // offline checks cannot hear or see them)
 +                     .Set("sounds", Center().sounds_played())
 +                     .Set("notices", Center().notices_shown())
++                     // passwords can be kept (the system's encryption)
++                     .Set("canAddMailbox", Center().can_keep_passwords())
 +                     .Set("total", service.total_unread())
 +                     .Set("checking", service.checking())
 +                     .Set("lastCheck", JsTime(service.last_check()))
@@ -6215,9 +6245,87 @@ index 0000000000000000000000000000000000000000..e3d5c078323404b3c3abbee2c8d3d606
 +    if (args.empty() || !args[0].is_int()) {
 +      return;
 +    }
-+    const int index = args[0].GetInt();
-+    Center().OpenGmail(thoron_mail::MailService::InboxUrl(index), index);
++    Center().OpenAccount(args[0].GetInt());
 +    CloseMenu(args);
++  }
++
++  // P5.77: a mailbox by its address and password. The answer is "" or why
++  // it was not added; the password is never sent back.
++  void AddImapAccount(const base::ListValue& args) {
++    AllowJavascript();
++    const base::DictValue* given =
++        args.size() >= 2 && args[0].is_string() ? args[1].GetIfDict() : nullptr;
++    if (!given) {
++      return;
++    }
++    thoron_mail::ImapAccount account;
++    auto text = [given](const char* name) {
++      const std::string* value = given->FindString(name);
++      return value ? *value : std::string();
++    };
++    account.email = text("email");
++    account.password = text("password");
++    account.host = text("host");
++    account.user = text("user");
++    account.webmail = text("webmail");
++    account.port = given->FindInt("port").value_or(993);
++    Center().AddImapAccount(
++        std::move(account),
++        base::BindOnce(&MailHandler::Answer, weak_factory_.GetWeakPtr(),
++                       args[0].GetString()));
++  }
++
++  void RemoveImapAccount(const base::ListValue& args) {
++    if (!args.empty() && args[0].is_string()) {
++      Center().RemoveImapAccount(args[0].GetString());
++    }
++  }
++
++  // The backup's text: [with passwords, passphrase].
++  void ExportBackup(const base::ListValue& args) {
++    AllowJavascript();
++    if (args.size() < 3 || !args[0].is_string() || !args[1].is_bool() ||
++        !args[2].is_string()) {
++      return;
++    }
++    Center().ExportBackup(
++        args[1].GetBool(), args[2].GetString(),
++        base::BindOnce(&MailHandler::Answer, weak_factory_.GetWeakPtr(),
++                       args[0].GetString()));
++  }
++
++  // A backup read: [the file's text, passphrase] gives {error, accounts}.
++  void ImportBackup(const base::ListValue& args) {
++    AllowJavascript();
++    if (args.size() < 3 || !args[0].is_string() || !args[1].is_string() ||
++        !args[2].is_string()) {
++      return;
++    }
++    Center().ImportBackup(
++        args[1].GetString(), args[2].GetString(),
++        base::BindOnce(&MailHandler::AnswerImported, weak_factory_.GetWeakPtr(),
++                       args[0].GetString()));
++  }
++
++  void OpenManage(const base::ListValue& args) {
++    Center().OpenManagePage(!args.empty() && args[0].is_bool() &&
++                            args[0].GetBool());
++    CloseMenu(args);
++  }
++
++  void Answer(const std::string& id, std::string text) {
++    if (IsJavascriptAllowed()) {
++      ResolveJavascriptCallback(base::Value(id), base::Value(std::move(text)));
++    }
++  }
++
++  void AnswerImported(const std::string& id, std::string error, int accounts) {
++    if (IsJavascriptAllowed()) {
++      ResolveJavascriptCallback(base::Value(id),
++                                base::DictValue()
++                                    .Set("error", std::move(error))
++                                    .Set("accounts", accounts));
++    }
 +  }
 +
 +  void SetChoice(const base::ListValue& args) {
@@ -6284,6 +6392,7 @@ index 0000000000000000000000000000000000000000..e3d5c078323404b3c3abbee2c8d3d606
 +  base::ScopedObservation<thoron_mail::MailService,
 +                          thoron_mail::MailService::Observer>
 +      observation_{this};
++  base::WeakPtrFactory<MailHandler> weak_factory_{this};
 +};
 +
 +}  // namespace
@@ -6314,6 +6423,18 @@ index 0000000000000000000000000000000000000000..e3d5c078323404b3c3abbee2c8d3d606
 +              // profile's own (user data): it ends before the profile.
 +              base::Unretained(profile)))) {
 +  service_->AddObserver(this);
++  // The mailboxes added by address and password (P5.77): looked at through
++  // the profile's network context, once their passwords can be decrypted.
++  // Unretained: the service is owned by this, which is the profile's own.
++  service_->SetContextGetter(base::BindRepeating(
++      [](Profile* profile) {
++        return profile->GetDefaultStoragePartition()->GetNetworkContext();
++      },
++      base::Unretained(profile)));
++  if (g_browser_process && g_browser_process->os_crypt_async()) {
++    g_browser_process->os_crypt_async()->GetInstance(base::BindOnce(
++        &ThoronMailCenter::OnEncryptor, weak_factory_.GetWeakPtr()));
++  }
 +}
 +
 +ThoronMailCenter::~ThoronMailCenter() {
@@ -6373,6 +6494,441 @@ index 0000000000000000000000000000000000000000..e3d5c078323404b3c3abbee2c8d3d606
 +  params.disposition = WindowOpenDisposition::kNewForegroundTab;
 +  params.window_action = NavigateParams::WindowAction::kShowWindow;
 +  Navigate(&params);
++}
++
++namespace {
++
++// The mailboxes a person added by address and password (P5.77): a list of
++// {email, host, port, user, webmail, secret}; `secret` is the password
++// encrypted by the system (os_crypt), in base64.
++constexpr char kImapAccountsPref[] = "thoron_mail.imap_accounts";
++// A backup is small; a file larger than this is not one.
++constexpr size_t kMostBackupBytes = 4 * 1024 * 1024;
++
++bool IsAddress(const std::string& email) {
++  const size_t at = email.find('@');
++  return at != std::string::npos && at > 0 && at + 1 < email.size() &&
++         email.size() <= 254 && base::IsStringASCII(email) &&
++         std::ranges::none_of(email, [](char c) {
++           return base::IsAsciiWhitespace(c) || c == '<' || c == '>' ||
++                  c == '"';
++         });
++}
++
++// The page a mailbox's mail is read on: https, or nothing.
++std::string CheckedWebmail(const std::string& webmail) {
++  const GURL url(webmail);
++  return url.is_valid() && url.SchemeIs(url::kHttpsScheme) &&
++                 webmail.size() <= 500
++             ? url.spec()
++             : std::string();
++}
++
++// `account` with what is left out filled in, or nullopt when it is not a
++// mailbox's details.
++std::optional<thoron_mail::ImapAccount> CheckedAccount(
++    thoron_mail::ImapAccount account) {
++  account.email = std::string(
++      base::TrimWhitespaceASCII(account.email, base::TRIM_ALL));
++  account.host = base::ToLowerASCII(
++      base::TrimWhitespaceASCII(account.host, base::TRIM_ALL));
++  if (account.user.empty()) {
++    account.user = account.email;
++  }
++  account.webmail = CheckedWebmail(account.webmail);
++  if (!IsAddress(account.email) || !thoron_mail::IsImapHost(account.host) ||
++      account.port <= 0 || account.port > 65535 || account.password.empty() ||
++      account.password.size() > 1024 || account.user.size() > 320) {
++    return std::nullopt;
++  }
++  return account;
++}
++
++// The backup's text sealed, or opened, off the UI thread (slow on purpose).
++std::string Sealed(std::string backup, std::string passphrase) {
++  return thoron_mail::SealBackup(backup, passphrase);
++}
++
++std::optional<std::string> Opened(std::string file, std::string passphrase) {
++  return thoron_mail::OpenBackup(file, passphrase);
++}
++
++}  // namespace
++
++void ThoronMailCenter::OnEncryptor(
++    scoped_refptr<os_crypt_async::Encryptor> encryptor) {
++  encryptor_ = std::move(encryptor);
++  service_->SetImapAccounts(KeptImapAccounts());
++}
++
++std::vector<thoron_mail::ImapAccount> ThoronMailCenter::KeptImapAccounts()
++    const {
++  std::vector<thoron_mail::ImapAccount> accounts;
++  if (!encryptor_) {
++    return accounts;
++  }
++  for (const base::Value& value :
++       profile_->GetPrefs()->GetList(kImapAccountsPref)) {
++    const base::DictValue* dict = value.GetIfDict();
++    const std::string* email = dict ? dict->FindString("email") : nullptr;
++    const std::string* host = dict ? dict->FindString("host") : nullptr;
++    const std::string* secret = dict ? dict->FindString("secret") : nullptr;
++    std::string encrypted;
++    thoron_mail::ImapAccount account;
++    if (!email || !host || !secret ||
++        !base::Base64Decode(*secret, &encrypted) ||
++        !encryptor_->DecryptString(encrypted, &account.password)) {
++      continue;
++    }
++    account.email = *email;
++    account.host = *host;
++    account.port = dict->FindInt("port").value_or(993);
++    if (const std::string* user = dict->FindString("user")) {
++      account.user = *user;
++    }
++    if (const std::string* webmail = dict->FindString("webmail")) {
++      account.webmail = *webmail;
++    }
++    if (std::optional<thoron_mail::ImapAccount> checked =
++            CheckedAccount(std::move(account))) {
++      accounts.push_back(std::move(*checked));
++    }
++  }
++  return accounts;
++}
++
++bool ThoronMailCenter::KeepImapAccounts(
++    const std::vector<thoron_mail::ImapAccount>& accounts) {
++  if (!encryptor_) {
++    return false;
++  }
++  base::ListValue kept;
++  for (const thoron_mail::ImapAccount& account : accounts) {
++    std::string encrypted;
++    if (!encryptor_->EncryptString(account.password, &encrypted)) {
++      return false;
++    }
++    kept.Append(base::DictValue()
++                    .Set("email", account.email)
++                    .Set("host", account.host)
++                    .Set("port", account.port)
++                    .Set("user", account.user)
++                    .Set("webmail", account.webmail)
++                    .Set("secret", base::Base64Encode(encrypted)));
++  }
++  profile_->GetPrefs()->SetList(kImapAccountsPref, std::move(kept));
++  service_->SetImapAccounts(accounts);
++  return true;
++}
++
++void ThoronMailCenter::AddImapAccount(thoron_mail::ImapAccount account,
++                                      Told told) {
++  std::optional<thoron_mail::ImapAccount> checked =
++      CheckedAccount(std::move(account));
++  if (!checked) {
++    std::move(told).Run("bad");
++    return;
++  }
++  if (!encryptor_) {
++    std::move(told).Run("locked");
++    return;
++  }
++  const std::vector<thoron_mail::ImapAccount>& known =
++      service_->imap_accounts();
++  if (std::ranges::any_of(known, [&](const thoron_mail::ImapAccount& other) {
++        return base::EqualsCaseInsensitiveASCII(other.email, checked->email);
++      })) {
++    std::move(told).Run("exists");
++    return;
++  }
++  if (known.size() >= thoron_mail::MailService::kMostImapAccounts) {
++    std::move(told).Run("full");
++    return;
++  }
++  if (imap_test_) {
++    std::move(told).Run("busy");
++    return;
++  }
++  // Signed in to once before it is kept: a wrong password is told at once.
++  thoron_mail::ImapAccount to_test = *checked;
++  imap_test_ = std::make_unique<thoron_mail::ImapCheck>(
++      profile_->GetDefaultStoragePartition()->GetNetworkContext(), to_test,
++      base::BindOnce(&ThoronMailCenter::OnImapTested,
++                     weak_factory_.GetWeakPtr(), std::move(*checked),
++                     std::move(told)));
++}
++
++void ThoronMailCenter::OnImapTested(thoron_mail::ImapAccount account,
++                                    Told told,
++                                    thoron_mail::ImapCheck::Result result) {
++  // this runs from inside the test
++  base::SequencedTaskRunner::GetCurrentDefault()->DeleteSoon(
++      FROM_HERE, std::move(imap_test_));
++  if (!result.problem.empty()) {
++    std::move(told).Run(result.problem);
++    return;
++  }
++  std::vector<thoron_mail::ImapAccount> accounts = service_->imap_accounts();
++  accounts.push_back(std::move(account));
++  std::move(told).Run(KeepImapAccounts(accounts) ? std::string() : "locked");
++}
++
++void ThoronMailCenter::RemoveImapAccount(const std::string& email) {
++  std::vector<thoron_mail::ImapAccount> accounts = service_->imap_accounts();
++  const size_t before = accounts.size();
++  std::erase_if(accounts, [&](const thoron_mail::ImapAccount& account) {
++    return account.email == email;
++  });
++  if (accounts.size() != before) {
++    KeepImapAccounts(accounts);
++  }
++}
++
++void ThoronMailCenter::OpenPage(const GURL& url) {
++  if (!url.is_valid() || !url.SchemeIs(url::kHttpsScheme)) {
++    return;
++  }
++  BrowserWindowInterface* found = nullptr;
++  int tab = -1;
++  if (service_->Choice("open") != "new") {
++    ForEachCurrentBrowserWindowInterfaceOrderedByActivation(
++        [&](BrowserWindowInterface* browser) {
++          if (browser->GetProfile() != profile_) {
++            return true;
++          }
++          TabStripModel* tabs = browser->GetTabStripModel();
++          for (int i = 0; i < tabs->count(); ++i) {
++            if (tabs->GetWebContentsAt(i)->GetLastCommittedURL().host() ==
++                url.host()) {
++              found = browser;
++              tab = i;
++              return false;
++            }
++          }
++          return true;
++        });
++  }
++  if (found) {
++    found->GetTabStripModel()->ActivateTabAt(tab);
++    found->GetWindow()->Activate();
++    return;
++  }
++  NavigateParams params(profile_, url, ui::PAGE_TRANSITION_LINK);
++  params.disposition = WindowOpenDisposition::kNewForegroundTab;
++  params.window_action = NavigateParams::WindowAction::kShowWindow;
++  Navigate(&params);
++}
++
++void ThoronMailCenter::OpenAccount(int index) {
++  for (const thoron_mail::MailAccount& account : service_->accounts()) {
++    if (account.index != index) {
++      continue;
++    }
++    if (!account.imap) {
++      // marks it looked at, too
++      OpenGmail(thoron_mail::MailService::InboxUrl(index), index);
++      return;
++    }
++    const std::string email = account.email;
++    const GURL webmail(account.webmail);
++    service_->MarkLooked(email);
++    OpenPage(webmail);
++    return;
++  }
++}
++
++void ThoronMailCenter::OpenManagePage(bool add) {
++  NavigateParams params(profile_,
++                        GURL(std::string(kThoronMailMenuUrl) +
++                             (add ? "#manage-add" : "#manage")),
++                        ui::PAGE_TRANSITION_AUTO_BOOKMARK);
++  params.disposition = WindowOpenDisposition::kSingletonTab;
++  params.window_action = NavigateParams::WindowAction::kShowWindow;
++  Navigate(&params);
++}
++
++base::DictValue ThoronMailCenter::BackupDict(bool with_passwords) const {
++  base::DictValue choices;
++  for (const char* name : {"sound", "count", "open", "messages", "which",
++                           "place", "toolbar-position", "address-position"}) {
++    choices.Set(name, service_->Choice(name));
++  }
++  base::ListValue accounts;
++  for (const thoron_mail::ImapAccount& account : service_->imap_accounts()) {
++    base::DictValue entry = base::DictValue()
++                                .Set("email", account.email)
++                                .Set("host", account.host)
++                                .Set("port", account.port)
++                                .Set("user", account.user)
++                                .Set("webmail", account.webmail);
++    if (with_passwords) {
++      entry.Set("password", account.password);
++    }
++    accounts.Append(std::move(entry));
++  }
++  PrefService* prefs = profile_->GetPrefs();
++  return base::DictValue()
++      .Set("format", thoron_mail::kBackupFormat)
++      .Set("version", 1)
++      .Set("sealed", false)
++      .Set("settings",
++           base::DictValue()
++               .Set("notify", service_->notify())
++               .Set("interval", service_->interval_minutes())
++               .Set("choices", std::move(choices))
++               .Set("ignored", prefs->GetList("thoron_mail.ignored").Clone())
++               .Set("order", prefs->GetString("thoron.toolbar_order")))
++      .Set("accounts", std::move(accounts));
++}
++
++void ThoronMailCenter::ExportBackup(bool with_passwords,
++                                    std::string passphrase,
++                                    Exported done) {
++  const bool seal = !passphrase.empty();
++  std::string backup =
++      base::WriteJsonWithOptions(BackupDict(with_passwords || seal),
++                                 base::JSONWriter::OPTIONS_PRETTY_PRINT)
++          .value_or(std::string());
++  if (!seal) {
++    std::move(done).Run(std::move(backup));
++    return;
++  }
++  base::ThreadPool::PostTaskAndReplyWithResult(
++      FROM_HERE, {base::TaskPriority::USER_VISIBLE},
++      base::BindOnce(&Sealed, std::move(backup), std::move(passphrase)),
++      std::move(done));
++}
++
++void ThoronMailCenter::ImportBackup(std::string file,
++                                    std::string passphrase,
++                                    Imported done) {
++  if (file.empty() || file.size() > kMostBackupBytes) {
++    std::move(done).Run("bad", 0);
++    return;
++  }
++  if (!thoron_mail::IsSealedBackup(file)) {
++    ApplyBackup(std::move(done), std::move(file));
++    return;
++  }
++  if (passphrase.empty()) {
++    std::move(done).Run("passphrase", 0);
++    return;
++  }
++  base::ThreadPool::PostTaskAndReplyWithResult(
++      FROM_HERE, {base::TaskPriority::USER_VISIBLE},
++      base::BindOnce(&Opened, std::move(file), std::move(passphrase)),
++      base::BindOnce(&ThoronMailCenter::ApplyBackup, weak_factory_.GetWeakPtr(),
++                     std::move(done)));
++}
++
++void ThoronMailCenter::ApplyBackup(Imported done,
++                                   std::optional<std::string> backup) {
++  if (!backup) {
++    std::move(done).Run("wrong", 0);
++    return;
++  }
++  std::optional<base::DictValue> dict =
++      base::JSONReader::ReadDict(*backup, base::JSON_PARSE_RFC);
++  const std::string* format = dict ? dict->FindString("format") : nullptr;
++  if (!format || *format != thoron_mail::kBackupFormat ||
++      dict->FindBool("sealed").value_or(false) ||
++      dict->FindInt("version").value_or(0) != 1) {
++    std::move(done).Run("bad", 0);
++    return;
++  }
++  if (!encryptor_) {
++    std::move(done).Run("locked", 0);
++    return;
++  }
++  // The settings: only what the M-Notifier knows, each checked as when a
++  // person sets it.
++  PrefService* prefs = profile_->GetPrefs();
++  if (const base::DictValue* settings = dict->FindDict("settings")) {
++    if (std::optional<bool> notify = settings->FindBool("notify")) {
++      service_->SetNotify(*notify);
++    }
++    if (std::optional<int> interval = settings->FindInt("interval")) {
++      service_->SetInterval(*interval);
++    }
++    if (const base::DictValue* choices = settings->FindDict("choices")) {
++      for (const auto [name, value] : *choices) {
++        if (value.is_string()) {
++          service_->SetChoice(name, value.GetString());
++        }
++      }
++    }
++    if (const base::ListValue* ignored = settings->FindList("ignored")) {
++      base::ListValue kept;
++      for (const base::Value& value : *ignored) {
++        if (value.is_string() && IsAddress(value.GetString()) &&
++            kept.size() < 50) {
++          kept.Append(value.GetString());
++        }
++      }
++      prefs->SetList("thoron_mail.ignored", std::move(kept));
++    }
++    if (const std::string* order = settings->FindString("order");
++        order && (*order == "mail,adblock" || *order == "adblock,mail")) {
++      prefs->SetString("thoron.toolbar_order", *order);
++    }
++  }
++  // The mailboxes: those of the backup, then those there were that it does
++  // not name. One the backup names without its password keeps the password
++  // it has here, or is left out.
++  std::vector<thoron_mail::ImapAccount> accounts;
++  const std::vector<thoron_mail::ImapAccount> known = service_->imap_accounts();
++  auto has = [&accounts](const std::string& email) {
++    return std::ranges::any_of(accounts,
++                               [&](const thoron_mail::ImapAccount& account) {
++                                 return account.email == email;
++                               });
++  };
++  if (const base::ListValue* list = dict->FindList("accounts")) {
++    for (const base::Value& value : *list) {
++      const base::DictValue* entry = value.GetIfDict();
++      const std::string* email = entry ? entry->FindString("email") : nullptr;
++      const std::string* host = entry ? entry->FindString("host") : nullptr;
++      if (!email || !host ||
++          accounts.size() >= thoron_mail::MailService::kMostImapAccounts) {
++        continue;
++      }
++      thoron_mail::ImapAccount account;
++      account.email = *email;
++      account.host = *host;
++      account.port = entry->FindInt("port").value_or(993);
++      if (const std::string* user = entry->FindString("user")) {
++        account.user = *user;
++      }
++      if (const std::string* webmail = entry->FindString("webmail")) {
++        account.webmail = *webmail;
++      }
++      if (const std::string* password = entry->FindString("password")) {
++        account.password = *password;
++      } else {
++        for (const thoron_mail::ImapAccount& old : known) {
++          if (old.email == *email) {
++            account.password = old.password;
++          }
++        }
++      }
++      std::optional<thoron_mail::ImapAccount> checked =
++          CheckedAccount(std::move(account));
++      if (checked && !has(checked->email)) {
++        accounts.push_back(std::move(*checked));
++      }
++    }
++  }
++  for (const thoron_mail::ImapAccount& old : known) {
++    if (!has(old.email) &&
++        accounts.size() < thoron_mail::MailService::kMostImapAccounts) {
++      accounts.push_back(old);
++    }
++  }
++  if (!KeepImapAccounts(accounts)) {
++    std::move(done).Run("locked", 0);
++    return;
++  }
++  std::move(done).Run(std::string(), static_cast<int>(accounts.size()));
 +}
 +
 +void ThoronMailCenter::PlayNewMailSound() {
@@ -6508,10 +7064,10 @@ index 0000000000000000000000000000000000000000..e3d5c078323404b3c3abbee2c8d3d606
 +WEB_UI_CONTROLLER_TYPE_IMPL(ThoronMailMenuUI)
 diff --git a/chrome/browser/ui/webui/thoron_mail_ui.h b/chrome/browser/ui/webui/thoron_mail_ui.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..7598c518e12a24a75e1573e3374295901d64b163
+index 0000000000000000000000000000000000000000..6651d7d1c15d45fc24900b7e28cbaf9f390ff108
 --- /dev/null
 +++ b/chrome/browser/ui/webui/thoron_mail_ui.h
-@@ -0,0 +1,100 @@
+@@ -0,0 +1,157 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -6519,6 +7075,7 @@ index 0000000000000000000000000000000000000000..7598c518e12a24a75e1573e337429590
 +#define CHROME_BROWSER_UI_WEBUI_THORON_MAIL_UI_H_
 +
 +#include <memory>
++#include <optional>
 +#include <string_view>
 +#include <vector>
 +
@@ -6526,6 +7083,11 @@ index 0000000000000000000000000000000000000000..7598c518e12a24a75e1573e337429590
 +#include "base/supports_user_data.h"
 +#include "chrome/browser/ui/webui/top_chrome/top_chrome_web_ui_controller.h"
 +#include "chrome/browser/ui/webui/top_chrome/top_chrome_webui_config.h"
++#include "base/memory/scoped_refptr.h"
++#include "base/memory/weak_ptr.h"
++#include "base/values.h"
++#include "components/os_crypt/async/common/encryptor.h"
++#include "components/thoron_mail/imap_check.h"
 +#include "components/thoron_mail/mail_service.h"
 +
 +class GURL;
@@ -6560,6 +7122,38 @@ index 0000000000000000000000000000000000000000..7598c518e12a24a75e1573e337429590
 +  // Opens Google's page to sign in, or to add an account, in a new tab.
 +  void OpenSignIn(bool add);
 +
++  // P5.77: the mailboxes a person adds with their address and password.
++  // The password is kept in the profile encrypted by the system (as the
++  // browser keeps its own passwords), and is never given back to a page.
++  //
++  // Adds `account` after signing in to it once: `told` gets "" when it was
++  // added, else why not ("sign-in", "offline", "protocol", "too-much", "bad":
++  // not a mailbox's details, "exists", "full", "busy", "locked": the
++  // system's encryption is not there).
++  using Told = base::OnceCallback<void(std::string)>;
++  void AddImapAccount(thoron_mail::ImapAccount account, Told told);
++  void RemoveImapAccount(const std::string& email);
++  // True once passwords can be kept (the system's encryption is there).
++  bool can_keep_passwords() const { return !!encryptor_; }
++
++  // Opens the account of `index`: Gmail's inbox of a Google account, the mail
++  // page of a mailbox (when it has one). Its new mail is counted from now.
++  void OpenAccount(int index);
++  // Opens the M-Notifier's own page in a tab: accounts, settings, backup;
++  // with `add`, its form for a mailbox by address and password.
++  void OpenManagePage(bool add);
++
++  // A backup of the mailboxes and the settings as a file's text (JSON). With
++  // a `passphrase` it is sealed with it and holds the passwords; without one
++  // it holds them only `with_passwords`.
++  using Exported = base::OnceCallback<void(std::string)>;
++  void ExportBackup(bool with_passwords, std::string passphrase, Exported done);
++  // Reads a backup: `done` gets "" and how many mailboxes it holds now, else
++  // why not ("passphrase": it is sealed and none was given; "wrong": it does
++  // not open; "bad": not a backup; "locked").
++  using Imported = base::OnceCallback<void(std::string, int)>;
++  void ImportBackup(std::string file, std::string passphrase, Imported done);
++
 +  // thoron_mail::MailService::Observer:
 +  void OnNewMail(const thoron_mail::MailAccount& account,
 +                 const std::vector<thoron_mail::MailMessage>& messages) override;
@@ -6569,10 +7163,29 @@ index 0000000000000000000000000000000000000000..7598c518e12a24a75e1573e337429590
 +  // with or without a notice.
 +  void PlayNewMailSound();
 +
++  void OnEncryptor(scoped_refptr<os_crypt_async::Encryptor> encryptor);
++  // The mailboxes kept in the profile, their passwords decrypted.
++  std::vector<thoron_mail::ImapAccount> KeptImapAccounts() const;
++  // Keeps `accounts` in the profile and looks at them.
++  bool KeepImapAccounts(const std::vector<thoron_mail::ImapAccount>& accounts);
++  void OnImapTested(thoron_mail::ImapAccount account,
++                    Told told,
++                    thoron_mail::ImapCheck::Result result);
++  // A backup as a dictionary (ExportBackup), and one taken in (ImportBackup).
++  base::DictValue BackupDict(bool with_passwords) const;
++  void ApplyBackup(Imported done, std::optional<std::string> backup);
++  // Opens `url` in a tab of the profile: the tab that is on that site when
++  // one is open (unless the person wants a new tab), else a new one.
++  void OpenPage(const GURL& url);
++
 +  const raw_ptr<Profile> profile_;
 +  std::unique_ptr<thoron_mail::MailService> service_;
 +  int sounds_played_ = 0;
 +  int notices_shown_ = 0;
++  scoped_refptr<os_crypt_async::Encryptor> encryptor_;
++  // the sign-in to a mailbox that is being added
++  std::unique_ptr<thoron_mail::ImapCheck> imap_test_;
++  base::WeakPtrFactory<ThoronMailCenter> weak_factory_{this};
 +};
 +
 +class ThoronMailMenuUI;
@@ -6614,19 +7227,38 @@ index 0000000000000000000000000000000000000000..7598c518e12a24a75e1573e337429590
 +#endif  // CHROME_BROWSER_UI_WEBUI_THORON_MAIL_UI_H_
 diff --git a/components/thoron_mail/BUILD.gn b/components/thoron_mail/BUILD.gn
 new file mode 100644
-index 0000000000000000000000000000000000000000..9ce54dcb049dffa229beef5c868dfe68446a03ae
+index 0000000000000000000000000000000000000000..0e19c03df16da1a1cba840bfc79f35ced095757b
 --- /dev/null
 +++ b/components/thoron_mail/BUILD.gn
-@@ -0,0 +1,27 @@
+@@ -0,0 +1,54 @@
 +# Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +# found in the LICENSE file.
 +
-+# Thoron's mail notifier: the unread mail of the Google accounts a profile is
-+# signed in to, read from Gmail's own feed with the profile's sign-in.
++import("//build/rust/rust_static_library.gni")
++
++# What a mail server sends is read here, in Rust: one look at a mailbox over
++# IMAP (P5.77). The browser only carries the bytes (imap_check.cc).
++rust_static_library("imap") {
++  crate_root = "imap.rs"
++  sources = [ crate_root ]
++  allow_unsafe = true  # the cxx bridge's generated glue
++  cxx_bindings = [ crate_root ]
++  deps = [ "//third_party/rust/base64/v0_22:lib" ]
++  build_native_rust_unit_tests = true
++}
++
++# Thoron's mail notifier, Thoron M-Notifier: the unread mail of the Google
++# accounts a profile is signed in to, read from Gmail's own feed with the
++# profile's sign-in, and of the mailboxes a person added by address and
++# password (IMAP).
 +static_library("thoron_mail") {
 +  sources = [
 +    "features.cc",
 +    "features.h",
++    "imap_check.cc",
++    "imap_check.h",
++    "mail_backup.cc",
++    "mail_backup.h",
 +    "mail_feed.cc",
 +    "mail_feed.h",
 +    "mail_page.cc",
@@ -6634,14 +7266,22 @@ index 0000000000000000000000000000000000000000..9ce54dcb049dffa229beef5c868dfe68
 +    "mail_service.cc",
 +    "mail_service.h",
 +  ]
++  public_deps = [
++    ":imap",
++    "//mojo/public/cpp/bindings",
++    "//mojo/public/cpp/system",
++    "//services/network/public/mojom",
++  ]
 +  deps = [
 +    "//base",
++    "//base:i18n",
 +    "//components/prefs",
++    "//crypto",
 +    "//net",
 +    "//services/data_decoder/public/cpp",
 +    "//services/data_decoder/public/mojom",
 +    "//services/network/public/cpp",
-+    "//services/network/public/mojom",
++    "//third_party/boringssl",
 +    "//url",
 +  ]
 +}
@@ -6684,6 +7324,1505 @@ index 0000000000000000000000000000000000000000..12433ec42437edb9ceb29dabc8d15e17
 +}  // namespace thoron_mail
 +
 +#endif  // COMPONENTS_THORON_MAIL_FEATURES_H_
+diff --git a/components/thoron_mail/imap.rs b/components/thoron_mail/imap.rs
+new file mode 100644
+index 0000000000000000000000000000000000000000..753dfc535012eaa8817b1b83f3ec91acf79e2484
+--- /dev/null
++++ b/components/thoron_mail/imap.rs
+@@ -0,0 +1,849 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++//! One look at a mailbox over IMAP for Thoron M-Notifier (P5.77): sign in, count the unread
++//! messages of the inbox and read who sent the newest ones and what they are about. Nothing in
++//! the mailbox is changed (the inbox is opened read-only and the messages are only peeked at).
++//!
++//! What a mail server sends is not to be trusted, so everything that reads it is here, in Rust:
++//! the browser (imap_check.cc) only carries bytes between the server and `ImapSession`, which says
++//! what to send next. Sizes are bounded; a server that sends too much ends the look.
++
++use base64::Engine as _;
++
++#[cxx::bridge(namespace = "thoron_mail")]
++mod ffi {
++    /// One piece of a header's text: `bytes` in `charset` (lower case; "" for plain text, which
++    /// is read as UTF-8).
++    struct ImapText {
++        charset: String,
++        bytes: Vec<u8>,
++    }
++
++    /// One unread message of the inbox.
++    struct ImapMessage {
++        /// "<UIDVALIDITY>:<UID>": the same for as long as the message is in the inbox.
++        id: String,
++        from_email: String,
++        from_name: Vec<ImapText>,
++        subject: Vec<ImapText>,
++        /// When the server got it, ms since 1970 (0 when it did not say).
++        issued_ms: i64,
++    }
++
++    /// What the browser does next: sends `send` (may be empty), and stops when `done`.
++    struct ImapStep {
++        send: Vec<u8>,
++        done: bool,
++    }
++
++    extern "Rust" {
++        type ImapSession;
++        /// A look for `user` with `password`, reading at most `most` of the newest unread messages.
++        fn imap_session(user: &str, password: &str, most: u32) -> Box<ImapSession>;
++        /// What the server sent, in the order it came.
++        fn on_bytes(self: &mut ImapSession, data: &[u8]) -> ImapStep;
++        /// The server closed the connection, or it broke: the look is over.
++        fn on_closed(self: &mut ImapSession);
++        /// "" when the look ended well; else "sign-in" (the server refused the name or the
++        /// password), "protocol" (the server said something this does not understand, or refused
++        /// the inbox), "too-much" (it sent more than a look may take) or "offline" (the connection
++        /// ended before the look did).
++        fn problem(self: &ImapSession) -> String;
++        /// How many unread messages the inbox has.
++        fn unseen(self: &ImapSession) -> u32;
++        /// The newest unread messages, newest first.
++        fn messages(self: &ImapSession) -> Vec<ImapMessage>;
++    }
++}
++
++use ffi::{ImapMessage, ImapStep, ImapText};
++
++/// The most a look takes from a server in all, and for one literal (a message's headers).
++const MAX_TOTAL: usize = 2 * 1024 * 1024;
++const MAX_LITERAL: usize = 64 * 1024;
++/// The most of a name or a subject that is kept.
++const MAX_TEXT: usize = 400;
++
++#[derive(PartialEq, Clone, Copy, Debug)]
++enum State {
++    Greeting,
++    Capability,
++    Auth,
++    Examine,
++    Search,
++    Fetch,
++    Logout,
++    Done,
++}
++
++/// A piece of one response: its text, or a literal it carried.
++enum Part {
++    Text(Vec<u8>),
++    Literal(Vec<u8>),
++}
++
++pub struct ImapSession {
++    state: State,
++    buf: Vec<u8>,
++    taken: usize,
++    most: usize,
++    /// "\0user\0password" in base64, until it is sent.
++    auth: String,
++    login: Option<String>,
++    capabilities: Vec<String>,
++    waiting_for_continuation: bool,
++    uid_validity: String,
++    uids: Vec<u32>,
++    unseen: u32,
++    messages: Vec<ImapMessage>,
++    problem: String,
++}
++
++fn imap_session(user: &str, password: &str, most: u32) -> Box<ImapSession> {
++    let plain = format!("\0{user}\0{password}");
++    Box::new(ImapSession {
++        state: State::Greeting,
++        buf: Vec::new(),
++        taken: 0,
++        most: most.clamp(1, 50) as usize,
++        auth: base64::engine::general_purpose::STANDARD.encode(plain.as_bytes()),
++        login: quoted(user).zip(quoted(password)).map(|(u, p)| format!("{u} {p}")),
++        capabilities: Vec::new(),
++        waiting_for_continuation: false,
++        uid_validity: String::new(),
++        uids: Vec::new(),
++        unseen: 0,
++        messages: Vec::new(),
++        problem: String::new(),
++    })
++}
++
++/// `text` as an IMAP quoted string, when it can be one (no line break, no NUL, ASCII).
++fn quoted(text: &str) -> Option<String> {
++    if !text.is_ascii() || text.bytes().any(|b| b == b'\r' || b == b'\n' || b == 0) {
++        return None;
++    }
++    Some(format!("\"{}\"", text.replace('\\', "\\\\").replace('"', "\\\"")))
++}
++
++impl ImapSession {
++    fn on_bytes(&mut self, data: &[u8]) -> ImapStep {
++        let mut send = Vec::new();
++        if self.state == State::Done {
++            return ImapStep { send, done: true };
++        }
++        self.taken += data.len();
++        if self.taken > MAX_TOTAL {
++            return self.fail("too-much");
++        }
++        self.buf.extend_from_slice(data);
++        loop {
++            match self.next_response() {
++                Err(()) => return self.fail("too-much"),
++                Ok(None) => break,
++                Ok(Some(parts)) => {
++                    self.handle(&parts, &mut send);
++                    if self.state == State::Done {
++                        break;
++                    }
++                }
++            }
++        }
++        ImapStep { send, done: self.state == State::Done }
++    }
++
++    fn on_closed(&mut self) {
++        if self.state == State::Logout {
++            // it said goodbye by closing
++            self.state = State::Done;
++        } else if self.state != State::Done {
++            self.fail("offline");
++        }
++    }
++
++    fn fail(&mut self, problem: &str) -> ImapStep {
++        if self.problem.is_empty() {
++            self.problem = problem.to_string();
++        }
++        self.state = State::Done;
++        self.forget_secret();
++        ImapStep { send: Vec::new(), done: true }
++    }
++
++    fn forget_secret(&mut self) {
++        // not left in memory longer than needed
++        self.auth = "\0".repeat(self.auth.len());
++        self.auth.clear();
++        self.login = None;
++    }
++
++    /// The next whole response in the buffer (a line, with the literals it carries), taken out of
++    /// it; None while it is not all there; Err when a literal is larger than a look may take.
++    fn next_response(&mut self) -> Result<Option<Vec<Part>>, ()> {
++        let mut parts = Vec::new();
++        let mut at = 0;
++        loop {
++            let Some(end) = find_crlf(&self.buf[at..]) else { return Ok(None) };
++            let line = &self.buf[at..at + end];
++            at += end + 2;
++            match literal_size(line) {
++                None => {
++                    parts.push(Part::Text(line.to_vec()));
++                    break;
++                }
++                Some(size) => {
++                    if size > MAX_LITERAL {
++                        return Err(());
++                    }
++                    if self.buf.len() < at + size {
++                        return Ok(None);
++                    }
++                    parts.push(Part::Text(line.to_vec()));
++                    parts.push(Part::Literal(self.buf[at..at + size].to_vec()));
++                    at += size;
++                }
++            }
++        }
++        self.buf.drain(..at);
++        Ok(Some(parts))
++    }
++
++    fn handle(&mut self, parts: &[Part], send: &mut Vec<u8>) {
++        let Some(Part::Text(first)) = parts.first() else { return };
++        let line = String::from_utf8_lossy(first).to_string();
++        let upper = line.to_ascii_uppercase();
++        match self.state {
++            State::Greeting => {
++                if upper.starts_with("* OK") || upper.starts_with("* PREAUTH") {
++                    self.note_capabilities(&upper);
++                    send.extend_from_slice(b"a1 CAPABILITY\r\n");
++                    self.state = State::Capability;
++                } else {
++                    self.problem = "protocol".to_string();
++                    self.state = State::Done;
++                }
++            }
++            State::Capability => {
++                if upper.starts_with("* CAPABILITY") {
++                    self.note_capabilities(&upper);
++                } else if upper.starts_with("A1 ") {
++                    self.sign_in(send);
++                }
++            }
++            State::Auth => {
++                if line.starts_with('+') && self.waiting_for_continuation {
++                    self.waiting_for_continuation = false;
++                    send.extend_from_slice(self.auth.as_bytes());
++                    send.extend_from_slice(b"\r\n");
++                } else if upper.starts_with("A2 OK") {
++                    self.forget_secret();
++                    send.extend_from_slice(b"a3 EXAMINE INBOX\r\n");
++                    self.state = State::Examine;
++                } else if upper.starts_with("A2 ") {
++                    self.problem = "sign-in".to_string();
++                    self.forget_secret();
++                    self.state = State::Done;
++                }
++            }
++            State::Examine => {
++                if let Some(value) = bracket_value(&upper, "UIDVALIDITY") {
++                    self.uid_validity = value;
++                } else if upper.starts_with("A3 OK") {
++                    send.extend_from_slice(b"a4 UID SEARCH UNSEEN\r\n");
++                    self.state = State::Search;
++                } else if upper.starts_with("A3 ") {
++                    self.end(send, "protocol");
++                }
++            }
++            State::Search => {
++                if let Some(rest) = upper.strip_prefix("* SEARCH") {
++                    for uid in rest.split_ascii_whitespace().filter_map(|t| t.parse::<u32>().ok()) {
++                        self.unseen = self.unseen.saturating_add(1);
++                        self.uids.push(uid);
++                        // only the newest are read: the list stays short
++                        if self.uids.len() > 4 * self.most {
++                            self.uids.sort_unstable();
++                            let cut = self.uids.len() - self.most;
++                            self.uids.drain(..cut);
++                        }
++                    }
++                } else if upper.starts_with("A4 OK") {
++                    self.uids.sort_unstable();
++                    let cut = self.uids.len().saturating_sub(self.most);
++                    self.uids.drain(..cut);
++                    if self.uids.is_empty() {
++                        self.end(send, "");
++                    } else {
++                        let list: Vec<String> = self.uids.iter().map(u32::to_string).collect();
++                        send.extend_from_slice(
++                            format!(
++                                "a5 UID FETCH {} (UID INTERNALDATE BODY.PEEK[HEADER.FIELDS (FROM SUBJECT)])\r\n",
++                                list.join(",")
++                            )
++                            .as_bytes(),
++                        );
++                        self.state = State::Fetch;
++                    }
++                } else if upper.starts_with("A4 ") {
++                    self.end(send, "protocol");
++                }
++            }
++            State::Fetch => {
++                if upper.starts_with("A5 ") {
++                    self.messages.sort_by(|a, b| b.issued_ms.cmp(&a.issued_ms).then(b.id.cmp(&a.id)));
++                    self.end(send, "");
++                } else if upper.starts_with('*') && upper.contains(" FETCH ") {
++                    self.note_message(parts);
++                }
++            }
++            State::Logout => {
++                if upper.starts_with("A6 ") {
++                    self.state = State::Done;
++                }
++            }
++            State::Done => {}
++        }
++    }
++
++    fn note_capabilities(&mut self, upper: &str) {
++        let text = match (upper.find("[CAPABILITY"), upper.strip_prefix("* CAPABILITY")) {
++            (_, Some(rest)) => rest.to_string(),
++            (Some(at), None) => upper[at + 1..].split(']').next().unwrap_or("").to_string(),
++            _ => return,
++        };
++        for token in text.split_ascii_whitespace().take(64) {
++            if token.len() <= 40 && !self.capabilities.iter().any(|c| c == token) {
++                self.capabilities.push(token.to_string());
++            }
++        }
++    }
++
++    fn has(&self, capability: &str) -> bool {
++        self.capabilities.iter().any(|c| c == capability)
++    }
++
++    fn sign_in(&mut self, send: &mut Vec<u8>) {
++        self.state = State::Auth;
++        if self.has("AUTH=PLAIN") {
++            if self.has("SASL-IR") {
++                send.extend_from_slice(format!("a2 AUTHENTICATE PLAIN {}\r\n", self.auth).as_bytes());
++            } else {
++                self.waiting_for_continuation = true;
++                send.extend_from_slice(b"a2 AUTHENTICATE PLAIN\r\n");
++            }
++        } else if let (false, Some(login)) = (self.has("LOGINDISABLED"), self.login.as_ref()) {
++            send.extend_from_slice(format!("a2 LOGIN {login}\r\n").as_bytes());
++        } else {
++            self.problem = "sign-in".to_string();
++            self.forget_secret();
++            self.state = State::Done;
++        }
++    }
++
++    /// Says goodbye; the look ends when the server answers (or closes).
++    fn end(&mut self, send: &mut Vec<u8>, problem: &str) {
++        if !problem.is_empty() && self.problem.is_empty() {
++            self.problem = problem.to_string();
++        }
++        send.extend_from_slice(b"a6 LOGOUT\r\n");
++        self.state = State::Logout;
++    }
++
++    fn note_message(&mut self, parts: &[Part]) {
++        if self.messages.len() >= self.most {
++            return;
++        }
++        let mut text = String::new();
++        let mut headers: &[u8] = &[];
++        for part in parts {
++            match part {
++                Part::Text(bytes) => text.push_str(&String::from_utf8_lossy(bytes)),
++                Part::Literal(bytes) if headers.is_empty() => headers = bytes,
++                Part::Literal(_) => {}
++            }
++        }
++        let upper = text.to_ascii_uppercase();
++        let Some(uid) = word_after(&upper, "UID ").and_then(|w| w.parse::<u32>().ok()) else { return };
++        let issued_ms = upper
++            .find("INTERNALDATE \"")
++            .and_then(|at| text[at + 14..].split('"').next())
++            .and_then(internal_date_ms)
++            .unwrap_or(0);
++        let (from, subject) = from_and_subject(headers);
++        let (from_name, from_email) = split_address(&from);
++        self.messages.push(ImapMessage {
++            id: format!("{}:{uid}", self.uid_validity),
++            from_email,
++            from_name: decode_words(from_name.as_bytes()),
++            subject: decode_words(subject.as_bytes()),
++            issued_ms,
++        });
++    }
++
++    fn problem(&self) -> String {
++        self.problem.clone()
++    }
++
++    fn unseen(&self) -> u32 {
++        self.unseen
++    }
++
++    fn messages(&self) -> Vec<ImapMessage> {
++        self.messages
++            .iter()
++            .map(|m| ImapMessage {
++                id: m.id.clone(),
++                from_email: m.from_email.clone(),
++                from_name: copy_text(&m.from_name),
++                subject: copy_text(&m.subject),
++                issued_ms: m.issued_ms,
++            })
++            .collect()
++    }
++}
++
++fn copy_text(parts: &[ImapText]) -> Vec<ImapText> {
++    parts.iter().map(|p| ImapText { charset: p.charset.clone(), bytes: p.bytes.clone() }).collect()
++}
++
++fn find_crlf(data: &[u8]) -> Option<usize> {
++    data.windows(2).position(|w| w == b"\r\n")
++}
++
++/// The size of the literal a line announces at its end ("... {123}"), if it does.
++fn literal_size(line: &[u8]) -> Option<usize> {
++    if line.last() != Some(&b'}') {
++        return None;
++    }
++    let open = line.iter().rposition(|&b| b == b'{')?;
++    let digits = &line[open + 1..line.len() - 1];
++    // "{123+}" is a literal the server need not announce: as sent by a client, never by a server
++    if digits.is_empty() || digits.len() > 9 || !digits.iter().all(u8::is_ascii_digit) {
++        return None;
++    }
++    std::str::from_utf8(digits).ok()?.parse().ok()
++}
++
++/// The value of "[NAME value]" in a response.
++fn bracket_value(upper: &str, name: &str) -> Option<String> {
++    let at = upper.find(&format!("[{name} "))?;
++    let value = upper[at + name.len() + 2..].split(']').next()?.trim();
++    (!value.is_empty() && value.len() <= 20 && value.bytes().all(|b| b.is_ascii_digit())).then(|| value.to_string())
++}
++
++fn word_after<'a>(text: &'a str, name: &str) -> Option<&'a str> {
++    let at = text.find(name)?;
++    text[at + name.len()..].split(|c: char| !c.is_ascii_alphanumeric()).next()
++}
++
++/// "17-Jul-1996 02:44:25 -0700" as ms since 1970.
++fn internal_date_ms(text: &str) -> Option<i64> {
++    let mut pieces = text.split_ascii_whitespace();
++    let mut date = pieces.next()?.split('-');
++    let day: i64 = date.next()?.parse().ok()?;
++    let month = match date.next()?.to_ascii_lowercase().as_str() {
++        "jan" => 1,
++        "feb" => 2,
++        "mar" => 3,
++        "apr" => 4,
++        "may" => 5,
++        "jun" => 6,
++        "jul" => 7,
++        "aug" => 8,
++        "sep" => 9,
++        "oct" => 10,
++        "nov" => 11,
++        "dec" => 12,
++        _ => return None,
++    };
++    let year: i64 = date.next()?.parse().ok()?;
++    let mut time = pieces.next()?.split(':');
++    let hour: i64 = time.next()?.parse().ok()?;
++    let minute: i64 = time.next()?.parse().ok()?;
++    let second: i64 = time.next()?.parse().ok()?;
++    let zone = pieces.next().unwrap_or("+0000");
++    if !(1..=31).contains(&day) || !(1970..=9999).contains(&year) || hour > 23 || minute > 59 || second > 60 {
++        return None;
++    }
++    let zone_minutes = if zone.len() == 5 && zone.is_ascii() {
++        let sign = if zone.starts_with('-') { -1 } else { 1 };
++        let hours: i64 = zone[1..3].parse().ok()?;
++        let minutes: i64 = zone[3..5].parse().ok()?;
++        sign * (hours * 60 + minutes)
++    } else {
++        0
++    };
++    // days since 1970-01-01 (the civil calendar, as in "chrono-Compatible Low-Level Date Algorithms")
++    let y = if month <= 2 { year - 1 } else { year };
++    let era = y.div_euclid(400);
++    let yoe = y.rem_euclid(400);
++    let doy = (153 * (month + if month > 2 { -3 } else { 9 }) + 2) / 5 + day - 1;
++    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
++    let days = era * 146097 + doe - 719468;
++    Some(((days * 24 + hour) * 60 + minute - zone_minutes) * 60_000 + second * 1000)
++}
++
++/// The values of the From and the Subject header of `headers`, with folded lines joined.
++fn from_and_subject(headers: &[u8]) -> (String, String) {
++    let text = String::from_utf8_lossy(headers);
++    let mut from = String::new();
++    let mut subject = String::new();
++    let mut current: Option<&mut String> = None;
++    for line in text.split("\r\n").flat_map(|l| l.split('\n')) {
++        if line.starts_with(' ') || line.starts_with('\t') {
++            if let Some(value) = current.as_mut() {
++                if value.len() < 4 * MAX_TEXT {
++                    value.push(' ');
++                    value.push_str(line.trim());
++                }
++            }
++            continue;
++        }
++        let Some((name, value)) = line.split_once(':') else {
++            current = None;
++            continue;
++        };
++        current = match name.trim().to_ascii_lowercase().as_str() {
++            "from" if from.is_empty() => Some(&mut from),
++            "subject" if subject.is_empty() => Some(&mut subject),
++            _ => None,
++        };
++        if let Some(target) = current.as_mut() {
++            target.push_str(value.trim());
++        }
++    }
++    (from, subject)
++}
++
++/// The name and the address of a From header's value ("Name <a@b>", "a@b").
++fn split_address(from: &str) -> (String, String) {
++    let (name, address) = match (from.rfind('<'), from.rfind('>')) {
++        (Some(open), Some(close)) if open < close => (&from[..open], &from[open + 1..close]),
++        _ => ("", from),
++    };
++    let address = address.trim();
++    let address = if address.len() <= 254 && address.contains('@') && address.bytes().all(|b| b.is_ascii_graphic()) {
++        address.to_string()
++    } else {
++        String::new()
++    };
++    (name.trim().trim_matches('"').trim().to_string(), address)
++}
++
++/// A header's text with its encoded words ("=?utf-8?B?...?=", RFC 2047) decoded: plain pieces and
++/// decoded pieces in the order they come. White space between two encoded words is dropped.
++fn decode_words(value: &[u8]) -> Vec<ImapText> {
++    let mut out: Vec<ImapText> = Vec::new();
++    let mut total = 0;
++    let mut push = |charset: &str, bytes: &[u8], out: &mut Vec<ImapText>| {
++        if bytes.is_empty() || total >= MAX_TEXT {
++            return;
++        }
++        let take = bytes.len().min(MAX_TEXT - total);
++        total += take;
++        match out.last_mut() {
++            Some(last) if last.charset == charset => last.bytes.extend_from_slice(&bytes[..take]),
++            _ => out.push(ImapText { charset: charset.to_string(), bytes: bytes[..take].to_vec() }),
++        }
++    };
++    let mut rest = value;
++    let mut after_word = false;
++    while !rest.is_empty() {
++        let Some(start) = rest.windows(2).position(|w| w == b"=?") else {
++            push("", rest, &mut out);
++            break;
++        };
++        match encoded_word(&rest[start..]) {
++            Some((charset, bytes, used)) => {
++                let before = &rest[..start];
++                if !(after_word && before.iter().all(u8::is_ascii_whitespace)) {
++                    push("", before, &mut out);
++                }
++                push(&charset, &bytes, &mut out);
++                rest = &rest[start + used..];
++                after_word = true;
++            }
++            None => {
++                push("", &rest[..start + 2], &mut out);
++                rest = &rest[start + 2..];
++                after_word = false;
++            }
++        }
++    }
++    out
++}
++
++/// One encoded word at the start of `data`: its charset, its bytes, and how long it is.
++fn encoded_word(data: &[u8]) -> Option<(String, Vec<u8>, usize)> {
++    // =?charset?B?text?=
++    let end = data.windows(2).skip(2).position(|w| w == b"?=").map(|p| p + 2)?;
++    // the "?=" found may be the one of "?Q?=..": the word needs three more '?' before its end
++    let mut inner = std::str::from_utf8(&data[2..end]).ok()?.splitn(3, '?');
++    let (charset, kind, text) = (inner.next()?, inner.next()?, inner.next());
++    let (text, end) = match text {
++        Some(text) => (text.to_string(), end),
++        None => {
++            // "=?utf-8?Q?=41..." : look for the end again, after the encoding letter
++            let from = 2 + charset.len() + 1 + kind.len() + 1;
++            let more = data.get(from..)?.windows(2).position(|w| w == b"?=")?;
++            (std::str::from_utf8(&data[from..from + more]).ok()?.to_string(), from + more)
++        }
++    };
++    // "charset*language" (RFC 2231): the language is not needed
++    let charset = charset.split('*').next()?.to_ascii_lowercase();
++    if charset.is_empty() || charset.len() > 40 || !charset.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_') {
++        return None;
++    }
++    let bytes = match kind {
++        "B" | "b" => base64::engine::general_purpose::STANDARD.decode(text.trim_end_matches('=').to_string() + pad(&text)).ok()?,
++        "Q" | "q" => q_decode(text.as_bytes())?,
++        _ => return None,
++    };
++    Some((charset, bytes, end + 2))
++}
++
++/// The '=' a base64 text needs at its end (some senders leave them out).
++fn pad(text: &str) -> &'static str {
++    match text.trim_end_matches('=').len() % 4 {
++        2 => "==",
++        3 => "=",
++        _ => "",
++    }
++}
++
++fn q_decode(text: &[u8]) -> Option<Vec<u8>> {
++    let mut out = Vec::with_capacity(text.len());
++    let mut at = 0;
++    while at < text.len() {
++        match text[at] {
++            b'_' => out.push(b' '),
++            b'=' => {
++                let hex = std::str::from_utf8(text.get(at + 1..at + 3)?).ok()?;
++                out.push(u8::from_str_radix(hex, 16).ok()?);
++                at += 2;
++            }
++            other => out.push(other),
++        }
++        at += 1;
++    }
++    Some(out)
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    fn text(parts: &[ImapText]) -> String {
++        parts.iter().map(|p| format!("[{}]{}", p.charset, String::from_utf8_lossy(&p.bytes))).collect()
++    }
++
++    fn feed(session: &mut ImapSession, server: &str) -> (String, bool) {
++        let step = session.on_bytes(server.as_bytes());
++        (String::from_utf8_lossy(&step.send).to_string(), step.done)
++    }
++
++    const HEADERS: &str = "From: =?UTF-8?B?QWxpY2Ug4pyT?= <alice@example.com>\r\nSubject: =?utf-8?Q?Hello_=E2=9C=93?=\r\n =?utf-8?Q?_again?=\r\n\r\n";
++
++    fn fetch(uid: u32, date: &str, headers: &str) -> String {
++        format!(
++            "* {uid} FETCH (UID {uid} INTERNALDATE \"{date}\" BODY[HEADER.FIELDS (FROM SUBJECT)] {{{}}}\r\n{headers})\r\n",
++            headers.len()
++        )
++    }
++
++    #[test]
++    fn a_whole_look_counts_the_unread_and_reads_the_newest() {
++        let mut s = imap_session("alice@example.com", "app pass", 2);
++        assert_eq!(feed(&mut s, "* OK ready\r\n").0, "a1 CAPABILITY\r\n");
++        let (sent, _) = feed(&mut s, "* CAPABILITY IMAP4rev1 AUTH=PLAIN SASL-IR\r\na1 OK done\r\n");
++        let auth = base64::engine::general_purpose::STANDARD.encode(b"\0alice@example.com\0app pass");
++        assert_eq!(sent, format!("a2 AUTHENTICATE PLAIN {auth}\r\n"));
++        assert_eq!(feed(&mut s, "a2 OK signed in\r\n").0, "a3 EXAMINE INBOX\r\n");
++        assert_eq!(
++            feed(&mut s, "* 9 EXISTS\r\n* OK [UIDVALIDITY 77] ok\r\na3 OK [READ-ONLY] done\r\n").0,
++            "a4 UID SEARCH UNSEEN\r\n"
++        );
++        // three unread, the two newest are read
++        let (sent, _) = feed(&mut s, "* SEARCH 4 9 7\r\na4 OK done\r\n");
++        assert_eq!(sent, "a5 UID FETCH 7,9 (UID INTERNALDATE BODY.PEEK[HEADER.FIELDS (FROM SUBJECT)])\r\n");
++        let server = fetch(7, "16-Nov-2026 10:00:00 +0000", HEADERS)
++            + &fetch(9, "16-Nov-2026 12:30:00 +0200", "Subject: plain\r\nFrom: bob@example.com\r\n\r\n")
++            + "a5 OK done\r\n";
++        // in two pieces, cut inside a literal
++        let cut = server.len() / 3;
++        assert_eq!(feed(&mut s, &server[..cut]), (String::new(), false));
++        assert_eq!(feed(&mut s, &server[cut..]), ("a6 LOGOUT\r\n".to_string(), false));
++        assert_eq!(feed(&mut s, "* BYE\r\na6 OK\r\n"), (String::new(), true));
++        assert_eq!(s.problem(), "");
++        assert_eq!(s.unseen(), 3);
++        let messages = s.messages();
++        assert_eq!(messages.len(), 2);
++        // newest first: 12:30 +0200 is 10:30 UTC
++        assert_eq!(messages[0].id, "77:9");
++        assert_eq!(messages[0].from_email, "bob@example.com");
++        assert_eq!(text(&messages[0].subject), "[]plain");
++        assert_eq!(messages[0].issued_ms - messages[1].issued_ms, 30 * 60 * 1000);
++        assert_eq!(messages[1].id, "77:7");
++        assert_eq!(messages[1].from_email, "alice@example.com");
++        assert_eq!(text(&messages[1].from_name), "[utf-8]Alice \u{2713}");
++        assert_eq!(text(&messages[1].subject), "[utf-8]Hello \u{2713} again");
++    }
++
++    #[test]
++    fn the_password_is_sent_only_when_the_server_asks_and_then_forgotten() {
++        let mut s = imap_session("u", "p", 5);
++        feed(&mut s, "* OK [CAPABILITY IMAP4rev1 AUTH=PLAIN] ready\r\n");
++        assert_eq!(feed(&mut s, "a1 OK\r\n").0, "a2 AUTHENTICATE PLAIN\r\n");
++        let auth = base64::engine::general_purpose::STANDARD.encode(b"\0u\0p");
++        assert_eq!(feed(&mut s, "+ \r\n").0, format!("{auth}\r\n"));
++        // a second "+" gets nothing
++        assert_eq!(feed(&mut s, "+ \r\n").0, "");
++        feed(&mut s, "a2 OK\r\n");
++        assert!(s.auth.is_empty() && s.login.is_none());
++    }
++
++    #[test]
++    fn a_server_without_plain_gets_login_with_the_quotes_escaped() {
++        let mut s = imap_session("a\"b", "p\\w", 5);
++        feed(&mut s, "* OK ready\r\n");
++        assert_eq!(feed(&mut s, "* CAPABILITY IMAP4rev1\r\na1 OK\r\n").0, "a2 LOGIN \"a\\\"b\" \"p\\\\w\"\r\n");
++        // where neither way is open, there is no sign-in
++        let mut s = imap_session("u", "p", 5);
++        feed(&mut s, "* OK ready\r\n");
++        assert_eq!(feed(&mut s, "* CAPABILITY IMAP4rev1 LOGINDISABLED\r\na1 OK\r\n"), (String::new(), true));
++        assert_eq!(s.problem(), "sign-in");
++        // a password that cannot be quoted is never put on a LOGIN line
++        let mut s = imap_session("u", "p\r\nx LOGOUT", 5);
++        feed(&mut s, "* OK ready\r\n");
++        assert_eq!(feed(&mut s, "* CAPABILITY IMAP4rev1\r\na1 OK\r\n"), (String::new(), true));
++    }
++
++    #[test]
++    fn a_refused_password_and_a_refused_inbox_are_told_apart() {
++        let mut s = imap_session("u", "wrong", 5);
++        feed(&mut s, "* OK [CAPABILITY AUTH=PLAIN SASL-IR] ready\r\n");
++        feed(&mut s, "a1 OK\r\n");
++        assert_eq!(feed(&mut s, "a2 NO [AUTHENTICATIONFAILED] Invalid credentials\r\n"), (String::new(), true));
++        assert_eq!(s.problem(), "sign-in");
++
++        let mut s = imap_session("u", "p", 5);
++        feed(&mut s, "* OK [CAPABILITY AUTH=PLAIN SASL-IR] ready\r\n");
++        feed(&mut s, "a1 OK\r\n");
++        feed(&mut s, "a2 OK\r\n");
++        assert_eq!(feed(&mut s, "a3 NO no such mailbox\r\n"), ("a6 LOGOUT\r\n".to_string(), false));
++        assert_eq!(s.problem(), "protocol");
++        assert_eq!(feed(&mut s, "a6 OK\r\n").1, true);
++    }
++
++    #[test]
++    fn an_inbox_without_unread_mail_reads_nothing() {
++        let mut s = imap_session("u", "p", 5);
++        feed(&mut s, "* OK [CAPABILITY AUTH=PLAIN SASL-IR] ready\r\na1 OK\r\na2 OK\r\na3 OK\r\n");
++        assert_eq!(feed(&mut s, "* SEARCH\r\na4 OK\r\n").0, "a6 LOGOUT\r\n");
++        assert_eq!((s.unseen(), s.messages().len(), s.problem()), (0, 0, String::new()));
++    }
++
++    #[test]
++    fn a_server_that_sends_too_much_or_nonsense_ends_the_look() {
++        let mut s = imap_session("u", "p", 5);
++        assert_eq!(feed(&mut s, "HTTP/1.1 400 Bad Request\r\n"), (String::new(), true));
++        assert_eq!(s.problem(), "protocol");
++        // a literal larger than a look takes
++        let mut s = imap_session("u", "p", 5);
++        feed(&mut s, "* OK [CAPABILITY AUTH=PLAIN SASL-IR] ready\r\na1 OK\r\na2 OK\r\na3 OK\r\n* SEARCH 1\r\na4 OK\r\n");
++        assert_eq!(feed(&mut s, "* 1 FETCH (UID 1 BODY[] {99999999}\r\n"), (String::new(), true));
++        assert_eq!(s.problem(), "too-much");
++        // more bytes than a look takes, without ever ending a line
++        let mut s = imap_session("u", "p", 5);
++        let chunk = "x".repeat(1024 * 1024);
++        assert_eq!(feed(&mut s, &chunk).1, false);
++        assert_eq!(feed(&mut s, &chunk).1, false);
++        assert_eq!(feed(&mut s, "x").1, true);
++        assert_eq!(s.problem(), "too-much");
++        // after the end nothing is taken
++        assert_eq!(feed(&mut s, "* OK\r\n"), (String::new(), true));
++    }
++
++    #[test]
++    fn a_connection_that_ends_early_is_offline_and_one_that_ends_after_goodbye_is_fine() {
++        let mut s = imap_session("u", "p", 5);
++        feed(&mut s, "* OK [CAPABILITY AUTH=PLAIN SASL-IR] ready\r\na1 OK\r\n");
++        s.on_closed();
++        assert_eq!(s.problem(), "offline");
++        assert!(s.auth.is_empty());
++
++        let mut s = imap_session("u", "p", 5);
++        feed(&mut s, "* OK [CAPABILITY AUTH=PLAIN SASL-IR] ready\r\na1 OK\r\na2 OK\r\na3 OK\r\n* SEARCH\r\na4 OK\r\n");
++        s.on_closed();
++        assert_eq!(s.problem(), "");
++        assert_eq!(feed(&mut s, "* OK\r\n"), (String::new(), true));
++    }
++
++    #[test]
++    fn only_the_newest_unread_are_kept_of_a_long_list() {
++        let mut s = imap_session("u", "p", 3);
++        feed(&mut s, "* OK [CAPABILITY AUTH=PLAIN SASL-IR] ready\r\na1 OK\r\na2 OK\r\na3 OK\r\n");
++        let list: Vec<String> = (1..=500u32).map(|n| n.to_string()).collect();
++        let (sent, _) = feed(&mut s, &format!("* SEARCH {}\r\n* SEARCH 900 800\r\na4 OK\r\n", list.join(" ")));
++        assert!(sent.starts_with("a5 UID FETCH 500,800,900 "), "{sent}");
++        assert_eq!(s.unseen(), 502);
++    }
++
++    #[test]
++    fn dates_are_read_with_their_zone() {
++        assert_eq!(internal_date_ms("01-Jan-1970 00:00:00 +0000"), Some(0));
++        assert_eq!(internal_date_ms("01-Jan-1970 01:00:00 +0100"), Some(0));
++        assert_eq!(internal_date_ms("16-Nov-2026 10:00:00 +0000"), Some(1_794_823_200_000));
++        assert_eq!(internal_date_ms("29-Feb-2024 23:59:59 -0530"), Some(1_709_270_999_000));
++        assert_eq!(internal_date_ms("32-Jan-2026 00:00:00 +0000"), None);
++        assert_eq!(internal_date_ms("01-Foo-2026 00:00:00 +0000"), None);
++        assert_eq!(internal_date_ms("nonsense"), None);
++    }
++
++    #[test]
++    fn headers_are_unfolded_and_the_first_of_each_counts() {
++        let (from, subject) = from_and_subject(b"X-Other: 1\r\nSUBJECT: one\r\n two\r\nFrom: a@example.com\r\nSubject: later\r\n");
++        assert_eq!((from.as_str(), subject.as_str()), ("a@example.com", "one two"));
++        assert_eq!(from_and_subject(b"no colon here\r\n"), (String::new(), String::new()));
++    }
++
++    #[test]
++    fn addresses_and_names_are_split() {
++        assert_eq!(split_address("Alice <a@example.com>"), ("Alice".to_string(), "a@example.com".to_string()));
++        assert_eq!(split_address("\"Last, First\" <a@example.com>"), ("Last, First".to_string(), "a@example.com".to_string()));
++        assert_eq!(split_address("a@example.com"), (String::new(), "a@example.com".to_string()));
++        // not an address: no address
++        assert_eq!(split_address("Somebody <not an address>").1, "");
++        assert_eq!(split_address("").1, "");
++    }
++
++    #[test]
++    fn encoded_words_are_decoded_piece_by_piece() {
++        assert_eq!(text(&decode_words(b"plain")), "[]plain");
++        assert_eq!(text(&decode_words(b"=?ISO-8859-1?Q?caf=E9?= au lait")), "[iso-8859-1]caf\u{FFFD}[] au lait");
++        // white space between two encoded words is dropped, and their bytes are joined
++        assert_eq!(text(&decode_words(b"=?utf-8?B?SGVs?= =?utf-8?B?bG8=?=")), "[utf-8]Hello");
++        // base64 without its padding, a language tag, another script
++        assert_eq!(text(&decode_words(b"=?UTF-8*en?B?SGk?=")), "[utf-8]Hi");
++        assert_eq!(text(&decode_words(b"=?windows-1255?B?+eXs7Q==?=")).len(), "[windows-1255]".len() + 4 * 3);
++        // what is not an encoded word stays as it is
++        assert_eq!(text(&decode_words(b"a =? b ?= c")), "[]a =? b ?= c");
++        assert_eq!(text(&decode_words(b"=?utf-8?X?abc?=")), "[]=?utf-8?X?abc?=");
++        assert_eq!(text(&decode_words(b"=?bad charset?B?QQ==?=")), "[]=?bad charset?B?QQ==?=");
++        // a Q word whose text starts with "="
++        assert_eq!(text(&decode_words(b"=?utf-8?Q?=41BC?=")), "[utf-8]ABC");
++        // a long subject is cut
++        let long = "x".repeat(2000);
++        assert_eq!(decode_words(long.as_bytes())[0].bytes.len(), MAX_TEXT);
++    }
++
++    #[test]
++    fn literal_sizes_are_read_only_from_the_end_of_a_line() {
++        assert_eq!(literal_size(b"* 1 FETCH (BODY[] {12}"), Some(12));
++        assert_eq!(literal_size(b"* 1 FETCH {12} more"), None);
++        assert_eq!(literal_size(b"{}"), None);
++        assert_eq!(literal_size(b"{12+}"), None);
++        assert_eq!(literal_size(b"{99999999999999999999}"), None);
++    }
++}
+diff --git a/components/thoron_mail/imap_check.cc b/components/thoron_mail/imap_check.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..24a812760e93588f844bcc9e7acaf1d45320c903
+--- /dev/null
++++ b/components/thoron_mail/imap_check.cc
+@@ -0,0 +1,308 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "components/thoron_mail/imap_check.h"
++
++#include <utility>
++
++#include "base/command_line.h"
++#include "base/containers/span.h"
++#include "base/functional/bind.h"
++#include "base/i18n/icu_string_conversions.h"
++#include "base/location.h"
++#include "base/strings/string_number_conversions.h"
++#include "base/strings/string_util.h"
++#include "base/strings/utf_string_conversions.h"
++#include "base/task/sequenced_task_runner.h"
++#include "base/time/time.h"
++#include "net/base/host_port_pair.h"
++#include "net/base/net_errors.h"
++#include "net/base/network_anonymization_key.h"
++#include "net/base/url_util.h"
++#include "net/traffic_annotation/network_traffic_annotation.h"
++#include "services/network/public/mojom/network_context.mojom.h"
++#include "url/gurl.h"
++
++namespace thoron_mail {
++
++namespace {
++
++// A look that takes longer than this is given up.
++constexpr base::TimeDelta kTimeout = base::Seconds(30);
++// The newest unread messages read from one mailbox.
++constexpr uint32_t kMostMessages = 20;
++// What is waiting to be sent is never more than this: a look sends a few
++// short lines.
++constexpr size_t kMostPending = 64 * 1024;
++
++// For the offline checks: every look goes to this local server instead, in
++// plain text ("127.0.0.1:<port>"; nothing but a loopback address is taken).
++constexpr char kImapForTesting[] = "thoron-mail-imap-for-testing";
++
++constexpr net::NetworkTrafficAnnotationTag kTrafficAnnotation =
++    net::DefineNetworkTrafficAnnotation("thoron_mail_imap", R"(
++        semantics {
++          sender: "Thoron M-Notifier"
++          description:
++            "Looks at a mailbox the person added to Thoron M-Notifier with its "
++            "address and password: signs in to the mail service's IMAP server "
++            "over TLS, counts the unread messages of the inbox and reads the "
++            "sender and the subject of the newest ones. Nothing in the mailbox "
++            "is changed."
++          trigger:
++            "The person added a mailbox by address and password: a moment "
++            "after the browser starts, then every few minutes (the person's "
++            "choice), and when the person asks in the M-Notifier's menu."
++          data:
++            "The name and the password the person entered for that mailbox, "
++            "sent only to the mail server the person named, over TLS."
++          destination: OTHER
++          destination_other: "The mail server the person named."
++        }
++        policy {
++          cookies_allowed: NO
++          setting:
++            "Remove the mailbox in the M-Notifier's settings; off when the "
++            "ThoronMailNotifier feature is off."
++          policy_exception_justification: "No policy yet."
++        })");
++
++// The local server that stands in for every mail server in the offline
++// checks, or an invalid address.
++GURL TestingEndpoint() {
++  const std::string value =
++      base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
++          kImapForTesting);
++  if (value.empty()) {
++    return GURL();
++  }
++  const GURL url("http://" + value + "/");
++  return url.is_valid() && net::IsLocalhost(url) ? url : GURL();
++}
++
++// A header's text, piece by piece in the charset each piece says. What cannot
++// be read in its charset is read as UTF-8.
++std::string TextOf(const rust::Vec<ImapText>& parts) {
++  std::u16string text;
++  for (const ImapText& part : parts) {
++    const std::string_view bytes(
++        reinterpret_cast<const char*>(part.bytes.data()), part.bytes.size());
++    const std::string charset(part.charset);
++    std::u16string piece;
++    if (charset.empty() || charset == "utf-8" || charset == "us-ascii" ||
++        !base::CodepageToUTF16(bytes, charset.c_str(),
++                               base::OnStringConversionError::SUBSTITUTE,
++                               &piece)) {
++      piece = base::UTF8ToUTF16(bytes);
++    }
++    text += piece;
++  }
++  return base::UTF16ToUTF8(
++      base::CollapseWhitespace(text, /*trim_sequences_with_line_breaks=*/true));
++}
++
++}  // namespace
++
++ImapAccount::ImapAccount() = default;
++ImapAccount::ImapAccount(const ImapAccount&) = default;
++ImapAccount& ImapAccount::operator=(const ImapAccount&) = default;
++ImapAccount::ImapAccount(ImapAccount&&) = default;
++ImapAccount& ImapAccount::operator=(ImapAccount&&) = default;
++ImapAccount::~ImapAccount() = default;
++
++ImapCheck::Result::Result() = default;
++ImapCheck::Result::Result(Result&&) = default;
++ImapCheck::Result& ImapCheck::Result::operator=(Result&&) = default;
++ImapCheck::Result::~Result() = default;
++
++bool IsImapHost(const std::string& host) {
++  if (host.empty() || host.size() > 253 || host.front() == '.' ||
++      host.front() == '-' || host.back() == '-') {
++    return false;
++  }
++  for (char c : host) {
++    if (!base::IsAsciiAlphaNumeric(c) && c != '.' && c != '-') {
++      return false;
++    }
++  }
++  return true;
++}
++
++ImapCheck::ImapCheck(network::mojom::NetworkContext* context,
++                     const ImapAccount& account,
++                     Done done)
++    : session_(imap_session(account.user, account.password, kMostMessages)),
++      done_(std::move(done)),
++      read_watcher_(FROM_HERE, mojo::SimpleWatcher::ArmingPolicy::MANUAL),
++      write_watcher_(FROM_HERE, mojo::SimpleWatcher::ArmingPolicy::MANUAL) {
++  GURL url = TestingEndpoint();
++  // TLS always, but to the offline checks' own local server
++  const bool tls = !url.is_valid();
++  if (tls && IsImapHost(account.host) && account.port > 0 &&
++      account.port <= 65535) {
++    url = GURL("https://" + account.host + ":" +
++               base::NumberToString(account.port) + "/");
++  }
++  if (!context || !url.is_valid()) {
++    // not from inside the constructor: `done` may destroy this
++    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
++        FROM_HERE, base::BindOnce(&ImapCheck::Finish,
++                                  weak_factory_.GetWeakPtr(), "offline"));
++    return;
++  }
++  context->CreateProxyResolvingSocketFactory(
++      factory_.BindNewPipeAndPassReceiver());
++  auto options = network::mojom::ProxyResolvingSocketOptions::New();
++  options->use_tls = tls;
++  factory_->CreateProxyResolvingSocket(
++      url, net::NetworkAnonymizationKey::CreateTransient(), std::move(options),
++      net::MutableNetworkTrafficAnnotationTag(kTrafficAnnotation),
++      socket_.BindNewPipeAndPassReceiver(), mojo::NullRemote(),
++      base::BindOnce(&ImapCheck::OnConnected, weak_factory_.GetWeakPtr()));
++  // base::Unretained is safe: the remotes and the timer are members.
++  factory_.set_disconnect_handler(
++      base::BindOnce(&ImapCheck::OnClosed, base::Unretained(this)));
++  timeout_.Start(FROM_HERE, kTimeout,
++                 base::BindOnce(&ImapCheck::Finish, base::Unretained(this),
++                                "offline"));
++}
++
++ImapCheck::~ImapCheck() = default;
++
++void ImapCheck::OnConnected(int result,
++                            const std::optional<net::IPEndPoint>& local,
++                            const std::optional<net::IPEndPoint>& peer,
++                            mojo::ScopedDataPipeConsumerHandle receive,
++                            mojo::ScopedDataPipeProducerHandle send) {
++  if (result != net::OK || !receive.is_valid() || !send.is_valid()) {
++    Finish("offline");
++    return;
++  }
++  receive_ = std::move(receive);
++  send_ = std::move(send);
++  // base::Unretained is safe: the watchers are members.
++  read_watcher_.Watch(
++      receive_.get(),
++      MOJO_HANDLE_SIGNAL_READABLE | MOJO_HANDLE_SIGNAL_PEER_CLOSED,
++      MOJO_WATCH_CONDITION_SATISFIED,
++      base::BindRepeating(&ImapCheck::OnReadable, base::Unretained(this)));
++  write_watcher_.Watch(
++      send_.get(), MOJO_HANDLE_SIGNAL_WRITABLE | MOJO_HANDLE_SIGNAL_PEER_CLOSED,
++      MOJO_WATCH_CONDITION_SATISFIED,
++      base::BindRepeating(&ImapCheck::OnWritable, base::Unretained(this)));
++  read_watcher_.ArmOrNotify();
++}
++
++void ImapCheck::OnReadable(MojoResult result,
++                           const mojo::HandleSignalsState& state) {
++  if (result != MOJO_RESULT_OK) {
++    OnClosed();
++    return;
++  }
++  while (true) {
++    base::span<const uint8_t> data;
++    const MojoResult read =
++        receive_->BeginReadData(MOJO_BEGIN_READ_DATA_FLAG_NONE, data);
++    if (read == MOJO_RESULT_SHOULD_WAIT) {
++      read_watcher_.ArmOrNotify();
++      return;
++    }
++    if (read != MOJO_RESULT_OK) {
++      OnClosed();
++      return;
++    }
++    ImapStep step = session_->on_bytes(
++        rust::Slice<const uint8_t>(data.data(), data.size()));
++    receive_->EndReadData(data.size());
++    if (step.done) {
++      Finish(std::string(session_->problem()));
++      return;
++    }
++    if (!step.send.empty()) {
++      if (pending_.size() + step.send.size() > kMostPending) {
++        Finish("protocol");
++        return;
++      }
++      pending_.append(reinterpret_cast<const char*>(step.send.data()),
++                      step.send.size());
++      // A write that fails ends the look, and `done` may destroy this.
++      base::WeakPtr<ImapCheck> alive = weak_factory_.GetWeakPtr();
++      Write();
++      if (!alive || !done_) {
++        return;
++      }
++    }
++  }
++}
++
++void ImapCheck::OnWritable(MojoResult result,
++                           const mojo::HandleSignalsState& state) {
++  if (result != MOJO_RESULT_OK) {
++    OnClosed();
++    return;
++  }
++  Write();
++}
++
++void ImapCheck::Write() {
++  while (!pending_.empty()) {
++    size_t written = 0;
++    const MojoResult result = send_->WriteData(base::as_byte_span(pending_),
++                                               MOJO_WRITE_DATA_FLAG_NONE,
++                                               written);
++    if (result == MOJO_RESULT_SHOULD_WAIT) {
++      write_watcher_.ArmOrNotify();
++      return;
++    }
++    if (result != MOJO_RESULT_OK) {
++      OnClosed();
++      return;
++    }
++    // what was sent (a sign-in among it) is not kept
++    std::fill_n(pending_.begin(), written, '\0');
++    pending_.erase(0, written);
++  }
++}
++
++void ImapCheck::OnClosed() {
++  session_->on_closed();
++  Finish(std::string(session_->problem()));
++}
++
++void ImapCheck::Finish(std::string problem) {
++  if (!done_) {
++    return;
++  }
++  timeout_.Stop();
++  read_watcher_.Cancel();
++  write_watcher_.Cancel();
++  receive_.reset();
++  send_.reset();
++  socket_.reset();
++  factory_.reset();
++  std::fill(pending_.begin(), pending_.end(), '\0');
++  pending_.clear();
++
++  Result result;
++  result.problem = std::move(problem);
++  if (result.problem.empty()) {
++    result.unread = static_cast<int>(
++        std::min<uint32_t>(session_->unseen(), 1000000u));
++    for (const ImapMessage& found : session_->messages()) {
++      MailMessage message;
++      message.id = std::string(found.id);
++      message.from_email = std::string(found.from_email);
++      message.from_name = TextOf(found.from_name);
++      message.subject = TextOf(found.subject);
++      if (found.issued_ms > 0) {
++        message.issued = base::Time::FromMillisecondsSinceUnixEpoch(
++            static_cast<double>(found.issued_ms));
++      }
++      result.latest.push_back(std::move(message));
++    }
++  }
++  // last: `done` may destroy this
++  std::move(done_).Run(std::move(result));
++}
++
++}  // namespace thoron_mail
+diff --git a/components/thoron_mail/imap_check.h b/components/thoron_mail/imap_check.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..e3342bbe232d25616cabc3ebbd76cad607733066
+--- /dev/null
++++ b/components/thoron_mail/imap_check.h
+@@ -0,0 +1,111 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef COMPONENTS_THORON_MAIL_IMAP_CHECK_H_
++#define COMPONENTS_THORON_MAIL_IMAP_CHECK_H_
++
++#include <optional>
++#include <string>
++#include <vector>
++
++#include "base/functional/callback.h"
++#include "base/memory/weak_ptr.h"
++#include "base/timer/timer.h"
++#include "components/thoron_mail/imap.rs.h"
++#include "components/thoron_mail/mail_feed.h"
++#include "mojo/public/cpp/bindings/remote.h"
++#include "mojo/public/cpp/system/data_pipe.h"
++#include "mojo/public/cpp/system/simple_watcher.h"
++#include "net/base/ip_endpoint.h"
++#include "services/network/public/mojom/network_context.mojom-forward.h"
++#include "services/network/public/mojom/proxy_resolving_socket.mojom.h"
++#include "third_party/rust/cxx/v1/cxx.h"
++
++namespace thoron_mail {
++
++// A mailbox the person added with its address and password (P5.77): any mail
++// service that speaks IMAP over TLS. Thoron signs in to it by itself, so it
++// does not depend on the accounts the browser is signed in to.
++struct ImapAccount {
++  ImapAccount();
++  ImapAccount(const ImapAccount&);
++  ImapAccount& operator=(const ImapAccount&);
++  ImapAccount(ImapAccount&&);
++  ImapAccount& operator=(ImapAccount&&);
++  ~ImapAccount();
++
++  std::string email;
++  std::string host;  // imap.example.com
++  int port = 993;    // IMAP over TLS
++  std::string user;  // what the server knows the person as; often the address
++  std::string password;
++  // The service's page for reading mail (https), opened from the menu; may be
++  // empty.
++  std::string webmail;
++};
++
++// True for a host name a look may connect to: letters, digits, dots and
++// hyphens, as a mail server's name is.
++bool IsImapHost(const std::string& host);
++
++// One look at one mailbox: connects (TLS, through the browser's network
++// service, so the person's proxy settings hold), signs in, counts the unread
++// messages of the inbox and reads who sent the newest and what about. What the
++// server sends is read in Rust (imap.rs); this only carries the bytes.
++// Nothing in the mailbox is changed. The look ends after kTimeout at the
++// latest.
++class ImapCheck {
++ public:
++  struct Result {
++    Result();
++    Result(Result&&);
++    Result& operator=(Result&&);
++    ~Result();
++    // "" when the look went well; else "sign-in" (the name or the password
++    // was refused), "offline" (no connection, or it ended early), "protocol"
++    // or "too-much" (the server's answers could not be used).
++    std::string problem;
++    int unread = 0;
++    std::vector<MailMessage> latest;
++  };
++  using Done = base::OnceCallback<void(Result)>;
++
++  // Starts the look. `done` runs once, unless this is destroyed first; it may
++  // destroy this.
++  ImapCheck(network::mojom::NetworkContext* context,
++            const ImapAccount& account,
++            Done done);
++  ImapCheck(const ImapCheck&) = delete;
++  ImapCheck& operator=(const ImapCheck&) = delete;
++  ~ImapCheck();
++
++ private:
++  void OnConnected(int result,
++                   const std::optional<net::IPEndPoint>& local,
++                   const std::optional<net::IPEndPoint>& peer,
++                   mojo::ScopedDataPipeConsumerHandle receive,
++                   mojo::ScopedDataPipeProducerHandle send);
++  void OnReadable(MojoResult result, const mojo::HandleSignalsState& state);
++  void OnWritable(MojoResult result, const mojo::HandleSignalsState& state);
++  void Write();
++  // the server closed the connection, or it broke
++  void OnClosed();
++  void Finish(std::string problem);
++
++  rust::Box<ImapSession> session_;
++  Done done_;
++  mojo::Remote<network::mojom::ProxyResolvingSocketFactory> factory_;
++  mojo::Remote<network::mojom::ProxyResolvingSocket> socket_;
++  mojo::ScopedDataPipeConsumerHandle receive_;
++  mojo::ScopedDataPipeProducerHandle send_;
++  mojo::SimpleWatcher read_watcher_;
++  mojo::SimpleWatcher write_watcher_;
++  // what is still to be sent
++  std::string pending_;
++  base::OneShotTimer timeout_;
++  base::WeakPtrFactory<ImapCheck> weak_factory_{this};
++};
++
++}  // namespace thoron_mail
++
++#endif  // COMPONENTS_THORON_MAIL_IMAP_CHECK_H_
+diff --git a/components/thoron_mail/mail_backup.cc b/components/thoron_mail/mail_backup.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..4d99796529b4be504e552580bf0cf1befe9bb3f1
+--- /dev/null
++++ b/components/thoron_mail/mail_backup.cc
+@@ -0,0 +1,159 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "components/thoron_mail/mail_backup.h"
++
++#include <array>
++#include <cstdint>
++#include <vector>
++
++#include "base/base64.h"
++#include "base/containers/span.h"
++#include "base/json/json_reader.h"
++#include "base/json/json_writer.h"
++#include "base/values.h"
++#include "crypto/aead.h"
++#include "crypto/random.h"
++#include "third_party/boringssl/src/include/openssl/evp.h"
++
++namespace thoron_mail {
++
++namespace {
++
++// scrypt as recommended for files a person keeps: 32 MB and a fraction of a
++// second for each guess of the passphrase.
++constexpr int kCost = 32768;  // N
++constexpr int kBlock = 8;     // r
++constexpr int kParallel = 1;  // p
++constexpr size_t kMaxMemory = 96 * 1024 * 1024;
++constexpr size_t kSaltBytes = 16;
++constexpr size_t kNonceBytes = 12;
++constexpr size_t kKeyBytes = 32;
++// A backup is small: the accounts and the settings.
++constexpr size_t kMaxBackupBytes = 4 * 1024 * 1024;
++// What a sealed backup is bound to.
++constexpr char kAssociated[] = "thoron-m-notifier-backup-v1";
++
++bool DeriveKey(std::string_view passphrase,
++               base::span<const uint8_t> salt,
++               int cost,
++               int block,
++               int parallel,
++               base::span<uint8_t> key) {
++  return EVP_PBE_scrypt(passphrase.data(), passphrase.size(), salt.data(),
++                        salt.size(), static_cast<uint64_t>(cost),
++                        static_cast<uint64_t>(block),
++                        static_cast<uint64_t>(parallel), kMaxMemory, key.data(),
++                        key.size()) == 1;
++}
++
++std::optional<std::vector<uint8_t>> Bytes(const base::DictValue& dict,
++                                          std::string_view name,
++                                          size_t size) {
++  const std::string* text = dict.FindString(name);
++  std::optional<std::vector<uint8_t>> bytes =
++      text ? base::Base64Decode(*text) : std::nullopt;
++  if (!bytes || (size != 0 && bytes->size() != size)) {
++    return std::nullopt;
++  }
++  return bytes;
++}
++
++std::optional<base::DictValue> SealedDict(std::string_view text) {
++  if (text.empty() || text.size() > 2 * kMaxBackupBytes) {
++    return std::nullopt;
++  }
++  std::optional<base::DictValue> dict =
++      base::JSONReader::ReadDict(text, base::JSON_PARSE_RFC);
++  if (!dict) {
++    return std::nullopt;
++  }
++  const std::string* format = dict->FindString("format");
++  if (!format || *format != kBackupFormat ||
++      !dict->FindBool("sealed").value_or(false)) {
++    return std::nullopt;
++  }
++  return dict;
++}
++
++}  // namespace
++
++std::string SealBackup(std::string_view backup, std::string_view passphrase) {
++  if (backup.empty() || backup.size() > kMaxBackupBytes || passphrase.empty()) {
++    return std::string();
++  }
++  const std::array<uint8_t, kSaltBytes> salt =
++      crypto::RandBytesAsArray<kSaltBytes>();
++  const std::array<uint8_t, kNonceBytes> nonce =
++      crypto::RandBytesAsArray<kNonceBytes>();
++  std::array<uint8_t, kKeyBytes> key;
++  if (!DeriveKey(passphrase, salt, kCost, kBlock, kParallel, key)) {
++    return std::string();
++  }
++  const std::vector<uint8_t> sealed =
++      crypto::Aead(crypto::Aead::AES_256_GCM, key)
++          .Seal(base::as_byte_span(backup), nonce,
++                base::byte_span_from_cstring(kAssociated));
++  key.fill(0);
++  if (sealed.empty()) {
++    return std::string();
++  }
++  const base::DictValue file = base::DictValue()
++                                   .Set("format", kBackupFormat)
++                                   .Set("version", 1)
++                                   .Set("sealed", true)
++                                   .Set("kdf", "scrypt")
++                                   .Set("n", kCost)
++                                   .Set("r", kBlock)
++                                   .Set("p", kParallel)
++                                   .Set("salt", base::Base64Encode(salt))
++                                   .Set("nonce", base::Base64Encode(nonce))
++                                   .Set("data", base::Base64Encode(sealed));
++  return base::WriteJsonWithOptions(file, base::JSONWriter::OPTIONS_PRETTY_PRINT)
++      .value_or(std::string());
++}
++
++bool IsSealedBackup(std::string_view text) {
++  return SealedDict(text).has_value();
++}
++
++std::optional<std::string> OpenBackup(std::string_view text,
++                                      std::string_view passphrase) {
++  std::optional<base::DictValue> file = SealedDict(text);
++  const std::string* kdf = file ? file->FindString("kdf") : nullptr;
++  if (!kdf || *kdf != "scrypt" || passphrase.empty() ||
++      file->FindInt("version").value_or(0) != 1) {
++    return std::nullopt;
++  }
++  // Only costs a careful file would name: a file cannot ask for hours or for
++  // all the memory.
++  const int cost = file->FindInt("n").value_or(0);
++  const int block = file->FindInt("r").value_or(0);
++  const int parallel = file->FindInt("p").value_or(0);
++  if (cost < 1024 || cost > 1048576 || (cost & (cost - 1)) != 0 ||
++      block != kBlock || parallel != kParallel) {
++    return std::nullopt;
++  }
++  const std::optional<std::vector<uint8_t>> salt =
++      Bytes(*file, "salt", kSaltBytes);
++  const std::optional<std::vector<uint8_t>> nonce =
++      Bytes(*file, "nonce", kNonceBytes);
++  const std::optional<std::vector<uint8_t>> data = Bytes(*file, "data", 0);
++  if (!salt || !nonce || !data || data->size() > kMaxBackupBytes + 64) {
++    return std::nullopt;
++  }
++  std::array<uint8_t, kKeyBytes> key;
++  if (!DeriveKey(passphrase, *salt, cost, block, parallel, key)) {
++    return std::nullopt;
++  }
++  const std::optional<std::vector<uint8_t>> opened =
++      crypto::Aead(crypto::Aead::AES_256_GCM, key)
++          .Open(*data, *nonce, base::byte_span_from_cstring(kAssociated));
++  key.fill(0);
++  if (!opened) {
++    return std::nullopt;
++  }
++  return std::string(opened->begin(), opened->end());
++}
++
++}  // namespace thoron_mail
+diff --git a/components/thoron_mail/mail_backup.h b/components/thoron_mail/mail_backup.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..699b6f8d31b8ebe86030e4755cae8c2d3252daf3
+--- /dev/null
++++ b/components/thoron_mail/mail_backup.h
+@@ -0,0 +1,42 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef COMPONENTS_THORON_MAIL_MAIL_BACKUP_H_
++#define COMPONENTS_THORON_MAIL_MAIL_BACKUP_H_
++
++#include <optional>
++#include <string>
++#include <string_view>
++
++namespace thoron_mail {
++
++// A backup of Thoron M-Notifier's accounts and settings as a file a person
++// keeps (P5.77): either as it is (JSON, without passwords unless the person
++// asks), or sealed with a passphrase.
++//
++// A sealed file is JSON too:
++//   {"format": "thoron-m-notifier-backup", "version": 1, "sealed": true,
++//    "kdf": "scrypt", "n": 32768, "r": 8, "p": 1,
++//    "salt": <base64, 16 bytes>, "nonce": <base64, 12 bytes>,
++//    "data": <base64: AES-256-GCM of the backup's JSON, with its tag>}
++// The key is scrypt(passphrase, salt); what is sealed is bound to this kind of
++// file (the associated data), so nothing else opens as one. A wrong
++// passphrase and a file that was changed are told the same way: it does not
++// open.
++inline constexpr char kBackupFormat[] = "thoron-m-notifier-backup";
++
++// `backup` (JSON) sealed with `passphrase`. Slow on purpose (a fraction of a
++// second): not on the UI thread. Empty when it could not be done.
++std::string SealBackup(std::string_view backup, std::string_view passphrase);
++
++// The backup inside the sealed file `text`, or nullopt (not such a file, the
++// wrong passphrase, or changed). Slow on purpose: not on the UI thread.
++std::optional<std::string> OpenBackup(std::string_view text,
++                                      std::string_view passphrase);
++
++// True when `text` is a sealed backup (so a passphrase is needed).
++bool IsSealedBackup(std::string_view text);
++
++}  // namespace thoron_mail
++
++#endif  // COMPONENTS_THORON_MAIL_MAIL_BACKUP_H_
 diff --git a/components/thoron_mail/mail_feed.cc b/components/thoron_mail/mail_feed.cc
 new file mode 100644
 index 0000000000000000000000000000000000000000..a5e3a57002d3ddd55f6ed110d427aca1cfc88752
@@ -6866,10 +9005,10 @@ index 0000000000000000000000000000000000000000..a5e3a57002d3ddd55f6ed110d427aca1
 +}  // namespace thoron_mail
 diff --git a/components/thoron_mail/mail_feed.h b/components/thoron_mail/mail_feed.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..a7392581a4f0aaf050ae158e808198dbf481d11c
+index 0000000000000000000000000000000000000000..4c249e10c731f7b7fc3e2bf12a29b82eaba25e5f
 --- /dev/null
 +++ b/components/thoron_mail/mail_feed.h
-@@ -0,0 +1,60 @@
+@@ -0,0 +1,75 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -6900,6 +9039,8 @@ index 0000000000000000000000000000000000000000..a7392581a4f0aaf050ae158e808198db
 +  // the conversation in Gmail (https://mail.google.com/ only; empty if not)
 +  std::string link;
 +  base::Time issued;
++  // from Gmail's spam, counted because the person asked for it (P5.77)
++  bool spam = false;
 +};
 +
 +// One Google account the browser is signed in to: Gmail's u/<index>.
@@ -6914,7 +9055,20 @@ index 0000000000000000000000000000000000000000..a7392581a4f0aaf050ae158e808198db
 +  int unread = 0;
 +  // the newest unread messages, as many as the feed has (at most 20)
 +  std::vector<MailMessage> latest;
++  // P5.77: a mailbox the person added with its address and password (IMAP),
++  // not one of the browser's Google accounts: its index is kFirstImapIndex or
++  // more, `webmail` is the page its mail is read on (may be empty), and
++  // `problem` says why the last look at it failed ("" when it went well;
++  // "sign-in", "offline", "protocol", "too-much"). The counts are then those
++  // of the last look that went well.
++  bool imap = false;
++  std::string webmail;
++  std::string problem;
 +};
++
++// The index of the first mailbox added by address and password; Google
++// accounts are u/0 to u/9.
++inline constexpr int kFirstImapIndex = 1000;
 +
 +// The account of Gmail's feed of unread mail (Atom 0.3) for u/`index`, from
 +// the tree the data decoder (a sandboxed process) parsed it into. Nullopt for
@@ -6932,10 +9086,10 @@ index 0000000000000000000000000000000000000000..a7392581a4f0aaf050ae158e808198db
 +#endif  // COMPONENTS_THORON_MAIL_MAIL_FEED_H_
 diff --git a/components/thoron_mail/mail_page.cc b/components/thoron_mail/mail_page.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..283cc6a7c50f2a8e96740fcf47815fef6249166b
+index 0000000000000000000000000000000000000000..3c7f785a4473a08a267301b8cc5f33071c43dd9b
 --- /dev/null
 +++ b/components/thoron_mail/mail_page.cc
-@@ -0,0 +1,441 @@
+@@ -0,0 +1,932 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -7023,6 +9177,30 @@ index 0000000000000000000000000000000000000000..283cc6a7c50f2a8e96740fcf47815fef
 +  select { font: inherit; padding: 4px 8px; border-radius: 8px; border: 1px solid var(--line);
 +           background: var(--bg); color: inherit; }
 +  .hint { color: var(--soft); font-size: 12px; margin: 2px 0 0; }
++  .error { color: var(--color-sys-error, #d93025); font-size: 12px; margin: 6px 0 0; min-block-size: 0; }
++  .field { display: block; padding: 5px 0; }
++  .field span { display: block; font-size: 12px; color: var(--soft); margin-block-end: 3px; }
++  .field input { font: inherit; inline-size: 100%; box-sizing: border-box; padding: 6px 10px; border-radius: 8px;
++                 border: 1px solid var(--line); background: var(--bg); color: inherit; }
++  .buttons { display: flex; gap: 8px; flex-wrap: wrap; padding-block-start: 8px; }
++  button.wide { inline-size: 100%; }
++  button:disabled { opacity: .5; cursor: default; }
++  details summary { cursor: pointer; color: var(--soft); font-size: 12px; padding: 6px 0; }
++  .warn { flex: none; inline-size: 18px; block-size: 18px; border-radius: 50%; display: grid; place-items: center;
++          background: var(--color-sys-error, #d93025); color: var(--color-sys-on-error, #fff); font-size: 12px;
++          font-weight: 700; }
++  .tag { flex: none; font-size: 11px; padding: 0 6px; border-radius: 100px; border: 1px solid var(--line);
++         color: var(--soft); }
++  .watch-row { display: flex; align-items: center; gap: 8px; }
++  .watch-row label { flex: 1; min-inline-size: 0; }
++  .watch-row label span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
++  #add-panel { padding: 4px 16px 12px; max-block-size: 480px; overflow-y: auto; }
++  #add-panel h3 { font-size: 12px; font-weight: 500; color: var(--accent); margin: 14px 0 6px; }
++  /* the M-Notifier's own page, in a tab: everything at once, in a column */
++  body.page { inline-size: auto; max-inline-size: 640px; margin: 0 auto; padding: 8px 16px 32px; }
++  body.page main, body.page #settings, body.page #add-panel { max-block-size: none; overflow: visible; }
++  body.page #gear, body.page #backup-bubble { display: none; }
++  body.page #settings, body.page #add-panel { border-block-start: 1px solid var(--line); margin-block-start: 8px; }
 +  [hidden] { display: none !important; }
 +</style>
 +</head>
@@ -7050,6 +9228,13 @@ index 0000000000000000000000000000000000000000..283cc6a7c50f2a8e96740fcf47815fef
 +      <option value="unread">All unread mail</option>
 +    </select></div>
 +  <div class="setting"><label for="interval" data-t>Look every</label><select id="interval"></select></div>
++  <div class="setting"><label for="which" data-t>Of Gmail, count</label>
++    <select id="which" data-choice="which">
++      <option value="inbox">The whole inbox</option>
++      <option value="primary">Only the Primary tab</option>
++      <option value="all">The inbox and spam</option>
++    </select></div>
++  <p class="hint" data-t>A mailbox added by address and password counts its whole inbox.</p>
 +  <h3 data-t>Where</h3>
 +  <div class="setting"><label for="place" data-t>Show it</label>
 +    <select id="place" data-choice="place">
@@ -7078,6 +9263,51 @@ index 0000000000000000000000000000000000000000..283cc6a7c50f2a8e96740fcf47815fef
 +    </select></div>
 +  <h3 data-t>Accounts to watch</h3>
 +  <div id="watch"></div>
++  <h3 data-t>Backup</h3>
++  <div id="backup-bubble"><button id="manage" type="button" data-t>Accounts and backup...</button></div>
++  <div id="backup" hidden>
++    <label class="field"><span data-t>Passphrase: seals the file, and keeps the passwords in it safe</span>
++      <input id="backup-pass" type="password" autocomplete="new-password"></label>
++    <label class="check"><input type="checkbox" id="backup-plain">
++      <span data-t>Without a passphrase, put the passwords in the file as they are</span></label>
++    <div class="buttons">
++      <button id="export" type="button" class="main" data-t>Save a backup...</button>
++      <button id="import" type="button" data-t>Read a backup...</button>
++    </div>
++    <input id="import-file" type="file" accept=".json,.thoron,application/json" hidden>
++    <p class="hint" data-t>Save it into your Google Drive folder, or any folder that is synced, to keep it in the cloud.</p>
++    <p class="hint" id="backup-state" role="status"></p>
++  </div>
++</section>
++<section id="add-panel" hidden>
++  <h3 data-t>A Google account</h3>
++  <button id="add-google" type="button" class="wide" data-t>Sign in with Google</button>
++  <p class="hint" data-t>Opens Google's own page. Thoron keeps no password.</p>
++  <h3 data-t>A mailbox by address and password</h3>
++  <div id="imap-bubble"><button id="add-mailbox" type="button" class="wide" data-t>Add by address and password...</button></div>
++  <div id="imap-form" hidden>
++    <label class="field"><span data-t>Email address</span>
++      <input id="imap-email" type="email" autocomplete="off" spellcheck="false"></label>
++    <label class="field"><span data-t>Password</span>
++      <input id="imap-password" type="password" autocomplete="new-password"></label>
++    <p class="hint" id="imap-hint"></p>
++    <details id="imap-more"><summary data-t>Server</summary>
++      <label class="field"><span data-t>IMAP server</span>
++        <input id="imap-host" type="text" spellcheck="false" autocomplete="off"></label>
++      <label class="field"><span data-t>Port</span>
++        <input id="imap-port" type="number" min="1" max="65535" value="993"></label>
++      <label class="field"><span data-t>Sign-in name, if it is not the address</span>
++        <input id="imap-user" type="text" spellcheck="false" autocomplete="off"></label>
++      <label class="field"><span data-t>The page its mail is read on (https, optional)</span>
++        <input id="imap-webmail" type="url" spellcheck="false" autocomplete="off"></label>
++    </details>
++    <p class="hint" data-t>Thoron signs in over a secure connection, only reads, and keeps the password encrypted by Windows.</p>
++    <p class="error" id="imap-error" role="alert"></p>
++    <div class="buttons">
++      <button id="imap-add" type="button" class="main" data-t>Add</button>
++      <button id="imap-cancel" type="button" data-t>Cancel</button>
++    </div>
++  </div>
 +</section>
 +<footer>
 +  <button id="add" type="button" data-t>Add an account</button>
@@ -7184,6 +9414,189 @@ index 0000000000000000000000000000000000000000..283cc6a7c50f2a8e96740fcf47815fef
 +  'A new tab': ['Una pestaña nueva', 'Un nouvel onglet', 'Einem neuen Tab', 'Uma nova guia', 'Новой вкладке'],
 +  'Accounts to watch': ['Cuentas que vigilar', 'Comptes à surveiller', 'Zu überwachende Konten', 'Contas a vigiar',
 +                        'Отслеживаемые аккаунты'],
++  'Of Gmail, count': ['De Gmail, contar', 'De Gmail, compter', 'Von Gmail zählen', 'Do Gmail, contar',
++                      'В Gmail считать'],
++  'The whole inbox': ['Toda la bandeja de entrada', 'Toute la boîte de réception', 'Den ganzen Posteingang',
++                      'Toda a caixa de entrada', 'Все входящие'],
++  'Only the Primary tab': ['Solo la pestaña Principal', "Seulement l'onglet Principale", 'Nur den Tab Allgemein',
++                           'Só a aba Principal', 'Только вкладку «Несортированные»'],
++  'The inbox and spam': ['La bandeja de entrada y el spam', 'La boîte de réception et le spam',
++                         'Den Posteingang und Spam', 'A caixa de entrada e o spam', 'Входящие и спам'],
++  'A mailbox added by address and password counts its whole inbox.': [
++    'Un buzón añadido con dirección y contraseña cuenta toda su bandeja de entrada.',
++    'Une boîte ajoutée par adresse et mot de passe compte toute sa boîte de réception.',
++    'Ein mit Adresse und Passwort hinzugefügtes Postfach zählt seinen ganzen Posteingang.',
++    'Uma caixa adicionada por endereço e senha conta toda a sua caixa de entrada.',
++    'Ящик, добавленный по адресу и паролю, считает все свои входящие.'],
++  'Spam': ['Spam', 'Spam', 'Spam', 'Spam', 'Спам'],
++  'Backup': ['Copia de seguridad', 'Sauvegarde', 'Sicherung', 'Backup', 'Резервная копия'],
++  'Accounts and backup...': ['Cuentas y copia de seguridad...', 'Comptes et sauvegarde...', 'Konten und Sicherung...',
++                             'Contas e backup...', 'Аккаунты и резервная копия...'],
++  'Passphrase: seals the file, and keeps the passwords in it safe': [
++    'Frase de contraseña: sella el archivo y protege las contraseñas que contiene',
++    'Phrase secrète : scelle le fichier et protège les mots de passe qu’il contient',
++    'Passphrase: versiegelt die Datei und schützt die Passwörter darin',
++    'Frase secreta: sela o arquivo e protege as senhas nele',
++    'Кодовая фраза: запечатывает файл и защищает пароли в нём'],
++  'Without a passphrase, put the passwords in the file as they are': [
++    'Sin frase de contraseña, guardar las contraseñas en el archivo tal cual',
++    'Sans phrase secrète, mettre les mots de passe en clair dans le fichier',
++    'Ohne Passphrase die Passwörter unverändert in die Datei schreiben',
++    'Sem frase secreta, colocar as senhas no arquivo como estão',
++    'Без кодовой фразы записать пароли в файл как есть'],
++  'Save a backup...': ['Guardar una copia...', 'Enregistrer une sauvegarde...', 'Sicherung speichern...',
++                       'Salvar um backup...', 'Сохранить копию...'],
++  'Read a backup...': ['Leer una copia...', 'Lire une sauvegarde...', 'Sicherung einlesen...', 'Ler um backup...',
++                       'Прочитать копию...'],
++  'Save it into your Google Drive folder, or any folder that is synced, to keep it in the cloud.': [
++    'Guárdala en tu carpeta de Google Drive, o en cualquier carpeta sincronizada, para tenerla en la nube.',
++    'Enregistrez-la dans votre dossier Google Drive, ou tout dossier synchronisé, pour la garder dans le cloud.',
++    'Speichern Sie sie in Ihrem Google-Drive-Ordner oder einem anderen synchronisierten Ordner, um sie in der Cloud zu behalten.',
++    'Salve-o na sua pasta do Google Drive, ou em qualquer pasta sincronizada, para mantê-lo na nuvem.',
++    'Сохраните её в папку Google Диска или в любую синхронизируемую папку, чтобы она была в облаке.'],
++  'A Google account': ['Una cuenta de Google', 'Un compte Google', 'Ein Google-Konto', 'Uma conta do Google',
++                       'Аккаунт Google'],
++  'Sign in with Google': ['Iniciar sesión con Google', 'Se connecter avec Google', 'Mit Google anmelden',
++                          'Entrar com o Google', 'Войти через Google'],
++  "Opens Google's own page. Thoron keeps no password.": [
++    'Abre la propia página de Google. Thoron no guarda ninguna contraseña.',
++    'Ouvre la page de Google. Thoron ne garde aucun mot de passe.',
++    'Öffnet Googles eigene Seite. Thoron speichert kein Passwort.',
++    'Abre a própria página do Google. O Thoron não guarda nenhuma senha.',
++    'Открывает страницу самого Google. Thoron не хранит пароль.'],
++  'A mailbox by address and password': ['Un buzón con dirección y contraseña',
++                                        'Une boîte par adresse et mot de passe',
++                                        'Ein Postfach mit Adresse und Passwort',
++                                        'Uma caixa por endereço e senha', 'Ящик по адресу и паролю'],
++  'Add by address and password...': ['Añadir con dirección y contraseña...',
++                                     'Ajouter par adresse et mot de passe...',
++                                     'Mit Adresse und Passwort hinzufügen...',
++                                     'Adicionar por endereço e senha...', 'Добавить по адресу и паролю...'],
++  'Email address': ['Dirección de correo', 'Adresse e-mail', 'E-Mail-Adresse', 'Endereço de e-mail',
++                    'Адрес электронной почты'],
++  'Password': ['Contraseña', 'Mot de passe', 'Passwort', 'Senha', 'Пароль'],
++  'Server': ['Servidor', 'Serveur', 'Server', 'Servidor', 'Сервер'],
++  'IMAP server': ['Servidor IMAP', 'Serveur IMAP', 'IMAP-Server', 'Servidor IMAP', 'Сервер IMAP'],
++  'Port': ['Puerto', 'Port', 'Port', 'Porta', 'Порт'],
++  'Sign-in name, if it is not the address': ['Nombre de inicio de sesión, si no es la dirección',
++                                             "Identifiant, s'il diffère de l'adresse",
++                                             'Anmeldename, falls nicht die Adresse',
++                                             'Nome de acesso, se não for o endereço',
++                                             'Имя для входа, если это не адрес'],
++  'The page its mail is read on (https, optional)': ['La página donde se lee su correo (https, opcional)',
++                                                     'La page où lire son courrier (https, facultatif)',
++                                                     'Die Seite, auf der die E-Mails gelesen werden (https, optional)',
++                                                     'A página onde o e-mail é lido (https, opcional)',
++                                                     'Страница для чтения почты (https, необязательно)'],
++  'Thoron signs in over a secure connection, only reads, and keeps the password encrypted by Windows.': [
++    'Thoron inicia sesión por una conexión segura, solo lee y guarda la contraseña cifrada por Windows.',
++    'Thoron se connecte par une liaison sécurisée, ne fait que lire et garde le mot de passe chiffré par Windows.',
++    'Thoron meldet sich über eine sichere Verbindung an, liest nur und speichert das Passwort von Windows verschlüsselt.',
++    'O Thoron entra por uma conexão segura, apenas lê e guarda a senha criptografada pelo Windows.',
++    'Thoron входит по защищённому соединению, только читает и хранит пароль зашифрованным средствами Windows.'],
++  'Add': ['Añadir', 'Ajouter', 'Hinzufügen', 'Adicionar', 'Добавить'],
++  'Cancel': ['Cancelar', 'Annuler', 'Abbrechen', 'Cancelar', 'Отмена'],
++  'Remove': ['Quitar', 'Retirer', 'Entfernen', 'Remover', 'Удалить'],
++  'Checking...': ['Comprobando...', 'Vérification...', 'Wird geprüft...', 'Verificando...', 'Проверка...'],
++  'Google accepts only an app password here, not your normal password: make one in your Google Account under Security, 2-Step Verification, App passwords.': [
++    'Google solo acepta aquí una contraseña de aplicación, no tu contraseña normal: créala en tu cuenta de Google, en Seguridad, Verificación en dos pasos, Contraseñas de aplicación.',
++    "Google n'accepte ici qu'un mot de passe d'application, pas votre mot de passe habituel : créez-en un dans votre compte Google, sous Sécurité, Validation en deux étapes, Mots de passe d'application.",
++    'Google akzeptiert hier nur ein App-Passwort, nicht Ihr normales Passwort: Erstellen Sie eines in Ihrem Google-Konto unter Sicherheit, Bestätigung in zwei Schritten, App-Passwörter.',
++    'O Google só aceita aqui uma senha de app, não a sua senha normal: crie uma na sua Conta do Google em Segurança, Verificação em duas etapas, Senhas de app.',
++    'Google принимает здесь только пароль приложения, а не обычный пароль: создайте его в аккаунте Google, раздел «Безопасность», «Двухэтапная аутентификация», «Пароли приложений».'],
++  'This service may ask for an app password, made in its account settings, instead of your normal password.': [
++    'Este servicio puede pedir una contraseña de aplicación, creada en los ajustes de su cuenta, en lugar de tu contraseña normal.',
++    "Ce service peut demander un mot de passe d'application, créé dans les paramètres du compte, au lieu de votre mot de passe habituel.",
++    'Dieser Dienst verlangt möglicherweise ein App-Passwort aus den Kontoeinstellungen statt Ihres normalen Passworts.',
++    'Este serviço pode pedir uma senha de app, criada nas configurações da conta, em vez da sua senha normal.',
++    'Этот сервис может требовать пароль приложения, созданный в настройках аккаунта, вместо обычного пароля.'],
++  'Microsoft no longer lets mail programs sign in to these accounts with a password. Open Outlook in the browser instead.': [
++    'Microsoft ya no permite que los programas de correo inicien sesión en estas cuentas con contraseña. Abre Outlook en el navegador.',
++    "Microsoft ne permet plus aux logiciels de messagerie de se connecter à ces comptes avec un mot de passe. Ouvrez Outlook dans le navigateur.",
++    'Microsoft lässt E-Mail-Programme sich bei diesen Konten nicht mehr mit einem Passwort anmelden. Öffnen Sie Outlook stattdessen im Browser.',
++    'A Microsoft não permite mais que programas de e-mail entrem nessas contas com senha. Abra o Outlook no navegador.',
++    'Microsoft больше не позволяет почтовым программам входить в эти аккаунты по паролю. Откройте Outlook в браузере.'],
++  'Proton Mail has no mailbox access of this kind without its Bridge app, which Thoron does not use yet.': [
++    'Proton Mail no ofrece este tipo de acceso sin su aplicación Bridge, que Thoron aún no usa.',
++    "Proton Mail n'offre pas ce type d'accès sans son application Bridge, que Thoron n'utilise pas encore.",
++    'Proton Mail bietet diesen Zugriff nur mit seiner Bridge-App, die Thoron noch nicht nutzt.',
++    'O Proton Mail não oferece esse tipo de acesso sem o app Bridge, que o Thoron ainda não usa.',
++    'Proton Mail не даёт такого доступа без приложения Bridge, которое Thoron пока не использует.'],
++  'The server refused the name or the password.': ['El servidor rechazó el nombre o la contraseña.',
++                                                   "Le serveur a refusé l'identifiant ou le mot de passe.",
++                                                   'Der Server hat den Namen oder das Passwort abgelehnt.',
++                                                   'O servidor recusou o nome ou a senha.',
++                                                   'Сервер отклонил имя или пароль.'],
++  'The server could not be reached.': ['No se pudo contactar con el servidor.', 'Le serveur est injoignable.',
++                                       'Der Server ist nicht erreichbar.', 'Não foi possível acessar o servidor.',
++                                       'Сервер недоступен.'],
++  "The server's answers could not be read.": ['No se pudieron leer las respuestas del servidor.',
++                                              "Les réponses du serveur n'ont pas pu être lues.",
++                                              'Die Antworten des Servers konnten nicht gelesen werden.',
++                                              'Não foi possível ler as respostas do servidor.',
++                                              'Ответы сервера не удалось прочитать.'],
++  'Check the address, the password, the server and the port.': [
++    'Comprueba la dirección, la contraseña, el servidor y el puerto.',
++    "Vérifiez l'adresse, le mot de passe, le serveur et le port.",
++    'Prüfen Sie Adresse, Passwort, Server und Port.', 'Verifique o endereço, a senha, o servidor e a porta.',
++    'Проверьте адрес, пароль, сервер и порт.'],
++  'This mailbox is already there.': ['Este buzón ya está.', 'Cette boîte est déjà là.',
++                                     'Dieses Postfach ist schon vorhanden.', 'Esta caixa já está aí.',
++                                     'Этот ящик уже добавлен.'],
++  'No more mailboxes can be added.': ['No se pueden añadir más buzones.', "Impossible d'ajouter d'autres boîtes.",
++                                      'Es können keine weiteren Postfächer hinzugefügt werden.',
++                                      'Não é possível adicionar mais caixas.', 'Больше ящиков добавить нельзя.'],
++  'Another mailbox is being added.': ['Se está añadiendo otro buzón.', "Une autre boîte est en cours d'ajout.",
++                                      'Ein anderes Postfach wird gerade hinzugefügt.',
++                                      'Outra caixa está sendo adicionada.', 'Сейчас добавляется другой ящик.'],
++  'Passwords cannot be kept yet. Try again in a moment.': [
++    'Aún no se pueden guardar contraseñas. Inténtalo de nuevo en un momento.',
++    "Les mots de passe ne peuvent pas encore être conservés. Réessayez dans un instant.",
++    'Passwörter können noch nicht gespeichert werden. Versuchen Sie es gleich noch einmal.',
++    'Ainda não é possível guardar senhas. Tente de novo em instantes.',
++    'Пароли пока нельзя сохранить. Повторите попытку чуть позже.'],
++  'Sign-in refused: its password may have changed. Remove it and add it again.': [
++    'Inicio de sesión rechazado: puede que su contraseña haya cambiado. Quítalo y añádelo de nuevo.',
++    'Connexion refusée : son mot de passe a peut-être changé. Retirez-la et ajoutez-la de nouveau.',
++    'Anmeldung abgelehnt: Das Passwort wurde vielleicht geändert. Entfernen Sie es und fügen Sie es neu hinzu.',
++    'Acesso recusado: a senha pode ter mudado. Remova e adicione de novo.',
++    'Вход отклонён: возможно, пароль изменился. Удалите ящик и добавьте его снова.'],
++  'Could not be reached at the last look.': ['No se pudo contactar en la última comprobación.',
++                                             'Injoignable lors de la dernière vérification.',
++                                             'Beim letzten Abruf nicht erreichbar.',
++                                             'Não foi possível acessar na última verificação.',
++                                             'При последней проверке недоступен.'],
++  'Saved, with the passwords sealed.': ['Guardada, con las contraseñas selladas.',
++                                        'Enregistrée, avec les mots de passe scellés.',
++                                        'Gespeichert, die Passwörter versiegelt.',
++                                        'Salvo, com as senhas seladas.', 'Сохранено, пароли запечатаны.'],
++  'Saved, with the passwords as they are: keep this file safe.': [
++    'Guardada, con las contraseñas tal cual: guarda este archivo en lugar seguro.',
++    'Enregistrée, avec les mots de passe en clair : gardez ce fichier en lieu sûr.',
++    'Gespeichert, mit den Passwörtern im Klartext: Bewahren Sie diese Datei sicher auf.',
++    'Salvo, com as senhas como estão: guarde este arquivo em segurança.',
++    'Сохранено, пароли записаны как есть: храните этот файл в надёжном месте.'],
++  'Saved, without the passwords.': ['Guardada, sin las contraseñas.', 'Enregistrée, sans les mots de passe.',
++                                    'Gespeichert, ohne die Passwörter.', 'Salvo, sem as senhas.',
++                                    'Сохранено, без паролей.'],
++  'This backup is sealed: type its passphrase above and read it again.': [
++    'Esta copia está sellada: escribe su frase de contraseña arriba y léela de nuevo.',
++    'Cette sauvegarde est scellée : saisissez sa phrase secrète ci-dessus et relisez-la.',
++    'Diese Sicherung ist versiegelt: Geben Sie oben ihre Passphrase ein und lesen Sie sie erneut ein.',
++    'Este backup está selado: digite a frase secreta acima e leia de novo.',
++    'Эта копия запечатана: введите её кодовую фразу выше и прочитайте снова.'],
++  'The passphrase does not open this backup.': ['La frase de contraseña no abre esta copia.',
++                                                "La phrase secrète n'ouvre pas cette sauvegarde.",
++                                                'Die Passphrase öffnet diese Sicherung nicht.',
++                                                'A frase secreta não abre este backup.',
++                                                'Кодовая фраза не открывает эту копию.'],
++  'This is not a backup of Thoron M-Notifier.': ['Esto no es una copia de Thoron M-Notifier.',
++                                                 "Ceci n'est pas une sauvegarde de Thoron M-Notifier.",
++                                                 'Das ist keine Sicherung von Thoron M-Notifier.',
++                                                 'Isto não é um backup do Thoron M-Notifier.',
++                                                 'Это не резервная копия Thoron M-Notifier.'],
++  'Read. Mailboxes now:': ['Leída. Buzones ahora:', 'Lue. Boîtes à présent :', 'Eingelesen. Postfächer jetzt:',
++                           'Lido. Caixas agora:', 'Прочитано. Ящиков теперь:'],
 +};
 +const AT = {es: 0, fr: 1, de: 2, pt: 3, ru: 4}[LANG];
 +const t = (text) => (AT === undefined || !ROWS[text] ? text : ROWS[text][AT]);
@@ -7216,8 +9629,11 @@ index 0000000000000000000000000000000000000000..283cc6a7c50f2a8e96740fcf47815fef
 +  if (message.isNew) {
 +    line.append(make('span', 'dot'));
 +  }
-+  line.append(make('span', 'from', message.from || message.fromEmail),
-+              make('span', 'when', message.issued ? ago(message.issued) : ''));
++  line.append(make('span', 'from', message.from || message.fromEmail));
++  if (message.spam) {
++    line.append(make('span', 'tag', t('Spam')));
++  }
++  line.append(make('span', 'when', message.issued ? ago(message.issued) : ''));
 +  button.append(line, make('div', 'subject', message.subject || '(no subject)'));
 +  if (message.snippet) {
 +    button.append(make('div', 'snippet', message.snippet));
@@ -7255,6 +9671,14 @@ index 0000000000000000000000000000000000000000..283cc6a7c50f2a8e96740fcf47815fef
 +    row.title = t('Open the inbox (the new mail is counted from then)');
 +    row.addEventListener('click', () => chrome.send('openInbox', [account.index]));
 +    row.append(make('span', 'face', (account.email || '?').slice(0, 1)), make('span', 'email', account.email));
++    if (account.problem) {
++      // a mailbox the last look could not read
++      const warn = make('span', 'warn', '!');
++      warn.title = t(account.problem === 'sign-in' ?
++          'Sign-in refused: its password may have changed. Remove it and add it again.' :
++          'Could not be reached at the last look.');
++      row.append(warn);
++    }
 +    if (account.new) {
 +      row.append(make('span', 'count new', String(account.new)));
 +    }
@@ -7301,8 +9725,196 @@ index 0000000000000000000000000000000000000000..283cc6a7c50f2a8e96740fcf47815fef
 +    box.checked = account.watched;
 +    box.addEventListener('change', () => chrome.send('setWatched', [account.email, box.checked]));
 +    label.append(box, make('span', '', account.email));
-+    watch.append(label);
++    const row = make('div', 'watch-row');
++    row.append(label);
++    if (account.imap) {
++      // a mailbox added by address and password can be taken out again
++      const remove = make('button', '', t('Remove'));
++      remove.type = 'button';
++      remove.addEventListener('click', () => chrome.send('removeImapAccount', [account.email]));
++      row.append(remove);
++    }
++    watch.append(row);
 +  }
++}
++
++// --- A mailbox by address and password (P5.77) ---
++// What is known of the mail services people use: the server, the page the mail is read on, and what to tell
++// about the password. `blocked`: the service takes no password from a mail program.
++const SERVICES = [
++  {match: /@(gmail|googlemail)\.com$/, host: 'imap.gmail.com', hint: 'google',
++   webmail: (email) => `https://mail.google.com/mail/?authuser=${encodeURIComponent(email)}`},
++  {match: /@(yahoo|ymail|rocketmail)\.[a-z.]+$/, host: 'imap.mail.yahoo.com', hint: 'app',
++   webmail: () => 'https://mail.yahoo.com/'},
++  {match: /@aol\.com$/, host: 'imap.aol.com', hint: 'app', webmail: () => 'https://mail.aol.com/'},
++  {match: /@(icloud|me|mac)\.com$/, host: 'imap.mail.me.com', hint: 'app',
++   webmail: () => 'https://www.icloud.com/mail'},
++  {match: /@(outlook|hotmail|live|msn)\.[a-z.]+$/, blocked: 'microsoft'},
++  {match: /@(proton|protonmail)\.(me|com|ch)$|@pm\.me$/, blocked: 'proton'},
++  {match: /@gmx\.[a-z.]+$/, host: 'imap.gmx.com', webmail: () => 'https://www.gmx.com/'},
++  {match: /@(mail|inbox|list|bk)\.ru$/, host: 'imap.mail.ru', hint: 'app',
++   webmail: () => 'https://e.mail.ru/inbox/'},
++  {match: /@(yandex|ya)\.[a-z.]+$/, host: 'imap.yandex.com', hint: 'app',
++   webmail: () => 'https://mail.yandex.com/'},
++  {match: /@zoho\.[a-z.]+$/, host: 'imap.zoho.com', webmail: () => 'https://mail.zoho.com/'},
++  {match: /@fastmail\.[a-z.]+$/, host: 'imap.fastmail.com', hint: 'app',
++   webmail: () => 'https://app.fastmail.com/'},
++];
++const HINTS = {
++  google: 'Google accepts only an app password here, not your normal password: make one in your Google Account ' +
++      'under Security, 2-Step Verification, App passwords.',
++  app: 'This service may ask for an app password, made in its account settings, instead of your normal password.',
++  microsoft: 'Microsoft no longer lets mail programs sign in to these accounts with a password. Open Outlook in ' +
++      'the browser instead.',
++  proton: 'Proton Mail has no mailbox access of this kind without its Bridge app, which Thoron does not use yet.',
++};
++const ADD_ERRORS = {
++  'sign-in': 'The server refused the name or the password.',
++  'offline': 'The server could not be reached.',
++  'protocol': "The server's answers could not be read.",
++  'too-much': "The server's answers could not be read.",
++  'bad': 'Check the address, the password, the server and the port.',
++  'exists': 'This mailbox is already there.',
++  'full': 'No more mailboxes can be added.',
++  'busy': 'Another mailbox is being added.',
++  'locked': 'Passwords cannot be kept yet. Try again in a moment.',
++};
++
++function serviceOf(email) {
++  const address = email.trim().toLowerCase();
++  return SERVICES.find((service) => service.match.test(address)) || null;
++}
++
++// The server and the mail page follow the address, until the person writes their own.
++const typed = new Set();
++function fillFromAddress() {
++  const email = $('imap-email').value.trim();
++  const service = serviceOf(email);
++  const domain = email.includes('@') ? email.slice(email.lastIndexOf('@') + 1).toLowerCase() : '';
++  if (!typed.has('imap-host')) {
++    $('imap-host').value = service ? (service.host || '') : (domain ? `imap.${domain}` : '');
++  }
++  if (!typed.has('imap-webmail')) {
++    $('imap-webmail').value = service && service.webmail ? service.webmail(email) : '';
++  }
++  const hint = service ? (service.blocked || service.hint) : '';
++  $('imap-hint').textContent = hint ? t(HINTS[hint]) : '';
++  $('imap-add').disabled = !!(service && service.blocked);
++  $('imap-error').textContent = '';
++}
++
++async function addMailbox() {
++  const email = $('imap-email').value.trim();
++  $('imap-error').textContent = '';
++  $('imap-add').disabled = true;
++  $('imap-add').textContent = t('Checking...');
++  let error = 'bad';
++  try {
++    error = await sendWithPromise('addImapAccount', {
++      email,
++      password: $('imap-password').value,
++      host: $('imap-host').value.trim(),
++      port: Number($('imap-port').value) || 993,
++      user: $('imap-user').value.trim(),
++      webmail: $('imap-webmail').value.trim(),
++    });
++  } catch {
++    // the window went away
++  }
++  $('imap-add').textContent = t('Add');
++  $('imap-add').disabled = false;
++  if (error) {
++    const service = serviceOf(email);
++    $('imap-error').textContent = t(ADD_ERRORS[error] || ADD_ERRORS.bad);
++    if (error === 'sign-in' && service && service.hint) {
++      $('imap-hint').textContent = t(HINTS[service.hint]);
++    }
++    return;
++  }
++  // added: the form is emptied, the password first
++  for (const id of ['imap-password', 'imap-email', 'imap-host', 'imap-user', 'imap-webmail']) {
++    $(id).value = '';
++  }
++  typed.clear();
++  $('imap-port').value = '993';
++  $('imap-hint').textContent = '';
++  showAddPanel(false);
++  refresh();
++}
++
++// --- The M-Notifier's own page (a tab) and its backup (P5.77) ---
++// In a tab the page shows everything at once; the menu shows one part at a time.
++const PAGE = location.hash.startsWith('#manage');
++
++function showAddPanel(open) {
++  $('add-panel').hidden = !open;
++  if (!PAGE) {
++    $('accounts').hidden = open;
++    $('settings').hidden = true;
++    $('gear').setAttribute('aria-pressed', 'false');
++  }
++  $('imap-form').hidden = !PAGE;
++  $('imap-bubble').hidden = PAGE;
++  if (open && PAGE) {
++    $('imap-email').focus();
++  }
++}
++
++async function saveBackup() {
++  const pass = $('backup-pass').value;
++  const plain = $('backup-plain').checked;
++  let text = '';
++  try {
++    text = await sendWithPromise('exportBackup', plain, pass);
++  } catch {
++    return;
++  }
++  if (!text) {
++    return;
++  }
++  const name = pass ? 'thoron-m-notifier-backup.thoron' : 'thoron-m-notifier-backup.json';
++  const said = pass ? 'Saved, with the passwords sealed.' :
++      plain ? 'Saved, with the passwords as they are: keep this file safe.' : 'Saved, without the passwords.';
++  try {
++    if (window.showSaveFilePicker) {
++      // the person chooses where: their Google Drive folder, for one
++      const handle = await window.showSaveFilePicker({suggestedName: name});
++      const file = await handle.createWritable();
++      await file.write(text);
++      await file.close();
++    } else {
++      const link = make('a');
++      link.href = URL.createObjectURL(new Blob([text], {type: 'application/json'}));
++      link.download = name;
++      link.click();
++      setTimeout(() => URL.revokeObjectURL(link.href), 10000);
++    }
++    $('backup-state').textContent = t(said);
++  } catch {
++    // the person closed the dialog
++  }
++}
++
++async function readBackup(file) {
++  if (!file || file.size > 4 * 1024 * 1024) {
++    $('backup-state').textContent = t('This is not a backup of Thoron M-Notifier.');
++    return;
++  }
++  let answer = {error: 'bad', accounts: 0};
++  try {
++    answer = await sendWithPromise('importBackup', await file.text(), $('backup-pass').value);
++  } catch {
++    return;
++  }
++  const errors = {
++    passphrase: 'This backup is sealed: type its passphrase above and read it again.',
++    wrong: 'The passphrase does not open this backup.',
++    bad: 'This is not a backup of Thoron M-Notifier.',
++    locked: 'Passwords cannot be kept yet. Try again in a moment.',
++  };
++  $('backup-state').textContent =
++      answer.error ? t(errors[answer.error] || errors.bad) : `${t('Read. Mailboxes now:')} ${answer.accounts}`;
++  refresh();
 +}
 +
 +function show(next) {
@@ -7334,9 +9946,42 @@ index 0000000000000000000000000000000000000000..283cc6a7c50f2a8e96740fcf47815fef
 +  const open = $('settings').hidden;
 +  $('settings').hidden = !open;
 +  $('accounts').hidden = open;
++  $('add-panel').hidden = true;
 +  $('gear').setAttribute('aria-pressed', String(open));
 +});
-+$('add').addEventListener('click', () => chrome.send('addAccount'));
++// "Add an account" opens the two ways to add one
++$('add').addEventListener('click', () => showAddPanel($('add-panel').hidden));
++$('add-google').addEventListener('click', () => chrome.send('addAccount'));
++// the form is on the M-Notifier's own page: a menu closes when another window is used (a password manager)
++$('add-mailbox').addEventListener('click', () => chrome.send('openManage', [true]));
++$('manage').addEventListener('click', () => chrome.send('openManage', [false]));
++$('imap-email').addEventListener('input', fillFromAddress);
++for (const id of ['imap-host', 'imap-webmail']) {
++  $(id).addEventListener('input', () => typed.add(id));
++}
++$('imap-add').addEventListener('click', addMailbox);
++$('imap-cancel').addEventListener('click', () => {
++  $('imap-password').value = '';
++  showAddPanel(false);
++});
++$('imap-password').addEventListener('keydown', (event) => {
++  if (event.key === 'Enter' && !$('imap-add').disabled) {
++    addMailbox();
++  }
++});
++$('export').addEventListener('click', saveBackup);
++$('import').addEventListener('click', () => $('import-file').click());
++$('import-file').addEventListener('change', () => {
++  readBackup($('import-file').files[0]);
++  $('import-file').value = '';
++});
++if (PAGE) {
++  document.body.classList.add('page');
++  $('settings').hidden = false;
++  $('backup').hidden = false;
++  showAddPanel(location.hash === '#manage-add');
++  addEventListener('hashchange', () => showAddPanel(location.hash === '#manage-add'));
++}
 +$('notify').addEventListener('change', () => chrome.send('setNotify', [$('notify').checked]));
 +$('sound').addEventListener('change', () => chrome.send('setChoice', ['sound', $('sound').checked ? 'on' : 'off']));
 +$('messages').addEventListener(
@@ -7403,10 +10048,10 @@ index 0000000000000000000000000000000000000000..529372e73e8bc78edd93e438e343ad21
 +#endif  // COMPONENTS_THORON_MAIL_MAIL_PAGE_H_
 diff --git a/components/thoron_mail/mail_service.cc b/components/thoron_mail/mail_service.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..2f560ee0d417e2dbe4bb2d83b816f985d9c99fa3
+index 0000000000000000000000000000000000000000..11da171978792276f2c344624d42389c9958c900
 --- /dev/null
 +++ b/components/thoron_mail/mail_service.cc
-@@ -0,0 +1,437 @@
+@@ -0,0 +1,580 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -7426,7 +10071,9 @@ index 0000000000000000000000000000000000000000..2f560ee0d417e2dbe4bb2d83b816f985
 +#include "services/data_decoder/public/mojom/xml_parser.mojom.h"
 +#include "services/network/public/cpp/resource_request.h"
 +#include "services/network/public/cpp/shared_url_loader_factory.h"
++#include "base/task/sequenced_task_runner.h"
 +#include "services/network/public/cpp/simple_url_loader.h"
++#include "services/network/public/mojom/network_context.mojom.h"
 +#include "services/network/public/mojom/url_response_head.mojom.h"
 +#include "url/origin.h"
 +
@@ -7454,6 +10101,8 @@ index 0000000000000000000000000000000000000000..2f560ee0d417e2dbe4bb2d83b816f985
 +    {"open", {"reuse", "new", nullptr}},
 +    // P5.78: the menu lists the messages, or only the accounts and counts
 +    {"messages", {"off", "on", nullptr}},
++    // P5.77: of a Google account's mail, what is counted
++    {"which", {"inbox", "primary", "all"}},
 +    {"place", {"toolbar", "address", "both"}},
 +    {"toolbar-position", {"extensions", "address", "menu"}},
 +    {"address-position", {"icons", "start", "end"}},
@@ -7683,9 +10332,34 @@ index 0000000000000000000000000000000000000000..2f560ee0d417e2dbe4bb2d83b816f985
 +  observers_.Notify(&Observer::OnMailChanged);
 +}
 +
-+GURL MailService::FeedUrl(int index) const {
-+  const std::string path =
-+      "mail/u/" + base::NumberToString(index) + "/feed/atom";
++void MailService::SetContextGetter(ContextGetter context) {
++  context_ = std::move(context);
++}
++
++void MailService::SetImapAccounts(std::vector<ImapAccount> accounts) {
++  if (accounts.size() > kMostImapAccounts) {
++    accounts.resize(kMostImapAccounts);
++  }
++  imap_ = std::move(accounts);
++  if (!started_) {
++    return;
++  }
++  if (checking_) {
++    look_again_ = true;
++  } else {
++    CheckNow();
++  }
++}
++
++GURL MailService::FeedUrl(int index, bool spam) const {
++  // Gmail's feed of unread mail: of the inbox as it is, of one label after
++  // it. The inbox's Primary tab is the label "^sq_ig_i_personal".
++  std::string path = "mail/u/" + base::NumberToString(index) + "/feed/atom";
++  if (spam) {
++    path += "/spam";
++  } else if (Choice("which") == "primary" && !primary_refused_) {
++    path += "/%5Esq_ig_i_personal";
++  }
 +  const std::string base =
 +      base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
 +          kFeedsForTesting);
@@ -7709,12 +10383,14 @@ index 0000000000000000000000000000000000000000..2f560ee0d417e2dbe4bb2d83b816f985
 +  }
 +  timer_.Stop();
 +  checking_ = true;
++  look_again_ = false;
++  primary_refused_ = false;
 +  next_.clear();
 +  observers_.Notify(&Observer::OnMailChanged);
-+  Fetch(0);
++  Fetch(0, /*spam=*/false);
 +}
 +
-+void MailService::Fetch(int index) {
++void MailService::Fetch(int index, bool spam) {
 +  scoped_refptr<network::SharedURLLoaderFactory> factory =
 +      factory_ ? factory_.Run() : nullptr;
 +  if (!factory) {
@@ -7722,7 +10398,7 @@ index 0000000000000000000000000000000000000000..2f560ee0d417e2dbe4bb2d83b816f985
 +    return;
 +  }
 +  auto request = std::make_unique<network::ResourceRequest>();
-+  request->url = FeedUrl(index);
++  request->url = FeedUrl(index, spam);
 +  request->method = "GET";
 +  // as Gmail's own page asks: the profile's sign-in for mail.google.com
 +  request->credentials_mode = network::mojom::CredentialsMode::kInclude;
@@ -7738,54 +10414,155 @@ index 0000000000000000000000000000000000000000..2f560ee0d417e2dbe4bb2d83b816f985
 +  loader_->DownloadToString(
 +      factory.get(),
 +      base::BindOnce(&MailService::OnFetched, weak_factory_.GetWeakPtr(),
-+                     index),
++                     index, spam),
 +      kMostBytes);
 +}
 +
-+void MailService::OnFetched(int index, std::optional<std::string> body) {
++void MailService::OnFetched(int index,
++                            bool spam,
++                            std::optional<std::string> body) {
 +  const int status = loader_ && loader_->ResponseInfo() &&
 +                             loader_->ResponseInfo()->headers
 +                         ? loader_->ResponseInfo()->headers->response_code()
 +                         : 0;
 +  const int net_error = loader_ ? loader_->NetError() : 0;
 +  loader_.reset();
++  if (spam && (!body || status != 200)) {
++    // the spam could not be read: the account is counted without it
++    AfterAccount(index, /*spam_done=*/true);
++    return;
++  }
++  if ((!body || status != 200) && Choice("which") == "primary" &&
++      !primary_refused_ && (status == 400 || status == 404)) {
++    // Gmail does not know the Primary tab's label here: the whole inbox
++    primary_refused_ = true;
++    Fetch(index, /*spam=*/false);
++    return;
++  }
 +  if (!body || status != 200) {
-+    // The first account that is not there ends the look. No account at all:
-+    // signed out (401 or a page to sign in), or the network.
++    // The first account that is not there ends the Google accounts. None at
++    // all: signed out (401 or a page to sign in), or the network.
 +    std::string problem;
 +    if (next_.empty()) {
 +      problem = status == 401 || status == 302 || status == 403 ? "signed-out"
 +                : status == 0 && net_error != 0                 ? "offline"
 +                                                                : "error";
 +    }
-+    Finish(std::move(problem));
++    CheckImap(0, std::move(problem));
 +    return;
 +  }
 +  data_decoder::DataDecoder::ParseXmlIsolated(
 +      *body, data_decoder::mojom::XmlParser::WhitespaceBehavior::kIgnore,
-+      base::BindOnce(&MailService::OnParsed, weak_factory_.GetWeakPtr(),
-+                     index));
++      base::BindOnce(&MailService::OnParsed, weak_factory_.GetWeakPtr(), index,
++                     spam));
 +}
 +
 +void MailService::OnParsed(int index,
++                           bool spam,
 +                           data_decoder::DataDecoder::ValueOrError result) {
 +  std::optional<MailAccount> account =
 +      result.has_value() ? AccountFromFeed(*result, index) : std::nullopt;
++  if (spam) {
++    // the account's spam, added to what its inbox has: newest first
++    if (account && !next_.empty() && next_.back().email == account->email) {
++      MailAccount& into = next_.back();
++      into.unread += account->unread;
++      for (MailMessage& message : account->latest) {
++        message.spam = true;
++        into.latest.push_back(std::move(message));
++      }
++      std::ranges::stable_sort(into.latest, [](const MailMessage& a,
++                                               const MailMessage& b) {
++        return a.issued > b.issued;
++      });
++      if (into.latest.size() > 20) {
++        into.latest.resize(20);
++      }
++    }
++    AfterAccount(index, /*spam_done=*/true);
++    return;
++  }
 +  // Gmail answers an index past the last account with the first one again
 +  const bool again = account && std::ranges::any_of(
 +                                    next_, [&](const MailAccount& known) {
 +                                      return known.email == account->email;
 +                                    });
 +  if (!account || again) {
-+    Finish(!next_.empty() ? std::string() : "signed-out");
++    CheckImap(0, !next_.empty() ? std::string() : "signed-out");
 +    return;
 +  }
 +  next_.push_back(std::move(*account));
-+  if (index + 1 >= kMostAccounts) {
-+    Finish(std::string());
++  AfterAccount(index, /*spam_done=*/false);
++}
++
++void MailService::AfterAccount(int index, bool spam_done) {
++  if (!spam_done && Choice("which") == "all") {
++    Fetch(index, /*spam=*/true);
 +    return;
 +  }
-+  Fetch(index + 1);
++  if (index + 1 >= kMostAccounts) {
++    CheckImap(0, std::string());
++    return;
++  }
++  Fetch(index + 1, /*spam=*/false);
++}
++
++void MailService::CheckImap(size_t at, std::string problem) {
++  // The network is away (the Google accounts could not be asked): the
++  // mailboxes are not tried either, and what the last look found stays.
++  network::mojom::NetworkContext* context =
++      context_ && at < imap_.size() && problem != "offline" &&
++              problem != "error"
++          ? context_.Run()
++          : nullptr;
++  if (!context) {
++    // Signed out of Google is no problem of a look that has mailboxes.
++    Finish(problem == "signed-out" &&
++                   std::ranges::any_of(next_, &MailAccount::imap)
++               ? std::string()
++               : std::move(problem));
++    return;
++  }
++  imap_check_ = std::make_unique<ImapCheck>(
++      context, imap_[at],
++      base::BindOnce(&MailService::OnImapChecked, weak_factory_.GetWeakPtr(),
++                     at, std::move(problem)));
++}
++
++void MailService::OnImapChecked(size_t at,
++                                std::string problem,
++                                ImapCheck::Result result) {
++  // the look at this mailbox is over (this runs from inside it)
++  std::unique_ptr<ImapCheck> finished = std::move(imap_check_);
++  base::SequencedTaskRunner::GetCurrentDefault()->DeleteSoon(
++      FROM_HERE, std::move(finished));
++  if (at < imap_.size()) {
++    MailAccount account;
++    account.index = kFirstImapIndex + static_cast<int>(at);
++    account.email = imap_[at].email;
++    account.imap = true;
++    account.webmail = imap_[at].webmail;
++    account.problem = result.problem;
++    if (result.problem.empty()) {
++      account.unread = result.unread;
++      account.latest = std::move(result.latest);
++    } else {
++      // a look that failed keeps what the last one found
++      for (const MailAccount& known : accounts_) {
++        if (known.imap && known.email == account.email) {
++          account.unread = known.unread;
++          account.latest = known.latest;
++        }
++      }
++    }
++    // an address is shown once: a Google account of the same name stays
++    if (std::ranges::none_of(next_, [&](const MailAccount& known) {
++          return known.email == account.email;
++        })) {
++      next_.push_back(std::move(account));
++    }
++  }
++  CheckImap(at + 1, std::move(problem));
 +}
 +
 +void MailService::Finish(std::string problem) {
@@ -7797,15 +10574,21 @@ index 0000000000000000000000000000000000000000..2f560ee0d417e2dbe4bb2d83b816f985
 +    accounts_ = std::move(next_);
 +    std::map<std::string, std::set<std::string>> seen;
 +    for (const MailAccount& account : accounts_) {
++      // An account that was not there at the last look (just added, or just
++      // signed in to) is only learned: what it has is not new mail.
++      const bool known_account = seen_.contains(account.email);
 +      std::set<std::string>& known = seen_[account.email];
 +      std::vector<MailMessage> fresh;
++      // remembered also while it has no unread mail
++      std::set<std::string>& now = seen[account.email];
 +      for (const MailMessage& message : account.latest) {
 +        if (!known.contains(message.id)) {
 +          fresh.push_back(message);
 +        }
-+        seen[account.email].insert(message.id);
++        now.insert(message.id);
 +      }
-+      if (first_look_done_ && !fresh.empty() && watched(account.email)) {
++      if (first_look_done_ && known_account && !fresh.empty() &&
++          watched(account.email)) {
 +        observers_.Notify(&Observer::OnNewMail, account, fresh);
 +      }
 +    }
@@ -7835,6 +10618,11 @@ index 0000000000000000000000000000000000000000..2f560ee0d417e2dbe4bb2d83b816f985
 +  }
 +  next_.clear();
 +  observers_.Notify(&Observer::OnMailChanged);
++  if (look_again_) {
++    // the mailboxes changed meanwhile
++    CheckNow();
++    return;
++  }
 +  Reschedule();
 +}
 +
@@ -7846,10 +10634,10 @@ index 0000000000000000000000000000000000000000..2f560ee0d417e2dbe4bb2d83b816f985
 +}  // namespace thoron_mail
 diff --git a/components/thoron_mail/mail_service.h b/components/thoron_mail/mail_service.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..a2a56b7ab705600b965476a769d04d3b2d8a149a
+index 0000000000000000000000000000000000000000..e086ff248354b26a39e5a4f3b3ea8046619e85be
 --- /dev/null
 +++ b/components/thoron_mail/mail_service.h
-@@ -0,0 +1,154 @@
+@@ -0,0 +1,188 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -7871,8 +10659,10 @@ index 0000000000000000000000000000000000000000..a2a56b7ab705600b965476a769d04d3b
 +#include "base/observer_list_types.h"
 +#include "base/time/time.h"
 +#include "base/timer/timer.h"
++#include "components/thoron_mail/imap_check.h"
 +#include "components/thoron_mail/mail_feed.h"
 +#include "services/data_decoder/public/cpp/data_decoder.h"
++#include "services/network/public/mojom/network_context.mojom-forward.h"
 +#include "url/gurl.h"
 +
 +class PrefService;
@@ -7897,6 +10687,12 @@ index 0000000000000000000000000000000000000000..a2a56b7ab705600b965476a769d04d3b
 + public:
 +  using FactoryGetter =
 +      base::RepeatingCallback<scoped_refptr<network::SharedURLLoaderFactory>()>;
++  // The profile's network context, for the mailboxes added by address and
++  // password (P5.77).
++  using ContextGetter =
++      base::RepeatingCallback<network::mojom::NetworkContext*()>;
++  // The most mailboxes added by address and password.
++  static constexpr size_t kMostImapAccounts = 20;
 +
 +  class Observer : public base::CheckedObserver {
 +   public:
@@ -7925,6 +10721,12 @@ index 0000000000000000000000000000000000000000..a2a56b7ab705600b965476a769d04d3b
 +  void Start();
 +  // Looks now, unless a look is under way.
 +  void CheckNow();
++
++  // P5.77: the mailboxes added by address and password, looked at after the
++  // browser's Google accounts. Setting them looks again.
++  void SetContextGetter(ContextGetter context);
++  void SetImapAccounts(std::vector<ImapAccount> accounts);
++  const std::vector<ImapAccount>& imap_accounts() const { return imap_; }
 +
 +  const std::vector<MailAccount>& accounts() const { return accounts_; }
 +  // The unread messages of every watched account.
@@ -7962,6 +10764,8 @@ index 0000000000000000000000000000000000000000..a2a56b7ab705600b965476a769d04d3b
 +  // accounts with their counts, "off", as X-notifier), "count" (the icon counts
 +  // "new" mail since the person looked, or all "unread"), "open" (mail opens
 +  // in the account's Gmail tab when one is open, "reuse", or a "new" tab),
++  // "which" (P5.77: of a Google account's mail, the whole "inbox" is counted,
++  // only its "primary" tab, or "all": the inbox and the spam),
 +  // "place" (the envelope in the "toolbar", the "address" bar, or "both"),
 +  // "toolbar-position" ("extensions", "address", "menu") and
 +  // "address-position" ("icons", "start", "end"), as Thoron adblock's shield.
@@ -7969,15 +10773,25 @@ index 0000000000000000000000000000000000000000..a2a56b7ab705600b965476a769d04d3b
 +  std::string Choice(const std::string& name) const;
 +  bool SetChoice(const std::string& name, const std::string& value);
 +
-+  // Gmail's address of the feed of account `index`.
-+  GURL FeedUrl(int index) const;
++  // Gmail's address of the feed of account `index`: of what the person chose
++  // to count, or of its spam.
++  GURL FeedUrl(int index, bool spam = false) const;
 +  // Gmail's inbox of account `index`.
 +  static GURL InboxUrl(int index);
 +
 + private:
-+  void Fetch(int index);
-+  void OnFetched(int index, std::optional<std::string> body);
-+  void OnParsed(int index, data_decoder::DataDecoder::ValueOrError result);
++  void Fetch(int index, bool spam);
++  void OnFetched(int index, bool spam, std::optional<std::string> body);
++  void OnParsed(int index,
++                bool spam,
++                data_decoder::DataDecoder::ValueOrError result);
++  // After Google account `index`: its spam when that is counted too, the
++  // next account, or the mailboxes added by address and password.
++  void AfterAccount(int index, bool spam_done);
++  // The mailboxes added by address and password, one after the other; then
++  // the look is over. `problem` is that of the Google accounts.
++  void CheckImap(size_t at, std::string problem);
++  void OnImapChecked(size_t at, std::string problem, ImapCheck::Result result);
 +  void Finish(std::string problem);
 +  void Reschedule();
 +  // when the person last looked at `email` (the first look's time until then)
@@ -7997,6 +10811,14 @@ index 0000000000000000000000000000000000000000..a2a56b7ab705600b965476a769d04d3b
 +  base::Time last_check_;
 +  std::string problem_;
 +  std::unique_ptr<network::SimpleURLLoader> loader_;
++  ContextGetter context_;
++  std::vector<ImapAccount> imap_;
++  std::unique_ptr<ImapCheck> imap_check_;
++  // Gmail refused the feed of the Primary tab in this look: the inbox's is
++  // read instead.
++  bool primary_refused_ = false;
++  // the mailboxes changed during a look: it is done again right after
++  bool look_again_ = false;
 +  base::OneShotTimer timer_;
 +  base::WeakPtrFactory<MailService> weak_factory_{this};
 +};

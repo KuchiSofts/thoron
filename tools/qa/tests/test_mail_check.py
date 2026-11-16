@@ -52,6 +52,25 @@ class StepTests(unittest.TestCase):
         self.assertTrue(mc.alerts_problems(first, quiet, {"sounds": 2, "notices": 1}))
         self.assertTrue(mc.alerts_problems(first, quiet, {"sounds": 1, "notices": 0}))
 
+    def test_which(self):
+        def state(unread, latest=()):
+            return {"accounts": [account("alice@example.com", unread, list(latest))]}
+        spam = [{"subject": "Winner", "spam": True}, {"subject": "Prize", "spam": True}, {"subject": "Hello"}]
+        self.assertEqual(mc.which_problems(state(1), state(7, spam), state(5), state(5, [{"subject": "Hello"}])), [])
+        self.assertEqual(len(mc.which_problems(state(5), state(5), state(1), state(7, spam))), 4)
+
+    def test_a_label_s_feed(self):
+        import urllib.request
+        with mc.Gmail() as gmail:
+            gmail.answers[0] = (200, "inbox")
+            gmail.labels[(0, mc.PRIMARY)] = (200, "primary")
+            base = f"http://127.0.0.1:{gmail.port}/mail/u/0/feed/atom"
+            read = lambda url: urllib.request.urlopen(url, timeout=5).read().decode()
+            self.assertEqual(read(base), "inbox")
+            self.assertEqual(read(base + "/%5Esq_ig_i_personal"), "primary")
+            with self.assertRaises(urllib.error.HTTPError):
+                read(base + "/spam")
+
     def test_seen(self):
         seen = {"accounts": [account("alice@example.com", 4, [{}, {}, {}], new=0)], "totalNew": 0}
         self.assertEqual(mc.seen_problems(seen), [])

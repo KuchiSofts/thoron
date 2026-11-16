@@ -2218,6 +2218,61 @@ response's body. Thoron is the browser, so it does it for every page:
   drag the check tells the test browser's own input thread that the button is held, since the browser asks
   Windows, and no other program sees it) and `adblock_icon_check.py` (the shield's places, size and menu).
 
+### 12.71 Mailboxes by address and password, what is counted, a backup (P5.77, 2026-11-16)
+
+- **Why (the owner):** "allow me to add users and passwords, so I am not limited to the Google accounts
+  signed in"; "change whether it shows only new messages in Primary, or with the others, and with spam"; "save
+  and back up the list to Google Drive, export to JSON or to an encrypted file with a password".
+- **A mailbox by address and password** is looked at over IMAP, the protocol mail programs use
+  (`thoron_mail::ImapCheck`). One look: connect over TLS, sign in (SASL PLAIN, or LOGIN where a server has no
+  other way), open the inbox read-only, count its unread messages, read the sender and the subject of the
+  newest 20 without marking them (`BODY.PEEK`), sign out. Nothing in the mailbox is changed.
+  - **The connection** is the network service's (`ProxyResolvingSocketFactory`, TLS on, the server's
+    certificate checked as for any site), so the person's proxy settings hold and the browser process parses no
+    TLS. A look ends after 30 seconds at the latest.
+  - **What the server sends is read in Rust** (`imap.rs`): a state machine that is given the bytes and says
+    what to send; C++ only carries bytes. A look takes 2 MB at most and 64 KB for one message's headers; a
+    server that sends more ends it. Words outside ASCII (RFC 2047) are decoded there and turned into text by
+    ICU for the charsets a message names. 13 unit tests: a whole look, both ways to sign in, a refused
+    password, a refused inbox, an inbox without unread mail, too much data, a dropped connection, dates, folded
+    headers, addresses, encoded words, literals.
+  - **The password** is typed into Thoron's own page, sent once to the browser process, and kept in the
+    profile encrypted by the system (os_crypt: on Windows a key only this Windows account can use), next to the
+    address, the server and the port (`thoron_mail.imap_accounts`). It is never given back to a page, never
+    written as it is, never logged; in memory it is overwritten once sent. A mailbox is signed in to once before
+    it is kept, so a wrong password is told at once.
+  - **Which services:** any with IMAP over TLS and a password. Known by name (server and mail page filled in):
+    Gmail (Google takes only an "app password" here, and says so in its account settings; the page tells the
+    person), Yahoo, AOL, iCloud, GMX, Mail.ru, Yandex, Zoho, Fastmail; any other by `imap.<its domain>` or the
+    server the person names. **Not possible this way:** Outlook, Hotmail and Live (Microsoft takes no password
+    from a mail program any more; it needs Microsoft's own sign-in and an application registered with
+    Microsoft) and Proton Mail (only through its Bridge program). The page says so instead of failing.
+  - A mailbox that could not be read keeps the counts of the last look that could, and shows why ("sign-in
+    refused", "could not be reached").
+- **What of Gmail is counted** (the browser's Google accounts): the whole inbox (as before), only its Primary
+  tab (Gmail's feed of the label `^sq_ig_i_personal`; where Gmail does not know it, the inbox), or the inbox
+  and spam (the spam's feed is read too, its messages marked "Spam"). A mailbox added by address and password
+  counts its whole inbox.
+- **An account that is new to the M-Notifier is only learned:** what it has at its first look is not new mail
+  and makes no sound.
+- **The M-Notifier's own page** (`chrome://mail-notifier.top-chrome/#manage`, opened in a tab from the menu):
+  the accounts, every setting, the form for a mailbox, and the backup. A menu closes when another window is
+  used (a password manager); a tab does not.
+- **The backup** (`thoron_mail::SealBackup`, `OpenBackup`): the mailboxes and the settings as one file. With a
+  passphrase it is sealed and holds the passwords: scrypt (N 32768, r 8, p 1) makes the key, AES-256-GCM seals
+  the backup's JSON, bound to this kind of file, so a wrong passphrase and a changed file both simply do not
+  open. Without a passphrase it is plain JSON and holds no password unless the person asks. Read back, it
+  brings the mailboxes and settings (each checked as when a person sets it); a mailbox without its password in
+  the file keeps the one it has here, or is left out. The file is saved where the person chooses (a folder
+  that is synced, Google Drive's for one, keeps it in the cloud). Thoron does not sign in to Google Drive
+  itself: it has no Google API keys by design.
+- **Checked** by `tools/qa/mail_imap_check.py` (a local stand-in mail server; a switch that takes only a
+  loopback address sends every look there in plain text): a refused password, a mailbox added and read with
+  its words decoded, the password nowhere in the profile's files as it is nor given to the page, new mail and
+  its sound, the count reset, a restart, and the backup (sealed, bare, with passwords; the mailbox removed and
+  brought back; a wrong passphrase, none, and a changed file refused), and by `tools/qa/mail_check.py` (what of
+  Gmail is counted).
+
 ## 13. Credits
 
 The procedural operators and the rest of the filter syntax are uBlock Origin's (with forms from Adblock

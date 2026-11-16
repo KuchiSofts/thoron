@@ -12,7 +12,7 @@ before it is at the top of the [roadmap](https://github.com/KuchiSofts/thoron/bl
 - [Updates](Updates)
 - [Import and default browser](Import-and-default-browser)
 - [Ad blocking](Ad-blocking)
-- [Mail notifier](Mail-notifier)
+- [Thoron M-Notifier](Mail-notifier)
 - [Privacy and security](Privacy-and-security)
 - [Versions](Versions)
 - [Building from source](Building-from-source)

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be found in the LICENSE file.
-"""Thoron's mail notifier, checked end to end and offline (ROADMAP P5.75).
+"""Thoron M-Notifier, Thoron's mail notifier, checked end to end and offline (ROADMAP P5.75, P5.76).
 
 The notifier reads Gmail's feed of unread mail (mail.google.com/mail/u/N/feed/atom) of every Google account the
 profile is signed in to. Here a local server stands in for Gmail (the browser is told so with a switch only a
@@ -8,8 +8,12 @@ local server is accepted for), with made-up accounts; nothing leaves the PC and 
 notifier's menu is opened as a tab and asked for what it shows. Steps:
 
     accounts  the two accounts the server has are found, each with its unread count and newest messages, and
-              the third address (no account there) ends the look
-    new       a message the server adds is found at the next look, and the count goes up
+              the third address (no account there) ends the look; what was there at the first look is not new,
+              and the settings have their defaults
+    new       a message the server adds is found at the next look: the unread count goes up and it is new
+    seen      the account's inbox opened from the menu: its new mail is counted from then (0 new, still unread)
+    settings  a setting changes (and a value it does not know is refused), and an account not watched is not
+              counted
     links     a message whose link leads off Gmail is shown without the link
     out       an answer of 401 for the first account (no sign-in) is told as "signed-out", with no account
     broken    a feed that is not XML leaves the notifier working (no account, no crash), and it reads the next
@@ -36,13 +40,21 @@ from tools.qa.cdp import WebSocket  # noqa: E402
 
 MENU_URL = "chrome://mail-notifier.top-chrome/"
 LOOK_S = 4.0
+DEFAULT_CHOICES = {"sound": "on", "count": "new", "open": "reuse", "place": "toolbar",
+                   "toolbar-position": "extensions", "address-position": "icons"}
 
 
-def entry(n: int, subject: str, link: str = "") -> str:
+def now_utc() -> str:
+    """A time a moment from now, as Gmail's feed writes it: mail that came after the first look."""
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() + 2))
+
+
+def entry(n: int, subject: str, link: str = "", when: str = "") -> str:
     link = link or f"http://mail.google.com/mail/u/0?account_id=a&amp;message_id={n}&amp;view=conv&amp;extsrc=atom"
+    when = when or f"2026-11-15T10:0{n}:00Z"
     return (f"<entry><title>{subject}</title><summary>Snippet {n}</summary>"
             f'<link rel="alternate" href="{link}" type="text/html" />'
-            f"<modified>2026-11-15T10:0{n}:00Z</modified><issued>2026-11-15T10:0{n}:00Z</issued>"
+            f"<modified>{when}</modified><issued>{when}</issued>"
             f"<id>tag:gmail.google.com,2004:{1000 + n}</id>"
             f"<author><name>Sender {n}</name><email>sender{n}@example.com</email></author></entry>")
 
@@ -101,6 +113,10 @@ def accounts_problems(state: dict) -> list[str]:
     latest = state.get("accounts", [{}])[0].get("latest", []) if state.get("accounts") else []
     if latest and (latest[0].get("from") != "Sender 1" or not latest[0].get("link", "").startswith("https://")):
         out.append(f"accounts: the first message reads {latest[0]}")
+    if state.get("totalNew") != 0 or any(a.get("new") for a in state.get("accounts", [])):
+        out.append(f"accounts: mail there at the first look counts as new ({state.get('totalNew')})")
+    if state.get("choices") != DEFAULT_CHOICES:
+        out.append(f"accounts: the settings are {state.get('choices')}, not {DEFAULT_CHOICES}")
     return out
 
 
@@ -108,7 +124,35 @@ def new_problems(state: dict) -> list[str]:
     accounts = state.get("accounts", [])
     if not accounts or accounts[0]["unread"] != 4 or len(accounts[0]["latest"]) != 3:
         return [f"new: after a new message, {[(a['email'], a['unread'], len(a['latest'])) for a in accounts]}"]
+    marks = [bool(m.get("isNew")) for m in accounts[0]["latest"]]
+    if accounts[0].get("new") != 1 or state.get("totalNew") != 1 or marks != [True, False, False]:
+        return [f"new: {accounts[0].get('new')} new ({state.get('totalNew')} in all), marked {marks}, not 1 and "
+                "[True, False, False]"]
     return []
+
+
+def seen_problems(state: dict) -> list[str]:
+    accounts = state.get("accounts", [])
+    if not accounts or accounts[0].get("new") != 0 or state.get("totalNew") != 0 or accounts[0]["unread"] != 4:
+        found = [(a["email"], a.get("new"), a["unread"]) for a in accounts]
+        return [f"seen: after the inbox was opened, (address, new, unread) {found}, not 0 new and 4 unread"]
+    return []
+
+
+def settings_problems(changed: dict, refused: dict, unwatched: dict, back: dict) -> list[str]:
+    out = []
+    want = dict(DEFAULT_CHOICES, place="address", count="unread")
+    if changed.get("choices") != want:
+        out.append(f"settings: after a change they are {changed.get('choices')}, not {want}")
+    if refused.get("choices") != want:
+        out.append(f"settings: a value not known changed them to {refused.get('choices')}")
+    first = (unwatched.get("accounts") or [{}])[0]
+    if first.get("watched") is not False or unwatched.get("total") != 0 or unwatched.get("totalNew") != 0:
+        out.append(f"settings: an account not watched: watched {first.get('watched')}, total "
+                   f"{unwatched.get('total')}, not False and 0")
+    if back.get("choices") != DEFAULT_CHOICES or back.get("total") != 4:
+        out.append(f"settings: put back, they are {back.get('choices')} with {back.get('total')} unread")
+    return out
 
 
 def links_problems(state: dict) -> list[str]:
@@ -156,11 +200,14 @@ def run(browser: Path, work: Path) -> list[str]:
             ws = WebSocket(_open(port, MENU_URL)["webSocketDebuggerUrl"])
             time.sleep(3)
 
+            def read() -> dict:
+                reply = ws.call("Runtime.evaluate", expression=GET_STATE, awaitPromise=True, returnByValue=True)
+                return json.loads(reply.get("result", {}).get("value") or "{}")
+
             def look() -> dict:
                 ws.call("Runtime.evaluate", expression="chrome.send('checkNow'); 1")
                 time.sleep(LOOK_S)
-                reply = ws.call("Runtime.evaluate", expression=GET_STATE, awaitPromise=True, returnByValue=True)
-                return json.loads(reply.get("result", {}).get("value") or "{}")
+                return read()
 
             def step(name: str, found: list[str], state: dict) -> None:
                 print(f"{'PASS' if not found else 'FAIL'}  {name}: "
@@ -174,9 +221,30 @@ def run(browser: Path, work: Path) -> list[str]:
             state = look()
             step("accounts", accounts_problems(state), state)
 
-            gmail.answers[0] = (200, feed("alice@example.com", 4, [entry(3, "New one")] + alice))
+            gmail.answers[0] = (200, feed("alice@example.com", 4, [entry(3, "New one", when=now_utc())] + alice))
+            time.sleep(2.5)  # the new message came after the first look
             state = look()
             step("new", new_problems(state), state)
+
+            # the address pressed in the menu: its inbox opens (a tab that goes nowhere here: no network)
+            ws.call("Runtime.evaluate", expression="chrome.send('openInbox', [0]); 1")
+            time.sleep(1)
+            state = read()
+            step("seen", seen_problems(state), state)
+
+            def send(name: str, *args) -> dict:
+                ws.call("Runtime.evaluate", expression=f"chrome.send({json.dumps(name)}, {json.dumps(list(args))}); 1")
+                time.sleep(0.5)
+                return read()
+
+            send("setChoice", "place", "address")
+            changed = send("setChoice", "count", "unread")
+            refused = send("setChoice", "place", "nowhere")
+            unwatched = send("setWatched", "alice@example.com", False)
+            send("setWatched", "alice@example.com", True)
+            send("setChoice", "place", "toolbar")
+            back = send("setChoice", "count", "new")
+            step("settings", settings_problems(changed, refused, unwatched, back), back)
 
             gmail.answers[0] = (200, feed("alice@example.com", 1, [entry(4, "Elsewhere", "https://ads.example.test/x")]))
             state = look()

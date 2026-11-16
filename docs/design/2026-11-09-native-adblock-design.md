@@ -2068,6 +2068,40 @@ response's body. Thoron is the browser, so it does it for every page:
   accepted for) with made-up accounts: two accounts found, a new message, a link off Gmail dropped, no sign-in,
   and a feed that is not XML. Outlook/Hotmail, Yahoo and Proton Mail come next.
 
+### 12.65 Thoron M-Notifier: where it is, new mail since you looked, its settings (P5.76, 2026-11-16)
+
+- **Why (the owner):** call it "Thoron M-Notifier"; the same settings as X-notifier; next to the address bar or
+  in it, with a position, as Thoron adblock's shield; opening an account's mailbox resets its new-mail counter;
+  spam is not counted; smooth, with no memory leak. The owner also asked to add a Gmail address with its
+  password: Thoron does not take or keep Google passwords (Google signs a person in only on its own page, and a
+  password kept by the browser is one more thing to steal). **Add an account** opens Google's own sign-in, and
+  the account is found from then on.
+- **New mail since you looked:** each account remembers when its inbox was last opened from the M-Notifier (its
+  address, **Open inbox**, or a notice; `thoron_mail.looked`, by address, at most 50). A message is new when it
+  came after that; an account seen for the first time starts from that moment, so what was there before is not
+  new, and mail that comes while Thoron is closed is new at the next start. Opening the inbox counts from then:
+  the account shows 0 new and still its unread count. The icon counts the new mail (or all unread mail, a
+  setting); new messages have a red dot in the menu.
+- **Spam:** the count is Gmail's feed of the inbox, so spam, trash and archived mail are never counted.
+- **Settings** (the menu's gear; one pref each, `thoron_mail.<name>`, a value it does not know is the default):
+  where (next to the address bar, in it, or both), where in the toolbar (right after the address bar, after the
+  extensions, next to the menu), where in the address bar (with the other icons, before them, at the far end),
+  what the icon counts (new or unread), how often it looks (1 to 30 minutes), notices of new mail and their
+  sound, where mail opens (the account's open Gmail tab or a new tab), and which accounts are watched (one not
+  watched is listed, but not counted and not told of; `thoron_mail.ignored`).
+- **Two envelopes, one menu code:** `ThoronMailButton` (the toolbar, moved where its position says as the
+  shield is) and `ThoronMailAddressIcon` (the address bar, laid out by `LocationBarView::Layout`, as large as its
+  other icons) draw the same envelope and open the same menu (`ThoronMailMenu`, a kept page shown at once).
+  Both follow the settings as soon as they change.
+- **No leak, smooth:** each envelope observes the service with a scoped observation (it ends with the view);
+  timers are one-shot and stop with their owner; the remembered times keep only the accounts there are (50 at
+  most); a look is one request at a time; the menu draws with the browser's own elements, no HTML strings.
+- **Checked** by `tools/qa/mail_check.py`: also that what was there at the first look is not new, a new
+  message counts and is marked, opening the inbox resets the count, a setting changes and an unknown value is
+  refused, and an account not watched is not counted; `tools/qa/mail_place_check.py` (a window off the
+  screen, Windows UI Automation): the envelope in the toolbar, the address bar or both, what it says as mail
+  comes and the inbox is opened, and each position.
+
 ## 13. Credits
 
 The procedural operators and the rest of the filter syntax are uBlock Origin's (with forms from Adblock

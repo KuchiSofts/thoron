@@ -6,7 +6,7 @@
 
 **A fast, secure and private browser for Windows, based on Thorium and Chromium.**
 
-[![Status](https://img.shields.io/badge/status-pre--release-F72F8E?style=flat-square)](#roadmap) <!-- progress-badge:start -->[![Roadmap progress](https://img.shields.io/badge/roadmap-49%25-7B2FF7?style=flat-square)](#roadmap)<!-- progress-badge:end --> [![Platforms](https://img.shields.io/badge/platforms-Windows%20first-24292f?style=flat-square)](#platforms) [![CPU](https://img.shields.io/badge/cpu-x64%20%7C%20ARM64-24292f?style=flat-square)](#platforms) [![License](https://img.shields.io/badge/license-BSD--3--Clause-24292f?style=flat-square)](LICENSE.md)
+[![Status](https://img.shields.io/badge/status-pre--release-F72F8E?style=flat-square)](#roadmap) <!-- progress-badge:start -->[![Roadmap progress](https://img.shields.io/badge/roadmap-50%25-7B2FF7?style=flat-square)](#roadmap)<!-- progress-badge:end --> [![Platforms](https://img.shields.io/badge/platforms-Windows%20first-24292f?style=flat-square)](#platforms) [![CPU](https://img.shields.io/badge/cpu-x64%20%7C%20ARM64-24292f?style=flat-square)](#platforms) [![License](https://img.shields.io/badge/license-BSD--3--Clause-24292f?style=flat-square)](LICENSE.md)
 
 [Why Thoron](#why-thoron) · [Features](#features) · [Install and update](#install-and-update) · [Versions](#versions) · [Roadmap](#roadmap) · [Platforms](#platforms) · [Verify](#verifying-downloads) · [Security](#security) · [Contributing](#contributing) · [Credits](#credits) · [Wiki](https://github.com/KuchiSofts/thoron/wiki)
 
@@ -47,7 +47,7 @@ Thoron is in active development. These are the headline features on the roadmap:
 | **Import from your browser** | Brings over **open tabs and tab groups** (names, colours, pinned tabs), bookmarks, history, passwords, settings and extensions from Thorium, Chrome, Edge, Brave, Vivaldi, Opera and later Firefox. Your old browser is never modified. | [P3](ROADMAP.md#p3---updater-v1--import) |
 | **A first run that moves you in** | On first start Thoron offers to import from the browsers it finds and to become your default browser. Both are offers: nothing is taken over silently. | [P3](ROADMAP.md#p3---updater-v1--import) |
 | **Thoron adblock** | On by default: a blocker inside the browser itself that reads the same lists as uBlock Origin and does everything it does, faster and lighter (about 5 % faster per page on real sites, with the same blocking). A new profile no longer gets uBlock Origin; a profile that has it keeps it, and the menu says when both run. Its lists and your own rules are on `chrome://adblock`, and its menu switches it off and on at any time, for every site or one site, with no relaunch. Its shield sits in the address bar, in the toolbar, or in both, as you choose. It also keeps pop-up ads and pages its lists name as harmful from opening. | [P5](ROADMAP.md#p5---quality) |
-| **Mail notifier** | The unread Gmail of every Google account you are signed in to, in the toolbar, with a notice for new mail. It uses Thoron's own sign-in: no password is asked for or kept. Outlook, Yahoo and Proton Mail are next. | [P5](ROADMAP.md#p5---quality) |
+| **Thoron M-Notifier** | The new and unread Gmail of every Google account you are signed in to, next to the address bar or in it, with a notice for new mail. Opening an account's inbox resets its count; spam is never counted. It uses Thoron's own sign-in: no password is asked for or kept. Outlook, Yahoo and Proton Mail are next. | [P5](ROADMAP.md#p5---quality) |
 | **Protected portable mode** | Saved passwords and cookies in the portable version are encrypted with your passphrase, so they work on any PC and stay safe if the folder is lost. | [P4](ROADMAP.md#p4---updater-v2) |
 | **Right build, automatically** | The installer picks the fastest build your CPU supports (AVX2, SSE4 or ARM64). | [P4](ROADMAP.md#p4---updater-v2) |
 | **Measured performance** | Every release is benchmarked (Speedometer, JetStream, MotionMark, startup, memory, idle CPU). A regression blocks the release. | [Q track](ROADMAP.md#quality--performance-q) |
@@ -78,7 +78,7 @@ changed in each version is in the [changelog](CHANGELOG.md), one line per change
 Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always current.
 
 <!-- roadmap:start -->
-**Overall:** `██████████░░░░░░░░░░` 101 of 205 tasks done (49%) · roadmap updated 2026-11-12
+**Overall:** `██████████░░░░░░░░░░` 102 of 206 tasks done (50%) · roadmap updated 2026-11-12
 
 | Area | Progress | Done | Status |
 |---|---|---|---|
@@ -88,7 +88,7 @@ Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always curre
 | [P2b - ARM64](ROADMAP.md#p2b---arm64) | `░░░░░░░░░░░░░░░░░░░░` | 0/5 | ⬜ Not started |
 | [P3 - Updater v1 + Import](ROADMAP.md#p3---updater-v1--import) | `░░░░░░░░░░░░░░░░░░░░` | 0/21 | ⬜ Not started |
 | [P4 - Updater v2](ROADMAP.md#p4---updater-v2) | `░░░░░░░░░░░░░░░░░░░░` | 0/11 | ⬜ Not started |
-| [P5 - Quality](ROADMAP.md#p5---quality) | `████████████████░░░░` | 60/76 | 🔄 In progress |
+| [P5 - Quality](ROADMAP.md#p5---quality) | `████████████████░░░░` | 61/77 | 🔄 In progress |
 | [Security (S)](ROADMAP.md#security-s) | `██████████░░░░░░░░░░` | 8/16 | 🔄 In progress |
 | [Quality & performance (Q)](ROADMAP.md#quality--performance-q) | `███░░░░░░░░░░░░░░░░░` | 1/7 | 🔄 In progress |
 | [Docs (D)](ROADMAP.md#docs-d) | `████████░░░░░░░░░░░░` | 4/10 | 🔄 In progress |
@@ -285,7 +285,8 @@ Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always curre
 - [x] **P5.73** Thoron adblock, the shield drawn on the line of the icons next to it, its position in the toolbar and the address bar with a preview, flags and country names for the regional lists, lists suggested for the browser's languages, finding a list or a setting
 - [x] **P5.74** Thoron adblock's own shield (Thoron's T, a look for each state), and Windows Security prompts (Windows Hello, the PIN) brought in front of the browser
 - [x] **P5.75** Thoron's mail notifier, Gmail and Google Workspace: the unread mail of every Google account the profile is signed in to, from Gmail's own feed with the profile's sign-in (no password), parsed in a sandbox; an envelope with the count, a menu per account, notices of new mail
-- [ ] **P5.76** Mail notifier for Outlook/Hotmail, Yahoo and Proton Mail, with the person's own sign-in where the service allows it
+- [x] **P5.76** Thoron M-Notifier: the name; next to the address bar or in it (or both), with a position, as Thoron adblock's shield; new mail counted since the person last opened the account's inbox (the counter resets there), spam never counted; X-notifier's settings (what the icon counts, how often, notices and their sound, where mail opens, the accounts watched)
+- [ ] **P5.77** Thoron M-Notifier for Outlook/Hotmail, Yahoo and Proton Mail, with the person's own sign-in where the service allows it
 - [ ] **P5.30** Native ad blocking, a page in Settings that a person can work with: one switch for the blocker; the filter lists with a checkbox each; add a list by its address and remove it again; "My filters", the person's own rules in the syntax of the lists; the sites where blocking is off
 
 **Security (S)**

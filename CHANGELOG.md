@@ -96,6 +96,9 @@ Explanations live in the design docs under `docs/design/`.
 - **QA tools:** `windows_security_check.py` checks that with a stand-in window, off the screen.
 - **Mail:** Thoron's own mail notifier: unread Gmail of every signed-in Google account in the toolbar, with notices of new mail and no password.
 - **QA tools:** `mail_check.py` checks the notifier against a local stand-in for Gmail.
+- **Mail:** the mail notifier is now Thoron M-Notifier: next to the address bar or in it, where you choose.
+- **Mail:** Thoron M-Notifier counts new mail since you last opened the account's inbox, and never spam; it has its own settings (what it counts, how often, notices and their sound, where mail opens, which accounts).
+- **QA tools:** `mail_place_check.py` checks where the M-Notifier's envelope is and what it says.
 - **QA tools:** `thoron_adblock_engine_fuzzer`, coverage-guided fuzzing of the ad blocking engine with libFuzzer; `adblock_breakage.py` measures pages beyond the home page and load times on the real network; `adblock_handover_check.py` checks the built-in blocker on by default and the hand-over from uBlock Origin.
 - **Version:** Thoron has its own version, 0.1.1, on the About page, `chrome://version` and in Windows.
 - **Ad blocking:** checks worker and service worker scripts and imports, and blocks WebSockets to hosts the lists block.

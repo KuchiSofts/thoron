@@ -83,7 +83,9 @@ WEAK_KEYS = frozenset(bytes.fromhex(text) for text in (
 ))
 
 OSES = ("win", "linux")
-CPUS = {"x64": ("avx2", "sse4"), "arm64": ("armv8",)}
+# avx512 is opt-in (ROADMAP P5.11): in the schema from the start, because a reader refuses a variant it does
+# not know, so one added after the first release would make every older updater refuse the manifest
+CPUS = {"x64": ("avx2", "sse4", "avx512"), "arm64": ("armv8",)}
 VARIANTS = tuple(f"{os_}-{arch}-{cpu}" for os_ in OSES for arch, cpus in CPUS.items() for cpu in cpus)
 KINDS = ("installed", "portable")
 TOP_KEYS = ("channel", "chromium_version", "critical", "expires", "min_updater_version", "packages",
@@ -265,7 +267,7 @@ def _packages(out: list, packages, version, hosts) -> None:
     for variant, kinds in packages.items():
         where = f"packages/{_shown(variant)}"
         if variant not in VARIANTS:
-            out.append(f"{where}: unknown variant (known: {', '.join(VARIANTS)})")
+            out.append(f"{where}: unknown variant (the names are in MANIFEST.md, section 4)")
             continue
         if type(kinds) is not dict or not kinds:
             out.append(f"{where}: must be an object with installed, portable or both")
@@ -505,8 +507,11 @@ class Decision:
     detail: str                         # the reason, in words, for the log
     manifest: dict | None = None        # the content, only when the manifest is the channel's current one
     remember_serial: int | None = None  # to store as the highest serial accepted, when not None
-    full: dict | None = None            # with UPDATE: the full package (url, size, sha256)
-    delta: dict | None = None           # with UPDATE: the delta from the installed version, if there is one
+    full: dict | None = None            # with UPDATE: the full package (url, size, sha256); with
+                                        # UPDATER_TOO_OLD too, when the release has a package for this copy:
+                                        # the old updater fetches it and hands the apply to the updater in it
+    delta: dict | None = None           # with UPDATE only: the delta from the installed version, if there is
+                                        # one; an updater that is too old never applies a delta
 
     @property
     def cannot_verify(self) -> bool:
@@ -565,10 +570,12 @@ def decide(data: dict, *, channel: str, installed: str, updater: str, variant: s
                         "older is ever installed", data, serial)
     if ver.key(version) == installed_key:
         return Decision(UP_TO_DATE, f"{version} is installed and is the newest release", data, serial)
-    if updater_key < ver.key(data["min_updater_version"]):
-        return Decision(UPDATER_TOO_OLD, f"{version} needs an updater of {data['min_updater_version']} or "
-                        f"later; this one is {updater}", data, serial)
     package = data["packages"].get(variant, {}).get(kind)
+    if updater_key < ver.key(data["min_updater_version"]):
+        # P4.6: this updater may not apply the release, so it fetches the whole package and the updater in it
+        # applies it (the old one never runs a delta or the swap)
+        return Decision(UPDATER_TOO_OLD, f"{version} needs an updater of {data['min_updater_version']} or "
+                        f"later; this one is {updater}", data, serial, package["full"] if package else None)
     if package is None:
         return Decision(NO_PACKAGE, f"{version} has no {kind} package for {variant}", data, serial)
     return Decision(UPDATE, f"{version} (Thoron {data['thoron_version']}) replaces {installed}", data, serial,

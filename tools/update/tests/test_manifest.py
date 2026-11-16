@@ -332,8 +332,8 @@ class SchemaTests(unittest.TestCase):
                 self.assertEqual(mf.problems(data, HOSTS), ["a manifest is one JSON object"])
 
     def test_the_variants_are_names_the_release_script_takes(self):
-        self.assertEqual(mf.VARIANTS, ("win-x64-avx2", "win-x64-sse4", "win-arm64-armv8",
-                                       "linux-x64-avx2", "linux-x64-sse4", "linux-arm64-armv8"))
+        self.assertEqual(mf.VARIANTS, ("win-x64-avx2", "win-x64-sse4", "win-x64-avx512", "win-arm64-armv8",
+                                       "linux-x64-avx2", "linux-x64-sse4", "linux-x64-avx512", "linux-arm64-armv8"))
         for variant in mf.VARIANTS:
             self.assertTrue(release._VARIANT.match(variant), variant)
 
@@ -730,7 +730,8 @@ class DecisionTests(unittest.TestCase):
         self.assertIn(decision.outcome, mf.OUTCOMES)
         self.assertTrue(decision.detail)
         if decision.outcome != mf.UPDATE:
-            self.assertIsNone(decision.full)
+            if decision.outcome != mf.UPDATER_TOO_OLD:      # P4.6: that one may carry the full package
+                self.assertIsNone(decision.full)
             self.assertIsNone(decision.delta)
         return decision
 
@@ -826,6 +827,13 @@ class DecisionTests(unittest.TestCase):
         self.assertFalse(decision.cannot_verify)
         self.assertEqual(decision.remember_serial, SERIAL)
         self.assertIn("needs an updater of 158.0.8127.3000 or later", decision.detail)
+        # P4.6: the full package comes with it, for the updater inside it to apply; never a delta
+        self.assertEqual(decision.full, self.decide().full)
+        self.assertIsNotNone(decision.full)
+        self.assertIsNone(decision.delta)
+        self.assertIsNone(self.decide(updater="158.0.8127.2999", variant="linux-x64-avx2").full)
+        self.assertEqual(self.decide(updater="158.0.8127.2999", variant="linux-x64-avx2").outcome,
+                         mf.UPDATER_TOO_OLD)
         self.assertEqual(self.decide(updater=OLD).outcome, mf.UPDATE)
         self.assertEqual(self.decide(installed=NEW, updater="1.0.0.0").outcome, mf.UP_TO_DATE)   # nothing to apply
 
@@ -1226,7 +1234,12 @@ class CommandLineTests(unittest.TestCase):
                 code, out, _ = self.run_tool(*argv)
                 self.assertEqual(code, 1)
                 self.assertIn(f"manifest: {outcome}:", out)
-                self.assertNotIn("package https", out)
+                # P4.6: an old updater is shown the full package, for the updater in it; never a delta
+                if outcome == "updater_too_old":
+                    self.assertIn("full package https", out)
+                    self.assertNotIn("delta", out.split("updater_too_old:", 1)[1])
+                else:
+                    self.assertNotIn("package https", out)
 
     def test_sign_refuses_what_is_not_valid_or_goes_back(self):
         previous = self.manifest.with_name("previous.json")

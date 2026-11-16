@@ -12031,10 +12031,10 @@ index 0000000000000000000000000000000000000000..114da93bd0ffd20dab18a7fedbee7897
 +]
 diff --git a/components/thoron_update/README.md b/components/thoron_update/README.md
 new file mode 100644
-index 0000000000000000000000000000000000000000..85a3547cd843dc9509b1040e2228b7e45d9a2d2b
+index 0000000000000000000000000000000000000000..21f34cdb33b7fb1a8ebfe7e7ba777d8a99a6d9da
 --- /dev/null
 +++ b/components/thoron_update/README.md
-@@ -0,0 +1,142 @@
+@@ -0,0 +1,153 @@
 +# thoron_update
 +
 +The core of Thoron's updater (ROADMAP P3.3): what a copy of Thoron makes of the two files a release
@@ -12074,7 +12074,7 @@ index 0000000000000000000000000000000000000000..85a3547cd843dc9509b1040e2228b7e4
 +| `kNotYetValid` | Dated after the clock | Cannot verify, with a hint to check the date and time |
 +| `kExpired` | Too old to show what the newest release is | Cannot verify |
 +| `kDowngrade` | Names a version below the installed one | Cannot verify |
-+| `kUpdaterTooOld` | A newer release this updater may not apply | Its own message |
++| `kUpdaterTooOld` | A newer release this updater may not apply | Installs like an update when the decision has the full package: the updater inside it applies the release (P4.6); else its own message |
 +| `kNoPackage` | A newer release with nothing for this variant and kind | Its own message |
 +| `kInvalidCopy` | The caller's own values make no sense; the files were not looked at | Error |
 +
@@ -12106,6 +12106,7 @@ index 0000000000000000000000000000000000000000..85a3547cd843dc9509b1040e2228b7e4
 +
 +    thoron_update --root <program folder> --status
 +    thoron_update --root <program folder> --apply <staged folder> --version <v> --files <files.json>
++        [--handed-off]
 +    thoron_update --root <program folder> --rollback
 +    thoron_update --root <program folder> --mode [auto|notify|off]
 +    thoron_update --check --manifest <update.json> --signature <update.json.sig> --public-key <base64>
@@ -12114,6 +12115,16 @@ index 0000000000000000000000000000000000000000..85a3547cd843dc9509b1040e2228b7e4
 +
 +`files.json` is a list of `{"path", "size", "sha256"}`, one for each file of the version, with `/` between
 +the parts of a path. `--check` reads the two files of a release as they were fetched.
++
++**The release's own updater applies the release (P4.6).** When the staged folder holds `thoron_update.exe`,
++`--apply` copies it into the program folder as `thoron_update.handoff.exe` (the staged folder is renamed
++during the swap, so nothing may run from it), checks the copy's length and SHA-256 against its entry in
++`files.json`, and runs it with the same command line and `--handed-off`; that one applies the release and
++its output and exit code are passed on, after the line `handed off to the updater of <version>`. A copy that
++does not match its entry is never started: the apply ends with exit 12 and the staged folder goes. So an
++updater below a release's `min_updater_version` only fetches, checks and unpacks the package (`--check`
++then names its full package, never a delta), and never runs the swap of a release it may not apply.
++`tools/qa/updater_handoff_check.py` checks this with the real program.
 +
 +| Exit code | Meaning |
 +|---|---|
@@ -12127,7 +12138,7 @@ index 0000000000000000000000000000000000000000..85a3547cd843dc9509b1040e2228b7e4
 +| 15 | `--rollback`: there is no version before the current one |
 +| 20 | `--check`: a newer release for this copy; the downloads follow `full:` and `delta:` |
 +| 21 | `--check`: the release cannot be verified (signature, form, channel, replay, dates, downgrade) |
-+| 22 | `--check`: a newer release that this updater may not apply |
++| 22 | `--check`: a newer release that this updater may not apply; `full:` names the package whose updater applies it, when there is one |
 +| 23 | `--check`: a newer release with nothing for this variant and kind |
 +
 +The modes: `auto` downloads and installs, and the new version starts with the next start; `notify` says a
@@ -12179,10 +12190,10 @@ index 0000000000000000000000000000000000000000..85a3547cd843dc9509b1040e2228b7e4
 +of the spec ("A signature to test against") is among them, under its own throwaway key.
 diff --git a/components/thoron_update/cli.cc b/components/thoron_update/cli.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..c0017516bac102eee47f0baf0351074da4b32d38
+index 0000000000000000000000000000000000000000..face74bf1417726dd73424964f122ff9950a14b7
 --- /dev/null
 +++ b/components/thoron_update/cli.cc
-@@ -0,0 +1,258 @@
+@@ -0,0 +1,328 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -12198,10 +12209,12 @@ index 0000000000000000000000000000000000000000..c0017516bac102eee47f0baf0351074d
 +#include "base/files/file_util.h"
 +#include "base/files/important_file_writer.h"
 +#include "base/json/json_reader.h"
++#include "base/process/launch.h"
 +#include "base/strings/string_number_conversions.h"
 +#include "base/strings/string_util.h"
 +#include "base/time/time.h"
 +#include "base/values.h"
++#include "build/build_config.h"
 +#include "components/thoron_update/package.h"
 +#include "components/thoron_update/swap.h"
 +
@@ -12344,7 +12357,76 @@ index 0000000000000000000000000000000000000000..c0017516bac102eee47f0baf0351074d
 +  }
 +}
 +
++// --apply, by the updater of the release when the staged folder has one.
++int Apply(const base::CommandLine& command, const base::FilePath& root, std::string* out) {
++  const std::optional<BuildVersion> version = ParseBuildVersion(Arg(command, "version"));
++  const std::optional<std::vector<VersionFile>> files =
++      ReadFiles(command.GetSwitchValuePath("files"));
++  if (!version || !files) {
++    *out += "--version or --files is missing or wrong\n";
++    return kExitUsage;
++  }
++  const base::FilePath staged = command.GetSwitchValuePath("apply");
++  const std::optional<VersionFile> updater = UpdaterEntry(*files);
++  if (updater && !command.HasSwitch("handed-off")) {
++    const base::FilePath copy = root.AppendASCII(kHandOffFile);
++    base::DeleteFile(copy);
++    if (!CopyCheckedUpdater(staged, *updater, copy)) {
++      // As for any other bad files: the staged folder goes (when a version
++      // starts in the folder; see CleanUp).
++      CleanUp(root);
++      *out += "the updater of " + ToString(*version) + " is not the one its files name\n";
++      return FromSwap(SwapResult::kBadFiles, out);
++    }
++    base::CommandLine next(copy);
++    for (const auto& [name, value] : command.GetSwitches()) {
++      next.AppendSwitchNative(name, value);
++    }
++    next.AppendSwitch("handed-off");
++    *out += "handed off to the updater of " + ToString(*version) + "\n";
++    std::string said;
++    int code = kExitIoError;
++    const bool ran = base::GetAppOutputWithExitCode(next, &said, &code);
++    base::DeleteFile(copy);
++    *out += said;
++    return ran ? code : kExitIoError;
++  }
++  return FromSwap(InstallVersion(root, staged, *version, *files), out);
++}
++
 +}  // namespace
++
++#if BUILDFLAG(IS_WIN)
++const char kUpdaterFile[] = "thoron_update.exe";
++const char kHandOffFile[] = "thoron_update.handoff.exe";
++#else
++const char kUpdaterFile[] = "thoron_update";
++const char kHandOffFile[] = "thoron_update.handoff";
++#endif
++
++std::optional<VersionFile> UpdaterEntry(const std::vector<VersionFile>& files) {
++  for (const VersionFile& file : files) {
++    if (file.path == kUpdaterFile) {
++      return file;
++    }
++  }
++  return std::nullopt;
++}
++
++bool CopyCheckedUpdater(const base::FilePath& staged,
++                        const VersionFile& entry,
++                        const base::FilePath& to) {
++  const std::optional<int64_t> size = base::GetFileSize(staged.AppendASCII(kUpdaterFile));
++  if (!size || *size != entry.size || !base::CopyFile(staged.AppendASCII(kUpdaterFile), to)) {
++    return false;
++  }
++  // What runs is the copy, so the copy is what is checked.
++  if (CheckFile(to, PackageFile{std::string(), entry.size, entry.sha256}) != FileCheck::kOk) {
++    base::DeleteFile(to);
++    return false;
++  }
++  return true;
++}
 +
 +std::string_view UpdateModeName(UpdateMode mode) {
 +  switch (mode) {
@@ -12391,6 +12473,13 @@ index 0000000000000000000000000000000000000000..c0017516bac102eee47f0baf0351074d
 +  return CannotVerify(outcome) ? Action::kWarn : Action::kNothing;
 +}
 +
++Action ActionFor(UpdateMode mode, const Decision& decision) {
++  if (decision.outcome == Outcome::kUpdaterTooOld && decision.full) {
++    return ActionFor(mode, Outcome::kUpdate);
++  }
++  return ActionFor(mode, decision.outcome);
++}
++
 +int RunUpdateCommand(const base::CommandLine& command, std::string* out) {
 +  if (command.HasSwitch("check")) {
 +    return Check(command, out);
@@ -12407,15 +12496,7 @@ index 0000000000000000000000000000000000000000..c0017516bac102eee47f0baf0351074d
 +    return FromSwap(RollBack(root), out);
 +  }
 +  if (command.HasSwitch("apply")) {
-+    const std::optional<BuildVersion> version = ParseBuildVersion(Arg(command, "version"));
-+    const std::optional<std::vector<VersionFile>> files =
-+        ReadFiles(command.GetSwitchValuePath("files"));
-+    if (!version || !files) {
-+      *out += "--version or --files is missing or wrong\n";
-+      return kExitUsage;
-+    }
-+    return FromSwap(InstallVersion(root, command.GetSwitchValuePath("apply"), *version, *files),
-+                    out);
++    return Apply(command, root, out);
 +  }
 +  if (command.HasSwitch("mode")) {
 +    const std::string name = Arg(command, "mode");
@@ -12443,20 +12524,22 @@ index 0000000000000000000000000000000000000000..c0017516bac102eee47f0baf0351074d
 +}  // namespace thoron_update
 diff --git a/components/thoron_update/cli.h b/components/thoron_update/cli.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..7768d8e80943dca766e031f5de0b8c1053f59c61
+index 0000000000000000000000000000000000000000..39990ebaae87f775d333e61597e345944cbec624
 --- /dev/null
 +++ b/components/thoron_update/cli.h
-@@ -0,0 +1,79 @@
+@@ -0,0 +1,109 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
 +#ifndef COMPONENTS_THORON_UPDATE_CLI_H_
 +#define COMPONENTS_THORON_UPDATE_CLI_H_
 +
++#include <optional>
 +#include <string>
 +#include <string_view>
 +
 +#include "components/thoron_update/manifest.h"
++#include "components/thoron_update/swap.h"
 +
 +namespace base {
 +class CommandLine;
@@ -12467,6 +12550,7 @@ index 0000000000000000000000000000000000000000..7768d8e80943dca766e031f5de0b8c10
 +//
 +//   thoron_update --root <program folder> --status
 +//   thoron_update --root <program folder> --apply <staged folder> --version <v> --files <files.json>
++//       [--handed-off]
 +//   thoron_update --root <program folder> --rollback
 +//   thoron_update --check --manifest <update.json> --signature <update.json.sig> --public-key <base64>
 +//       --channel <channel> --installed <v> --updater <v> --variant <name> --kind installed|portable
@@ -12474,7 +12558,16 @@ index 0000000000000000000000000000000000000000..7768d8e80943dca766e031f5de0b8c10
 +//   thoron_update --root <program folder> --mode [auto|notify|off]
 +//
 +// The program folder is the one of swap.h: a folder per version and the file
-+// `current`. --check reads the two files of a release as they were fetched;
++// `current`.
++//
++// The release's own updater applies the release (ROADMAP P4.6). When the staged
++// folder holds the updater (kUpdaterFile), --apply copies it out of the folder
++// (the folder is renamed during the swap), checks the copy against its entry in
++// the files, and runs it with the same command line and --handed-off; that one
++// applies the release itself. So an updater below a release's
++// min_updater_version only fetches, checks and unpacks the package and never
++// runs the swap of a release it may not apply. A copy that does not match its
++// entry is never started: the apply ends with bad files. --check reads the two files of a release as they were fetched;
 +// fetching them is the browser's part (P3.20).
 +
 +namespace thoron_update {
@@ -12518,6 +12611,24 @@ index 0000000000000000000000000000000000000000..7768d8e80943dca766e031f5de0b8c10
 +  kWarn,     // show that updates cannot be verified (P4.5)
 +};
 +Action ActionFor(UpdateMode mode, Outcome outcome);
++// The same for a whole decision: an updater that is too old installs like an
++// update when the decision has the package (P4.6), and tells otherwise.
++Action ActionFor(UpdateMode mode, const Decision& decision);
++
++// The updater's file in a version's folder, and the name of its copy in the
++// program folder while it applies a release it was handed.
++extern const char kUpdaterFile[];
++extern const char kHandOffFile[];
++
++// The entry of the updater in `files`, when the version has one.
++std::optional<VersionFile> UpdaterEntry(const std::vector<VersionFile>& files);
++
++// Copies the updater of the staged folder to `to` and checks the copy against
++// `entry` (length and SHA-256). False, and nothing left at `to`, when it does
++// not match or cannot be copied.
++bool CopyCheckedUpdater(const base::FilePath& staged,
++                        const VersionFile& entry,
++                        const base::FilePath& to);
 +
 +// Runs the command line `command`; what it prints goes to `out`. Gives the
 +// exit code.
@@ -12557,10 +12668,10 @@ index 0000000000000000000000000000000000000000..cba5f110a4048b3b56ed2d92c09e2f81
 +}
 diff --git a/components/thoron_update/cli_unittest.cc b/components/thoron_update/cli_unittest.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..3fe3d6f2f05c42dae3faf9d369ff9a20d31bd1b3
+index 0000000000000000000000000000000000000000..543ec1c80e2b0d01b8d911474ef99c8f8ad0b833
 --- /dev/null
 +++ b/components/thoron_update/cli_unittest.cc
-@@ -0,0 +1,182 @@
+@@ -0,0 +1,248 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -12685,6 +12796,72 @@ index 0000000000000000000000000000000000000000..3fe3d6f2f05c42dae3faf9d369ff9a20
 +    EXPECT_EQ(ActionFor(mode, Outcome::kNoPackage), Action::kNothing);
 +  }
 +  EXPECT_EQ(ActionFor(UpdateMode::kOff, Outcome::kExpired), Action::kNothing);
++}
++
++// P4.6: an updater that is too old installs the release like an update when
++// the decision carries the package (the updater inside it applies it).
++TEST(ThoronUpdateModeTest, AnUpdaterThatIsTooOldInstallsWhenItHasThePackage) {
++  Decision decision;
++  decision.outcome = Outcome::kUpdaterTooOld;
++  EXPECT_EQ(ActionFor(UpdateMode::kAuto, decision), Action::kTell);
++  decision.full = PackageFile{"https://github.com/a.zip", 30, std::string(64, 'a')};
++  EXPECT_EQ(ActionFor(UpdateMode::kAuto, decision), Action::kInstall);
++  EXPECT_EQ(ActionFor(UpdateMode::kNotify, decision), Action::kTell);
++  EXPECT_EQ(ActionFor(UpdateMode::kOff, decision), Action::kNothing);
++  decision.outcome = Outcome::kExpired;
++  EXPECT_EQ(ActionFor(UpdateMode::kAuto, decision), Action::kWarn);
++}
++
++TEST_F(ThoronUpdateCliTest, TheUpdaterOfTheReleaseIsFoundAndCopiedOnlyWhenItMatches) {
++  const std::string program = "an updater";
++  const base::FilePath staged = dir_.GetPath().AppendASCII("158.0.8127.3010.staging");
++  ASSERT_TRUE(base::CreateDirectory(staged));
++  ASSERT_TRUE(base::WriteFile(staged.AppendASCII(kUpdaterFile), program));
++  const VersionFile entry{kUpdaterFile, static_cast<int64_t>(program.size()),
++                          base::HexEncodeLower(crypto::hash::Sha256(program))};
++  EXPECT_FALSE(UpdaterEntry({{"thoron.exe", 1, std::string(64, 'a')}}));
++  const std::optional<VersionFile> found =
++      UpdaterEntry({{"thoron.exe", 1, std::string(64, 'a')}, entry});
++  ASSERT_TRUE(found);
++  EXPECT_EQ(found->sha256, entry.sha256);
++
++  const base::FilePath copy = dir_.GetPath().AppendASCII(kHandOffFile);
++  EXPECT_TRUE(CopyCheckedUpdater(staged, entry, copy));
++  std::string read;
++  ASSERT_TRUE(base::ReadFileToString(copy, &read));
++  EXPECT_EQ(read, program);
++  ASSERT_TRUE(base::DeleteFile(copy));
++
++  // another program of the same length, or another length: no copy is left
++  ASSERT_TRUE(base::WriteFile(staged.AppendASCII(kUpdaterFile), "an updatex"));
++  EXPECT_FALSE(CopyCheckedUpdater(staged, entry, copy));
++  EXPECT_FALSE(base::PathExists(copy));
++  ASSERT_TRUE(base::WriteFile(staged.AppendASCII(kUpdaterFile), "longer than it says"));
++  EXPECT_FALSE(CopyCheckedUpdater(staged, entry, copy));
++  EXPECT_FALSE(base::PathExists(copy));
++}
++
++// An apply whose staged updater is not the one its files name starts nothing
++// and switches nothing.
++TEST_F(ThoronUpdateCliTest, AStagedUpdaterThatDoesNotMatchIsNeverStarted) {
++  EXPECT_EQ(Apply("158.0.8127.3000"), kExitOk);
++  const std::string program = "an updater";
++  const base::FilePath staged = dir_.GetPath().AppendASCII("158.0.8127.3010.staging");
++  ASSERT_TRUE(base::CreateDirectory(staged));
++  ASSERT_TRUE(base::WriteFile(staged.AppendASCII(kUpdaterFile), "not the updater"));
++  const base::FilePath list = dir_.GetPath().AppendASCII("158.0.8127.3010.files.json");
++  ASSERT_TRUE(base::WriteFile(
++      list, std::string("[{\"path\": \"") + kUpdaterFile + "\", \"size\": " +
++                base::NumberToString(program.size()) + ", \"sha256\": \"" +
++                base::HexEncodeLower(crypto::hash::Sha256(program)) + "\"}]"));
++  EXPECT_EQ(Run({"--root=" + Root(), "--apply=" + staged.AsUTF8Unsafe(), "--version=158.0.8127.3010",
++                 "--files=" + list.AsUTF8Unsafe()}),
++            kExitBadFiles);
++  EXPECT_NE(out_.find("is not the one its files name"), std::string::npos);
++  EXPECT_FALSE(base::PathExists(dir_.GetPath().AppendASCII(kHandOffFile)));
++  EXPECT_FALSE(base::PathExists(staged));
++  Run({"--root=" + Root(), "--status"});
++  EXPECT_EQ(out_, "current: 158.0.8127.3000\nprevious: none\nmode: auto\n");
 +}
 +
 +class ThoronUpdateCliCheckTest : public ThoronUpdateCliTest {
@@ -12893,10 +13070,10 @@ index 0000000000000000000000000000000000000000..724b048dee3a1ce75f35a0f7dcbe4600
 +}
 diff --git a/components/thoron_update/launcher/thoron_launcher_win.cc b/components/thoron_update/launcher/thoron_launcher_win.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..bb3507a18e56921ce0910494d3dbefb06f29e671
+index 0000000000000000000000000000000000000000..b0372aa90e38083400ee3dfc2205b60c212bb13b
 --- /dev/null
 +++ b/components/thoron_update/launcher/thoron_launcher_win.cc
-@@ -0,0 +1,275 @@
+@@ -0,0 +1,321 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -12947,6 +13124,23 @@ index 0000000000000000000000000000000000000000..bb3507a18e56921ce0910494d3dbefb0
 +  }
 +  __cpuidex(r, 7, 0);
 +  return r[1] & (1 << 5);
++}
++
++// The avx512_skx profile (build/config/compiler_opt.gni): AVX2 and AVX-512 F,
++// CD, VL, BW and DQ, with the system saving the AVX-512 registers too.
++__attribute__((target("xsave"))) bool HasAvx512() {
++  if (!HasAvx2()) {
++    return false;
++  }
++  // XMM, YMM, the mask registers and both halves of the ZMM registers
++  if ((_xgetbv(0) & 0xE6) != 0xE6) {
++    return false;
++  }
++  int r[4];
++  __cpuidex(r, 7, 0);
++  const unsigned ebx = static_cast<unsigned>(r[1]);
++  constexpr unsigned kF = 1u << 16, kDq = 1u << 17, kCd = 1u << 28, kBw = 1u << 30, kVl = 1u << 31;
++  return (ebx & (kF | kDq | kCd | kBw | kVl)) == (kF | kDq | kCd | kBw | kVl);
 +}
 +
 +bool HasSse42() {
@@ -13031,22 +13225,39 @@ index 0000000000000000000000000000000000000000..bb3507a18e56921ce0910494d3dbefb0
 +  return dots == 3 && digit;
 +}
 +
-+// What the package says it is built for: "win-x64-avx2" or "win-x64-sse4".
-+bool IsAvx2Package(const wchar_t* folder) {
-+  wchar_t path[kPath] = {};
-+  char text[64];
-+  if (!Append(path, kPath, folder) || !Append(path, kPath, L"\\variant") ||
-+      !ReadSmallFile(path, text, sizeof(text))) {
-+    // no file: the package is the AVX2 build, the one made first
-+    return true;
-+  }
-+  const char want[] = "win-x64-avx2";
-+  for (size_t i = 0; want[i]; ++i) {
-+    if (text[i] != want[i]) {
++enum class Build { kAvx2, kSse4, kAvx512, kUnknown };
++
++// Whether `text` is `name`, then the end, a line end or a space.
++bool IsName(const char* text, const char* name) {
++  size_t i = 0;
++  for (; name[i]; ++i) {
++    if (text[i] != name[i]) {
 +      return false;
 +    }
 +  }
-+  return true;
++  return text[i] == 0 || text[i] == '\r' || text[i] == '\n' || text[i] == ' ';
++}
++
++// What the package says it is built for, in the file `variant`. Any other text
++// is a package this launcher does not know, never taken for one it does.
++Build PackageBuild(const wchar_t* folder) {
++  wchar_t path[kPath] = {};
++  char text[64] = {};
++  if (!Append(path, kPath, folder) || !Append(path, kPath, L"\\variant") ||
++      !ReadSmallFile(path, text, sizeof(text) - 1)) {
++    // no file: the package is the AVX2 build, the one made first
++    return Build::kAvx2;
++  }
++  if (IsName(text, "win-x64-avx2")) {
++    return Build::kAvx2;
++  }
++  if (IsName(text, "win-x64-sse4")) {
++    return Build::kSse4;
++  }
++  if (IsName(text, "win-x64-avx512")) {
++    return Build::kAvx512;
++  }
++  return Build::kUnknown;
 +}
 +
 +void Tell(const wchar_t* message) {
@@ -13089,14 +13300,26 @@ index 0000000000000000000000000000000000000000..bb3507a18e56921ce0910494d3dbefb0
 +  GetEnvironmentVariableW(L"THORON_LAUNCHER_ASSUME_CPU", assume, 16);
 +  const bool sse4_only = StartsWith(assume, L"sse4");
 +  const bool too_old = StartsWith(assume, L"old");
++  const bool avx2_only = StartsWith(assume, L"avx2");
 +  const bool avx2 = !sse4_only && !too_old && HasAvx2();
++  const bool avx512 = avx2 && !avx2_only && HasAvx512();
 +  const bool sse4 = !too_old && (sse4_only || HasSse42());
-+  if (IsAvx2Package(folder) ? !avx2 : !sse4) {
-+    Tell(avx2 || sse4
-+             ? L"This copy of Thoron is made for processors with AVX2, which this computer's processor "
++  const Build build = PackageBuild(folder);
++  if (build == Build::kUnknown) {
++    Tell(L"This copy of Thoron is made for a kind of processor this launcher does not know. "
++         L"Unpack the whole package again, or download the package for this computer.");
++    return kWrongProcessor;
++  }
++  const bool runs = build == Build::kAvx512 ? avx512 : build == Build::kAvx2 ? avx2 : sse4;
++  if (!runs) {
++    Tell(!sse4 ? L"This computer's processor is too old for Thoron: it needs SSE4.2 at least."
++         : build == Build::kAvx512
++             ? L"This copy of Thoron is made for processors with AVX-512, which this computer's "
++               L"processor does not have. The AVX2 or SSE4 version of Thoron runs here: download it "
++               L"from the same page and put your \"User Data\" folder into it to keep your profile."
++             : L"This copy of Thoron is made for processors with AVX2, which this computer's processor "
 +               L"does not have. The SSE4 version of Thoron runs here: download it from the same page "
-+               L"and put your \"User Data\" folder into it to keep your profile."
-+             : L"This computer's processor is too old for Thoron: it needs SSE4.2 at least.");
++               L"and put your \"User Data\" folder into it to keep your profile.");
 +    return kWrongProcessor;
 +  }
 +
@@ -13915,10 +14138,10 @@ index 0000000000000000000000000000000000000000..2582f8ca3e279b2882611c579656d871
 +    sys.exit(main(sys.argv[1:]))
 diff --git a/components/thoron_update/manifest.cc b/components/thoron_update/manifest.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..4512124f39febc8a6c184bbd32dfee219acb2052
+index 0000000000000000000000000000000000000000..de9cdcf85aa1ca26de7ca7089247f72fef176338
 --- /dev/null
 +++ b/components/thoron_update/manifest.cc
-@@ -0,0 +1,783 @@
+@@ -0,0 +1,789 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -13953,9 +14176,10 @@ index 0000000000000000000000000000000000000000..4512124f39febc8a6c184bbd32dfee21
 +// Build 158.0.8127.4500 is Chromium 158.0.8127.45.
 +constexpr int kRebuildsPerChromiumPatch = 100;
 +
-+constexpr std::array<std::string_view, 6> kVariantNames = {
++constexpr std::array<std::string_view, 8> kVariantNames = {
 +    "win-x64-avx2",   "win-x64-sse4",   "win-arm64-armv8",
 +    "linux-x64-avx2", "linux-x64-sse4", "linux-arm64-armv8",
++    "win-x64-avx512", "linux-x64-avx512",
 +};
 +constexpr std::array<std::string_view, 2> kKindNames = {"installed",
 +                                                        "portable"};
@@ -14617,6 +14841,11 @@ index 0000000000000000000000000000000000000000..4512124f39febc8a6c184bbd32dfee21
 +    decision.outcome = Outcome::kUpToDate;
 +  } else if (copy.updater < read->min_updater_version) {
 +    decision.outcome = Outcome::kUpdaterTooOld;
++    // P4.6: the whole package, for the updater inside it to apply.
++    const auto package = read->packages.find({copy.variant, copy.kind});
++    if (package != read->packages.end()) {
++      decision.full = package->second.full;
++    }
 +  } else if (const auto package =
 +                 read->packages.find({copy.variant, copy.kind});
 +             package == read->packages.end()) {
@@ -14704,10 +14933,10 @@ index 0000000000000000000000000000000000000000..4512124f39febc8a6c184bbd32dfee21
 +}  // namespace thoron_update
 diff --git a/components/thoron_update/manifest.h b/components/thoron_update/manifest.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..53824eb865a70156f3788c5256d2df8bb19dcc68
+index 0000000000000000000000000000000000000000..f91fec4604f3f7f2463bb0233ec9a9f17340551d
 --- /dev/null
 +++ b/components/thoron_update/manifest.h
-@@ -0,0 +1,222 @@
+@@ -0,0 +1,229 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -14770,6 +14999,10 @@ index 0000000000000000000000000000000000000000..53824eb865a70156f3788c5256d2df8b
 +  kLinuxX64Avx2,     // linux-x64-avx2
 +  kLinuxX64Sse4,     // linux-x64-sse4
 +  kLinuxArm64Armv8,  // linux-arm64-armv8
++  // Opt-in (ROADMAP P5.11): in the schema from the start, since a reader
++  // refuses a variant it does not know. VariantsFor() never offers them.
++  kWinX64Avx512,     // win-x64-avx512
++  kLinuxX64Avx512,   // linux-x64-avx512
 +};
 +
 +// How a copy is installed.
@@ -14879,7 +15112,10 @@ index 0000000000000000000000000000000000000000..53824eb865a70156f3788c5256d2df8b
 +  // on the channel. The stored serial only goes up.
 +  std::optional<int64_t> remember_serial;
 +  // With kUpdate: the whole package, and the delta that applies from exactly
-+  // the installed version when the manifest has one.
++  // the installed version when the manifest has one. With kUpdaterTooOld, when
++  // the release has a package for this copy: the whole package only, so that
++  // the old updater fetches it and the updater inside it applies it (P4.6); an
++  // updater that is too old never applies a delta.
 +  std::optional<PackageFile> full;
 +  std::optional<PackageFile> delta;
 +};
@@ -14932,10 +15168,10 @@ index 0000000000000000000000000000000000000000..53824eb865a70156f3788c5256d2df8b
 +#endif  // COMPONENTS_THORON_UPDATE_MANIFEST_H_
 diff --git a/components/thoron_update/manifest_test_vectors.h b/components/thoron_update/manifest_test_vectors.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..04498cb11fb65e34a998d7f5d0824a39fc435ba2
+index 0000000000000000000000000000000000000000..088e36d9b9750bb6967fcc441469aeb800ce60ad
 --- /dev/null
 +++ b/components/thoron_update/manifest_test_vectors.h
-@@ -0,0 +1,3470 @@
+@@ -0,0 +1,3504 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -15242,7 +15478,8 @@ index 0000000000000000000000000000000000000000..04498cb11fb65e34a998d7f5d0824a39
 +     .keep_front = 1644,
 +     .updater = "158.0.8127.2999",
 +     .outcome = "updater_too_old",
-+     .remember_serial = 2026120100},
++     .remember_serial = 2026120100,
++     .full = kExampleFull},
 +    {.name = "an old updater has nothing to apply when the copy is current",
 +     .keep_front = 1644,
 +     .installed = "158.0.8127.4500",
@@ -15364,7 +15601,8 @@ index 0000000000000000000000000000000000000000..04498cb11fb65e34a998d7f5d0824a39
 +     .updater = "158.0.8127.2900",
 +     .now = 1796169600,
 +     .outcome = "updater_too_old",
-+     .remember_serial = 2026120100},
++     .remember_serial = 2026120100,
++     .full = kExampleFull},
 +    {.name = "MANIFEST.md, copy 4: update",
 +     .keep_front = 1644,
 +     .installed = "0.0.0.0",
@@ -17941,6 +18179,22 @@ index 0000000000000000000000000000000000000000..04498cb11fb65e34a998d7f5d0824a39
 +                "        }\n"
 +                "      }\n"
 +                "    },\n"
++                "    \"linux-x64-avx512\": {\n"
++                "      \"installed\": {\n"
++                "        \"full\": {\n"
++                "          \"sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\",\n"
++                "          \"size\": 1,\n"
++                "          \"url\": \"https://github.com/KuchiSofts/thoron/releases/download/v0.1.2/thoron.exe\"\n"
++                "        }\n"
++                "      },\n"
++                "      \"portable\": {\n"
++                "        \"full\": {\n"
++                "          \"sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\",\n"
++                "          \"size\": 1,\n"
++                "          \"url\": \"https://github.com/KuchiSofts/thoron/releases/download/v0.1.2/thoron.exe\"\n"
++                "        }\n"
++                "      }\n"
++                "    },\n"
 +                "    \"linux-x64-sse4\": {\n"
 +                "      \"installed\": {\n"
 +                "        \"full\": {\n"
@@ -17989,6 +18243,22 @@ index 0000000000000000000000000000000000000000..04498cb11fb65e34a998d7f5d0824a39
 +                "        }\n"
 +                "      }\n"
 +                "    },\n"
++                "    \"win-x64-avx512\": {\n"
++                "      \"installed\": {\n"
++                "        \"full\": {\n"
++                "          \"sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\",\n"
++                "          \"size\": 1,\n"
++                "          \"url\": \"https://github.com/KuchiSofts/thoron/releases/download/v0.1.2/thoron.exe\"\n"
++                "        }\n"
++                "      },\n"
++                "      \"portable\": {\n"
++                "        \"full\": {\n"
++                "          \"sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\",\n"
++                "          \"size\": 1,\n"
++                "          \"url\": \"https://github.com/KuchiSofts/thoron/releases/download/v0.1.2/thoron.exe\"\n"
++                "        }\n"
++                "      }\n"
++                "    },\n"
 +                "    \"win-x64-sse4\": {\n"
 +                "      \"installed\": {\n"
 +                "        \"full\": {\n"
@@ -18003,8 +18273,8 @@ index 0000000000000000000000000000000000000000..04498cb11fb65e34a998d7f5d0824a39
 +                "          \"size\": 1,\n"
 +                "          \"url\": \"https://github.com/KuchiSofts/thoron/releases/download/v0.1.2/thoron",
 +     .keep_back = 175,
-+     .signature = "3e36becf0933287eaec66103821f18c9713fb21029de42bf59acaa10d507febf"
-+                  "cc631cf4e58541ca3b17dedb7386f43985183aef66fe072b2aa212d33362b503",
++     .signature = "05c8e2b317d3073ea91fa85a96c029f2231231b35d5725f09916e4797b589d81"
++                  "f0dd8d6749dd479d63852f12faafe77eba562ee95af1040972cf0437555a6e07",
 +     .variant = "linux-arm64-armv8",
 +     .kind = "portable",
 +     .outcome = "update",
@@ -18408,10 +18678,10 @@ index 0000000000000000000000000000000000000000..04498cb11fb65e34a998d7f5d0824a39
 +#endif  // COMPONENTS_THORON_UPDATE_MANIFEST_TEST_VECTORS_H_
 diff --git a/components/thoron_update/manifest_unittest.cc b/components/thoron_update/manifest_unittest.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..7f4de937f11c9753b4b0028885ba8f539c151697
+index 0000000000000000000000000000000000000000..750d4e09f63d37834aa6e3af9c6067cb7b9bbabb
 --- /dev/null
 +++ b/components/thoron_update/manifest_unittest.cc
-@@ -0,0 +1,569 @@
+@@ -0,0 +1,576 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -18597,7 +18867,14 @@ index 0000000000000000000000000000000000000000..7f4de937f11c9753b4b0028885ba8f53
 +    EXPECT_EQ(decision.manifest.has_value(), vector.remember_serial != 0);
 +    EXPECT_EQ(Written(decision.full), vector.full);
 +    EXPECT_EQ(Written(decision.delta), vector.delta);
-+    EXPECT_EQ(decision.full.has_value(), decision.outcome == Outcome::kUpdate);
++    // The full package comes with an update, and with an updater that is too
++    // old when there is one for the copy (P4.6); a delta only with an update.
++    if (decision.outcome == Outcome::kUpdate) {
++      EXPECT_TRUE(decision.full);
++    } else if (decision.outcome != Outcome::kUpdaterTooOld) {
++      EXPECT_FALSE(decision.full);
++    }
++    EXPECT_TRUE(!decision.delta || decision.outcome == Outcome::kUpdate);
 +    ++checked;
 +  }
 +  EXPECT_GE(checked, 300u);
@@ -18983,10 +19260,10 @@ index 0000000000000000000000000000000000000000..7f4de937f11c9753b4b0028885ba8f53
 +}  // namespace thoron_update
 diff --git a/components/thoron_update/package.cc b/components/thoron_update/package.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..814b037f664ec303273d76e96e26ad9f38de4bad
+index 0000000000000000000000000000000000000000..7e5538ed2ee7bb1f0cee82d26a090309eaa12bea
 --- /dev/null
 +++ b/components/thoron_update/package.cc
-@@ -0,0 +1,195 @@
+@@ -0,0 +1,203 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -19111,6 +19388,10 @@ index 0000000000000000000000000000000000000000..814b037f664ec303273d76e96e26ad9f
 +
 +std::vector<DownloadStep> PlanDownloads(const Decision& decision) {
 +  std::vector<DownloadStep> plan;
++  if (decision.outcome == Outcome::kUpdaterTooOld && decision.full) {
++    plan.push_back({*decision.full, /*delta=*/false});
++    return plan;
++  }
 +  if (decision.outcome != Outcome::kUpdate || !decision.full) {
 +    return plan;
 +  }
@@ -19142,6 +19423,7 @@ index 0000000000000000000000000000000000000000..814b037f664ec303273d76e96e26ad9f
 +  cpu.avx = features.has_avx();
 +  cpu.avx2 = features.has_avx2();
 +  cpu.fma3 = features.has_fma3();
++  cpu.avx512 = features.has_avx512_f() && features.has_avx512_bw();
 +#elif defined(ARCH_CPU_ARM64)
 +  cpu.arm64 = true;
 +#endif
@@ -19154,6 +19436,9 @@ index 0000000000000000000000000000000000000000..814b037f664ec303273d76e96e26ad9f
 +    case Variant::kWinX64Avx2:
 +    case Variant::kLinuxX64Avx2:
 +      return sse4 && cpu.avx && cpu.avx2 && cpu.fma3;
++    case Variant::kWinX64Avx512:
++    case Variant::kLinuxX64Avx512:
++      return sse4 && cpu.avx && cpu.avx2 && cpu.fma3 && cpu.avx512;
 +    case Variant::kWinX64Sse4:
 +    case Variant::kLinuxX64Sse4:
 +      return sse4;
@@ -19184,10 +19469,10 @@ index 0000000000000000000000000000000000000000..814b037f664ec303273d76e96e26ad9f
 +}  // namespace thoron_update
 diff --git a/components/thoron_update/package.h b/components/thoron_update/package.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..c28b06294bd8c7095b0bd06b80d8e08c3614b236
+index 0000000000000000000000000000000000000000..d1104afaf96188d05524d87c09b6c8d625e6c1d5
 --- /dev/null
 +++ b/components/thoron_update/package.h
-@@ -0,0 +1,120 @@
+@@ -0,0 +1,127 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -19262,7 +19547,9 @@ index 0000000000000000000000000000000000000000..c28b06294bd8c7095b0bd06b80d8e08c
 +// manifest has one from the installed version and it is smaller than the full
 +// package, then the full package. Schema 1 lists deltas that lead straight to
 +// the new version, so the smallest total download is the smaller of the two.
-+// Empty unless `decision` is kUpdate with its full package.
++// Empty unless `decision` is kUpdate with its full package. For kUpdaterTooOld
++// with a full package it is that package alone: the updater inside it applies
++// the release (P4.6).
 +std::vector<DownloadStep> PlanDownloads(const Decision& decision);
 +
 +// Tries `plan` in order. `attempt` downloads a step's file, checks it
@@ -19290,19 +19577,24 @@ index 0000000000000000000000000000000000000000..c28b06294bd8c7095b0bd06b80d8e08c
 +  bool avx = false;
 +  bool avx2 = false;
 +  bool fma3 = false;
++  // AVX-512 F and BW with the system saving their registers. The avx512_skx
++  // build also needs CD, VL and DQ, which every processor with BW has.
++  bool avx512 = false;
 +};
 +
 +// The processor this code runs on.
 +Processor ThisProcessor();
 +
 +// Whether a build of `variant` runs on `cpu`. The AVX2 builds are made for
-+// AVX, AVX2, FMA and F16C (every processor with AVX2 has F16C); the SSE4 builds
-+// for SSE4.1 and SSE4.2; the ARM64 builds for ARMv8.
++// AVX, AVX2, FMA and F16C (every processor with AVX2 has F16C); the AVX-512
++// builds for that and AVX-512; the SSE4 builds for SSE4.1 and SSE4.2; the
++// ARM64 builds for ARMv8.
 +bool RunsOn(Variant variant, const Processor& cpu);
 +
 +// The variants of `os` that run on `cpu`, the fastest first: a processor with
 +// AVX2 can run the SSE4 build too, which an updater takes when a release has no
-+// AVX2 package. Empty when no build of Thoron runs on `cpu`.
++// AVX2 package. Empty when no build of Thoron runs on `cpu`. The AVX-512 builds
++// are never in it: a copy runs one only when the person chose it (P5.11).
 +std::vector<Variant> VariantsFor(Os os, const Processor& cpu);
 +
 +}  // namespace thoron_update
@@ -19310,10 +19602,10 @@ index 0000000000000000000000000000000000000000..c28b06294bd8c7095b0bd06b80d8e08c
 +#endif  // COMPONENTS_THORON_UPDATE_PACKAGE_H_
 diff --git a/components/thoron_update/package_unittest.cc b/components/thoron_update/package_unittest.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..8b4271f1d0784dfe774c24341cca2b93dd6fef45
+index 0000000000000000000000000000000000000000..55fa69087629432220f8190288ee407a60d3400c
 --- /dev/null
 +++ b/components/thoron_update/package_unittest.cc
-@@ -0,0 +1,259 @@
+@@ -0,0 +1,290 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -19480,6 +19772,19 @@ index 0000000000000000000000000000000000000000..8b4271f1d0784dfe774c24341cca2b93
 +  EXPECT_TRUE(PlanDownloads(decision).empty());
 +}
 +
++// P4.6: an updater that is too old fetches the whole package, never a delta,
++// and the updater inside it applies the release.
++TEST(ThoronUpdatePlanTest, AnUpdaterThatIsTooOldGetsTheWholePackageOnly) {
++  Decision decision = UpdateWith(30);
++  decision.outcome = Outcome::kUpdaterTooOld;
++  const std::vector<DownloadStep> plan = PlanDownloads(decision);
++  ASSERT_EQ(plan.size(), 1u);
++  EXPECT_FALSE(plan[0].delta);
++  EXPECT_EQ(plan[0].file, *decision.full);
++  decision.full.reset();
++  EXPECT_TRUE(PlanDownloads(decision).empty());
++}
++
 +TEST(ThoronUpdatePlanTest, TheDeltaIsUsedWhenItHolds) {
 +  std::vector<bool> tried;
 +  const std::optional<DownloadStep> used =
@@ -19559,6 +19864,24 @@ index 0000000000000000000000000000000000000000..8b4271f1d0784dfe774c24341cca2b93
 +  arm.arm64 = true;
 +  EXPECT_FALSE(RunsOn(Variant::kWinX64Sse4, arm));
 +  EXPECT_FALSE(RunsOn(Variant::kWinArm64Armv8, goldmont));
++}
++
++TEST(ThoronUpdateVariantTest, AnAvx512BuildNeedsAvx512AndIsNeverOffered) {
++  Processor skylake_x;
++  skylake_x.x64 = skylake_x.sse41 = skylake_x.sse42 = skylake_x.avx = skylake_x.avx2 =
++      skylake_x.fma3 = skylake_x.avx512 = true;
++  Processor haswell = skylake_x;
++  haswell.avx512 = false;
++  EXPECT_TRUE(RunsOn(Variant::kWinX64Avx512, skylake_x));
++  EXPECT_TRUE(RunsOn(Variant::kLinuxX64Avx512, skylake_x));
++  EXPECT_FALSE(RunsOn(Variant::kWinX64Avx512, haswell));
++  Processor odd = skylake_x;  // AVX-512 said, AVX2 not: not a processor to trust
++  odd.avx2 = false;
++  EXPECT_FALSE(RunsOn(Variant::kWinX64Avx512, odd));
++  using V = std::vector<Variant>;
++  EXPECT_EQ(VariantsFor(Os::kWindows, skylake_x), (V{Variant::kWinX64Avx2, Variant::kWinX64Sse4}));
++  EXPECT_EQ(VariantName(Variant::kWinX64Avx512), "win-x64-avx512");
++  EXPECT_EQ(ParseVariant("linux-x64-avx512"), Variant::kLinuxX64Avx512);
 +}
 +
 +TEST(ThoronUpdateVariantTest, TheProcessorThisRunsOnRunsThisBuild) {
@@ -20158,10 +20481,10 @@ index 0000000000000000000000000000000000000000..2f5b859dac4db51d0df2007646fa94d7
 +}  // namespace thoron_update
 diff --git a/components/thoron_update/swap.cc b/components/thoron_update/swap.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..e7f26e5d20aa8e08da6545145fc7a36a521e2656
+index 0000000000000000000000000000000000000000..2ba749828e503e77abf77c1697881e333a1401f6
 --- /dev/null
 +++ b/components/thoron_update/swap.cc
-@@ -0,0 +1,251 @@
+@@ -0,0 +1,259 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -20177,6 +20500,7 @@ index 0000000000000000000000000000000000000000..e7f26e5d20aa8e08da6545145fc7a36a
 +#include "base/files/important_file_writer.h"
 +#include "base/strings/string_split.h"
 +#include "base/strings/string_util.h"
++#include "build/build_config.h"
 +#include "components/thoron_update/package.h"
 +
 +namespace thoron_update {
@@ -20347,6 +20671,13 @@ index 0000000000000000000000000000000000000000..e7f26e5d20aa8e08da6545145fc7a36a
 +  for (const base::FilePath& path : away) {
 +    Remove(path);
 +  }
++  // The copy of an updater that was handed an apply and was killed (cli.h); it
++  // cannot be removed while it runs, and then stays for the next clean-up.
++#if BUILDFLAG(IS_WIN)
++  base::DeleteFile(root.AppendASCII("thoron_update.handoff.exe"));
++#else
++  base::DeleteFile(root.AppendASCII("thoron_update.handoff"));
++#endif
 +}
 +
 +SwapResult InstallVersion(const base::FilePath& root,

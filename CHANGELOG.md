@@ -7,6 +7,8 @@ Explanations live in the design docs under `docs/design/`.
 ## [Unreleased]
 
 ### Added
+- **Portable:** the launcher refuses a package made for another kind of processor and says why, instead of starting a browser that cannot run.
+- **Updates:** an old updater never applies a release it may not: it fetches the release's full package and hands the update to the updater inside it, after checking that updater's hash.
 
 - **Ad blocking:** built-in `adblock-rust` engine ends ad and tracker requests before they leave the browser.
 - **Ad blocking:** off by default; "Built-in ad blocking" on `chrome://flags/#thoron-native-adblock` turns it on or off.

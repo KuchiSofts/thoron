@@ -126,6 +126,14 @@ packages
 | `linux-x64-avx2` | Linux, x64 processors with AVX2 |
 | `linux-x64-sse4` | Linux, x64 processors without AVX2 |
 | `linux-arm64-armv8` | Linux on ARM64 |
+| `win-x64-avx512` | Windows, x64 processors with AVX-512 (F, CD, VL, BW, DQ); opt-in |
+| `linux-x64-avx512` | Linux, x64 processors with AVX-512 (F, CD, VL, BW, DQ); opt-in |
+
+The two AVX-512 names are in schema 1 from the start (ROADMAP P5.11), although no AVX-512 package is made
+yet: a reader refuses a manifest that names a variant it does not know, so a variant added after the first
+release would cut every older copy off from updates. They are opt-in: an updater or installer never picks
+one on its own (`VariantsFor` in `components/thoron_update/package.h`), a copy runs one only when the person
+chose it, and an AVX-512 copy whose release has no AVX-512 package gets `no_package`, as any copy does.
 
 | Kind | Windows | Linux |
 |---|---|---|
@@ -246,7 +254,7 @@ Each step ends the check with the outcome named, or goes on to the next.
 | `not_yet_valid` | Dated after the clock: the clock is behind, or the manifest is wrong | Cannot verify, with a hint to check the date and time | No |
 | `expired` | Too old to show what the newest release is | Cannot verify | No |
 | `downgrade` | Names a version below the installed one. Nothing is installed | Cannot verify | Yes |
-| `updater_too_old` | A newer release that this updater may not apply | Its own message: update with the installer (until P4.6) | Yes |
+| `updater_too_old` | A newer release that this updater may not apply | Installs like an update when the release has a package for the copy: the old updater fetches the full package (never a delta) and the updater inside it applies the release (P4.6); else its own message: update with the installer | Yes |
 | `no_package` | A newer release with nothing for this variant and kind | Its own message: a newer version exists, but not for this computer | Yes |
 
 Only `up_to_date` is ever shown as "up to date". The seven outcomes from `bad_signature` to `downgrade`
@@ -448,9 +456,16 @@ py -3 -I tools/update/manifest.py example --out example.json
   would need their deltas too.
 - **P4.4:** the reference looks up one variant. A processor with AVX2 can also run `sse4`; whether the
   updater falls back to it when `avx2` is missing is decided there.
-- **P4.6:** `updater_too_old` only stops an old updater. How it gets a newer one by itself is not in
-  schema 1. The small installer is an updater too: a `min_updater_version` above its own build stops it
-  as well, so it is raised only when old updaters must really not be used.
+- **P4.6, decided 2026-11-16:** the release's own updater applies the release. With `updater_too_old`
+  the decision names the release's full package for the copy, when there is one, and never a delta: the
+  old updater fetches it, checks its length and SHA-256 against the signed manifest and unpacks it, and
+  `--apply` then copies the `thoron_update.exe` of the staged folder out of it, checks the copy against
+  its entry in the package's files and hands the apply to it (`components/thoron_update/README.md`). So
+  an old updater never runs the swap or a delta of a release it may not apply, and schema 1 needs no new
+  key (an old reader refuses unknown keys). What old code still does is fetch, hash and unpack, which is
+  why that part stays the smallest. Every updater from this build on hands off on every apply, and no
+  release was published before it. The small installer is an updater too: a `min_updater_version` above
+  its own build stops it as well, so it is raised only when old updaters must really not be used.
 - **P4.7, decided 2026-11-16:** the signature file still names no key; an updater that trusts several keys
   tries each. A release that moves to a new key publishes a key statement beside the manifest,
   `update.key`: 96 bytes, the new public key (32) and the Ed25519 signature (64) of a key the copy already

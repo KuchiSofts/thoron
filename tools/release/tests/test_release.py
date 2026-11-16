@@ -486,7 +486,7 @@ class ManifestPartsTests(ReleaseTestCase):
             return rel.manifest_problems(plan or self.f.plan(), build, variant, self.f.private, public or self.f.public)
 
         self.assertIn("--manifest-key does not belong to the public key", problems(public=ar.keygen()[1])[0])
-        self.assertIn("win-x64-avx512 is not a variant a manifest can name", problems(variant="win-x64-avx512")[0])
+        self.assertIn("win-x64-avx10 is not a variant a manifest can name", problems(variant="win-x64-avx10")[0])
         self.assertIn("no package is made for linux-x64-avx2 yet", problems(variant="linux-x64-avx2")[0])
         self.assertIn("min_updater_version: must not be higher than version",
                       problems(self.f.plan(min_updater_version=NEXT_BUILD)))

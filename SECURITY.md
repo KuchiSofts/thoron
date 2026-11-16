@@ -11,6 +11,7 @@ Security is Thoron's first priority. Thank you for helping keep its users safe.
 
 Thoron aims to ship within **7 days** of a Chrome release that fixes an actively exploited
 vulnerability, and within **14 days** of each new Chrome major version (see [ROADMAP](ROADMAP.md#release-policy)).
+How such a release is made is in [`docs/security/SECURITY_RELEASES.md`](docs/security/SECURITY_RELEASES.md).
 
 ## Reporting a vulnerability
 
@@ -64,6 +65,8 @@ There is no Thoron release yet. **In place today:** the upstream audit and exten
   ROADMAP **S.10**).
 - **Your data is never touched by updates:** the updater never writes inside your profile; major
   updates snapshot it first.
+- **Threat model:** what the updater, the import and portable encryption defend against, and what
+  they do not, is in [`docs/security/THREAT_MODEL.md`](docs/security/THREAT_MODEL.md).
 
 ## Security history inherited from Thorium
 

@@ -2157,6 +2157,32 @@ response's body. Thoron is the browser, so it does it for every page:
   translated heading and description of the setting in Settings, not the English (a translation whose id
   does not match is silently left out).
 
+### 12.69 Signed updates of the scriptlets and stand-ins (P5.23, 2026-11-16)
+
+- **Why (the owner, 2026-11-11):** the built-in blocker must "still be able to update the scripts and
+  blocklists". The lists update by themselves; the scriptlets and stand-ins were fixed at build time (P5.19).
+  They run inside every page, so a copy is only taken in when Thoron signed it.
+- **The file:** `thoron-adblock-resources 1`, `serial: YYYYMMDDNN`, `signature: <base64>`, an empty line, then
+  the resources as the shipped `thoron_adblock_resources.json`. The Ed25519 signature is over the file without
+  its signature line (the header names the kind of file, so a signature over something else never fits).
+- **In the browser** (`list_store.cc`, `list_updater.cc`): after each check of the lists the updater asks for
+  `thoron_adblock_resources.signed` (a release asset of the Thoron repository, over HTTPS, as a list is
+  fetched: no cookies, no cache, 20 MB at most). It is taken in only when the signature holds with Thoron's
+  public key (BoringSSL's `ED25519_verify`), its serial is higher than the copy in use
+  (`kShippedResourcesSerial` for the shipped one) and the engine accepts it as a resource list; it is written
+  atomically to `<user data>/Thoron Adblock/resources.signed`, and the engine is rebuilt with it at once.
+  Every time the engine is built the stored copy is verified again; anything that does not hold leaves the
+  shipped copy in use. A newer browser with newer shipped resources (a higher serial) uses its own.
+- **No key, no update:** `kResourcesPublicKey` is all zero until the key ceremony (ROADMAP P2.11, the owner's).
+  Until then nothing is asked for and only the shipped copy is used. For the offline check a switch gives a
+  key made for that run, honoured only while the lists come from a local server.
+- **Making one:** `tools/release/adblock_resources.py keygen` makes the key (offline; the private key goes to a
+  file outside the repository, the public key is printed as the C++ array), `sign` signs a resource list with
+  a serial, `verify` checks a file as the browser does.
+- **Checked** by `tools/qa/adblock_resources_check.py`: no update, a forged update (changed after signing),
+  a signed newer one (in use at once), an older one (refused), a restart (the stored copy is checked again
+  and used), another key and no key (the shipped copy; with no key nothing is asked for).
+
 ## 13. Credits
 
 The procedural operators and the rest of the filter syntax are uBlock Origin's (with forms from Adblock

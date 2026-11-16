@@ -78,10 +78,10 @@ index 0f7d54fe9798d8726656c6cd8f30ea2194b8c4e1..908235300b443a23bea4c2a9b39d0715
        "//sandbox:sandbox_unittests",
 diff --git a/components/thoron_adblock/BUILD.gn b/components/thoron_adblock/BUILD.gn
 new file mode 100644
-index 0000000000000000000000000000000000000000..6a3f4a57e3cde79747d48d9399228304f0374af9
+index 0000000000000000000000000000000000000000..4c3e64b95f78a7a9b601cfa1b89d07a745a85d24
 --- /dev/null
 +++ b/components/thoron_adblock/BUILD.gn
-@@ -0,0 +1,282 @@
+@@ -0,0 +1,283 @@
 +# Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +# found in the LICENSE file.
 +
@@ -244,6 +244,7 @@ index 0000000000000000000000000000000000000000..6a3f4a57e3cde79747d48d9399228304
 +    "//base/version_info",
 +    "//mojo/public/cpp/bindings",
 +    "//third_party/blink/public/common",
++    "//third_party/boringssl",
 +  ]
 +  data_deps = [
 +    ":compiled_engine",
@@ -5786,10 +5787,10 @@ index 0000000000000000000000000000000000000000..f48ae9a58c33eb08b4e5ec7ec657261c
 +}
 diff --git a/components/thoron_adblock/engine_service.cc b/components/thoron_adblock/engine_service.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..d6a59e2b3aa1c89acf174ffd2c25ad5379471952
+index 0000000000000000000000000000000000000000..4e8cf50f728c20a703051d8af768af78fed7ee67
 --- /dev/null
 +++ b/components/thoron_adblock/engine_service.cc
-@@ -0,0 +1,1700 @@
+@@ -0,0 +1,1703 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -5918,6 +5919,9 @@ index 0000000000000000000000000000000000000000..d6a59e2b3aa1c89acf174ffd2c25ad53
 +  base::PathService::Get(base::DIR_ASSETS, &paths.bundled_dir);
 +  paths.store_dir = store_dir_;
 +  paths.version = std::string(version_info::GetVersionNumber());
++  // P5.23: the key updates of the scriptlets must be signed with (a test key
++  // only while the lists come from a local server)
++  paths.resources_key = ResourcesKey(ListsUrlForTesting().is_valid());
 +  return paths;
 +}
 +
@@ -11832,10 +11836,10 @@ index 0000000000000000000000000000000000000000..eed875cd4da34b0f151586a64b5700ff
 +#endif  // COMPONENTS_THORON_ADBLOCK_LIST_FETCH_H_
 diff --git a/components/thoron_adblock/list_store.cc b/components/thoron_adblock/list_store.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..578b995ac6395ff6396cbbeb90f878bf95dd5188
+index 0000000000000000000000000000000000000000..7803ae93407fc6edbf88200a93e5e7e4158b8543
 --- /dev/null
 +++ b/components/thoron_adblock/list_store.cc
-@@ -0,0 +1,1043 @@
+@@ -0,0 +1,1199 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -11845,6 +11849,8 @@ index 0000000000000000000000000000000000000000..578b995ac6395ff6396cbbeb90f878bf
 +#include <array>
 +#include <utility>
 +
++#include "base/base64.h"
++#include "base/command_line.h"
 +#include "base/files/file_util.h"
 +#include "base/files/important_file_writer.h"
 +#include "base/hash/sha1.h"
@@ -11854,6 +11860,7 @@ index 0000000000000000000000000000000000000000..578b995ac6395ff6396cbbeb90f878bf
 +#include "base/strings/string_number_conversions.h"
 +#include "base/strings/string_util.h"
 +#include "base/values.h"
++#include "third_party/boringssl/src/include/openssl/curve25519.h"
 +#include "url/url_constants.h"
 +
 +namespace thoron_adblock {
@@ -11870,6 +11877,16 @@ index 0000000000000000000000000000000000000000..578b995ac6395ff6396cbbeb90f878bf
 +constexpr base::FilePath::CharType kBundledResources[] =
 +    FILE_PATH_LITERAL("thoron_adblock_resources.json");
 +constexpr size_t kMaxResourcesBytes = 16 * 1024 * 1024;
++// P5.23: the newer scriptlets and stand-ins, as downloaded (signed).
++constexpr base::FilePath::CharType kStoredResources[] =
++    FILE_PATH_LITERAL("resources.signed");
++constexpr size_t kMaxSignedResourcesBytes = kMaxResourcesBytes + 4096;
++constexpr std::string_view kResourcesHeader = "thoron-adblock-resources 1";
++// Thoron's Ed25519 key for these updates (P5.23), made at the key ceremony
++// (ROADMAP P2.11). All zero until then: no update is fetched or used.
++constexpr uint8_t kResourcesPublicKey[ED25519_PUBLIC_KEY_LEN] = {};
++constexpr char kResourcesKeyForTesting[] =
++    "thoron-adblock-resources-key-for-testing";
 +constexpr base::FilePath::CharType kStoredEngine[] =
 +    FILE_PATH_LITERAL("engine.dat");
 +constexpr base::FilePath::CharType kStoredLists[] = FILE_PATH_LITERAL("lists");
@@ -12169,12 +12186,99 @@ index 0000000000000000000000000000000000000000..578b995ac6395ff6396cbbeb90f878bf
 +  return std::nullopt;
 +}
 +
++std::optional<SignedResources> VerifyResources(std::string_view text,
++                                               std::string_view key) {
++  if (key.size() != ED25519_PUBLIC_KEY_LEN ||
++      text.size() > kMaxSignedResourcesBytes) {
++    return std::nullopt;
++  }
++  // header, serial, signature, an empty line, the resources
++  std::string_view rest = text;
++  std::string_view lines[4];
++  for (std::string_view& line : lines) {
++    const size_t end = rest.find('\n');
++    if (end == std::string_view::npos) {
++      return std::nullopt;
++    }
++    line = rest.substr(0, end);
++    rest.remove_prefix(end + 1);
++  }
++  constexpr std::string_view kSerial = "serial: ";
++  constexpr std::string_view kSignature = "signature: ";
++  int64_t serial = 0;
++  if (lines[0] != kResourcesHeader || !lines[1].starts_with(kSerial) ||
++      !lines[2].starts_with(kSignature) || !lines[3].empty() ||
++      lines[1].size() != kSerial.size() + 10 ||
++      !base::StringToInt64(lines[1].substr(kSerial.size()), &serial) ||
++      serial <= 0 || rest.empty()) {
++    return std::nullopt;
++  }
++  std::string signature;
++  if (!base::Base64Decode(lines[2].substr(kSignature.size()), &signature) ||
++      signature.size() != ED25519_SIGNATURE_LEN) {
++    return std::nullopt;
++  }
++  // the file without its signature line
++  const std::string message =
++      base::StrCat({lines[0], "\n", lines[1], "\n\n", rest});
++  if (!ED25519_verify(reinterpret_cast<const uint8_t*>(message.data()),
++                      message.size(),
++                      reinterpret_cast<const uint8_t*>(signature.data()),
++                      reinterpret_cast<const uint8_t*>(key.data()))) {
++    return std::nullopt;
++  }
++  return SignedResources{serial, std::string(rest)};
++}
++
++std::string ResourcesKey(bool testing) {
++  const base::CommandLine& line = *base::CommandLine::ForCurrentProcess();
++  if (testing && line.HasSwitch(kResourcesKeyForTesting)) {
++    std::string key;
++    if (base::Base64Decode(line.GetSwitchValueASCII(kResourcesKeyForTesting),
++                           &key) &&
++        key.size() == ED25519_PUBLIC_KEY_LEN) {
++      return key;
++    }
++    return std::string();
++  }
++  if (std::all_of(std::begin(kResourcesPublicKey),
++                  std::end(kResourcesPublicKey),
++                  [](uint8_t b) { return b == 0; })) {
++    return std::string();
++  }
++  return std::string(std::begin(kResourcesPublicKey),
++                     std::end(kResourcesPublicKey));
++}
++
 +namespace {
 +
-+// Gives `engine` the shipped resources. Without the file, or with one that is
-+// not a resource list, the engine still blocks; it only has no stand-ins and
-+// no scriptlets.
++// The stored update, when it holds and is newer than the shipped copy.
++std::optional<SignedResources> StoredResources(const StorePaths& paths) {
++  if (paths.resources_key.empty()) {
++    return std::nullopt;
++  }
++  std::optional<std::string> text = ReadText(
++      paths.store_dir.Append(kStoredResources), kMaxSignedResourcesBytes);
++  if (!text) {
++    return std::nullopt;
++  }
++  std::optional<SignedResources> found =
++      VerifyResources(*text, paths.resources_key);
++  if (!found || found->serial <= kShippedResourcesSerial) {
++    return std::nullopt;
++  }
++  return found;
++}
++
++// Gives `engine` its resources: a newer copy signed with Thoron's key (P5.23,
++// checked again here), else the shipped one. Without either, or with one that
++// is not a resource list, the engine still blocks; it only has no stand-ins
++// and no scriptlets.
 +void AddResources(const StorePaths& paths, Engine& engine) {
++  if (std::optional<SignedResources> update = StoredResources(paths);
++      update && engine.use_resources(ToStr(update->json)) > 0) {
++    return;
++  }
 +  std::optional<std::string> json = ReadText(
 +      paths.bundled_dir.Append(kBundledResources), kMaxResourcesBytes);
 +  if (json && !json->empty()) {
@@ -12470,6 +12574,62 @@ index 0000000000000000000000000000000000000000..578b995ac6395ff6396cbbeb90f878bf
 +}
 +
 +}  // namespace
++
++int64_t ResourcesSerialInUse(const StorePaths& paths) {
++  std::optional<SignedResources> update = StoredResources(paths);
++  return update ? update->serial : kShippedResourcesSerial;
++}
++
++ResourcesResult::ResourcesResult() = default;
++ResourcesResult::ResourcesResult(ResourcesResult&&) = default;
++ResourcesResult& ResourcesResult::operator=(ResourcesResult&&) = default;
++ResourcesResult::~ResourcesResult() = default;
++
++ResourcesResult ApplyResourcesUpdate(const StorePaths& paths,
++                                     const base::FilePath& download) {
++  ResourcesResult result;
++  std::optional<std::string> text =
++      ReadText(download, kMaxSignedResourcesBytes);
++  base::DeleteFile(download);
++  if (!text) {
++    result.summary = "Scriptlets: the update could not be read.\n";
++    return result;
++  }
++  std::optional<SignedResources> update =
++      VerifyResources(*text, paths.resources_key);
++  if (!update) {
++    result.summary =
++        "Scriptlets: the update was refused: its signature does not hold.\n";
++    return result;
++  }
++  const int64_t in_use = ResourcesSerialInUse(paths);
++  if (update->serial <= in_use) {
++    result.summary =
++        update->serial == in_use
++            ? std::string("Scriptlets: unchanged.\n")
++            : base::StrCat({"Scriptlets: the update was refused: ",
++                            base::NumberToString(update->serial),
++                            " is older than ", base::NumberToString(in_use),
++                            ", in use.\n"});
++    return result;
++  }
++  // it must be a resource list the engine takes
++  rust::Box<Engine> probe = engine_from_rules("");
++  if (probe->use_resources(ToStr(update->json)) == 0) {
++    result.summary =
++        "Scriptlets: the update was refused: it is not a resource list.\n";
++    return result;
++  }
++  if (!base::ImportantFileWriter::WriteFileAtomically(
++          paths.store_dir.Append(kStoredResources), *text)) {
++    result.summary = "Scriptlets: the update could not be saved.\n";
++    return result;
++  }
++  result.engine = LoadEngine(paths);
++  result.summary = base::StrCat({"Scriptlets: updated to ",
++                                 base::NumberToString(update->serial), ".\n"});
++  return result;
++}
 +
 +std::optional<rust::Box<Engine>> LoadEngine(const StorePaths& paths) {
 +  bool rebuild = false;
@@ -12881,16 +13041,17 @@ index 0000000000000000000000000000000000000000..578b995ac6395ff6396cbbeb90f878bf
 +}  // namespace thoron_adblock
 diff --git a/components/thoron_adblock/list_store.h b/components/thoron_adblock/list_store.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..afc6fddd83dd1ffda301852b596e50602d171b45
+index 0000000000000000000000000000000000000000..05072792b236272c147b62c9777e12b7052b840b
 --- /dev/null
 +++ b/components/thoron_adblock/list_store.h
-@@ -0,0 +1,211 @@
+@@ -0,0 +1,263 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
 +#ifndef COMPONENTS_THORON_ADBLOCK_LIST_STORE_H_
 +#define COMPONENTS_THORON_ADBLOCK_LIST_STORE_H_
 +
++#include <cstdint>
 +#include <map>
 +#include <optional>
 +#include <set>
@@ -12925,7 +13086,58 @@ index 0000000000000000000000000000000000000000..afc6fddd83dd1ffda301852b596e5060
 +  base::FilePath bundled_dir;  // next to the browser: the shipped engine and lists
 +  base::FilePath store_dir;    // <user data dir>/Thoron Adblock, the updated copies
 +  std::string version;         // browser version; copies from another version are ignored
++  // P5.23: the Ed25519 key (32 bytes) updates of the scriptlets and stand-ins
++  // must be signed with: Thoron's (ResourcesKey), or empty, and then no update
++  // is fetched or used.
++  std::string resources_key;
 +};
++
++// P5.23: uBlock Origin's scriptlets and stand-ins are shipped with the browser
++// (thoron_adblock_resources.json, serial kShippedResourcesSerial). Between
++// releases a newer copy may come, signed with Thoron's key: a text file of
++//   thoron-adblock-resources 1
++//   serial: <YYYYMMDDNN>
++//   signature: <base64 of the Ed25519 signature>
++//   <an empty line>
++//   <the resources, as the shipped file>
++// The signature is over the file without its signature line. A copy is only
++// taken in when the signature holds and its serial is higher than the one in
++// use; it is checked again each time it is read. Anything else leaves the copy
++// in use as it is.
++inline constexpr int64_t kShippedResourcesSerial = 2026111100;
++inline constexpr std::string_view kResourcesFileName =
++    "thoron_adblock_resources.signed";
++inline constexpr char kResourcesUrl[] =
++    "https://github.com/KuchiSofts/thoron/releases/download/adblock-resources/"
++    "thoron_adblock_resources.signed";
++struct SignedResources {
++  int64_t serial = 0;
++  std::string json;
++};
++// The resources in `text` when it is such a file signed with `key`.
++std::optional<SignedResources> VerifyResources(std::string_view text,
++                                               std::string_view key);
++// The key updates must be signed with: Thoron's, made at the key ceremony
++// (ROADMAP P2.11; none yet: ""). With `testing` (the offline checks: the lists
++// come from a local server) the one given with
++// --thoron-adblock-resources-key-for-testing, in base64, instead.
++std::string ResourcesKey(bool testing);
++// The serial of the resources the engine is given: the stored update's when it
++// holds and is newer than the shipped copy, else the shipped copy's.
++int64_t ResourcesSerialInUse(const StorePaths& paths);
++struct ResourcesResult {
++  ResourcesResult();
++  ResourcesResult(ResourcesResult&&);
++  ResourcesResult& operator=(ResourcesResult&&);
++  ~ResourcesResult();
++  std::string summary;
++  // Set when the update was taken in: the engine with the new resources.
++  std::optional<rust::Box<Engine>> engine;
++};
++// Takes in the update downloaded to `download` (deleted afterwards), or says
++// why not.
++ResourcesResult ApplyResourcesUpdate(const StorePaths& paths,
++                                     const base::FilePath& download);
 +
 +// The largest list accepted, and the most a list may shrink against its
 +// previous copy.
@@ -13098,10 +13310,10 @@ index 0000000000000000000000000000000000000000..afc6fddd83dd1ffda301852b596e5060
 +#endif  // COMPONENTS_THORON_ADBLOCK_LIST_STORE_H_
 diff --git a/components/thoron_adblock/list_updater.cc b/components/thoron_adblock/list_updater.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..1ea2043d974b25f60b24d47c80322e6e0cbf92f4
+index 0000000000000000000000000000000000000000..a5899ea33c2efe70ea199d57ef31104b9225bf7e
 --- /dev/null
 +++ b/components/thoron_adblock/list_updater.cc
-@@ -0,0 +1,271 @@
+@@ -0,0 +1,315 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -13356,7 +13568,51 @@ index 0000000000000000000000000000000000000000..1ea2043d974b25f60b24d47c80322e6e
 +  if (result.engine) {
 +    on_new_engine_.Run(std::move(*result.engine));
 +  }
-+  Finished(result.summary);
++  FetchResources(std::move(result.summary));
++}
++
++void ListUpdater::FetchResources(std::string summary) {
++  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
++  // No key, no update: nothing is asked for.
++  scoped_refptr<network::SharedURLLoaderFactory> factory =
++      paths_.resources_key.empty() ? nullptr : factory_getter_.Run();
++  if (!factory) {
++    Finished(summary);
++    return;
++  }
++  const bool testing = base_url_for_testing_.is_valid();
++  const GURL url = testing ? base_url_for_testing_.Resolve(kResourcesFileName)
++                           : GURL(kResourcesUrl);
++  fetch_ = std::make_unique<ListFetch>(
++      url,
++      paths_.store_dir.Append(kDownloadDir)
++          .Append(FILE_PATH_LITERAL("resources.part")),
++      std::move(factory), file_runner_, testing,
++      base::BindOnce(&ListUpdater::OnResourcesFetched,
++                     weak_factory_.GetWeakPtr(), std::move(summary)));
++}
++
++void ListUpdater::OnResourcesFetched(std::string summary, base::FilePath path) {
++  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
++  fetch_.reset();
++  if (path.empty()) {
++    Finished(summary + "Scriptlets: no update could be downloaded.\n");
++    return;
++  }
++  file_runner_->PostTaskAndReplyWithResult(
++      FROM_HERE, base::BindOnce(&ApplyResourcesUpdate, paths_, std::move(path)),
++      base::BindOnce(&ListUpdater::OnResourcesApplied,
++                     weak_factory_.GetWeakPtr(), std::move(summary)));
++}
++
++void ListUpdater::OnResourcesApplied(std::string summary,
++                                     ResourcesResult result) {
++  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
++  VLOG(1) << "Thoron ad-blocking scriptlets:\n" << result.summary;
++  if (result.engine) {
++    on_new_engine_.Run(std::move(*result.engine));
++  }
++  Finished(summary + result.summary);
 +}
 +
 +void ListUpdater::Finished(const std::string& summary) {
@@ -13375,10 +13631,10 @@ index 0000000000000000000000000000000000000000..1ea2043d974b25f60b24d47c80322e6e
 +}  // namespace thoron_adblock
 diff --git a/components/thoron_adblock/list_updater.h b/components/thoron_adblock/list_updater.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..8dbe44fc9a233565b4b6d83fddd28087625a20fc
+index 0000000000000000000000000000000000000000..9b8294a98875fb298b4b64d7c8dae9753c7a91be
 --- /dev/null
 +++ b/components/thoron_adblock/list_updater.h
-@@ -0,0 +1,115 @@
+@@ -0,0 +1,120 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -13462,6 +13718,11 @@ index 0000000000000000000000000000000000000000..8dbe44fc9a233565b4b6d83fddd28087
 +  void OnFetched(base::FilePath path);
 +  void FinishFetching();
 +  void OnApplied(UpdateResult result);
++  // P5.23: after the lists, a newer copy of the scriptlets and stand-ins,
++  // signed with Thoron's key (only when the browser has that key).
++  void FetchResources(std::string summary);
++  void OnResourcesFetched(std::string summary, base::FilePath path);
++  void OnResourcesApplied(std::string summary, ResourcesResult result);
 +  void Finished(const std::string& summary);
 +  GURL UrlFor(const ActiveList& source, bool fallback) const;
 +

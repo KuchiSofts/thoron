@@ -89,7 +89,7 @@ from tools.docs import check_docs  # noqa: E402
 from tools.legal import patch_licenses  # noqa: E402
 from tools.legal import unlicensed_patches  # noqa: E402
 from tools.qa import perf_gate  # noqa: E402
-from tools.release import adblock_resources, changelog, package_audit, portable, version as ver  # noqa: E402
+from tools.release import adblock_resources, changelog, delta, package_audit, portable, version as ver  # noqa: E402
 from tools.update import manifest as mf  # noqa: E402
 
 _VARIANT = re.compile(r"^(win|linux)-(x64|arm64)-[a-z0-9]+$")
@@ -342,6 +342,45 @@ def portable_problems(chrome_bin: Path, version: str, variant: str, launcher: Pa
     return out + found
 
 
+MOST_DELTAS = 3       # ROADMAP P4.1: from each of the previous 3 releases
+
+
+def delta_name(old_version: str, version: str, variant: str) -> str:
+    return f"thoron-{old_version}-to-{version}-{variant}-portable.delta"
+
+
+def add_deltas(chrome_bin: Path, dist: Path, version: str, variant: str, olds: list[Path],
+               zucchini: Path) -> tuple[list[Path], list[dict]]:
+    """The delta packages from each older release's browser folder to this one (tools/release/delta.py), each
+    applied once and checked before it is kept, with what each holds and its size."""
+    if len(olds) > MOST_DELTAS:
+        raise ReleaseError(f"at most {MOST_DELTAS} deltas (--delta-from), not {len(olds)}")
+    made, reports = [], []
+    for old in olds:
+        try:
+            old_version = delta.version_of(delta.files(old))
+            target = dist / delta_name(old_version, version, variant)
+            reports.append(delta.make(old, chrome_bin, zucchini, target))
+        except delta.DeltaError as exc:
+            raise ReleaseError(f"delta from {old.name}: {exc}") from None
+        made.append(target)
+    return made, reports
+
+
+def update_sizes(reports: list[dict], full_bytes: int) -> str:
+    """The notes' section on what an update downloads: the full package and each delta (P4.1)."""
+    if not reports:
+        return ""
+    mib = 1024 * 1024
+    lines = ["", "## Update sizes", "",
+             f"- The whole portable package: {full_bytes / mib:.1f} MiB."]
+    for r in sorted(reports, key=lambda r: r["from"], reverse=True):
+        lines.append(f"- From {r['from']}: {r['delta_bytes'] / mib:.1f} MiB, "
+                     f"{100 * r['delta_bytes'] / max(1, full_bytes):.1f} % of the whole package "
+                     f"({r['same']} files the same, {r['patch']} patched, {r['whole']} whole).")
+    return "\n".join(lines) + "\n"
+
+
 def add_portable(chrome_bin: Path, dist: Path, version: str, variant: str, launcher: Path, updater: Path) -> Path:
     """The portable .zip of the release, made by tools/release/portable.py in the release folder. The
     folder it is zipped from, which that call has just made, is taken away again: a release folder holds
@@ -468,7 +507,8 @@ def wiki_commands(gh_repo: str) -> list[str]:
 
 def assemble(out: Path, dist: Path, version: str, variant: str, buildinfo: Path, chrome_bin: Path | None = None,
              licences: dict[str, bytes] | None = None, launcher: Path | None = None,
-             updater: Path | None = None) -> list[Path]:
+             updater: Path | None = None, deltas_from: list[Path] | None = None, zucchini: Path | None = None,
+             delta_reports: list | None = None) -> list[Path]:
     """Fills the release folder. With `chrome_bin` the portable package of a Windows build is made beside
     the installer, with the launcher and the updater the build wrote into `out` unless others are named;
     with `licences` the licence bundle. SHA256SUMS lists every file."""
@@ -487,6 +527,12 @@ def assemble(out: Path, dist: Path, version: str, variant: str, buildinfo: Path,
     if chrome_bin is not None and platform == "win":
         files.append(add_portable(chrome_bin, dist, version, variant, launcher or out / portable.BUILT_LAUNCHER,
                                   updater or out / portable.UPDATER))
+        if deltas_from:
+            made, reports = add_deltas(chrome_bin, dist, version, variant, list(deltas_from),
+                                       zucchini or out / "zucchini.exe")
+            files += made
+            if delta_reports is not None:
+                delta_reports.extend(reports)
     info = dist / f"BUILDINFO-{version}-{variant}.json"
     shutil.copy2(buildinfo, info)
     files.append(info)
@@ -615,6 +661,12 @@ def manifest_packages(dist: Path, version: str, variant: str, gh_repo: str, tag:
     folder, and the address the draft will serve it from."""
     kinds = {kind: {"full": mf.file_entry(path, download_url(gh_repo, tag, path.name))}
              for kind, path in package_files(dist, version, variant).items()}
+    # The deltas of the portable package, keyed by the version each turns into this one (P4.1).
+    suffix = f"-to-{version}-{variant}-portable.delta"
+    deltas = {path.name[len("thoron-"):-len(suffix)]: mf.file_entry(path, download_url(gh_repo, tag, path.name))
+              for path in sorted(dist.glob(f"thoron-*{suffix}"))}
+    if deltas and "portable" in kinds:
+        kinds["portable"]["deltas"] = deltas
     return {variant: kinds} if kinds else {}
 
 
@@ -877,13 +929,21 @@ def _prepare(a) -> int:
     if a.dist.exists() and any(a.dist.iterdir()):
         raise ReleaseError(f"{a.dist} is not empty; a release folder is never overwritten")
     try:
-        files = assemble(a.out, a.dist, version, a.variant, a.buildinfo, chrome_bin, licences, launcher, updater)
+        delta_reports: list = []
+        files = assemble(a.out, a.dist, version, a.variant, a.buildinfo, chrome_bin, licences, launcher, updater,
+                         a.delta_from, a.zucchini, delta_reports)
         source = {"tag": info["source_tag"], "commit": info["thoron_commit"], "chromium_tag": info["chromium_tag"],
                   "licences": licence_bundle_name(version)}
         notes = changelog.render(version, a.chromium_old, chromium_new, a.repo, a.since,
                                  artifacts=(a.dist / "SHA256SUMS").read_text(encoding="utf-8").splitlines(),
                                  security=security, highlights=highlights, changes=changes, thoron_version=thoron,
                                  source=source, audit=changelog.audit_lines(a.repo))
+        portable_zip = a.dist / portable_name(version, a.variant)
+        if delta_reports and portable_zip.is_file():
+            notes += update_sizes(delta_reports, portable_zip.stat().st_size)
+            for r in delta_reports:
+                print(f"release: delta from {r['from']}: {r['delta_bytes']} bytes "
+                      f"({r['same']} same, {r['patch']} patched, {r['whole']} whole), applied and checked")
         (a.dist / "NOTES.md").write_text(notes, encoding="utf-8", newline="\n")
         print(f"release: the notes list the changes under [{section}] of CHANGELOG.md")
         if a.minisign_key:
@@ -945,6 +1005,10 @@ def main(argv: list[str], run=None) -> int:
                     f"{portable.BUILT_LAUNCHER} in the out dir")
     a_.add_argument("--updater", type=Path, help=f"the updater put beside the browser in the portable package; "
                     f"default: {portable.UPDATER} in the out dir")
+    a_.add_argument("--delta-from", type=Path, action="append", default=[],
+                    help=f"an older release's browser folder (Chrome-bin) to make a delta package from; up to "
+                    f"{MOST_DELTAS} times (ROADMAP P4.1)")
+    a_.add_argument("--zucchini", type=Path, help="Chromium's zucchini.exe; default: the one in the out dir")
     a_.add_argument("--contributors", type=Path, help="a saved list of upstream's contributors, as "
                     "tools/credits/contributors.py --from-json reads it; default: ask GitHub (read only)")
     a_.add_argument("--minisign-key", type=Path)

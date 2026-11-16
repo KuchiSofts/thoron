@@ -1502,5 +1502,40 @@ class ChecksumTests(ReleaseTestCase):
         self.assertEqual(rel.checksum_problems(dist), ["gone.exe is in SHA256SUMS and not in the folder"])
 
 
+class DeltaReleaseTests(unittest.TestCase):
+    """ROADMAP P4.1: the release's delta packages, their place in the manifest and their sizes in the notes."""
+
+    def test_names_and_the_sizes_section(self):
+        self.assertEqual(rel.delta_name("158.0.8127.3000", "158.0.8127.3010", "win-x64-avx2"),
+                         "thoron-158.0.8127.3000-to-158.0.8127.3010-win-x64-avx2-portable.delta")
+        self.assertEqual(rel.update_sizes([], 100), "")
+        text = rel.update_sizes([{"from": "158.0.8127.3000", "delta_bytes": 8 * 1024 * 1024, "same": 233,
+                                  "patch": 29, "whole": 0}], 220 * 1024 * 1024)
+        self.assertIn("## Update sizes", text)
+        self.assertIn("- From 158.0.8127.3000: 8.0 MiB, 3.6 % of the whole package (233 files the same, "
+                      "29 patched, 0 whole).", text)
+        self.assertNotIn(chr(0x2014), text)    # no long dash in the notes
+
+    def test_the_manifest_names_the_portable_deltas(self):
+        with tempfile.TemporaryDirectory() as d:
+            dist = Path(d)
+            version, variant = "158.0.8127.3010", "win-x64-avx2"
+            (dist / rel.portable_name(version, variant)).write_bytes(b"zip")
+            (dist / rel.delta_name("158.0.8127.3000", version, variant)).write_bytes(b"delta")
+            (dist / rel.delta_name("158.0.8127.2000", "158.0.8127.2500", variant)).write_bytes(b"other")
+            packages = rel.manifest_packages(dist, version, variant, "KuchiSofts/thoron", "v0.1.2")
+            deltas = packages[variant]["portable"]["deltas"]
+            self.assertEqual(sorted(deltas), ["158.0.8127.3000"])
+            self.assertEqual(deltas["158.0.8127.3000"]["size"], 5)
+            self.assertTrue(deltas["158.0.8127.3000"]["url"].endswith(
+                rel.delta_name("158.0.8127.3000", version, variant)))
+
+    def test_at_most_three_deltas(self):
+        with tempfile.TemporaryDirectory() as d:
+            with self.assertRaises(rel.ReleaseError):
+                rel.add_deltas(Path(d), Path(d), "158.0.8127.3010", "win-x64-avx2", [Path(d)] * 4,
+                               Path("zucchini.exe"))
+
+
 if __name__ == "__main__":
     unittest.main()

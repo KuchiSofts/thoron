@@ -2448,10 +2448,10 @@ index 0000000000000000000000000000000000000000..d345a9b5a9e7492291134540f13777e9
 +}
 diff --git a/chrome/browser/thoron_update/thoron_update_win.cc b/chrome/browser/thoron_update/thoron_update_win.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..d60572e4b95af103a3f0500b60ce8cbffaafc293
+index 0000000000000000000000000000000000000000..f0f1a6c7d60c6812e2f3451d3743b1bf6a11c96c
 --- /dev/null
 +++ b/chrome/browser/thoron_update/thoron_update_win.cc
-@@ -0,0 +1,203 @@
+@@ -0,0 +1,201 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -2548,10 +2548,6 @@ index 0000000000000000000000000000000000000000..d60572e4b95af103a3f0500b60ce8cbf
 +}
 +
 +bool RunPortableUpdate(const base::FilePath& package, bool delta, const std::string& version) {
-+  if (delta) {
-+    // A portable release has no deltas (P4.1).
-+    return false;
-+  }
 +  base::FilePath exe;
 +  base::PathService::Get(base::DIR_EXE, &exe);
 +  bool portable = false;
@@ -2561,7 +2557,9 @@ index 0000000000000000000000000000000000000000..d60572e4b95af103a3f0500b60ce8cbf
 +  }
 +  base::CommandLine command(exe.Append(FILE_PATH_LITERAL("thoron_update.exe")));
 +  command.AppendSwitchPath("root", root);
-+  command.AppendSwitchPath("apply-package", package);
++  // A delta makes the new version from this one's folder (P4.1); a package
++  // holds it whole.
++  command.AppendSwitchPath(delta ? "apply-delta" : "apply-package", package);
 +  command.AppendSwitchASCII("version", version);
 +  base::LaunchOptions options;
 +  options.start_hidden = true;
@@ -2657,10 +2655,10 @@ index 0000000000000000000000000000000000000000..d60572e4b95af103a3f0500b60ce8cbf
 +}  // namespace thoron_update_win
 diff --git a/chrome/browser/thoron_update/thoron_update_win.h b/chrome/browser/thoron_update/thoron_update_win.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..9f6798328675ac90fbefe1fc2ba923f8f529ac04
+index 0000000000000000000000000000000000000000..2f3557941fca5d63befe44eb2ef8d94e303683c1
 --- /dev/null
 +++ b/chrome/browser/thoron_update/thoron_update_win.h
-@@ -0,0 +1,48 @@
+@@ -0,0 +1,49 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -2699,8 +2697,9 @@ index 0000000000000000000000000000000000000000..9f6798328675ac90fbefe1fc2ba923f8
 +bool RunInstaller(const base::FilePath& package, bool delta, const std::string& version);
 +
 +// The update of a portable copy: its own updater unpacks the version's folder
-+// of the checked package and puts it in place (thoron_update --apply-package),
-+// and the next start, or the relaunch, runs it.
++// of the checked package (thoron_update --apply-package), or makes it from this
++// version's folder with a delta (--apply-delta), and puts it in place; the next
++// start, or the relaunch, runs it.
 +bool RunPortableUpdate(const base::FilePath& package, bool delta, const std::string& version);
 +
 +// Whether the installer's exit code means it installed.
@@ -12456,10 +12455,10 @@ index 0000000000000000000000000000000000000000..3e4c28764458836945e8dccad2197a69
 +#endif  // COMPONENTS_THORON_MAIL_MAIL_SERVICE_H_
 diff --git a/components/thoron_update/BUILD.gn b/components/thoron_update/BUILD.gn
 new file mode 100644
-index 0000000000000000000000000000000000000000..c307107d9be2a77b7cf786f0fd417dd9e8ea2c75
+index 0000000000000000000000000000000000000000..bcc95deb66605d080963bb36981a39786d3a6b3d
 --- /dev/null
 +++ b/components/thoron_update/BUILD.gn
-@@ -0,0 +1,117 @@
+@@ -0,0 +1,122 @@
 +# Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +# found in the LICENSE file.
 +
@@ -12472,6 +12471,8 @@ index 0000000000000000000000000000000000000000..c307107d9be2a77b7cf786f0fd417dd9
 +  sources = [
 +    "cli.cc",
 +    "cli.h",
++    "delta_package.cc",
++    "delta_package.h",
 +    "manifest.cc",
 +    "manifest.h",
 +    "package.cc",
@@ -12485,6 +12486,7 @@ index 0000000000000000000000000000000000000000..c307107d9be2a77b7cf786f0fd417dd9
 +  ]
 +  deps = [
 +    "//base",
++    "//components/zucchini:zucchini_lib",
 +    "//crypto",
 +    "//third_party/boringssl",
 +    "//third_party/sqlite",
@@ -12517,6 +12519,7 @@ index 0000000000000000000000000000000000000000..c307107d9be2a77b7cf786f0fd417dd9
 +  testonly = true
 +  sources = [
 +    "cli_unittest.cc",
++    "delta_package_unittest.cc",
 +    "key_rotation_unittest.cc",
 +    "manifest_test_vectors.h",
 +    "manifest_unittest.cc",
@@ -12533,6 +12536,7 @@ index 0000000000000000000000000000000000000000..c307107d9be2a77b7cf786f0fd417dd9
 +    "//base",
 +    "//base/test:test_support",
 +    "//components/prefs:test_support",
++    "//components/zucchini:zucchini_lib",
 +    "//crypto",
 +    "//net",
 +    "//services/network:test_support",
@@ -12579,11 +12583,12 @@ index 0000000000000000000000000000000000000000..c307107d9be2a77b7cf786f0fd417dd9
 +}
 diff --git a/components/thoron_update/DEPS b/components/thoron_update/DEPS
 new file mode 100644
-index 0000000000000000000000000000000000000000..beb8343f22d0c2666b6fdae1536e9d29de8f10d2
+index 0000000000000000000000000000000000000000..7ec239331342b7f306c7d09622c231e6c0b58b0d
 --- /dev/null
 +++ b/components/thoron_update/DEPS
-@@ -0,0 +1,10 @@
+@@ -0,0 +1,11 @@
 +include_rules = [
++  "+components/zucchini",
 +  "+third_party/zlib/google",
 +  "+url",
 +  "+services/network/public",
@@ -12595,10 +12600,10 @@ index 0000000000000000000000000000000000000000..beb8343f22d0c2666b6fdae1536e9d29
 +]
 diff --git a/components/thoron_update/README.md b/components/thoron_update/README.md
 new file mode 100644
-index 0000000000000000000000000000000000000000..b87968efd2f3654a8d9e1a62bdeb940ae7aa9c2a
+index 0000000000000000000000000000000000000000..a9eaf82dcece3be8971bc66e47fbaf7895ec5cab
 --- /dev/null
 +++ b/components/thoron_update/README.md
-@@ -0,0 +1,188 @@
+@@ -0,0 +1,198 @@
 +# thoron_update
 +
 +The core of Thoron's updater (ROADMAP P3.3): what a copy of Thoron makes of the two files a release
@@ -12686,6 +12691,7 @@ index 0000000000000000000000000000000000000000..b87968efd2f3654a8d9e1a62bdeb940a
 +    thoron_update --root <program folder> --apply <staged folder> --version <v> --files <files.json>
 +        [--handed-off]
 +    thoron_update --root <program folder> --apply-package <portable .zip> --version <v>
++    thoron_update --root <program folder> --apply-delta <file.delta> --version <v>
 +    thoron_update --root <program folder> --rollback
 +    thoron_update --root <program folder> --mode [auto|notify|off]
 +    thoron_update --check --manifest <update.json> --signature <update.json.sig> --public-key <base64>
@@ -12715,7 +12721,16 @@ index 0000000000000000000000000000000000000000..b87968efd2f3654a8d9e1a62bdeb940a
 +(`chrome/browser/thoron_update/`), and its relaunch starts the version `current` names
 +(`BrowserOfCurrentVersion` in `swap.h`). `tools/qa/portable_update_check.py` checks it with a real package.
 +
-+**Rollback (P3.8).** `--rollback` says what it would do and does it only with `--confirm`. With
++**Deltas (P4.1).** `--apply-delta` makes the new version's folder from the current one's with a delta
++of `tools/release/delta.py` (`delta_package.h`): every file of the new folder is the older file as it is,
++made from it with a Zucchini patch (Chromium's `components/zucchini`, the code the tool made it with), or
++whole. Every older file is checked against the SHA-256 the delta names before it is used and every file
++made against the new one's; a path that leaves the folder, a delta for other versions or a patch that does
++not apply refuses the whole delta and leaves nothing. Then the swap as for `--apply`, through the updater of
++the new version. A portable copy's browser uses it when the manifest names a delta from its version.
++`tools/qa/delta_apply_check.py` applies a real delta between two builds and compares every file.
++
++**Rollback (P3.8). `--rollback` says what it would do and does it only with `--confirm`. With
 +`--restore-profile <User Data> --snapshots <folder>` it first puts the profile back from the snapshot taken
 +before the current version (`before-<version>`, made by `--apply-package --snapshot-profile <User Data>
 +--snapshots <folder>`; `snapshot.h`), all or nothing, and then switches the version back.
@@ -12789,10 +12804,10 @@ index 0000000000000000000000000000000000000000..b87968efd2f3654a8d9e1a62bdeb940a
 +of the spec ("A signature to test against") is among them, under its own throwaway key.
 diff --git a/components/thoron_update/cli.cc b/components/thoron_update/cli.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..9b760e9d6a67261aa51fea65fc6cb367e1210b75
+index 0000000000000000000000000000000000000000..7b45c475d6691d3a6144e469bf67300bedde249a
 --- /dev/null
 +++ b/components/thoron_update/cli.cc
-@@ -0,0 +1,454 @@
+@@ -0,0 +1,511 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -12816,6 +12831,7 @@ index 0000000000000000000000000000000000000000..9b760e9d6a67261aa51fea65fc6cb367
 +#include "base/values.h"
 +#include "build/build_config.h"
 +#include "components/thoron_update/package.h"
++#include "components/thoron_update/delta_package.h"
 +#include "components/thoron_update/portable_package.h"
 +#include "components/thoron_update/snapshot.h"
 +#include "components/thoron_update/swap.h"
@@ -13053,6 +13069,13 @@ index 0000000000000000000000000000000000000000..9b760e9d6a67261aa51fea65fc6cb367
 +                     command.HasSwitch("handed-off"), out);
 +}
 +
++int SnapshotAndApply(const base::CommandLine& command,
++                     const base::FilePath& root,
++                     const base::FilePath& staged,
++                     const BuildVersion& version_value,
++                     const std::vector<VersionFile>& files,
++                     std::string* out);
++
 +// --apply-package: a portable copy's update from its release's package.
 +int ApplyPackage(const base::CommandLine& command, const base::FilePath& root, std::string* out) {
 +  const std::optional<BuildVersion> version = ParseBuildVersion(Arg(command, "version"));
@@ -13073,6 +13096,57 @@ index 0000000000000000000000000000000000000000..9b760e9d6a67261aa51fea65fc6cb367
 +    *out += std::string(UnpackResultName(unpacked)) + "\n";
 +    return unpacked == UnpackResult::kIoError ? kExitIoError : kExitBadFiles;
 +  }
++  const int code = SnapshotAndApply(command, root, staged, *version, files, out);
++  // The launcher of a portable copy sits beside its program folder.
++  const base::FilePath launcher = root.DirName().AppendASCII("Thoron.exe");
++  if (code == kExitOk && base::PathExists(launcher)) {
++    *out += ReplaceLauncher(package, launcher) ? "launcher: current\n" : "launcher: kept\n";
++  }
++  return code;
++}
++
++// --apply-delta: the newer version made from the current one's folder (P4.1).
++int ApplyDeltaCommand(const base::CommandLine& command, const base::FilePath& root, std::string* out) {
++  const std::optional<BuildVersion> version = ParseBuildVersion(Arg(command, "version"));
++  const base::FilePath delta = command.GetSwitchValuePath("apply-delta");
++  const std::optional<BuildVersion> current = CurrentVersion(root);
++  if (!version || delta.empty()) {
++    *out += "--version or --apply-delta is missing or wrong\n";
++    return kExitUsage;
++  }
++  if (!current) {
++    *out += "no version starts in the folder, so there is nothing to make the delta from\n";
++    return kExitNoVersion;
++  }
++  if (*current == *version) {
++    return FromSwap(SwapResult::kAlreadyCurrent, out);
++  }
++  const base::FilePath staged = root.AppendASCII(ToString(*version) + ".staging");
++  base::DeletePathRecursively(staged);
++  std::vector<VersionFile> files;
++  const DeltaResult made =
++      ApplyDelta(delta, VersionFolder(root, *current), *current, *version, staged, &files);
++  if (made != DeltaResult::kDone) {
++    *out += std::string(DeltaResultName(made)) + "\n";
++    return made == DeltaResult::kIoError        ? kExitIoError
++           : made == DeltaResult::kWrongVersion ? kExitBadRequest
++                                                : kExitBadFiles;
++  }
++  *out += "delta: " + ToString(*current) + " -> " + ToString(*version) + ", " +
++          base::NumberToString(files.size()) + " files made and checked\n";
++  return SnapshotAndApply(command, root, staged, *version, files, out);
++}
++
++// The end of --apply-package and --apply-delta: the profile's snapshot when
++// asked for, the list of the staged files, and the apply through the updater
++// in the staged folder.
++int SnapshotAndApply(const base::CommandLine& command,
++                     const base::FilePath& root,
++                     const base::FilePath& staged,
++                     const BuildVersion& version_value,
++                     const std::vector<VersionFile>& files,
++                     std::string* out) {
++  const BuildVersion* version = &version_value;
 +  // The profile as it is, before the version changes (P3.7), when asked for.
 +  const base::FilePath user_data = command.GetSwitchValuePath("snapshot-profile");
 +  const base::FilePath snapshots = command.GetSwitchValuePath("snapshots");
@@ -13104,11 +13178,6 @@ index 0000000000000000000000000000000000000000..9b760e9d6a67261aa51fea65fc6cb367
 +  const int code = ApplyStaged(root, staged, *version, files, files_path,
 +                               command.HasSwitch("handed-off"), out);
 +  base::DeleteFile(files_path);
-+  // The launcher of a portable copy sits beside its program folder.
-+  const base::FilePath launcher = root.DirName().AppendASCII("Thoron.exe");
-+  if (code == kExitOk && base::PathExists(launcher)) {
-+    *out += ReplaceLauncher(package, launcher) ? "launcher: current\n" : "launcher: kept\n";
-+  }
 +  return code;
 +}
 +
@@ -13220,6 +13289,9 @@ index 0000000000000000000000000000000000000000..9b760e9d6a67261aa51fea65fc6cb367
 +  if (command.HasSwitch("apply-package")) {
 +    return ApplyPackage(command, root, out);
 +  }
++  if (command.HasSwitch("apply-delta")) {
++    return ApplyDeltaCommand(command, root, out);
++  }
 +  if (command.HasSwitch("apply")) {
 +    return Apply(command, root, out);
 +  }
@@ -13249,10 +13321,10 @@ index 0000000000000000000000000000000000000000..9b760e9d6a67261aa51fea65fc6cb367
 +}  // namespace thoron_update
 diff --git a/components/thoron_update/cli.h b/components/thoron_update/cli.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..0543989c3b106754a21cf3d7bfa7f72b1456a401
+index 0000000000000000000000000000000000000000..c3ef0c8e52107507af272d552d2edbd9fa53a5f5
 --- /dev/null
 +++ b/components/thoron_update/cli.h
-@@ -0,0 +1,119 @@
+@@ -0,0 +1,121 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -13277,6 +13349,8 @@ index 0000000000000000000000000000000000000000..0543989c3b106754a21cf3d7bfa7f72b
 +//   thoron_update --root <program folder> --apply <staged folder> --version <v> --files <files.json>
 +//       [--handed-off]
 +//   thoron_update --root <program folder> --apply-package <portable .zip> --version <v>
++//       [--snapshot-profile <User Data> --snapshots <folder>]
++//   thoron_update --root <program folder> --apply-delta <file.delta> --version <v>
 +//       [--snapshot-profile <User Data> --snapshots <folder>]
 +//   thoron_update --root <program folder> --rollback [--confirm]
 +//       [--restore-profile <User Data> --snapshots <folder>]
@@ -13656,6 +13730,560 @@ index 0000000000000000000000000000000000000000..f21ca483286d302bd276d12ce6060fd0
 +  args = CheckArgs(std::string(test_vectors::kExampleSignature));
 +  args[1] = "--manifest=" + dir_.GetPath().AppendASCII("none.json").AsUTF8Unsafe();
 +  EXPECT_EQ(Run(args), kExitUsage);
++}
++
++}  // namespace
++}  // namespace thoron_update
+diff --git a/components/thoron_update/delta_package.cc b/components/thoron_update/delta_package.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..ba7b95d9e604495422f9b7618d46e96f80b18146
+--- /dev/null
++++ b/components/thoron_update/delta_package.cc
+@@ -0,0 +1,294 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "components/thoron_update/delta_package.h"
++
++#include <map>
++#include <optional>
++#include <set>
++#include <string>
++#include <utility>
++
++#include "base/containers/span.h"
++#include "base/files/file_path.h"
++#include "base/files/file_util.h"
++#include "base/json/json_reader.h"
++#include "base/strings/string_number_conversions.h"
++#include "base/strings/string_split.h"
++#include "base/strings/string_util.h"
++#include "base/values.h"
++#include "components/thoron_update/package.h"
++#include "components/thoron_update/portable_package.h"
++#include "components/zucchini/buffer_view.h"
++#include "components/zucchini/patch_reader.h"
++#include "components/zucchini/zucchini.h"
++#include "crypto/hash.h"
++#include "third_party/zlib/google/zip_reader.h"
++
++namespace thoron_update {
++
++namespace {
++
++constexpr uint64_t kMostListBytes = 16 * 1024 * 1024;
++
++struct Entry {
++  std::string path;
++  int64_t size = 0;
++  std::string sha256;
++  std::string how;
++  std::string from_path;
++  std::string from_sha256;
++};
++
++std::string Sha256Hex(base::span<const uint8_t> data) {
++  return base::HexEncodeLower(crypto::hash::Sha256(data));
++}
++
++// A path inside the version's folder: parts joined by '/', none empty, '.' or
++// '..', no '\\' or ':' (no drive, no stream).
++std::optional<base::FilePath> Inside(const base::FilePath& folder, const std::string& path) {
++  if (path.empty() || path.size() > 1024) {
++    return std::nullopt;
++  }
++  base::FilePath out = folder;
++  for (const std::string& part :
++       base::SplitString(path, "/", base::KEEP_WHITESPACE, base::SPLIT_WANT_ALL)) {
++    if (part.empty() || part == "." || part == ".." ||
++        part.find_first_of("\\:") != std::string::npos) {
++      return std::nullopt;
++    }
++    out = out.Append(base::FilePath::FromUTF8Unsafe(part));
++  }
++  return out;
++}
++
++std::optional<std::vector<Entry>> ReadList(const std::string& text,
++                                           const BuildVersion& from,
++                                           const BuildVersion& to,
++                                           DeltaResult* why) {
++  *why = DeltaResult::kNotADelta;
++  const std::optional<base::Value> read = base::JSONReader::Read(text, base::JSON_PARSE_RFC);
++  const base::DictValue* dict = read ? read->GetIfDict() : nullptr;
++  if (!dict || dict->FindInt("format").value_or(0) != 1) {
++    return std::nullopt;
++  }
++  const std::string* from_text = dict->FindString("from");
++  const std::string* to_text = dict->FindString("to");
++  if (!from_text || !to_text) {
++    return std::nullopt;
++  }
++  if (*from_text != ToString(from) || *to_text != ToString(to)) {
++    *why = DeltaResult::kWrongVersion;
++    return std::nullopt;
++  }
++  const base::ListValue* list = dict->FindList("files");
++  if (!list || list->empty() || list->size() > kMostUnpackedFiles) {
++    *why = list && list->size() > kMostUnpackedFiles ? DeltaResult::kTooLarge
++                                                      : DeltaResult::kNotADelta;
++    return std::nullopt;
++  }
++  std::vector<Entry> out;
++  std::set<std::string> seen;
++  int64_t total = 0;
++  for (const base::Value& value : *list) {
++    const base::DictValue* file = value.GetIfDict();
++    if (!file) {
++      return std::nullopt;
++    }
++    Entry entry;
++    const std::string* path = file->FindString("path");
++    const std::string* sha = file->FindString("sha256");
++    const std::string* how = file->FindString("how");
++    const std::optional<double> size = file->FindDouble("size");
++    if (!path || !sha || !how || !size || *size < 0 || *size > 4294967295.0 ||
++        !seen.insert(base::ToLowerASCII(*path)).second) {
++      return std::nullopt;
++    }
++    entry.path = *path;
++    entry.sha256 = *sha;
++    entry.how = *how;
++    entry.size = static_cast<int64_t>(*size);
++    if (entry.how == "same" || entry.how == "patch") {
++      const std::string* from_path = file->FindString("from_path");
++      const std::string* from_sha = file->FindString("from_sha256");
++      if (!from_path || !from_sha) {
++        return std::nullopt;
++      }
++      entry.from_path = *from_path;
++      entry.from_sha256 = *from_sha;
++    } else if (entry.how != "whole") {
++      return std::nullopt;
++    }
++    total += entry.size;
++    if (total > kMostUnpackedBytes) {
++      *why = DeltaResult::kTooLarge;
++      return std::nullopt;
++    }
++    out.push_back(std::move(entry));
++  }
++  return out;
++}
++
++DeltaResult Abandon(const base::FilePath& staged, DeltaResult result) {
++  base::DeletePathRecursively(staged);
++  return result;
++}
++
++}  // namespace
++
++std::string_view DeltaResultName(DeltaResult result) {
++  switch (result) {
++    case DeltaResult::kDone:
++      return "done";
++    case DeltaResult::kNotADelta:
++      return "not_a_delta";
++    case DeltaResult::kWrongVersion:
++      return "wrong_version";
++    case DeltaResult::kOldFileDiffers:
++      return "old_file_differs";
++    case DeltaResult::kPatchFails:
++      return "patch_fails";
++    case DeltaResult::kNewFileDiffers:
++      return "new_file_differs";
++    case DeltaResult::kTooLarge:
++      return "too_large";
++    case DeltaResult::kIoError:
++      return "io_error";
++  }
++  return "io_error";
++}
++
++DeltaResult ApplyDelta(const base::FilePath& delta,
++                       const base::FilePath& old_folder,
++                       const BuildVersion& from,
++                       const BuildVersion& to,
++                       const base::FilePath& staged,
++                       std::vector<VersionFile>* files) {
++  files->clear();
++  if (base::PathExists(staged)) {
++    return DeltaResult::kIoError;
++  }
++  // The list first.
++  std::vector<Entry> entries;
++  {
++    zip::ZipReader reader;
++    if (!reader.Open(delta)) {
++      return DeltaResult::kNotADelta;
++    }
++    std::string text;
++    bool found = false;
++    while (const zip::ZipReader::Entry* entry = reader.Next()) {
++      if (entry->path.AsUTF8Unsafe() == "delta.json") {
++        found = reader.ExtractCurrentEntryToString(kMostListBytes, &text);
++        break;
++      }
++    }
++    if (!found) {
++      return DeltaResult::kNotADelta;
++    }
++    DeltaResult why = DeltaResult::kNotADelta;
++    std::optional<std::vector<Entry>> read = ReadList(text, from, to, &why);
++    if (!read) {
++      return why;
++    }
++    entries = std::move(*read);
++  }
++  if (!base::CreateDirectory(staged)) {
++    return DeltaResult::kIoError;
++  }
++  std::map<std::string, size_t> stored;  // "patch/<n>" or "whole/<n>" -> entry
++  for (size_t n = 0; n < entries.size(); ++n) {
++    const Entry& entry = entries[n];
++    const std::optional<base::FilePath> target = Inside(staged, entry.path);
++    if (!target) {
++      return Abandon(staged, DeltaResult::kNotADelta);
++    }
++    if (entry.how != "same") {
++      stored[entry.how + "/" + base::NumberToString(n)] = n;
++      continue;
++    }
++    const std::optional<base::FilePath> source = Inside(old_folder, entry.from_path);
++    if (!source || CheckFile(*source, PackageFile{std::string(), entry.size, entry.from_sha256}) !=
++                       FileCheck::kOk) {
++      return Abandon(staged, DeltaResult::kOldFileDiffers);
++    }
++    if (!base::CreateDirectory(target->DirName()) || !base::CopyFile(*source, *target)) {
++      return Abandon(staged, DeltaResult::kIoError);
++    }
++    if (CheckFile(*target, PackageFile{std::string(), entry.size, entry.sha256}) != FileCheck::kOk) {
++      return Abandon(staged, DeltaResult::kNewFileDiffers);
++    }
++  }
++  // Then the patches and whole files, in the order the .zip holds them.
++  zip::ZipReader reader;
++  if (!reader.Open(delta)) {
++    return Abandon(staged, DeltaResult::kNotADelta);
++  }
++  while (const zip::ZipReader::Entry* zipped = reader.Next()) {
++    if (zipped->is_unsafe || zipped->is_encrypted || zipped->is_symbolic_link) {
++      return Abandon(staged, DeltaResult::kNotADelta);
++    }
++    const auto it = stored.find(zipped->path.AsUTF8Unsafe());
++    if (zipped->is_directory || it == stored.end()) {
++      continue;
++    }
++    const Entry& entry = entries[it->second];
++    stored.erase(it);
++    const base::FilePath target = *Inside(staged, entry.path);
++    if (!base::CreateDirectory(target.DirName())) {
++      return Abandon(staged, DeltaResult::kIoError);
++    }
++    if (entry.how == "whole") {
++      bool extracted = false;
++      {
++        zip::FilePathWriterDelegate writer(target);
++        extracted = reader.ExtractCurrentEntry(&writer, static_cast<uint64_t>(entry.size) + 1);
++      }
++      if (!extracted) {
++        return Abandon(staged, DeltaResult::kNewFileDiffers);
++      }
++    } else {
++      std::string patch;
++      if (!reader.ExtractCurrentEntryToString(static_cast<uint64_t>(kMostUnpackedBytes), &patch)) {
++        return Abandon(staged, DeltaResult::kTooLarge);
++      }
++      const std::optional<base::FilePath> source = Inside(old_folder, entry.from_path);
++      std::optional<std::vector<uint8_t>> old_bytes =
++          source ? base::ReadFileToBytes(*source) : std::nullopt;
++      if (!old_bytes || Sha256Hex(*old_bytes) != entry.from_sha256) {
++        return Abandon(staged, DeltaResult::kOldFileDiffers);
++      }
++      const std::optional<zucchini::EnsemblePatchReader> patch_reader =
++          zucchini::EnsemblePatchReader::Create(zucchini::ConstBufferView(
++              reinterpret_cast<const uint8_t*>(patch.data()), patch.size()));
++      if (!patch_reader || patch_reader->header().new_size != static_cast<uint64_t>(entry.size)) {
++        return Abandon(staged, DeltaResult::kPatchFails);
++      }
++      std::vector<uint8_t> made(entry.size);
++      if (zucchini::ApplyBuffer(zucchini::ConstBufferView(old_bytes->data(), old_bytes->size()),
++                                *patch_reader,
++                                zucchini::MutableBufferView(made.data(), made.size())) !=
++          zucchini::status::kStatusSuccess) {
++        return Abandon(staged, DeltaResult::kPatchFails);
++      }
++      if (Sha256Hex(made) != entry.sha256) {
++        return Abandon(staged, DeltaResult::kNewFileDiffers);
++      }
++      if (!base::WriteFile(target, made)) {
++        return Abandon(staged, DeltaResult::kIoError);
++      }
++    }
++    if (CheckFile(target, PackageFile{std::string(), entry.size, entry.sha256}) != FileCheck::kOk) {
++      return Abandon(staged, DeltaResult::kNewFileDiffers);
++    }
++  }
++  if (!reader.ok() || !stored.empty()) {
++    return Abandon(staged, DeltaResult::kNotADelta);
++  }
++  for (const Entry& entry : entries) {
++    files->push_back({entry.path, entry.size, entry.sha256});
++  }
++  return DeltaResult::kDone;
++}
++
++}  // namespace thoron_update
+diff --git a/components/thoron_update/delta_package.h b/components/thoron_update/delta_package.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..8b78e2339b0bb46b5eab6dd418201163aced3683
+--- /dev/null
++++ b/components/thoron_update/delta_package.h
+@@ -0,0 +1,59 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef COMPONENTS_THORON_UPDATE_DELTA_PACKAGE_H_
++#define COMPONENTS_THORON_UPDATE_DELTA_PACKAGE_H_
++
++#include <string_view>
++#include <vector>
++
++#include "components/thoron_update/manifest.h"
++#include "components/thoron_update/swap.h"
++
++namespace base {
++class FilePath;
++}  // namespace base
++
++// A delta package (ROADMAP P4.1), made by tools/release/delta.py: the files of
++// a newer version made from the folder of an older one. A .zip with
++// delta.json, which lists every file of the newer folder (its path, size and
++// SHA-256, and how it is made: `same` as the older file, `patch` with a Zucchini
++// patch from it, or `whole`), and the patches and whole files. The updater
++// applies it with Chromium's Zucchini, the code the tool made the patches with.
++namespace thoron_update {
++
++enum class DeltaResult {
++  kDone,
++  // Not a .zip with a delta.json of format 1, or a path that leaves the folder.
++  kNotADelta,
++  // The delta is not from the current version to the one asked for.
++  kWrongVersion,
++  // An older file it is made from is missing or not the one the delta names.
++  kOldFileDiffers,
++  // A patch that does not apply.
++  kPatchFails,
++  // A file it made is not the newer file the delta names.
++  kNewFileDiffers,
++  // More than kMostUnpackedBytes or kMostUnpackedFiles (portable_package.h).
++  kTooLarge,
++  // The staging folder is there already, or reading or writing failed.
++  kIoError,
++};
++
++std::string_view DeltaResultName(DeltaResult result);
++
++// Makes the folder of `to` in `staged`, which must not exist, from
++// `old_folder`, the folder of `from`, with the delta, and lists its files in
++// `files`. Every older file is checked against the SHA-256 the delta names
++// before it is used, and every file made against the newer one's. With
++// anything but kDone, nothing is left at `staged`.
++DeltaResult ApplyDelta(const base::FilePath& delta,
++                       const base::FilePath& old_folder,
++                       const BuildVersion& from,
++                       const BuildVersion& to,
++                       const base::FilePath& staged,
++                       std::vector<VersionFile>* files);
++
++}  // namespace thoron_update
++
++#endif  // COMPONENTS_THORON_UPDATE_DELTA_PACKAGE_H_
+diff --git a/components/thoron_update/delta_package_unittest.cc b/components/thoron_update/delta_package_unittest.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..ff5118a51b97fe3df2ad320d300bfe21fceb08dd
+--- /dev/null
++++ b/components/thoron_update/delta_package_unittest.cc
+@@ -0,0 +1,183 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "components/thoron_update/delta_package.h"
++
++#include <string>
++#include <vector>
++
++#include "base/files/file_path.h"
++#include "base/files/file_util.h"
++#include "base/files/scoped_temp_dir.h"
++#include "base/json/json_writer.h"
++#include "base/strings/string_number_conversions.h"
++#include "base/values.h"
++#include "components/zucchini/buffer_view.h"
++#include "components/zucchini/patch_writer.h"
++#include "components/zucchini/zucchini.h"
++#include "crypto/hash.h"
++#include "testing/gtest/include/gtest/gtest.h"
++#include "third_party/zlib/google/zip.h"
++
++namespace thoron_update {
++namespace {
++
++constexpr char kOld[] = "158.0.8127.3000";
++constexpr char kNew[] = "158.0.8127.3010";
++
++std::string Hex(const std::string& data) {
++  return base::HexEncodeLower(crypto::hash::Sha256(data));
++}
++
++std::string Patch(const std::string& from, const std::string& to) {
++  const zucchini::ConstBufferView a(reinterpret_cast<const uint8_t*>(from.data()), from.size());
++  const zucchini::ConstBufferView b(reinterpret_cast<const uint8_t*>(to.data()), to.size());
++  zucchini::EnsemblePatchWriter writer(a, b);
++  EXPECT_EQ(zucchini::GenerateBuffer(a, b, zucchini::GenerateOptions(), &writer),
++            zucchini::status::kStatusSuccess);
++  std::string out(writer.SerializedSize(), '\0');
++  EXPECT_TRUE(writer.SerializeInto(
++      zucchini::MutableBufferView(reinterpret_cast<uint8_t*>(out.data()), out.size())));
++  return out;
++}
++
++class ThoronUpdateDeltaTest : public testing::Test {
++ protected:
++  void SetUp() override {
++    ASSERT_TRUE(dir_.CreateUniqueTempDir());
++    old_folder_ = dir_.GetPath().AppendASCII("Application").AppendASCII(kOld);
++    // The older version's folder: a file that stays, one that changes, one that goes.
++    Put(old_folder_, "thoron.exe", launcher_);
++    Put(old_folder_, std::string(kOld) + "/chrome.dll", old_dll_);
++    Put(old_folder_, std::string(kOld) + "/gone.dat", "gone");
++  }
++
++  void Put(const base::FilePath& root, const std::string& relative, const std::string& data) {
++    const base::FilePath path = root.Append(base::FilePath::FromUTF8Unsafe(relative));
++    ASSERT_TRUE(base::CreateDirectory(path.DirName()));
++    ASSERT_TRUE(base::WriteFile(path, data));
++  }
++
++  // A delta as tools/release/delta.py makes it, changed by `change` first.
++  base::FilePath Delta(base::RepeatingCallback<void(base::DictValue&)> change = {},
++                       const std::string& patch_bytes = "") {
++    base::ListValue files;
++    auto add = [&](const std::string& path, const std::string& data, const std::string& how,
++                   const std::string& from_path, const std::string& from_data) {
++      base::DictValue entry;
++      entry.Set("path", path);
++      entry.Set("size", static_cast<double>(data.size()));
++      entry.Set("sha256", Hex(data));
++      entry.Set("how", how);
++      if (how != "whole") {
++        entry.Set("from_path", from_path);
++        entry.Set("from_sha256", Hex(from_data));
++      }
++      files.Append(std::move(entry));
++    };
++    add("thoron.exe", launcher_, "same", "thoron.exe", launcher_);
++    add(std::string(kNew) + "/chrome.dll", new_dll_, "patch", std::string(kOld) + "/chrome.dll",
++        old_dll_);
++    add(std::string(kNew) + "/new.dat", "new", "whole", "", "");
++    base::DictValue list;
++    list.Set("format", 1);
++    list.Set("from", kOld);
++    list.Set("to", kNew);
++    list.Set("files", std::move(files));
++    if (change) {
++      change.Run(list);
++    }
++    const base::FilePath tree = dir_.GetPath().AppendASCII("tree" + base::NumberToString(++made_));
++    std::string json;
++    EXPECT_TRUE(base::JSONWriter::Write(list, &json));
++    Put(tree, "delta.json", json);
++    Put(tree, "patch/1", patch_bytes.empty() ? Patch(old_dll_, new_dll_) : patch_bytes);
++    Put(tree, "whole/2", "new");
++    const base::FilePath zip = dir_.GetPath().AppendASCII("d" + base::NumberToString(made_) + ".delta");
++    EXPECT_TRUE(zip::Zip(tree, zip, true));
++    return zip;
++  }
++
++  DeltaResult Apply(const base::FilePath& delta, std::vector<VersionFile>* files) {
++    return ApplyDelta(delta, old_folder_, *ParseBuildVersion(kOld), *ParseBuildVersion(kNew), Staged(),
++                      files);
++  }
++
++  base::FilePath Staged() { return dir_.GetPath().AppendASCII("Application").AppendASCII("s.staging"); }
++
++  base::ScopedTempDir dir_;
++  base::FilePath old_folder_;
++  int made_ = 0;
++  const std::string launcher_ = "the launcher, unchanged";
++  const std::string old_dll_ = std::string(3000, 'a') + "an engine of the older version" + std::string(500, 'b');
++  const std::string new_dll_ = std::string(3000, 'a') + "an engine of the NEWER version!" + std::string(520, 'b');
++};
++
++TEST_F(ThoronUpdateDeltaTest, TheNewerFolderIsMadeAndListed) {
++  std::vector<VersionFile> files;
++  ASSERT_EQ(Apply(Delta(), &files), DeltaResult::kDone);
++  ASSERT_EQ(files.size(), 3u);
++  std::string read;
++  ASSERT_TRUE(base::ReadFileToString(Staged().AppendASCII(kNew).AppendASCII("chrome.dll"), &read));
++  EXPECT_EQ(read, new_dll_);
++  ASSERT_TRUE(base::ReadFileToString(Staged().AppendASCII("thoron.exe"), &read));
++  EXPECT_EQ(read, launcher_);
++  ASSERT_TRUE(base::ReadFileToString(Staged().AppendASCII(kNew).AppendASCII("new.dat"), &read));
++  EXPECT_EQ(read, "new");
++  // the file the newer version does not have is not made
++  EXPECT_FALSE(base::PathExists(Staged().AppendASCII(kNew).AppendASCII("gone.dat")));
++  EXPECT_EQ(files[1].sha256, Hex(new_dll_));
++}
++
++TEST_F(ThoronUpdateDeltaTest, ADeltaForOtherVersionsIsRefused) {
++  std::vector<VersionFile> files;
++  EXPECT_EQ(Apply(Delta(base::BindRepeating([](base::DictValue& d) { d.Set("from", "158.0.8127.2000"); })),
++                  &files),
++            DeltaResult::kWrongVersion);
++  EXPECT_FALSE(base::PathExists(Staged()));
++}
++
++TEST_F(ThoronUpdateDeltaTest, AnOlderFileThatIsNotTheOneNamedIsNeverUsed) {
++  Put(old_folder_, std::string(kOld) + "/chrome.dll", old_dll_ + "x");
++  std::vector<VersionFile> files;
++  EXPECT_EQ(Apply(Delta(), &files), DeltaResult::kOldFileDiffers);
++  EXPECT_FALSE(base::PathExists(Staged()));
++  EXPECT_TRUE(files.empty());
++}
++
++TEST_F(ThoronUpdateDeltaTest, APatchThatDoesNotApplyOrGivesAnotherFileIsRefused) {
++  std::vector<VersionFile> files;
++  EXPECT_EQ(Apply(Delta({}, "not a patch at all"), &files), DeltaResult::kPatchFails);
++  EXPECT_FALSE(base::PathExists(Staged()));
++  // a valid patch to another file: made, then found not to be the newer one
++  const std::string other = new_dll_ + "?";
++  EXPECT_EQ(Apply(Delta({}, Patch(old_dll_, other)), &files), DeltaResult::kPatchFails);
++  EXPECT_FALSE(base::PathExists(Staged()));
++}
++
++TEST_F(ThoronUpdateDeltaTest, APathThatLeavesTheFolderIsRefused) {
++  std::vector<VersionFile> files;
++  for (const char* path : {"../outside.exe", "a/../../b", "C:/x", "a\\b", ""}) {
++    SCOPED_TRACE(path);
++    const std::string bad = path;
++    EXPECT_EQ(Apply(Delta(base::BindRepeating(
++                        [](const std::string& bad, base::DictValue& d) {
++                          (*d.FindList("files"))[2].GetDict().Set("path", bad);
++                        },
++                        bad)),
++                    &files),
++              DeltaResult::kNotADelta);
++    EXPECT_FALSE(base::PathExists(Staged()));
++  }
++}
++
++TEST_F(ThoronUpdateDeltaTest, NotADeltaAtAll) {
++  ASSERT_TRUE(base::WriteFile(dir_.GetPath().AppendASCII("x.delta"), "not a zip"));
++  std::vector<VersionFile> files;
++  EXPECT_EQ(Apply(dir_.GetPath().AppendASCII("x.delta"), &files), DeltaResult::kNotADelta);
++  EXPECT_EQ(Apply(Delta(base::BindRepeating([](base::DictValue& d) { d.Set("format", 2); })), &files),
++            DeltaResult::kNotADelta);
 +}
 +
 +}  // namespace

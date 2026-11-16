@@ -454,6 +454,11 @@ py -3 -I tools/update/manifest.py example --out example.json
   release again before it expires (section 10) has no command of its own yet.
 - **P4.2:** schema 1 lists deltas that lead straight to `version`. A chain over releases in between
   would need their deltas too.
+- **P4.1, 2026-11-16:** `release.py prepare --delta-from <older Chrome-bin>` (up to 3) makes the portable
+  package's deltas (`thoron-<older>-to-<version>-<variant>-portable.delta`, `tools/release/delta.py`), lists
+  them in `SHA256SUMS`, names them in the manifest under the portable package's `deltas`, and writes their
+  sizes in the notes. Installed copies get the full installer; a delta for them would be Chromium's
+  differential installer, which is not made yet.
 - **P4.4:** the reference looks up one variant. A processor with AVX2 can also run `sse4`; whether the
   updater falls back to it when `avx2` is missing is decided there.
 - **P4.6, decided 2026-11-16:** the release's own updater applies the release. With `updater_too_old`

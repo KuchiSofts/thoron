@@ -451,7 +451,16 @@ py -3 -I tools/update/manifest.py example --out example.json
 - **P4.6:** `updater_too_old` only stops an old updater. How it gets a newer one by itself is not in
   schema 1. The small installer is an updater too: a `min_updater_version` above its own build stops it
   as well, so it is raised only when old updaters must really not be used.
-- **P4.7:** one public key. The signature file names no key; an updater that trusts two keys tries both.
+- **P4.7, decided 2026-11-16:** the signature file still names no key; an updater that trusts several keys
+  tries each. A release that moves to a new key publishes a key statement beside the manifest,
+  `update.key`: 96 bytes, the new public key (32) and the Ed25519 signature (64) of a key the copy already
+  trusts over the 21 bytes `thoron-update-key-v1` and LF, then the new key. A copy that trusts the signing
+  key then trusts the new one too, and keeps it; statements are followed as a chain, at most 8; a statement
+  no trusted key signed, or one that introduces no key (section 5), is ignored. The purpose prefix keeps a
+  statement from ever being taken for a manifest's signature, and the other way round.
+  `manifest.py key-statement` writes one, `check-key-statement` checks it; the drill is
+  `tools/update/tests/test_key_rotation.py`, and the updater's own check reads a statement made by the tool
+  (`components/thoron_update/key_rotation_unittest.cc`).
 - **`critical`** speaks for this release only. A copy two releases behind does not learn that the release
   it skipped was critical.
 - **One version per manifest:** when a platform ships later than the others, its copies get `no_package`

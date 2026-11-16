@@ -65,7 +65,7 @@ Author: KuchiSofts
 License: BSD-3-Clause
 
 diff --git a/BUILD.gn b/BUILD.gn
-index 0f7d54fe9798d8726656c6cd8f30ea2194b8c4e1..046c2258603ad14b8aae323d7caebac2b14fe495 100644
+index 0f7d54fe9798d8726656c6cd8f30ea2194b8c4e1..eefc4827730bb388fc199d13787f937179e4c93a 100644
 --- a/BUILD.gn
 +++ b/BUILD.gn
 @@ -202,6 +202,8 @@ group("gn_all") {
@@ -73,7 +73,7 @@ index 0f7d54fe9798d8726656c6cd8f30ea2194b8c4e1..046c2258603ad14b8aae323d7caebac2
        "//components:components_unittests",
        "//components/gwp_asan:gwp_asan_unittests",
 +      "//components/thoron_adblock:engine_unittests",
-+      "//components/thoron_update:thoron_update_unittests",
++      "//components/thoron_update:thoron_update_all",
        "//infra/orchestrator:orchestrator_all",
        "//net:net_unittests",
        "//sandbox:sandbox_unittests",

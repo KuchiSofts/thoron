@@ -84,6 +84,7 @@ from tools.credits import contributors  # noqa: E402
 from tools.docs import check_docs  # noqa: E402
 from tools.legal import patch_licenses  # noqa: E402
 from tools.legal import unlicensed_patches  # noqa: E402
+from tools.qa import perf_gate  # noqa: E402
 from tools.release import adblock_resources, changelog, package_audit, portable, version as ver  # noqa: E402
 from tools.update import manifest as mf  # noqa: E402
 
@@ -406,6 +407,23 @@ def licence_record_problems(repo: Path) -> list[str]:
     except (OSError, ValueError, KeyError) as exc:
         return [f"the licence records could not be read ({type(exc).__name__})"]
     return found
+
+
+PERF_BASELINE = "docs/perf/baseline.json"
+
+
+def performance_problems(repo: Path, bench: Path | None, thoron: str) -> list[str]:
+    """Why the release's benchmark forbids it (ROADMAP Q.3): it is missing, or a measure regressed against
+    the baseline and docs/perf/EXPLAINED.md does not explain it for this version."""
+    if bench is None:
+        return ["no benchmark of this build: run tools/qa/bench.py on it and give --bench"]
+    try:
+        baseline = json.loads((repo / PERF_BASELINE).read_text(encoding="utf-8"))
+        results = json.loads(bench.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        return [f"the benchmark or {PERF_BASELINE} could not be read ({type(exc).__name__})"]
+    explained = _repo_text(repo / perf_gate.EXPLAINED) or ""
+    return perf_gate.problems(baseline, results, thoron, explained)
 
 
 # --- the wiki (ROADMAP D.9) --------------------------------------------------------------------------------
@@ -808,6 +826,12 @@ def _prepare(a) -> int:
         problems += [f"portable package: {p}" for p in portable_problems(chrome_bin, version)]
     problems += [f"credits: {p}" for p in credits_problems(a.repo, upstream_contributors(a.contributors))]
     problems += [f"patch licences: {p}" for p in licence_record_problems(a.repo)]
+    problems += [f"performance: {p}" for p in performance_problems(a.repo, a.bench, thoron)]
+    audit_doc, audit_lines = changelog.audit_lines(a.repo)
+    if not audit_lines:
+        problems.append("upstream audit: no docs/security/UPSTREAM_AUDIT_*.md with lines \"For the release notes\" "
+                        "(ROADMAP P2.2)" if audit_doc is None else
+                        f"upstream audit: {audit_doc} has no lines \"For the release notes\" (ROADMAP P2.2)")
     problems += [f"wiki: {p}" for p in wiki_problems(a.repo, thoron)]
     changes = None
     try:
@@ -841,7 +865,7 @@ def _prepare(a) -> int:
         notes = changelog.render(version, a.chromium_old, chromium_new, a.repo, a.since,
                                  artifacts=(a.dist / "SHA256SUMS").read_text(encoding="utf-8").splitlines(),
                                  security=security, highlights=highlights, changes=changes, thoron_version=thoron,
-                                 source=source)
+                                 source=source, audit=changelog.audit_lines(a.repo))
         (a.dist / "NOTES.md").write_text(notes, encoding="utf-8", newline="\n")
         print(f"release: the notes list the changes under [{section}] of CHANGELOG.md")
         if a.minisign_key:
@@ -904,6 +928,8 @@ def main(argv: list[str], run=None) -> int:
     a_.add_argument("--minisign-key", type=Path)
     a_.add_argument("--security", type=Path, help="security.json: the fixes the notes name")
     a_.add_argument("--highlights", type=Path, help="a hand-written opening of the notes")
+    a_.add_argument("--bench", type=Path, help="tools/qa/bench.py's result for this build; it is compared "
+                    "with docs/perf/baseline.json (ROADMAP Q.3)")
     a_.add_argument("--manifest-key", type=Path, help="the private key file that signs the update manifest")
     a_.add_argument("--manifest-public-key", help="the public key copies of Thoron hold, base64 of 32 bytes")
     a_.add_argument("--gh-repo", help="the repository the draft is made in: its release serves the packages")

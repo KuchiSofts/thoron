@@ -199,6 +199,32 @@ def _log(repo: Path, since: str) -> list[dict]:
     return entries
 
 
+AUDIT_GLOB = "docs/security/UPSTREAM_AUDIT_*.md"
+AUDIT_SECTION = re.compile(r"(?ms)^## \d+\. For the release notes\n(.*?)(?=^## |\Z)")
+
+
+def audit_lines(repo: Path) -> tuple[str | None, list[str]]:
+    """The newest upstream audit (ROADMAP P2.2) and its lines for the release notes: the list items of its
+    section "For the release notes", each joined onto one line. (None, []) when there is none."""
+    docs = sorted(repo.glob(AUDIT_GLOB), key=lambda p: (len(p.stem), p.stem))
+    if not docs:
+        return None, []
+    newest = docs[-1]
+    m = AUDIT_SECTION.search(newest.read_text(encoding="utf-8").replace("\r\n", "\n"))
+    if not m:
+        return newest.name, []
+    items, current = [], None
+    for line in m.group(1).splitlines():
+        if line.startswith("- "):
+            current = line[2:].strip()
+            items.append(current)
+        elif line.startswith("  ") and current is not None and line.strip():
+            items[-1] = items[-1] + " " + line.strip()
+        elif not line.strip():
+            current = None
+    return newest.name, items
+
+
 def series_files(tree: Path) -> dict[str, str]:
     from tools.legal.patch_licenses import series_patches
     return {rel: (tree / rel).read_text(encoding="utf-8", errors="replace") for rel in series_patches(tree)
@@ -209,7 +235,7 @@ def render(version: str, chromium_old: str, chromium_new: str, repo: Path, since
            upstream: Path | None = None, upstream_since: str | None = None,
            series: dict | None = None, security: list | None = None, artifacts: list | None = None,
            highlights: str | None = None, changes: dict | None = None, thoron_version: str | None = None,
-           source: dict | None = None) -> str:
+           source: dict | None = None, audit: tuple[str, list[str]] | None = None) -> str:
     """`changes` are the release's lines of the short changelog (release_changes); without them the commits
     are grouped by prefix. `thoron_version` is the version people see; `version` stays the build number.
     `source` names the tag, the commit, the Chromium tag and the licence bundle of the release (L.2)."""
@@ -250,6 +276,10 @@ def render(version: str, chromium_old: str, chromium_new: str, repo: Path, since
             out.append("No new upstream commits.")
     else:
         out.append("No new upstream commits.")
+    if audit and audit[1]:
+        out += ["", "## Upstream audit", "",
+                f"Every change taken from upstream was audited before this release (`docs/security/{audit[0]}`):",
+                ""] + [f"- {_clean(line)}" for line in audit[1]]
     out += ["", "## Patches", ""]
     series = series or {"added": [], "removed": [], "refreshed": []}
     for key, title in (("added", "Added"), ("removed", "Removed"), ("refreshed", "Refreshed")):

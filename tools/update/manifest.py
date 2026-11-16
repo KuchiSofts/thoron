@@ -50,6 +50,11 @@ SIGNATURE_NAME = MANIFEST_NAME + ".sig"
 # same key made for anything else (the ad blocker's resources, a checksum list, a later schema) is never
 # the signature of a manifest.
 SIGNATURE_PREFIX = b"thoron-update-manifest-v1\n"
+# A key statement (ROADMAP P4.7): the new public key (32 bytes), then the signature (64 bytes) of a key the
+# copy already trusts over this prefix and the new key. update.key of a release holds one.
+KEY_STATEMENT_PREFIX = b"thoron-update-key-v1\n"
+KEY_STATEMENT_BYTES = 96
+MOST_KEY_STATEMENTS = 8
 SIGNATURE_BYTES = 64
 KEY_BYTES = 32
 
@@ -732,6 +737,19 @@ def _write_new(path: Path, content: bytes) -> bool:
 
 
 def _run(a) -> int:
+    if a.command == "key-statement":
+        statement = sign_key_statement(read_private_key(a.old_key), _public_key(a.new_public_key))
+        if not _write_new(a.out, statement):
+            return 1
+        print(f"key statement: {a.out.name} introduces {base64.b64encode(statement[:KEY_BYTES]).decode()}")
+        return 0
+    if a.command == "check-key-statement":
+        key = key_from_statement(a.statement.read_bytes(), [_public_key(a.public_key)])
+        if key is None:
+            print("key statement: not signed by that key, or no statement")
+            return 1
+        print(f"key statement: introduces {base64.b64encode(key).decode()}")
+        return 0
     if a.command == "example":
         raw = example()
         if a.out:
@@ -795,6 +813,73 @@ def _run(a) -> int:
     return 0
 
 
+# --- key rotation (ROADMAP P4.7) -------------------------------------------------------------------------
+#
+# A copy trusts the key it was built with. A release that moves to a new key publishes, beside the manifest,
+# a key statement: the new public key and the signature of the old key over the purpose prefix and the new
+# key. A copy that trusts the old key then trusts the new one too, and keeps it; a chain of statements is
+# followed from key to key. A manifest is checked under each trusted key in turn (MANIFEST.md, section 11:
+# an updater that trusts two keys tries both). A statement no trusted key signed is ignored.
+
+def sign_key_statement(old_private_key: bytes, new_public_key: bytes) -> bytes:
+    """The key statement that introduces `new_public_key` under the old key: 96 bytes."""
+    _exact_bytes(old_private_key=old_private_key, new_public_key=new_public_key)
+    if not usable_key(new_public_key):
+        raise ManifestError("the new key is no key: all zero or a point of small order")
+    if len(old_private_key) != KEY_BYTES:
+        raise ManifestError("the old private key is 32 bytes")
+    return new_public_key + _raw_signature(old_private_key, KEY_STATEMENT_PREFIX + new_public_key)
+
+
+def key_from_statement(statement: bytes, trusted: list[bytes]) -> bytes | None:
+    """The key `statement` introduces, when it is a statement and one of `trusted` signed it."""
+    _exact_bytes(statement=statement)
+    if len(statement) != KEY_STATEMENT_BYTES:
+        return None
+    new_key, signature = statement[:KEY_BYTES], statement[KEY_BYTES:]
+    if not usable_key(new_key):
+        return None
+    from cryptography.exceptions import InvalidSignature
+    ed25519 = _ed25519()
+    for key in trusted:
+        if not usable_key(key):
+            continue
+        try:
+            ed25519.Ed25519PublicKey.from_public_bytes(key).verify(signature, KEY_STATEMENT_PREFIX + new_key)
+        except (InvalidSignature, ValueError):
+            continue
+        return new_key
+    return None
+
+
+def trusted_keys(built_in: bytes, statements: list[bytes]) -> list[bytes]:
+    """The keys a copy trusts: its own, and every key a chain of `statements` leads to from it, in the order
+    they were reached. At most MOST_KEY_STATEMENTS statements are read."""
+    keys = [built_in]
+    pending = list(statements[:MOST_KEY_STATEMENTS])
+    found = True
+    while found:
+        found = False
+        for statement in list(pending):
+            key = key_from_statement(statement, keys)
+            if key is not None:
+                pending.remove(statement)
+                if key not in keys:
+                    keys.append(key)
+                found = True
+    return keys
+
+
+def check_update_with_keys(manifest: bytes, signature: bytes, keys: list[bytes], **copy) -> "Decision":
+    """check_update() under each key in turn: the first answer that is not bad_signature, else that one."""
+    answer = None
+    for key in keys:
+        answer = check_update(manifest, signature, key, **copy)
+        if answer.outcome != BAD_SIGNATURE:
+            return answer
+    return answer if answer is not None else check_update(manifest, signature, bytes(KEY_BYTES), **copy)
+
+
 def main(argv: list[str]) -> int:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="command", required=True)
@@ -809,6 +894,13 @@ def main(argv: list[str]) -> int:
     before.add_argument("--previous", type=Path, help="the manifest this one replaces: it must not go back")
     before.add_argument("--first", action="store_true", help="the channel has no manifest yet")
     s.add_argument("--out", type=Path, help="the signature file (default: <manifest>.sig)")
+    k = sub.add_parser("key-statement", help="write a key statement: the old key signs the new public key (P4.7)")
+    k.add_argument("--old-key", type=Path, required=True, help="the old private key file (base64 of 32 bytes)")
+    k.add_argument("--new-public-key", required=True, help="the new public key, base64 of 32 bytes")
+    k.add_argument("--out", type=Path, required=True, help="the statement to write: update.key of a release")
+    t = sub.add_parser("check-key-statement", help="say which key a statement introduces under a trusted key")
+    t.add_argument("statement", type=Path)
+    t.add_argument("--public-key", required=True, help="the trusted public key, base64 of 32 bytes")
     c = sub.add_parser("verify", help="check the signature, the manifest and its dates")
     c.add_argument("--public-key", required=True, help="the public key, base64 of 32 bytes")
     c.add_argument("--signature", type=Path, help="the signature file (default: <manifest>.sig)")

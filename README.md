@@ -6,7 +6,7 @@
 
 **A fast, secure and private browser for Windows, based on Thorium and Chromium.**
 
-[![Status](https://img.shields.io/badge/status-pre--release-F72F8E?style=flat-square)](#roadmap) <!-- progress-badge:start -->[![Roadmap progress](https://img.shields.io/badge/roadmap-60%25-7B2FF7?style=flat-square)](#roadmap)<!-- progress-badge:end --> [![Platforms](https://img.shields.io/badge/platforms-Windows%20first-24292f?style=flat-square)](#platforms) [![CPU](https://img.shields.io/badge/cpu-x64%20%7C%20ARM64-24292f?style=flat-square)](#platforms) [![License](https://img.shields.io/badge/license-BSD--3--Clause-24292f?style=flat-square)](LICENSE.md)
+[![Status](https://img.shields.io/badge/status-pre--release-F72F8E?style=flat-square)](#roadmap) <!-- progress-badge:start -->[![Roadmap progress](https://img.shields.io/badge/roadmap-64%25-7B2FF7?style=flat-square)](#roadmap)<!-- progress-badge:end --> [![Platforms](https://img.shields.io/badge/platforms-Windows%20first-24292f?style=flat-square)](#platforms) [![CPU](https://img.shields.io/badge/cpu-x64%20%7C%20ARM64-24292f?style=flat-square)](#platforms) [![License](https://img.shields.io/badge/license-BSD--3--Clause-24292f?style=flat-square)](LICENSE.md)
 
 [Why Thoron](#why-thoron) · [Features](#features) · [Install and update](#install-and-update) · [Versions](#versions) · [Roadmap](#roadmap) · [Platforms](#platforms) · [Verify](#verifying-downloads) · [Security](#security) · [Contributing](#contributing) · [Credits](#credits) · [Wiki](https://github.com/KuchiSofts/thoron/wiki)
 
@@ -78,19 +78,19 @@ changed in each version is in the [changelog](CHANGELOG.md), one line per change
 Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always current.
 
 <!-- roadmap:start -->
-**Overall:** `████████████░░░░░░░░` 125 of 209 tasks done (60%) · roadmap updated 2026-11-12
+**Overall:** `█████████████░░░░░░░` 134 of 209 tasks done (64%) · roadmap updated 2026-11-12
 
 | Area | Progress | Done | Status |
 |---|---|---|---|
 | [P0 - Foundation](ROADMAP.md#p0---foundation) | `████████████████████` | 11/11 | ✅ Done |
 | [P1 - Build environment](ROADMAP.md#p1---build-environment) | `██████████████████░░` | 9/10 | 🔄 In progress |
-| [P2 - First release](ROADMAP.md#p2---first-release) | `██████░░░░░░░░░░░░░░` | 8/26 | 🔄 In progress |
+| [P2 - First release](ROADMAP.md#p2---first-release) | `███████░░░░░░░░░░░░░` | 9/26 | 🔄 In progress |
 | [P2b - ARM64](ROADMAP.md#p2b---arm64) | `░░░░░░░░░░░░░░░░░░░░` | 0/5 | 🔄 In progress |
-| [P3 - Updater v1 + Import](ROADMAP.md#p3---updater-v1--import) | `█████░░░░░░░░░░░░░░░` | 5/21 | 🔄 In progress |
-| [P4 - Updater v2](ROADMAP.md#p4---updater-v2) | `██░░░░░░░░░░░░░░░░░░` | 1/11 | 🔄 In progress |
-| [P5 - Quality](ROADMAP.md#p5---quality) | `█████████████████░░░` | 67/80 | 🔄 In progress |
+| [P3 - Updater v1 + Import](ROADMAP.md#p3---updater-v1--import) | `████████░░░░░░░░░░░░` | 8/21 | 🔄 In progress |
+| [P4 - Updater v2](ROADMAP.md#p4---updater-v2) | `█████░░░░░░░░░░░░░░░` | 3/11 | 🔄 In progress |
+| [P5 - Quality](ROADMAP.md#p5---quality) | `█████████████████░░░` | 68/80 | 🔄 In progress |
 | [Security (S)](ROADMAP.md#security-s) | `██████████████░░░░░░` | 11/16 | 🔄 In progress |
-| [Quality & performance (Q)](ROADMAP.md#quality--performance-q) | `███░░░░░░░░░░░░░░░░░` | 1/7 | 🔄 In progress |
+| [Quality & performance (Q)](ROADMAP.md#quality--performance-q) | `█████████░░░░░░░░░░░` | 3/7 | 🔄 In progress |
 | [Docs (D)](ROADMAP.md#docs-d) | `████████████░░░░░░░░` | 6/10 | 🔄 In progress |
 | [Legal & licensing (L)](ROADMAP.md#legal--licensing-l) | `████████░░░░░░░░░░░░` | 3/8 | 🔄 In progress |
 | [Branding (B)](ROADMAP.md#branding-b) | `███████████████░░░░░` | 3/4 | 🔄 In progress |
@@ -98,11 +98,11 @@ Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always curre
 **What's next**
 
 - 🔄 **P1.9** Thoron build docs written from scratch and followed end-to-end
-- 🔄 **P2.2** Audit all upstream changes since `de9a1bc6` with `tools/audit` (S.1)
 - 🔄 **P2.4** Identity patch, Linux: package `thoron-browser`, `.desktop` file, `~/.config/thoron`; the keyring entry stays `Chromium Safe Storage` (shared with Thorium, so imported passwords stay readable)
 - 🔄 **P2.6** Widevine not bundled; fetched by Chromium's component updater at runtime
 - 🔄 **P2.8** Windows packaging: Thoron mini_installer, portable `.zip` with launcher
 - 🔄 **P2.12** Release script `tools/release/release.py`: build matrix → package → `SHA256SUMS` → sign → `BUILDINFO` → **draft** GitHub release; sets the version and refuses a non-increasing one with `tools/release/version.py` (P2.14)
+- 🔄 **P2.13** `tools/release/changelog.py`: release notes generated from commit prefixes, upstream merges (author-credited), the Chromium version diff and security fixes (CVE and severity), patch changes, and issues
 
 <details>
 <summary><b>Full task list</b> (generated from <a href="ROADMAP.md">ROADMAP.md</a>)</summary>
@@ -137,7 +137,7 @@ Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always curre
 **P2 - First release**
 
 - [x] **P2.1** Branch `ks/M158`; rebase the upstream patch series from 156 to Chromium 158.0.8127.x
-- [ ] **P2.2** Audit all upstream changes since `de9a1bc6` with `tools/audit` (S.1)
+- [x] **P2.2** Audit all upstream changes since `de9a1bc6` with `tools/audit` (S.1)
 - [x] **P2.3** Identity patch, Windows: product name Thoron, `%LOCALAPPDATA%\Thoron`, `HKCU\Software\Thoron`, new app GUID in `chromium_install_modes.h`, ProgIDs, AppUserModelID
 - [ ] **P2.4** Identity patch, Linux: package `thoron-browser`, `.desktop` file, `~/.config/thoron`; the keyring entry stays `Chromium Safe Storage` (shared with Thorium, so imported passwords stay readable)
 - [x] **P2.5** About page: Thoron version, Chromium version, verbatim disclaimer, links to credits and changelog
@@ -183,14 +183,14 @@ Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always curre
 - [ ] **P3.8** Rollback: restore N-1 plus the snapshot, with an explicit warning and confirmation
 - [ ] **P3.9** About page updater states: checking, downloading %, ready to relaunch, up to date, cannot verify, error
 - [ ] **P3.10** Scheduling without admin rights: Windows per-user task (Limited), Linux systemd user timer, portable only while running
-- [ ] **P3.11** Update settings (auto / notify-only / off) and CLI `--check --apply --status --rollback`
+- [x] **P3.11** Update settings (auto / notify-only / off) and CLI `--check --apply --status --rollback`
 - [ ] **P3.12** Portable launcher (a Windows `.exe` replacing the `.bat`; Linux shell launcher) with swap-on-start
 - [ ] **P3.13** Import UI in the installer and in Settings → Import: detected browsers and profiles, per-type checkboxes, a "please close <browser>" prompt (never force-closes)
 - [ ] **P3.14** Chromium-family import engine: copy, never move; verify (hash plus SQLite integrity); bookmarks, history, passwords, cookies, extensions, settings, autofill
 - [ ] **P3.15** Tabs and tab-groups import: our own SNSS session parser (windows, tab order, groups with name, colour and collapsed state, pinned and active tab, per-tab history)
 - [ ] **P3.16** Linux keyring check: Thoron keeps the `Chromium Safe Storage` entry that Thorium uses, so no key migration is needed; prove it on import
-- [ ] **P3.17** Guided Chrome password import (Chrome's own CSV export → import → secure delete); never bypasses app-bound encryption
-- [ ] **P3.18** Import report (counts per type, what was skipped and why; no secrets)
+- [x] **P3.17** Guided Chrome password import (Chrome's own CSV export → import → secure delete); never bypasses app-bound encryption
+- [x] **P3.18** Import report (counts per type, what was skipped and why; no secrets)
 - [ ] **P3.19** One installer for good, `ThoronSetup.exe`: a small program that never changes with a release; it reads the signed update manifest, downloads the newest full installer, checks the signature and the SHA-256, and runs it
 - [ ] **P3.20** Updates from inside the browser, Windows: a check on a schedule and from the About page, the signed manifest (P3.3), a verified download (P3.4), then Chromium's own installer applies the new version while the browser runs and the About page offers to relaunch; `User Data` is never opened by the update
 - [ ] **P3.21** First run on Windows: offers to import from the browsers it finds (P3.13, P3.14) and to make Thoron the default browser for web links and for the file types a browser opens; where Windows wants the person to confirm, it opens Windows' own page for it and takes nothing over silently
@@ -200,10 +200,10 @@ Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always curre
 - [ ] **P4.1** Delta packages: per-file Zucchini patches from each of the previous 3 releases, per variant
 - [x] **P4.2** Delta-chain selection (smallest total download) with automatic fallback to the full package on any base-hash mismatch
 - [ ] **P4.3** Resumable downloads (HTTP range; Windows BITS optional), pause on metered connections, proxy support
-- [ ] **P4.4** CPU variant auto-selection (AVX2 / SSE4 / ARM64), plus the portable "moved to another PC" check
+- [x] **P4.4** CPU variant auto-selection (AVX2 / SSE4 / ARM64), plus the portable "moved to another PC" check
 - [ ] **P4.5** Freeze and expiry protection with clock-skew tolerance
 - [ ] **P4.6** Updater self-update via `min_updater_version`
-- [ ] **P4.7** Signing-key rotation (the old key signs the new key's statement)
+- [x] **P4.7** Signing-key rotation (the old key signs the new key's statement)
 - [ ] **P4.8** Firefox import: bookmarks, history and passwords via Chromium's importer; tabs and groups from `sessionstore.jsonlz4`
 - [ ] **P4.9** Portable passphrase encryption: Argon2id-wrapped profile key, remember-this-PC (DPAPI/libsecret), recovery key, read support for old formats
 - [ ] **P4.10** Upstream portable adoption: copy → verify → encrypt the copy → verify decryption → use; original untouched
@@ -219,7 +219,7 @@ Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always curre
 - [ ] **P5.6** `STATUS_ACCESS_VIOLATION` on Discord (#1288)
 - [ ] **P5.7** HEVC/AV1 playback regression (#1271) and NVIDIA frame drops (#1285)
 - [ ] **P5.8** Passwords not saved (#137, #684, #1199)
-- [ ] **P5.9** Random logouts and lost sessions (#1005, #458)
+- [x] **P5.9** Random logouts and lost sessions (#1005, #458)
 - [ ] **P5.10** Slow start-up with multiple profiles (#803)
 - [ ] **P5.11** Evaluate an AVX-512 variant (performance gain versus stability)
 - [ ] **P5.12** Linux hardware video acceleration (VA-API) on current Ubuntu (#1231)
@@ -314,8 +314,8 @@ Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always curre
 **Quality & performance (Q)**
 
 - [ ] **Q.1** Benchmark suite `tools/qa/bench`: Speedometer 3, JetStream 2, MotionMark, start-up with 1 and 4 profiles, idle and 20-tab memory, idle CPU
-- [ ] **Q.2** Baselines: Thorium M156 and Chrome of the same major version
-- [ ] **Q.3** Regression gate in the release script (a release is blocked until any regression is explained)
+- [x] **Q.2** Baselines: Thorium M156 and Chrome of the same major version
+- [x] **Q.3** Regression gate in the release script (a release is blocked until any regression is explained)
 - [ ] **Q.4** Memory-leak soak test (8 h of tab churn; memory-growth threshold)
 - [ ] **Q.5** Crash triage process (local Crashpad dumps; symbol publication decision)
 - [ ] **Q.6** Test VMs: Windows 11 x64, Ubuntu 24.04 and 26.04 x64, clean snapshots

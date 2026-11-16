@@ -136,6 +136,17 @@ Explanations live in the design docs under `docs/design/`.
 - **Updates:** the updater chooses the build for the processor (AVX2, SSE4, ARM64) by itself.
 - **Updates:** a new version is put in place beside the old one and switched to in one step, so a copy that is stopped halfway still starts; the version before is kept for a rollback.
 - **Updates:** a snapshot of what matters in every profile (bookmarks, passwords, history, cookies, open tabs), verified and checked by SQLite, for a rollback; the last two are kept.
+- **Updates:** `thoron_update.exe` shows, applies and rolls back versions and checks a release; the update modes auto, notify and off.
+- **Updates:** signing-key rotation: the old key signs a statement that introduces the new one.
+- **Portable:** `Thoron.exe`, the portable launcher; it runs on every x64 processor and says when the build is not made for this one.
+- **Release:** `release.py prepare` refuses a release whose benchmark regressed against the baseline and is not explained.
+- **QA tools:** `portable_launcher_check.py` checks the launcher and an update and rollback of a portable copy from awkward folders and a drive root.
+- **Performance:** baselines of Thoron 158, Thorium 156 and Chrome 157 in `docs/perf/`.
+- **Release:** the notes of every release carry the summary of the upstream audit.
+- **Import:** `chrome_passwords.py` guides Chrome's password export into Thoron and overwrites and deletes the file afterwards.
+- **Import:** every import writes a report of what came over, by count, without any value.
+- **Import:** `detect.py` finds the Chromium-family browsers of the current user and their profiles.
+- **QA tools:** `cookie_persistence_check.py` checks that cookies and site storage survive a restart and an update.
 - **QA tools:** `identity_check.py` reads a build and its installer for every "Thorium" a person can still see.
 - **Legal:** each of the 6 patches without a licence has a written decision; 5 are carried out.
 - **Legal:** `unlicensed_patches.py check` fails when a patch without a licence is not withheld from `source/` or has no decision.
@@ -219,6 +230,7 @@ Explanations live in the design docs under `docs/design/`.
 
 ### Changed
 
+- **QA tools:** `bench.py` measures one warm-up run first and drops it.
 - **Brand:** translations name Thoron in every form of the name, not only the bare word.
 - **Brand:** the installer asks "Do you want to install Thoron?"; flags, version and URLs pages name Thoron.
 - **Brand:** the flags page shows Thoron's logo, the settings pages' dark header a white Thoron mark.

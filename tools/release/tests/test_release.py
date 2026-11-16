@@ -53,6 +53,10 @@ INVENTORY = patch_licenses.render_table([
     {"patch": "a.patch", "origin": "Thorium (Alex313031, gz83)", "license": "BSD-3-Clause", "evidence": "x"},
     {"patch": "b.patch", "origin": "ungoogled-chromium, Bromite", "license": "BSD-3-Clause AND GPL-3.0",
      "evidence": "y"}])
+BENCH = {"browser": "Thoron", "startup_ms": {"median": 400.0, "spread_pct": 1.0},
+         "memory_1_tab_mb": {"median": 180.0, "spread_pct": 1.0},
+         "memory_20_tabs_mb": {"median": 900.0, "spread_pct": 1.0},
+         "idle_cpu_pct": {"median": 0.4, "spread_pct": 20.0}}
 CREDITS = ("# Credits\n\nThorium, ungoogled-chromium and Bromite.\n\n" + contributors.START + "\n"
            + contributors.render_contributors(PEOPLE) + contributors.END + "\n")
 REPO_FILES = {"CHANGELOG.md": CHANGELOG, "CREDITS.md": CREDITS, "LICENSE.md": "BSD 3-Clause License\n",
@@ -62,6 +66,12 @@ REPO_FILES = {"CHANGELOG.md": CHANGELOG, "CREDITS.md": CREDITS, "LICENSE.md": "B
               "tools/legal/patch_origins.tsv": "patch\torigin\tlicense\tevidence\n",
               "source/UPSTREAM.json": json.dumps({"withheld": {"other/thorium-default-api-keys.patch": "0" * 40}}),
               "docs/legal/UNLICENSED_PATCHES.md": "# Patches without a licence\n\nNone is left.\n",
+              # the upstream audit's lines for the notes (P2.2)
+              "docs/security/UPSTREAM_AUDIT_M158.md": "# Audit\n\n## 9. For the release notes\n\n"
+                                                      "- Every upstream change was read.\n- Nothing hidden\n"
+                                                      "  came in.\n\n## 10. Review\n",
+              # the performance baseline (Q.3)
+              "docs/perf/baseline.json": json.dumps(BENCH),
               "docs/wiki/Home.md": "# Thoron\n\nSee [Versions](Versions).\n"}
 NOW = mf.parse_time("2026-12-01T12:00:00Z")
 DAY = 86400
@@ -272,10 +282,14 @@ class ReleaseFixture(Fixture):
             code = rel.main([str(arg) for arg in argv], run=run)
         return code, out.getvalue(), err.getvalue()
 
-    def prepare(self, *more, dist: Path | None = None, previous: str = "156.0.8078.28", **kw):
+    def prepare(self, *more, dist: Path | None = None, previous: str = "156.0.8078.28", bench: dict | None = None,
+                **kw):
+        bench_file = self.repo.parent / "bench.json"
+        bench_file.write_text(json.dumps(bench or BENCH), encoding="utf-8")
         return self.main("prepare", "--src", self.src, "--out", self.out, "--platform", "win", "--variant", VARIANT,
                          "--previous", previous, "--buildinfo", self.buildinfo, "--dist", dist or self.dist,
-                         "--repo", self.repo, "--since", "v0.1.1", "--chromium-old", "156.0.8078.80", *more, **kw)
+                         "--repo", self.repo, "--since", "v0.1.1", "--chromium-old", "156.0.8078.80",
+                         "--bench", bench_file, *more, **kw)
 
     def with_manifest(self, *more) -> tuple:
         return ("--manifest-key", self.keys / "manifest.key", "--manifest-public-key", text(self.public),
@@ -1236,6 +1250,32 @@ class CreditsTests(GateTestCase):
         self.f.repo_file("CREDITS.md", CREDITS + "\nIridium.\n")
         self.f.repo_file("NOTICE", "Licences: BSD-3-Clause, GPL-3.0 and MIT.\n")
         self.assertEqual(rel.credits_problems(self.f.repo, PEOPLE), [])
+
+    def test_the_audit_summary_is_read_for_the_notes(self):
+        self.assertEqual(changelog.audit_lines(self.f.repo),
+                         ("UPSTREAM_AUDIT_M158.md", ["Every upstream change was read.", "Nothing hidden came in."]))
+        # the commits of the repository do not matter here
+        with mock.patch.object(changelog, "_log", return_value=[]):
+            notes = changelog.render(BUILD, "156.0.8078.80", "158.0.8127.30", self.f.repo, "v0.1.1",
+                                     audit=changelog.audit_lines(self.f.repo))
+        self.assertIn("## Upstream audit", notes)
+        self.assertIn("- Nothing hidden came in.", notes)
+        (self.f.repo / "docs/security/UPSTREAM_AUDIT_M158.md").unlink()
+        self.assertEqual(changelog.audit_lines(self.f.repo), (None, []))
+
+    def test_an_injected_regression_blocks_a_dry_run_release_until_it_is_explained(self):
+        slower = dict(BENCH, startup_ms={"median": 480.0, "spread_pct": 1.0})
+        found = rel.performance_problems(self.f.repo, None, THORON)
+        self.assertEqual(len(found), 1)
+        self.assertIn("no benchmark", found[0])
+        bench = self.f.repo.parent / "slower.json"
+        bench.write_text(json.dumps(slower), encoding="utf-8")
+        found = rel.performance_problems(self.f.repo, bench, THORON)
+        self.assertEqual(len(found), 1)
+        self.assertIn("startup_ms rose 20.0 %", found[0])
+        self.f.repo_file("docs/perf/EXPLAINED.md",
+                         f"# Explained\n\n- {THORON} startup_ms: the lists load at start; 80 ms, accepted.\n")
+        self.assertEqual(rel.performance_problems(self.f.repo, bench, THORON), [])
 
     def test_a_patch_without_a_licence_stops_a_release(self):
         self.assertEqual(rel.licence_record_problems(self.f.repo), [])

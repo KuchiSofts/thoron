@@ -1,0 +1,57 @@
+{
+  "browser": "Thorium 156.0.8078.28",
+  "version": "",
+  "warmup": 1,
+  "startup_ms": {
+    "median": 719.0,
+    "spread_pct": 15.3,
+    "runs": 5,
+    "repeatable": false,
+    "values": [
+      687.0,
+      782.0,
+      672.0,
+      766.0,
+      719.0
+    ]
+  },
+  "memory_1_tab_mb": {
+    "median": 389.9,
+    "spread_pct": 18.9,
+    "runs": 5,
+    "repeatable": false,
+    "values": [
+      380.5,
+      389.9,
+      443.7,
+      454.1,
+      389.7
+    ]
+  },
+  "memory_20_tabs_mb": {
+    "median": 794.1,
+    "spread_pct": 3.1,
+    "runs": 5,
+    "repeatable": false,
+    "values": [
+      785.7,
+      794.1,
+      803.2,
+      778.3,
+      795.3
+    ]
+  },
+  "idle_cpu_pct": {
+    "median": 0.6,
+    "spread_pct": 24.1,
+    "runs": 5,
+    "repeatable": false,
+    "values": [
+      0.7,
+      0.6,
+      0.6,
+      0.7,
+      0.6
+    ]
+  }
+}

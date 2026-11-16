@@ -71,5 +71,21 @@ class ReportTests(unittest.TestCase):
         json.loads(json.dumps(results))
 
 
+class WarmupTests(unittest.TestCase):
+    def test_the_warmup_runs_are_dropped(self):
+        self.assertEqual(bench.without_warmup([1469.0, 515.0, 563.0, 719.0, 672.0, 600.0], 1),
+                         [515.0, 563.0, 719.0, 672.0, 600.0])
+        self.assertEqual(bench.without_warmup([1.0, 2.0, 3.0], 0), [1.0, 2.0, 3.0])
+
+
+
+class ProfilesTests(unittest.TestCase):
+    def test_the_picker_is_told_by_its_address(self):
+        self.assertTrue(bench.picker_ready([{"type": "browser_ui", "url": "chrome://profile-picker/"}]))
+        self.assertFalse(bench.picker_ready([{"type": "page", "url": "chrome://newtab/"}]))
+        self.assertFalse(bench.picker_ready([]))
+        self.assertEqual(len(bench.PROFILES), 4)
+
+
 if __name__ == "__main__":
     unittest.main()

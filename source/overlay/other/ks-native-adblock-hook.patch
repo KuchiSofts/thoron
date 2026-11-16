@@ -11930,10 +11930,10 @@ index 0000000000000000000000000000000000000000..3e4c28764458836945e8dccad2197a69
 +#endif  // COMPONENTS_THORON_MAIL_MAIL_SERVICE_H_
 diff --git a/components/thoron_update/BUILD.gn b/components/thoron_update/BUILD.gn
 new file mode 100644
-index 0000000000000000000000000000000000000000..d62c944463e5256ff83ef13db44bc7c643a0a2b4
+index 0000000000000000000000000000000000000000..8505de25883137f7d50747a6fbdee1068abc93be
 --- /dev/null
 +++ b/components/thoron_update/BUILD.gn
-@@ -0,0 +1,56 @@
+@@ -0,0 +1,84 @@
 +# Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +# found in the LICENSE file.
 +
@@ -11944,6 +11944,8 @@ index 0000000000000000000000000000000000000000..d62c944463e5256ff83ef13db44bc7c6
 +# rules are docs/update/MANIFEST.md of Thoron's repository.
 +static_library("thoron_update") {
 +  sources = [
++    "cli.cc",
++    "cli.h",
 +    "manifest.cc",
 +    "manifest.h",
 +    "package.cc",
@@ -11966,6 +11968,8 @@ index 0000000000000000000000000000000000000000..d62c944463e5256ff83ef13db44bc7c6
 +source_set("unit_tests") {
 +  testonly = true
 +  sources = [
++    "cli_unittest.cc",
++    "key_rotation_unittest.cc",
 +    "manifest_test_vectors.h",
 +    "manifest_unittest.cc",
 +    "package_unittest.cc",
@@ -11990,6 +11994,30 @@ index 0000000000000000000000000000000000000000..d62c944463e5256ff83ef13db44bc7c6
 +    "//testing/gtest",
 +  ]
 +}
++
++# The portable launcher is built with the tests, so it is built and checked
++# whenever they are.
++group("thoron_update_all") {
++  testonly = true
++  deps = [
++    ":thoron_update",
++    ":thoron_update_cli",
++    ":thoron_update_unittests",
++  ]
++  if (is_win) {
++    deps += [ "launcher:thoron_launcher" ]
++  }
++}
++
++# The command line of the updater (cli.h): thoron_update.exe.
++executable("thoron_update_cli") {
++  output_name = "thoron_update"
++  sources = [ "cli_main.cc" ]
++  deps = [
++    ":thoron_update",
++    "//base",
++  ]
++}
 diff --git a/components/thoron_update/DEPS b/components/thoron_update/DEPS
 new file mode 100644
 index 0000000000000000000000000000000000000000..114da93bd0ffd20dab18a7fedbee789741199aa1
@@ -12003,10 +12031,10 @@ index 0000000000000000000000000000000000000000..114da93bd0ffd20dab18a7fedbee7897
 +]
 diff --git a/components/thoron_update/README.md b/components/thoron_update/README.md
 new file mode 100644
-index 0000000000000000000000000000000000000000..8b477db1f53eef048ba17ca080a34fa85be9455d
+index 0000000000000000000000000000000000000000..85a3547cd843dc9509b1040e2228b7e45d9a2d2b
 --- /dev/null
 +++ b/components/thoron_update/README.md
-@@ -0,0 +1,83 @@
+@@ -0,0 +1,142 @@
 +# thoron_update
 +
 +The core of Thoron's updater (ROADMAP P3.3): what a copy of Thoron makes of the two files a release
@@ -12061,20 +12089,79 @@ index 0000000000000000000000000000000000000000..8b477db1f53eef048ba17ca080a34fa8
 +  profile, and only when it is higher than the stored one.
 +- Uses a downloaded file only after its length is `size` and its SHA-256 is `sha256`.
 +
++## What else it holds
++
++- `package.h`: a downloaded file is used only when its length and SHA-256 are the manifest's (P3.4); the
++  delta is tried before the full package when it is smaller, and the full package is the fallback (P4.2);
++  the build that fits the processor (P4.4).
++- `swap.h`: a version is put in place in a folder of its own and switched to by one atomic write of the
++  file `current`, which names the version that starts and the one before it; a kill at any step leaves a
++  version that starts (P3.5); a rollback switches back (P3.8).
++- `snapshot.h`: a verified copy of what matters in every profile, checked by SQLite, the last two kept, and
++  its restore (P3.7, P3.8).
++- `cli.h`: the command line, `thoron_update.exe`, and the update modes (P3.11).
++- `launcher/`: `Thoron.exe` of the portable package (P3.12).
++
++## The command line
++
++    thoron_update --root <program folder> --status
++    thoron_update --root <program folder> --apply <staged folder> --version <v> --files <files.json>
++    thoron_update --root <program folder> --rollback
++    thoron_update --root <program folder> --mode [auto|notify|off]
++    thoron_update --check --manifest <update.json> --signature <update.json.sig> --public-key <base64>
++        --channel <channel> --installed <v> --updater <v> --variant <name> --kind installed|portable
++        --allowed-host <host> [--last-serial <n>] [--now <seconds since 1970>]
++
++`files.json` is a list of `{"path", "size", "sha256"}`, one for each file of the version, with `/` between
++the parts of a path. `--check` reads the two files of a release as they were fetched.
++
++| Exit code | Meaning |
++|---|---|
++| 0 | Done; with `--check`: up to date |
++| 1 | The command line is not one of the above |
++| 10 | `--status`: no version starts in the folder |
++| 11 | `--apply`: that version is the current one already |
++| 12 | `--apply`: the staged folder is not exactly the files of `files.json`; nothing was switched |
++| 13 | `--apply`: the version is zero, or a path leaves the version's folder |
++| 14 | A rename or a write failed; what was current still is |
++| 15 | `--rollback`: there is no version before the current one |
++| 20 | `--check`: a newer release for this copy; the downloads follow `full:` and `delta:` |
++| 21 | `--check`: the release cannot be verified (signature, form, channel, replay, dates, downgrade) |
++| 22 | `--check`: a newer release that this updater may not apply |
++| 23 | `--check`: a newer release with nothing for this variant and kind |
++
++The modes: `auto` downloads and installs, and the new version starts with the next start; `notify` says a
++newer version is there and installs when asked; `off` looks only when asked. A look the person asks for
++always shows its answer.
++
++## The launcher
++
++`launcher/thoron_launcher_win.cc` becomes `Thoron.exe` of the portable package. It starts the version
++`Application\current` names (or `Application\thoron.exe` of a package made before), with the profile in
++the package's `User Data` folder, which it makes itself: a folder it cannot make would send the browser
++to the computer's own profile folder, so then it starts nothing. It passes its command line on.
++
++It is built without the build's processor flags and links nothing that is built with them (no base, no
++C++ library), so it runs on every x64 processor. On one that cannot run the package's build it says so,
++where the browser itself would stop before any of its code ran. The package names its build in the file
++`variant` (`win-x64-avx2`, `win-x64-sse4`); without it the package is taken for the AVX2 build. Exit
++status: 0 started, 2 no browser in the package, 3 the processor cannot run it, 4 the start failed.
++
 +## What it is not yet
 +
-+- No fetching. Nothing here touches the network or a file.
-+- No download and no check of a package (P3.4), no staging or swap (P3.5, P3.6).
-+- No About page (P3.9), no settings and no command line (P3.11).
++- No fetching over the network and no About page: the browser's part (P3.9, P3.20).
 +- No place for the public key, the allowed hosts or the stored serial: the caller passes them.
 +- One key. Key rotation is P4.7.
 +
 +## The tests
 +
 +`manifest_unittest.cc` runs every vector of `manifest_test_vectors.h` and the cases of the stage: a changed
-+bit in either file, an older manifest, malformed JSON, an expired manifest.
++bit in either file, an older manifest, malformed JSON, an expired manifest. `package_unittest.cc`,
++`swap_unittest.cc` (among them a kill after each step), `snapshot_unittest.cc` and `cli_unittest.cc` test the
++rest. One test takes a snapshot of a copy of a real profile when `THORON_SNAPSHOT_PROFILE_COPY` names one,
++and prints only counts and file names.
 +
-+    autoninja -C out/<dir> components/thoron_update:thoron_update_unittests
++    autoninja -C out/<dir> components/thoron_update:thoron_update_all
 +    out/<dir>/thoron_update_unittests
 +
 +The vectors are real. `make_test_vectors.py` makes them with the reference tool and takes its cases from
@@ -12090,6 +12177,1001 @@ index 0000000000000000000000000000000000000000..8b477db1f53eef048ba17ca080a34fa8
 +The key of the vectors is a test key. Its private half is the SHA-256 of a phrase in the script, so it is no
 +secret and anyone gets the same vectors. It signs nothing else, and no build of Thoron trusts it. The vector
 +of the spec ("A signature to test against") is among them, under its own throwaway key.
+diff --git a/components/thoron_update/cli.cc b/components/thoron_update/cli.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..c0017516bac102eee47f0baf0351074da4b32d38
+--- /dev/null
++++ b/components/thoron_update/cli.cc
+@@ -0,0 +1,258 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "components/thoron_update/cli.h"
++
++#include <optional>
++#include <string>
++#include <vector>
++
++#include "base/base64.h"
++#include "base/command_line.h"
++#include "base/files/file_path.h"
++#include "base/files/file_util.h"
++#include "base/files/important_file_writer.h"
++#include "base/json/json_reader.h"
++#include "base/strings/string_number_conversions.h"
++#include "base/strings/string_util.h"
++#include "base/time/time.h"
++#include "base/values.h"
++#include "components/thoron_update/package.h"
++#include "components/thoron_update/swap.h"
++
++namespace thoron_update {
++
++namespace {
++
++constexpr char kModeFile[] = "update-mode";
++constexpr int64_t kMostFilesBytes = 16 * 1024 * 1024;
++
++std::string Arg(const base::CommandLine& command, const char* name) {
++  return command.GetSwitchValueASCII(name);
++}
++
++std::optional<std::vector<VersionFile>> ReadFiles(const base::FilePath& path) {
++  std::string text;
++  if (!base::ReadFileToStringWithMaxSize(path, &text, kMostFilesBytes)) {
++    return std::nullopt;
++  }
++  std::optional<base::Value> read = base::JSONReader::Read(text, base::JSON_PARSE_RFC);
++  if (!read || !read->is_list()) {
++    return std::nullopt;
++  }
++  std::vector<VersionFile> files;
++  for (const base::Value& value : read->GetList()) {
++    const base::DictValue* entry = value.GetIfDict();
++    const std::string* path_text = entry ? entry->FindString("path") : nullptr;
++    const std::string* sha256 = entry ? entry->FindString("sha256") : nullptr;
++    const std::optional<double> size = entry ? entry->FindDouble("size") : std::nullopt;
++    if (!path_text || !sha256 || !size || *size < 0 || *size > 2147483647.0) {
++      return std::nullopt;
++    }
++    files.push_back({*path_text, static_cast<int64_t>(*size), *sha256});
++  }
++  return files;
++}
++
++int Status(const base::FilePath& root, std::string* out) {
++  const std::optional<BuildVersion> current = CurrentVersion(root);
++  const std::optional<BuildVersion> previous = PreviousVersion(root);
++  *out += "current: " + (current ? ToString(*current) : std::string("none")) + "\n";
++  *out += "previous: " + (previous ? ToString(*previous) : std::string("none")) + "\n";
++  *out += std::string("mode: ") + std::string(UpdateModeName(ReadUpdateMode(root))) + "\n";
++  return current ? kExitOk : kExitNoVersion;
++}
++
++int FromSwap(SwapResult result, std::string* out) {
++  *out += std::string(SwapResultName(result)) + "\n";
++  switch (result) {
++    case SwapResult::kDone:
++      return kExitOk;
++    case SwapResult::kAlreadyCurrent:
++      return kExitAlreadyCurrent;
++    case SwapResult::kBadFiles:
++      return kExitBadFiles;
++    case SwapResult::kBadRequest:
++      return kExitBadRequest;
++    case SwapResult::kNothingToRollBack:
++      return kExitNothingToRollBack;
++    case SwapResult::kIoError:
++    case SwapResult::kInterrupted:
++      return kExitIoError;
++  }
++  return kExitIoError;
++}
++
++int Check(const base::CommandLine& command, std::string* out) {
++  const base::FilePath manifest_path = command.GetSwitchValuePath("manifest");
++  const base::FilePath signature_path = command.GetSwitchValuePath("signature");
++  if (!base::PathExists(manifest_path) || !base::PathExists(signature_path)) {
++    *out += "the manifest or its signature could not be read\n";
++    return kExitUsage;
++  }
++  // A file that is too long is read up to one byte more than may be, so that
++  // CheckUpdate refuses it as it refuses any other.
++  std::string manifest;
++  std::string signature;
++  base::ReadFileToStringWithMaxSize(manifest_path, &manifest, kMaxManifestBytes + 1);
++  base::ReadFileToStringWithMaxSize(signature_path, &signature, kSignatureBytes + 1);
++  CopyInfo copy;
++  std::string key;
++  if (!base::Base64Decode(Arg(command, "public-key"), &key) || key.size() != kPublicKeyBytes) {
++    *out += "--public-key is not base64 of 32 bytes\n";
++    return kExitUsage;
++  }
++  std::copy(key.begin(), key.end(), copy.public_key.begin());
++  const std::string host = Arg(command, "allowed-host");
++  if (!host.empty()) {
++    copy.allowed_hosts.push_back(host);
++  }
++  copy.channel = Arg(command, "channel");
++  const std::optional<BuildVersion> installed = ParseBuildVersion(Arg(command, "installed"));
++  const std::optional<BuildVersion> updater = ParseBuildVersion(Arg(command, "updater"));
++  const std::optional<Variant> variant = ParseVariant(Arg(command, "variant"));
++  const std::optional<Kind> kind = ParseKind(Arg(command, "kind"));
++  if (!installed || !updater || !variant || !kind) {
++    *out += "--installed, --updater, --variant or --kind is missing or wrong\n";
++    return kExitUsage;
++  }
++  copy.installed = *installed;
++  copy.updater = *updater;
++  copy.variant = *variant;
++  copy.kind = *kind;
++  if (command.HasSwitch("last-serial") &&
++      !base::StringToInt64(Arg(command, "last-serial"), &copy.last_serial)) {
++    *out += "--last-serial is not a number\n";
++    return kExitUsage;
++  }
++  int64_t now = (base::Time::Now() - base::Time::UnixEpoch()).InSeconds();
++  if (command.HasSwitch("now") && !base::StringToInt64(Arg(command, "now"), &now)) {
++    *out += "--now is not a number\n";
++    return kExitUsage;
++  }
++  const Decision decision = CheckUpdate(manifest, signature, copy, now);
++  *out += "outcome: " + std::string(OutcomeName(decision.outcome)) + "\n";
++  if (decision.manifest) {
++    *out += "version: " + ToString(decision.manifest->version) + " (" +
++            decision.manifest->thoron_version + ")\n";
++  }
++  if (decision.remember_serial) {
++    *out += "serial: " + base::NumberToString(*decision.remember_serial) + "\n";
++  }
++  for (const DownloadStep& step : PlanDownloads(decision)) {
++    *out += std::string(step.delta ? "delta: " : "full: ") + step.file.url + " " +
++            base::NumberToString(step.file.size) + " " + step.file.sha256 + "\n";
++  }
++  switch (decision.outcome) {
++    case Outcome::kUpToDate:
++      return kExitOk;
++    case Outcome::kUpdate:
++      return kExitUpdate;
++    case Outcome::kUpdaterTooOld:
++      return kExitUpdaterTooOld;
++    case Outcome::kNoPackage:
++      return kExitNoPackage;
++    case Outcome::kInvalidCopy:
++      return kExitUsage;
++    default:
++      return CannotVerify(decision.outcome) ? kExitCannotVerify : kExitUsage;
++  }
++}
++
++}  // namespace
++
++std::string_view UpdateModeName(UpdateMode mode) {
++  switch (mode) {
++    case UpdateMode::kAuto:
++      return "auto";
++    case UpdateMode::kNotify:
++      return "notify";
++    case UpdateMode::kOff:
++      return "off";
++  }
++  return "auto";
++}
++
++UpdateMode ReadUpdateMode(const base::FilePath& root) {
++  std::string text;
++  if (!base::ReadFileToStringWithMaxSize(root.AppendASCII(kModeFile), &text, 16)) {
++    return UpdateMode::kAuto;
++  }
++  const std::string_view name = base::TrimWhitespaceASCII(text, base::TRIM_ALL);
++  if (name == "notify") {
++    return UpdateMode::kNotify;
++  }
++  if (name == "off") {
++    return UpdateMode::kOff;
++  }
++  return UpdateMode::kAuto;
++}
++
++bool WriteUpdateMode(const base::FilePath& root, UpdateMode mode) {
++  return base::ImportantFileWriter::WriteFileAtomically(
++      root.AppendASCII(kModeFile), std::string(UpdateModeName(mode)) + "\n");
++}
++
++Action ActionFor(UpdateMode mode, Outcome outcome) {
++  if (mode == UpdateMode::kOff) {
++    return Action::kNothing;
++  }
++  if (outcome == Outcome::kUpdate) {
++    return mode == UpdateMode::kAuto ? Action::kInstall : Action::kTell;
++  }
++  if (outcome == Outcome::kUpdaterTooOld) {
++    return Action::kTell;
++  }
++  return CannotVerify(outcome) ? Action::kWarn : Action::kNothing;
++}
++
++int RunUpdateCommand(const base::CommandLine& command, std::string* out) {
++  if (command.HasSwitch("check")) {
++    return Check(command, out);
++  }
++  const base::FilePath root = command.GetSwitchValuePath("root");
++  if (root.empty()) {
++    *out += "--root is missing\n";
++    return kExitUsage;
++  }
++  if (command.HasSwitch("status")) {
++    return Status(root, out);
++  }
++  if (command.HasSwitch("rollback")) {
++    return FromSwap(RollBack(root), out);
++  }
++  if (command.HasSwitch("apply")) {
++    const std::optional<BuildVersion> version = ParseBuildVersion(Arg(command, "version"));
++    const std::optional<std::vector<VersionFile>> files =
++        ReadFiles(command.GetSwitchValuePath("files"));
++    if (!version || !files) {
++      *out += "--version or --files is missing or wrong\n";
++      return kExitUsage;
++    }
++    return FromSwap(InstallVersion(root, command.GetSwitchValuePath("apply"), *version, *files),
++                    out);
++  }
++  if (command.HasSwitch("mode")) {
++    const std::string name = Arg(command, "mode");
++    if (name.empty()) {
++      *out += std::string(UpdateModeName(ReadUpdateMode(root))) + "\n";
++      return kExitOk;
++    }
++    if (name != "auto" && name != "notify" && name != "off") {
++      *out += "--mode is auto, notify or off\n";
++      return kExitUsage;
++    }
++    const UpdateMode mode = name == "notify" ? UpdateMode::kNotify
++                            : name == "off"  ? UpdateMode::kOff
++                                             : UpdateMode::kAuto;
++    if (!WriteUpdateMode(root, mode)) {
++      return kExitIoError;
++    }
++    *out += name + "\n";
++    return kExitOk;
++  }
++  *out += "one of --status, --apply, --rollback, --check or --mode\n";
++  return kExitUsage;
++}
++
++}  // namespace thoron_update
+diff --git a/components/thoron_update/cli.h b/components/thoron_update/cli.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..7768d8e80943dca766e031f5de0b8c1053f59c61
+--- /dev/null
++++ b/components/thoron_update/cli.h
+@@ -0,0 +1,79 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef COMPONENTS_THORON_UPDATE_CLI_H_
++#define COMPONENTS_THORON_UPDATE_CLI_H_
++
++#include <string>
++#include <string_view>
++
++#include "components/thoron_update/manifest.h"
++
++namespace base {
++class CommandLine;
++class FilePath;
++}  // namespace base
++
++// The updater's command line and its settings (ROADMAP P3.11).
++//
++//   thoron_update --root <program folder> --status
++//   thoron_update --root <program folder> --apply <staged folder> --version <v> --files <files.json>
++//   thoron_update --root <program folder> --rollback
++//   thoron_update --check --manifest <update.json> --signature <update.json.sig> --public-key <base64>
++//       --channel <channel> --installed <v> --updater <v> --variant <name> --kind installed|portable
++//       --allowed-host <host> [--last-serial <n>] [--now <seconds since 1970>]
++//   thoron_update --root <program folder> --mode [auto|notify|off]
++//
++// The program folder is the one of swap.h: a folder per version and the file
++// `current`. --check reads the two files of a release as they were fetched;
++// fetching them is the browser's part (P3.20).
++
++namespace thoron_update {
++
++// The exit codes, as documented in README.md.
++enum ExitCode {
++  kExitOk = 0,             // done; with --check: up to date
++  kExitUsage = 1,          // the command line is not one of the above
++  kExitNoVersion = 10,     // --status: no version starts in the folder
++  kExitAlreadyCurrent = 11,
++  kExitBadFiles = 12,      // --apply: the staged folder is not the package's files
++  kExitBadRequest = 13,    // --apply: the version or a path of the files is wrong
++  kExitIoError = 14,
++  kExitNothingToRollBack = 15,
++  kExitUpdate = 20,        // --check: a newer release for this copy
++  kExitCannotVerify = 21,  // --check: bad signature, malformed, replayed, expired...
++  kExitUpdaterTooOld = 22,
++  kExitNoPackage = 23,
++};
++
++// How a copy updates itself.
++enum class UpdateMode {
++  kAuto,    // downloads and installs; the new version starts with the next start
++  kNotify,  // says a newer version is there; installs when asked
++  kOff,     // looks only when asked
++};
++
++std::string_view UpdateModeName(UpdateMode mode);
++
++// The mode kept in the program folder (the file `update-mode`); kAuto when
++// none is kept or it is not one of the three.
++UpdateMode ReadUpdateMode(const base::FilePath& root);
++bool WriteUpdateMode(const base::FilePath& root, UpdateMode mode);
++
++// What a copy does with a decision in its mode, when it looked on its own (a
++// look the person asked for always shows its answer).
++enum class Action {
++  kNothing,
++  kInstall,  // download, verify and put in place (P3.4, P3.5)
++  kTell,     // show that a newer version is there
++  kWarn,     // show that updates cannot be verified (P4.5)
++};
++Action ActionFor(UpdateMode mode, Outcome outcome);
++
++// Runs the command line `command`; what it prints goes to `out`. Gives the
++// exit code.
++int RunUpdateCommand(const base::CommandLine& command, std::string* out);
++
++}  // namespace thoron_update
++
++#endif  // COMPONENTS_THORON_UPDATE_CLI_H_
+diff --git a/components/thoron_update/cli_main.cc b/components/thoron_update/cli_main.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..cba5f110a4048b3b56ed2d92c09e2f8141865ae6
+--- /dev/null
++++ b/components/thoron_update/cli_main.cc
+@@ -0,0 +1,23 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++// thoron_update: the updater's command line (ROADMAP P3.11). See cli.h and
++// README.md for what it takes and the exit codes it gives.
++
++#include <stdio.h>
++
++#include <string>
++
++#include "base/at_exit.h"
++#include "base/command_line.h"
++#include "components/thoron_update/cli.h"
++
++int main(int argc, char** argv) {
++  base::AtExitManager at_exit;
++  base::CommandLine::Init(argc, argv);
++  std::string out;
++  const int code =
++      thoron_update::RunUpdateCommand(*base::CommandLine::ForCurrentProcess(), &out);
++  fputs(out.c_str(), stdout);
++  return code;
++}
+diff --git a/components/thoron_update/cli_unittest.cc b/components/thoron_update/cli_unittest.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..3fe3d6f2f05c42dae3faf9d369ff9a20d31bd1b3
+--- /dev/null
++++ b/components/thoron_update/cli_unittest.cc
+@@ -0,0 +1,182 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "components/thoron_update/cli.h"
++
++#include <string>
++#include <vector>
++
++#include "base/base64.h"
++#include "base/command_line.h"
++#include "base/files/file_path.h"
++#include "base/files/file_util.h"
++#include "base/files/scoped_temp_dir.h"
++#include "base/strings/string_number_conversions.h"
++#include "base/strings/utf_string_conversions.h"
++#include "components/thoron_update/manifest_test_vectors.h"
++#include "components/thoron_update/swap.h"
++#include "crypto/hash.h"
++#include "testing/gtest/include/gtest/gtest.h"
++
++namespace thoron_update {
++namespace {
++
++base::CommandLine Command(const std::vector<std::string>& args) {
++  base::CommandLine::StringVector argv = {FILE_PATH_LITERAL("thoron_update")};
++  for (const std::string& arg : args) {
++#if BUILDFLAG(IS_WIN)
++    argv.push_back(base::UTF8ToWide(arg));
++#else
++    argv.push_back(arg);
++#endif
++  }
++  return base::CommandLine(argv);
++}
++
++class ThoronUpdateCliTest : public testing::Test {
++ protected:
++  void SetUp() override { ASSERT_TRUE(dir_.CreateUniqueTempDir()); }
++
++  int Run(const std::vector<std::string>& args) {
++    out_.clear();
++    return RunUpdateCommand(Command(args), &out_);
++  }
++
++  std::string Root() { return dir_.GetPath().AsUTF8Unsafe(); }
++
++  // A staged folder of `version` with one file, and its files.json.
++  void Stage(const std::string& version, std::string* staged, std::string* files) {
++    const std::string content = "program " + version;
++    const base::FilePath folder = dir_.GetPath().AppendASCII(version + ".staging");
++    ASSERT_TRUE(base::CreateDirectory(folder));
++    ASSERT_TRUE(base::WriteFile(folder.AppendASCII("thoron.exe"), content));
++    const base::FilePath list = dir_.GetPath().AppendASCII(version + ".files.json");
++    ASSERT_TRUE(base::WriteFile(
++        list, "[{\"path\": \"thoron.exe\", \"size\": " + base::NumberToString(content.size()) +
++                  ", \"sha256\": \"" + base::HexEncodeLower(crypto::hash::Sha256(content)) +
++                  "\"}]"));
++    *staged = folder.AsUTF8Unsafe();
++    *files = list.AsUTF8Unsafe();
++  }
++
++  int Apply(const std::string& version) {
++    std::string staged, files;
++    Stage(version, &staged, &files);
++    return Run({"--root=" + Root(), "--apply=" + staged, "--version=" + version, "--files=" + files});
++  }
++
++  base::ScopedTempDir dir_;
++  std::string out_;
++};
++
++TEST_F(ThoronUpdateCliTest, StatusApplyAndRollBackGiveTheirExitCodes) {
++  EXPECT_EQ(Run({"--root=" + Root(), "--status"}), kExitNoVersion);
++  EXPECT_EQ(out_, "current: none\nprevious: none\nmode: auto\n");
++  EXPECT_EQ(Apply("158.0.8127.3000"), kExitOk);
++  EXPECT_EQ(Apply("158.0.8127.3010"), kExitOk);
++  EXPECT_EQ(Run({"--root=" + Root(), "--status"}), kExitOk);
++  EXPECT_EQ(out_, "current: 158.0.8127.3010\nprevious: 158.0.8127.3000\nmode: auto\n");
++  EXPECT_EQ(Run({"--root=" + Root(), "--rollback"}), kExitOk);
++  Run({"--root=" + Root(), "--status"});
++  EXPECT_EQ(out_, "current: 158.0.8127.3000\nprevious: 158.0.8127.3010\nmode: auto\n");
++}
++
++TEST_F(ThoronUpdateCliTest, WhatCannotBeDoneHasItsOwnExitCode) {
++  EXPECT_EQ(Run({"--root=" + Root(), "--rollback"}), kExitNothingToRollBack);
++  EXPECT_EQ(Apply("158.0.8127.3000"), kExitOk);
++  // the staged folder is not the files list's
++  std::string staged, files;
++  Stage("158.0.8127.3010", &staged, &files);
++  ASSERT_TRUE(base::WriteFile(base::FilePath::FromUTF8Unsafe(staged).AppendASCII("thoron.exe"), "x"));
++  EXPECT_EQ(Run({"--root=" + Root(), "--apply=" + staged, "--version=158.0.8127.3010",
++                 "--files=" + files}),
++            kExitBadFiles);
++  EXPECT_EQ(Run({"--root=" + Root(), "--apply=x", "--version=158.0.8127", "--files=" + files}),
++            kExitUsage);
++  EXPECT_EQ(Run({"--status"}), kExitUsage);
++  EXPECT_EQ(Run({"--root=" + Root()}), kExitUsage);
++}
++
++TEST_F(ThoronUpdateCliTest, TheModeIsKeptAndReadBack) {
++  EXPECT_EQ(Run({"--root=" + Root(), "--mode"}), kExitOk);
++  EXPECT_EQ(out_, "auto\n");
++  for (const char* mode : {"notify", "off", "auto"}) {
++    EXPECT_EQ(Run({"--root=" + Root(), std::string("--mode=") + mode}), kExitOk);
++    Run({"--root=" + Root(), "--mode"});
++    EXPECT_EQ(out_, std::string(mode) + "\n");
++  }
++  EXPECT_EQ(Run({"--root=" + Root(), "--mode=sometimes"}), kExitUsage);
++  ASSERT_TRUE(base::WriteFile(dir_.GetPath().AppendASCII("update-mode"), "nonsense"));
++  EXPECT_EQ(ReadUpdateMode(dir_.GetPath()), UpdateMode::kAuto);
++}
++
++TEST(ThoronUpdateModeTest, EachModeDoesWhatItSays) {
++  EXPECT_EQ(ActionFor(UpdateMode::kAuto, Outcome::kUpdate), Action::kInstall);
++  EXPECT_EQ(ActionFor(UpdateMode::kNotify, Outcome::kUpdate), Action::kTell);
++  EXPECT_EQ(ActionFor(UpdateMode::kOff, Outcome::kUpdate), Action::kNothing);
++  for (UpdateMode mode : {UpdateMode::kAuto, UpdateMode::kNotify}) {
++    EXPECT_EQ(ActionFor(mode, Outcome::kUpToDate), Action::kNothing);
++    EXPECT_EQ(ActionFor(mode, Outcome::kExpired), Action::kWarn);
++    EXPECT_EQ(ActionFor(mode, Outcome::kBadSignature), Action::kWarn);
++    EXPECT_EQ(ActionFor(mode, Outcome::kUpdaterTooOld), Action::kTell);
++    EXPECT_EQ(ActionFor(mode, Outcome::kNoPackage), Action::kNothing);
++  }
++  EXPECT_EQ(ActionFor(UpdateMode::kOff, Outcome::kExpired), Action::kNothing);
++}
++
++class ThoronUpdateCliCheckTest : public ThoronUpdateCliTest {
++ protected:
++  std::vector<std::string> CheckArgs(const std::string& signature_hex,
++                                     const std::string& installed = "158.0.8127.3000",
++                                     int64_t now = test_vectors::kNow) {
++    const base::FilePath manifest = dir_.GetPath().AppendASCII("update.json");
++    const base::FilePath signature = dir_.GetPath().AppendASCII("update.json.sig");
++    std::vector<uint8_t> bytes;
++    EXPECT_TRUE(base::HexStringToBytes(signature_hex, &bytes));
++    EXPECT_TRUE(base::WriteFile(manifest, test_vectors::kExample));
++    EXPECT_TRUE(base::WriteFile(signature, bytes));
++    std::vector<uint8_t> key;
++    EXPECT_TRUE(base::HexStringToBytes(test_vectors::kTestPublicKey, &key));
++    return {"--check", "--manifest=" + manifest.AsUTF8Unsafe(),
++            "--signature=" + signature.AsUTF8Unsafe(), "--public-key=" + base::Base64Encode(key),
++            "--channel=stable", "--installed=" + installed, "--updater=158.0.8127.3000",
++            "--variant=win-x64-avx2", "--kind=installed", "--allowed-host=github.com",
++            "--now=" + base::NumberToString(now)};
++  }
++};
++
++TEST_F(ThoronUpdateCliCheckTest, ANewerReleaseIsAnUpdate) {
++  EXPECT_EQ(Run(CheckArgs(std::string(test_vectors::kExampleSignature))), kExitUpdate);
++  EXPECT_NE(out_.find("outcome: update\n"), std::string::npos) << out_;
++  EXPECT_NE(out_.find("full: https://github.com/"), std::string::npos) << out_;
++}
++
++TEST_F(ThoronUpdateCliCheckTest, TheInstalledVersionIsUpToDate) {
++  EXPECT_EQ(Run(CheckArgs(std::string(test_vectors::kExampleSignature),
++                          std::string(test_vectors::kNewVersion))),
++            kExitOk);
++  EXPECT_NE(out_.find("outcome: up_to_date\n"), std::string::npos) << out_;
++}
++
++TEST_F(ThoronUpdateCliCheckTest, AForgedOrExpiredManifestCannotBeVerified) {
++  std::string forged(test_vectors::kExampleSignature);
++  forged[0] = forged[0] == '0' ? '1' : '0';
++  EXPECT_EQ(Run(CheckArgs(forged)), kExitCannotVerify);
++  EXPECT_NE(out_.find("outcome: bad_signature\n"), std::string::npos) << out_;
++  EXPECT_EQ(Run(CheckArgs(std::string(test_vectors::kExampleSignature), "158.0.8127.3000",
++                          test_vectors::kExpires + 2 * 86400)),
++            kExitCannotVerify);
++  EXPECT_NE(out_.find("outcome: expired\n"), std::string::npos) << out_;
++}
++
++TEST_F(ThoronUpdateCliCheckTest, AWrongCommandLineIsAUsageError) {
++  std::vector<std::string> args = CheckArgs(std::string(test_vectors::kExampleSignature));
++  args[3] = "--public-key=not-base64";
++  EXPECT_EQ(Run(args), kExitUsage);
++  args = CheckArgs(std::string(test_vectors::kExampleSignature));
++  args[1] = "--manifest=" + dir_.GetPath().AppendASCII("none.json").AsUTF8Unsafe();
++  EXPECT_EQ(Run(args), kExitUsage);
++}
++
++}  // namespace
++}  // namespace thoron_update
+diff --git a/components/thoron_update/key_rotation_unittest.cc b/components/thoron_update/key_rotation_unittest.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..8667f8436917d6b3795d0abc91e9f3b3f4b71fd3
+--- /dev/null
++++ b/components/thoron_update/key_rotation_unittest.cc
+@@ -0,0 +1,104 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include <string>
++#include <vector>
++
++#include "base/strings/string_number_conversions.h"
++#include "components/thoron_update/manifest.h"
++#include "components/thoron_update/manifest_test_vectors.h"
++#include "testing/gtest/include/gtest/gtest.h"
++
++// Key rotation (ROADMAP P4.7), checked against what the reference tool makes.
++// The two keys are the test keys of make_test_vectors.py (no release key):
++// "test" signs the statement that introduces "other", and the example manifest
++// is signed with "other". Made with tools/update/manifest.py:
++//   sign_key_statement(sha256(TEST_KEY_PHRASE), public_key_of(sha256(OTHER_KEY_PHRASE)))
++//   sign(example(), sha256(OTHER_KEY_PHRASE), ..., now=2026-12-01T13:00:00Z)
++
++namespace thoron_update {
++namespace {
++
++constexpr std::string_view kOtherPublicKey =
++    "049f897b6739697fe841cd71a9bc0d6fec6c58688901c4b5d22c1cb0ee9eb163";
++constexpr std::string_view kStatement =
++    "049f897b6739697fe841cd71a9bc0d6fec6c58688901c4b5d22c1cb0ee9eb163"
++    "38eb27fcf6e0371837cf45cc53beec185fee43fad43beb76270a44eda9050a67"
++    "73154f8af0ba0e8659301732bbe9e394c670b5489101d1eab98356c0e1eca105";
++constexpr std::string_view kExampleSignedByOther =
++    "cb2994c32a10e227c84b5a6450ac326a7cbe0762b4498605d029874f369765a5"
++    "3e6b1dcd19e738f262a60bed8d033baab7da1d8ac8721d53fa6760717af36308";
++
++std::string Bytes(std::string_view hex) {
++  std::string out;
++  EXPECT_TRUE(base::HexStringToString(hex, &out));
++  return out;
++}
++
++PublicKey Key(std::string_view hex) {
++  PublicKey key = {};
++  const std::string bytes = Bytes(hex);
++  EXPECT_EQ(bytes.size(), key.size());
++  std::copy(bytes.begin(), bytes.end(), key.begin());
++  return key;
++}
++
++CopyInfo Copy() {
++  CopyInfo copy;
++  copy.allowed_hosts = {"github.com"};
++  copy.channel = "stable";
++  copy.installed = *ParseBuildVersion(test_vectors::kOldVersion);
++  copy.updater = copy.installed;
++  copy.variant = Variant::kWinX64Avx2;
++  copy.kind = Kind::kInstalled;
++  return copy;
++}
++
++TEST(ThoronUpdateKeyRotationTest, TheReferencesStatementIntroducesTheNewKey) {
++  const std::optional<PublicKey> key =
++      KeyFromStatement(Bytes(kStatement), {Key(test_vectors::kTestPublicKey)});
++  ASSERT_TRUE(key);
++  EXPECT_EQ(*key, Key(kOtherPublicKey));
++}
++
++TEST(ThoronUpdateKeyRotationTest, AStatementNoTrustedKeySignedIsIgnored) {
++  EXPECT_FALSE(KeyFromStatement(Bytes(kStatement), {Key(kOtherPublicKey)}));
++  std::string changed = Bytes(kStatement);
++  for (size_t at : {0u, 31u, 32u, 95u}) {
++    std::string bad = changed;
++    bad[at] = static_cast<char>(bad[at] ^ 1);
++    EXPECT_FALSE(KeyFromStatement(bad, {Key(test_vectors::kTestPublicKey)})) << at;
++  }
++  EXPECT_FALSE(KeyFromStatement(changed.substr(0, 95), {Key(test_vectors::kTestPublicKey)}));
++  // no key is never introduced, whoever would sign it
++  EXPECT_FALSE(KeyFromStatement(std::string(96, '\0'), {Key(test_vectors::kTestPublicKey)}));
++}
++
++TEST(ThoronUpdateKeyRotationTest, TheDrill) {
++  const std::string signature = Bytes(kExampleSignedByOther);
++  const PublicKey built_in = Key(test_vectors::kTestPublicKey);
++  // without the statement the release signed with the new key cannot be verified
++  EXPECT_EQ(CheckUpdateWithKeys(test_vectors::kExample, signature, Copy(), {built_in},
++                                test_vectors::kNow)
++                .outcome,
++            Outcome::kBadSignature);
++  // with it, the copy trusts the new key and the release is an update
++  const std::vector<PublicKey> keys = TrustedKeys(built_in, {Bytes(kStatement)});
++  ASSERT_EQ(keys.size(), 2u);
++  EXPECT_EQ(keys[1], Key(kOtherPublicKey));
++  EXPECT_EQ(CheckUpdateWithKeys(test_vectors::kExample, signature, Copy(), keys, test_vectors::kNow)
++                .outcome,
++            Outcome::kUpdate);
++  // a release still signed with the old key verifies as before
++  EXPECT_EQ(CheckUpdateWithKeys(test_vectors::kExample, Bytes(test_vectors::kExampleSignature),
++                                Copy(), keys, test_vectors::kNow)
++                .outcome,
++            Outcome::kUpdate);
++  // a statement that only the new key could have signed does not make itself trusted
++  EXPECT_EQ(TrustedKeys(Key(kOtherPublicKey), {Bytes(kStatement)}).size(), 1u);
++  // a statement given twice is one key
++  EXPECT_EQ(TrustedKeys(built_in, {Bytes(kStatement), Bytes(kStatement)}).size(), 2u);
++}
++
++}  // namespace
++}  // namespace thoron_update
+diff --git a/components/thoron_update/launcher/BUILD.gn b/components/thoron_update/launcher/BUILD.gn
+new file mode 100644
+index 0000000000000000000000000000000000000000..724b048dee3a1ce75f35a0f7dcbe4600a2575d90
+--- /dev/null
++++ b/components/thoron_update/launcher/BUILD.gn
+@@ -0,0 +1,32 @@
++# Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++# found in the LICENSE file.
++
++import("//build/config/compiler/compiler.gni")
++import("//build/config/sanitizers/sanitizers.gni")
++
++# The portable package's launcher, Thoron.exe (ROADMAP P3.12, P4.4). It must
++# start on every x64 processor, so it is built without the build's processor
++# flags and links nothing compiled with them: no base, no C++ library.
++executable("thoron_launcher") {
++  sources = [ "thoron_launcher_win.cc" ]
++
++  # The system headers are precompiled as modules with the processor flags;
++  # this file is compiled without them, so it reads the headers as they are.
++  use_libcxx_modules = false
++  configs -= [
++    "//build/config/compiler:thorium_x86_isa",
++    "//build/config/win:console",
++  ]
++  configs += [ "//build/config/win:windowed" ]
++  if (!is_asan && !use_clang_profiling) {
++    no_default_deps = true
++  }
++  libs = [
++    "kernel32.lib",
++    "user32.lib",
++  ]
++  assert_no_deps = [
++    "//base",
++    "//buildtools/third_party/libc++",
++  ]
++}
+diff --git a/components/thoron_update/launcher/thoron_launcher_win.cc b/components/thoron_update/launcher/thoron_launcher_win.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..bb3507a18e56921ce0910494d3dbefb06f29e671
+--- /dev/null
++++ b/components/thoron_update/launcher/thoron_launcher_win.cc
+@@ -0,0 +1,275 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++// The launcher of Thoron's portable package (ROADMAP P3.12, P4.4): Thoron.exe
++// in the package's folder. It starts the version Application\current names,
++// with the profile in the package's own "User Data" folder, and passes on its
++// command line.
++//
++// It is built for every x64 processor and uses nothing of the browser's code:
++// no base, no C++ library, only Windows. So on a computer whose processor
++// cannot run the browser's build (an AVX2 copy moved to an older PC) it says
++// so, where the browser itself would stop before any of its code ran.
++//
++// Exit status: 0 the browser was started; 2 no browser was found in the
++// package; 3 this processor cannot run the package's build; 4 starting it
++// failed.
++
++#include <windows.h>
++
++#include <intrin.h>
++
++namespace {
++
++constexpr int kStarted = 0;
++constexpr int kNoBrowser = 2;
++constexpr int kWrongProcessor = 3;
++constexpr int kStartFailed = 4;
++
++// Long paths are fine; command lines are limited by Windows to 32767.
++constexpr DWORD kPath = 32768;
++
++// The processor's features the builds are made for (package.h, RunsOn).
++__attribute__((target("xsave"))) bool HasAvx2() {
++  int r[4];
++  __cpuid(r, 0);
++  if (r[0] < 7) {
++    return false;
++  }
++  __cpuid(r, 1);
++  const bool sse41 = r[2] & (1 << 19);
++  const bool sse42 = r[2] & (1 << 20);
++  const bool fma = r[2] & (1 << 12);
++  const bool osxsave = r[2] & (1 << 27);
++  const bool avx = r[2] & (1 << 28);
++  // the system must save the registers AVX uses
++  if (!sse41 || !sse42 || !fma || !osxsave || !avx || (_xgetbv(0) & 6) != 6) {
++    return false;
++  }
++  __cpuidex(r, 7, 0);
++  return r[1] & (1 << 5);
++}
++
++bool HasSse42() {
++  int r[4];
++  __cpuid(r, 1);
++  return (r[2] & (1 << 19)) && (r[2] & (1 << 20));
++}
++
++size_t Length(const wchar_t* text) {
++  size_t n = 0;
++  while (text[n]) {
++    ++n;
++  }
++  return n;
++}
++
++// Appends `text` to `out` (of `room` characters), always ending it.
++bool Append(wchar_t* out, size_t room, const wchar_t* text) {
++  size_t at = Length(out);
++  for (size_t i = 0; text[i]; ++i, ++at) {
++    if (at + 1 >= room) {
++      return false;
++    }
++    out[at] = text[i];
++  }
++  out[at] = 0;
++  return true;
++}
++
++bool StartsWith(const wchar_t* text, const wchar_t* start) {
++  for (size_t i = 0; start[i]; ++i) {
++    if (text[i] != start[i]) {
++      return false;
++    }
++  }
++  return true;
++}
++
++bool Exists(const wchar_t* path) {
++  return GetFileAttributesW(path) != INVALID_FILE_ATTRIBUTES;
++}
++
++// Reads at most `room - 1` bytes of the file at `path` as ASCII.
++bool ReadSmallFile(const wchar_t* path, char* out, DWORD room) {
++  HANDLE file = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_DELETE, nullptr,
++                            OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
++  if (file == INVALID_HANDLE_VALUE) {
++    return false;
++  }
++  DWORD read = 0;
++  const BOOL ok = ReadFile(file, out, room - 1, &read, nullptr);
++  CloseHandle(file);
++  out[ok ? read : 0] = 0;
++  return ok && read > 0;
++}
++
++// The version of the first line of `text` ("158.0.8127.3010"), copied to
++// `version`, when it is four numbers joined by dots.
++bool FirstVersion(const char* text, wchar_t* version, size_t room) {
++  size_t n = 0;
++  int dots = 0;
++  bool digit = false;
++  for (; text[n] && text[n] != '\n' && text[n] != '\r'; ++n) {
++    const char c = text[n];
++    if (c == '.') {
++      if (!digit) {
++        return false;
++      }
++      ++dots;
++      digit = false;
++    } else if (c >= '0' && c <= '9') {
++      digit = true;
++    } else {
++      return false;
++    }
++    if (n + 1 >= room) {
++      return false;
++    }
++    version[n] = c;
++  }
++  version[n] = 0;
++  return dots == 3 && digit;
++}
++
++// What the package says it is built for: "win-x64-avx2" or "win-x64-sse4".
++bool IsAvx2Package(const wchar_t* folder) {
++  wchar_t path[kPath] = {};
++  char text[64];
++  if (!Append(path, kPath, folder) || !Append(path, kPath, L"\\variant") ||
++      !ReadSmallFile(path, text, sizeof(text))) {
++    // no file: the package is the AVX2 build, the one made first
++    return true;
++  }
++  const char want[] = "win-x64-avx2";
++  for (size_t i = 0; want[i]; ++i) {
++    if (text[i] != want[i]) {
++      return false;
++    }
++  }
++  return true;
++}
++
++void Tell(const wchar_t* message) {
++  // The checks read the message from a file instead of a window.
++  wchar_t out[kPath];
++  if (GetEnvironmentVariableW(L"THORON_LAUNCHER_MESSAGE_FILE", out, kPath)) {
++    HANDLE file = CreateFileW(out, GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL,
++                              nullptr);
++    if (file != INVALID_HANDLE_VALUE) {
++      DWORD written = 0;
++      WriteFile(file, message, static_cast<DWORD>(Length(message) * sizeof(wchar_t)), &written,
++                nullptr);
++      CloseHandle(file);
++    }
++    return;
++  }
++  MessageBoxW(nullptr, message, L"Thoron", MB_OK | MB_ICONWARNING);
++}
++
++}  // namespace
++
++int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
++  // The package's folder: the one this program is in.
++  wchar_t folder[kPath] = {};
++  const DWORD got = GetModuleFileNameW(nullptr, folder, kPath);
++  if (got == 0 || got >= kPath) {
++    return kNoBrowser;
++  }
++  for (DWORD i = got; i > 0; --i) {
++    if (folder[i - 1] == L'\\') {
++      folder[i - 1] = 0;
++      break;
++    }
++  }
++
++  // The processor: an AVX2 build on a processor without it stops at once, so
++  // this is said before it is started. (Tests may say which processor to
++  // assume.)
++  wchar_t assume[16] = {};
++  GetEnvironmentVariableW(L"THORON_LAUNCHER_ASSUME_CPU", assume, 16);
++  const bool sse4_only = StartsWith(assume, L"sse4");
++  const bool too_old = StartsWith(assume, L"old");
++  const bool avx2 = !sse4_only && !too_old && HasAvx2();
++  const bool sse4 = !too_old && (sse4_only || HasSse42());
++  if (IsAvx2Package(folder) ? !avx2 : !sse4) {
++    Tell(avx2 || sse4
++             ? L"This copy of Thoron is made for processors with AVX2, which this computer's processor "
++               L"does not have. The SSE4 version of Thoron runs here: download it from the same page "
++               L"and put your \"User Data\" folder into it to keep your profile."
++             : L"This computer's processor is too old for Thoron: it needs SSE4.2 at least.");
++    return kWrongProcessor;
++  }
++
++  // The version to start: the one Application\current names, or the browser
++  // of a package made before there were versions side by side.
++  wchar_t browser[kPath] = {};
++  wchar_t pointer[kPath] = {};
++  char text[64];
++  wchar_t version[32];
++  Append(pointer, kPath, folder);
++  Append(pointer, kPath, L"\\Application\\current");
++  if (ReadSmallFile(pointer, text, sizeof(text)) && FirstVersion(text, version, 32)) {
++    Append(browser, kPath, folder);
++    Append(browser, kPath, L"\\Application\\");
++    Append(browser, kPath, version);
++    Append(browser, kPath, L"\\thoron.exe");
++  }
++  if (!browser[0] || !Exists(browser)) {
++    browser[0] = 0;
++    Append(browser, kPath, folder);
++    Append(browser, kPath, L"\\Application\\thoron.exe");
++  }
++  if (!Exists(browser)) {
++    Tell(L"Thoron's program files are not in this folder. Unpack the whole package again.");
++    return kNoBrowser;
++  }
++
++  // The profile folder is made here: a folder that cannot be made (a drive
++  // that is write-protected) would make the browser use the computer's own
++  // profile folder instead, so nothing is started then.
++  wchar_t profile[kPath] = {};
++  Append(profile, kPath, folder);
++  Append(profile, kPath, L"\\User Data");
++  if (!CreateDirectoryW(profile, nullptr) && GetLastError() != ERROR_ALREADY_EXISTS) {
++    Tell(L"Thoron cannot write its profile into this folder (is the drive write-protected?). "
++         L"Nothing was started, so that nothing is written to this computer instead.");
++    return kStartFailed;
++  }
++
++  // The command line: the browser, the package's profile, and what this
++  // program was given (after its own name).
++  static wchar_t command[kPath];
++  command[0] = 0;
++  bool fits = Append(command, kPath, L"\"") && Append(command, kPath, browser) &&
++              Append(command, kPath, L"\" --user-data-dir=\"") && Append(command, kPath, folder) &&
++              Append(command, kPath, L"\\User Data\"");
++  const wchar_t* rest = GetCommandLineW();
++  if (*rest == L'"') {
++    for (++rest; *rest && *rest != L'"'; ++rest) {
++    }
++    if (*rest) {
++      ++rest;
++    }
++  } else {
++    while (*rest && *rest != L' ' && *rest != L'\t') {
++      ++rest;
++    }
++  }
++  if (*rest) {
++    fits = fits && Append(command, kPath, rest);
++  }
++  if (!fits) {
++    return kStartFailed;
++  }
++  STARTUPINFOW startup = {};
++  startup.cb = sizeof(startup);
++  PROCESS_INFORMATION process = {};
++  if (!CreateProcessW(browser, command, nullptr, nullptr, FALSE, 0, nullptr, folder, &startup,
++                      &process)) {
++    return kStartFailed;
++  }
++  CloseHandle(process.hThread);
++  CloseHandle(process.hProcess);
++  return kStarted;
++}
 diff --git a/components/thoron_update/make_test_vectors.py b/components/thoron_update/make_test_vectors.py
 new file mode 100644
 index 0000000000000000000000000000000000000000..2582f8ca3e279b2882611c579656d8710eb03ad1
@@ -12833,10 +13915,10 @@ index 0000000000000000000000000000000000000000..2582f8ca3e279b2882611c579656d871
 +    sys.exit(main(sys.argv[1:]))
 diff --git a/components/thoron_update/manifest.cc b/components/thoron_update/manifest.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..1f8d4171a9d4e53461d0a2d57694ef93025d4783
+index 0000000000000000000000000000000000000000..4512124f39febc8a6c184bbd32dfee219acb2052
 --- /dev/null
 +++ b/components/thoron_update/manifest.cc
-@@ -0,0 +1,716 @@
+@@ -0,0 +1,783 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -13552,13 +14634,80 @@ index 0000000000000000000000000000000000000000..1f8d4171a9d4e53461d0a2d57694ef93
 +  return decision;
 +}
 +
++std::optional<PublicKey> KeyFromStatement(std::string_view statement,
++                                          const std::vector<PublicKey>& trusted) {
++  if (statement.size() != kKeyStatementBytes) {
++    return std::nullopt;
++  }
++  PublicKey key;
++  std::copy(statement.begin(), statement.begin() + kPublicKeyBytes, key.begin());
++  if (!IsKey(key)) {
++    return std::nullopt;
++  }
++  std::string message("thoron-update-key-v1\n");
++  message.append(statement.substr(0, kPublicKeyBytes));
++  const std::string_view signature = statement.substr(kPublicKeyBytes);
++  for (const PublicKey& signer : trusted) {
++    if (IsKey(signer) &&
++        ED25519_verify(reinterpret_cast<const uint8_t*>(message.data()), message.size(),
++                       reinterpret_cast<const uint8_t*>(signature.data()),
++                       signer.data()) == 1) {
++      return key;
++    }
++  }
++  return std::nullopt;
++}
++
++std::vector<PublicKey> TrustedKeys(const PublicKey& built_in,
++                                   const std::vector<std::string>& statements) {
++  std::vector<PublicKey> keys = {built_in};
++  std::vector<std::string_view> pending;
++  for (size_t i = 0; i < statements.size() && i < kMostKeyStatements; ++i) {
++    pending.push_back(statements[i]);
++  }
++  bool found = true;
++  while (found) {
++    found = false;
++    for (auto it = pending.begin(); it != pending.end();) {
++      const std::optional<PublicKey> key = KeyFromStatement(*it, keys);
++      if (!key) {
++        ++it;
++        continue;
++      }
++      it = pending.erase(it);
++      if (std::ranges::find(keys, *key) == keys.end()) {
++        keys.push_back(*key);
++      }
++      found = true;
++    }
++  }
++  return keys;
++}
++
++Decision CheckUpdateWithKeys(std::string_view manifest,
++                             std::string_view signature,
++                             CopyInfo copy,
++                             const std::vector<PublicKey>& keys,
++                             int64_t now) {
++  Decision decision;
++  decision.outcome = Outcome::kBadSignature;
++  for (const PublicKey& key : keys) {
++    copy.public_key = key;
++    decision = CheckUpdate(manifest, signature, copy, now);
++    if (decision.outcome != Outcome::kBadSignature) {
++      return decision;
++    }
++  }
++  return decision;
++}
++
 +}  // namespace thoron_update
 diff --git a/components/thoron_update/manifest.h b/components/thoron_update/manifest.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..7f0a97d55c50dfb11fa00efa97a514be29e0fa3b
+index 0000000000000000000000000000000000000000..53824eb865a70156f3788c5256d2df8bb19dcc68
 --- /dev/null
 +++ b/components/thoron_update/manifest.h
-@@ -0,0 +1,190 @@
+@@ -0,0 +1,222 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -13745,6 +14894,38 @@ index 0000000000000000000000000000000000000000..7f0a97d55c50dfb11fa00efa97a514be
 +                     std::string_view signature,
 +                     const CopyInfo& copy,
 +                     int64_t now);
++
++// --- Key rotation (ROADMAP P4.7) ---------------------------------------------
++//
++// A copy trusts the key it was built with. A release that moves to a new key
++// publishes a key statement beside the manifest (update.key): the new public key
++// (32 bytes) and the signature (64 bytes) of a key the copy trusts over the
++// prefix "thoron-update-key-v1" and LF, then the new key. A copy that trusts the
++// signing key then trusts the new one too, and keeps it. A statement no trusted
++// key signed is ignored. tools/update/manifest.py is the reference here too.
++
++inline constexpr size_t kKeyStatementBytes = 96;
++inline constexpr size_t kMostKeyStatements = 8;
++using PublicKey = std::array<uint8_t, kPublicKeyBytes>;
++
++// The key `statement` introduces, when it is a statement and one of `trusted`
++// signed it. No key (all zero, a point of small order) is never introduced.
++std::optional<PublicKey> KeyFromStatement(std::string_view statement,
++                                          const std::vector<PublicKey>& trusted);
++
++// The keys a copy trusts: `built_in`, and every key a chain of `statements`
++// leads to from it, in the order they were reached. At most
++// kMostKeyStatements statements are read.
++std::vector<PublicKey> TrustedKeys(const PublicKey& built_in,
++                                   const std::vector<std::string>& statements);
++
++// CheckUpdate() under each of `keys` in turn (copy.public_key is not used): the
++// first decision that is not kBadSignature, else that one.
++Decision CheckUpdateWithKeys(std::string_view manifest,
++                             std::string_view signature,
++                             CopyInfo copy,
++                             const std::vector<PublicKey>& keys,
++                             int64_t now);
 +
 +}  // namespace thoron_update
 +

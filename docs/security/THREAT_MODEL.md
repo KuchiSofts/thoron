@@ -196,12 +196,12 @@ to the "Done when" of its stage in `ROADMAP.md`, or dropped with a reason, when 
 
 | Mitigation | Proposed home |
 |---|---|
-| U2: a download is stopped at the signed size | P3.4 |
-| U5: the newest verified release date is remembered | P4.5 |
-| U8: a file swapped between check and run is refused | P3.4 |
-| U9: paths stay inside the staging folder; manifest and delta parsers are fuzzed | P3.5, P4.1 |
-| U10: a file signed for another purpose is refused | P3.1, P3.3 |
-| U11: no manifest field can start a rollback | P3.1 |
+| U2: a download is stopped at the signed size | P3.4 (refusing a longer file is tested; stopping the download itself at that size comes with the downloader, P3.20, P4.3) |
+| U5: the newest verified release date is remembered | Tested (2026-11-16): the serial of the newest accepted manifest is handed back to be stored, and an older one is `replayed` (`thoron_update_unittests`, RejectsOlderManifests); where it is stored is P3.20 |
+| U8: a file swapped between check and run is refused | Partly tested (2026-11-16): a file is read with others kept from writing to it and checked again where it is used (NeverPlacesAnUnverifiedFile); between that and the start of the program, P3.20 |
+| U9: paths stay inside the staging folder; manifest and delta parsers are fuzzed | Paths tested (2026-11-16, APathThatLeavesTheFolderIsRefused); fuzzing: P4.1 |
+| U10: a file signed for another purpose is refused | Tested (2026-11-16): a signature over the bare bytes, without the purpose, is `bad_signature` (RejectsBadSignatures) |
+| U11: no manifest field can start a rollback | Tested (2026-11-16): a manifest that names a version below the installed one is `downgrade` and hands out no package (RejectsOlderManifests); a rollback starts only from the command line or the person (`--rollback`, P3.8) |
 | U12: the update request carries no cookie, referrer or version | P3.3 |
 | U14: every release is installed by the previous release's updater before it is published | P3.20, release checklist |
 | I2: a profile written a moment ago is refused | P3.14 |

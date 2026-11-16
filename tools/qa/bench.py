@@ -4,10 +4,12 @@
 
 Every run uses a fresh throwaway profile in --work, the sandbox stays on, and every page comes from a
 local server on 127.0.0.1, so nothing leaves the machine and no real profile is touched. Each value is
-measured --runs times; the report gives the median and the spread ((max - min) / median), and marks a
+measured --runs times, after --warmup runs that are measured and dropped (the first start of a series
+reads the program from disk and is much slower than the rest; on a PC in use it doubled the start-up time
+and the memory of 20 tabs); the report gives the median and the spread ((max - min) / median), and marks a
 value repeatable when the spread is within 3 %. The online suites (Speedometer 3, JetStream 2,
 MotionMark) are a later step.
-    py -3 -I tools/qa/bench.py --browser <out>\\thoron.exe --work C:\\thoron-build\\bench --runs 5
+    py -3 -I tools/qa/bench.py --browser <out>\\thoron.exe --work C:\\thoron-build\\bench --runs 5 --warmup 1
         --out docs/perf/<name>.json --md docs/perf/<name>.md
 """
 import argparse
@@ -47,6 +49,11 @@ def tree(procs: list[dict], root: int) -> list[dict]:
 
 def total(procs: list[dict], root: int, key: str):
     return sum(p[key] for p in tree(procs, root))
+
+
+def without_warmup(values: list[float], warmup: int) -> list[float]:
+    """`values` without the first `warmup` of them."""
+    return values[warmup:]
 
 
 def summarise(values: list[float]) -> dict:
@@ -164,6 +171,95 @@ def run_startup(browser: Path, work: Path, runs: int, timeout: float = 60) -> li
     return values
 
 
+PROFILES = ("Default", "Profile 1", "Profile 2", "Profile 3")
+
+
+def _close_by_devtools(port: int) -> None:
+    import urllib.request
+    from tools.qa.cdp import WebSocket
+    version = json.loads(urllib.request.urlopen(f"http://127.0.0.1:{port}/json/version", timeout=10).read())
+    ws = WebSocket(version["webSocketDebuggerUrl"])
+    try:
+        ws.call("Browser.close")
+    except (ConnectionError, OSError):
+        pass
+    finally:
+        ws.close()
+
+
+def _port_file(user_data: Path, limit: float = 60) -> int:
+    end = time.perf_counter() + limit
+    path = user_data / "DevToolsActivePort"
+    while time.perf_counter() < end:
+        try:
+            return int(path.read_text().splitlines()[0])
+        except (OSError, ValueError, IndexError):
+            time.sleep(0.01)
+    raise BenchError("DevTools did not start")
+
+
+def profiles_template(browser: Path, work: Path) -> Path:
+    """A folder of profiles with the four of PROFILES, each made by a start of its own."""
+    root = Path(tempfile.mkdtemp(prefix="profiles-", dir=work))
+    for name in PROFILES:
+        (root / "DevToolsActivePort").unlink(missing_ok=True)
+        proc = subprocess.Popen([str(browser), "--headless=new", f"--user-data-dir={root}", "--no-first-run",
+                                 "--no-default-browser-check", f"--profile-directory={name}",
+                                 "--remote-debugging-address=127.0.0.1", "--remote-debugging-port=0",
+                                 "about:blank"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        try:
+            port = _port_file(root)
+            time.sleep(2)
+            _close_by_devtools(port)
+            proc.wait(timeout=30)
+        except (BenchError, OSError, subprocess.TimeoutExpired):
+            _stop(proc, Path(tempfile.mkdtemp(prefix="stopped-", dir=work)))
+            raise
+    (root / "DevToolsActivePort").unlink(missing_ok=True)
+    return root
+
+
+def picker_ready(listing: list[dict]) -> bool:
+    """Whether the targets DevTools lists hold the loaded profile picker."""
+    return any(str(t.get("url", "")).startswith("chrome://profile-picker") for t in listing)
+
+
+def run_startup_profiles(browser: Path, work: Path, runs: int, timeout: float = 60) -> list[float]:
+    """Start-up with 4 profiles: the time until the profile picker, which such a start shows, has loaded."""
+    import urllib.request
+    template = profiles_template(browser, work)
+    values = []
+    try:
+        for _ in range(runs):
+            profile = Path(tempfile.mkdtemp(prefix="bench-", dir=work))
+            shutil.rmtree(profile)
+            shutil.copytree(template, profile)
+            start = time.perf_counter()
+            proc = subprocess.Popen([str(browser), "--headless=new", f"--user-data-dir={profile}",
+                                     "--no-first-run", "--no-default-browser-check",
+                                     "--remote-debugging-address=127.0.0.1", "--remote-debugging-port=0"],
+                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            try:
+                port = _port_file(profile, timeout)
+                end = start + timeout
+                while True:
+                    try:
+                        with urllib.request.urlopen(f"http://127.0.0.1:{port}/json/list", timeout=2) as reply:
+                            if picker_ready(json.loads(reply.read())):
+                                values.append((time.perf_counter() - start) * 1000)
+                                break
+                    except OSError:
+                        pass
+                    if time.perf_counter() > end:
+                        raise BenchError(f"the profile picker did not load within {timeout} s")
+                    time.sleep(0.01)
+            finally:
+                _stop(proc, profile)
+    finally:
+        shutil.rmtree(template, ignore_errors=True)
+    return values
+
+
 def _open_tabs(profile: Path, urls: list[str], timeout: float = 30) -> None:
     """Open more tabs through the test profile's DevTools endpoint (127.0.0.1, random port): the headless
     browser does not open several command-line URLs."""
@@ -228,6 +324,9 @@ def main(argv: list[str]) -> int:
     p.add_argument("--browser", type=Path, required=True)
     p.add_argument("--work", type=Path, required=True)
     p.add_argument("--runs", type=int, default=5)
+    p.add_argument("--warmup", type=int, default=1, help="runs measured first and dropped (default 1)")
+    p.add_argument("--profiles", action="store_true", help="also start-up with 4 profiles: until the profile "
+                   "picker such a start shows has loaded")
     p.add_argument("--label", default="")
     p.add_argument("--out", type=Path, required=True)
     p.add_argument("--md", type=Path)
@@ -235,10 +334,18 @@ def main(argv: list[str]) -> int:
     a.work.mkdir(parents=True, exist_ok=True)
     try:
         results = {"browser": a.label or a.browser.name, "version": "",
-                   "startup_ms": summarise(run_startup(a.browser, a.work, a.runs)),
-                   "memory_1_tab_mb": summarise(run_memory(a.browser, a.work, a.runs, 1)),
-                   "memory_20_tabs_mb": summarise(run_memory(a.browser, a.work, a.runs, 20)),
-                   "idle_cpu_pct": summarise(run_idle_cpu(a.browser, a.work, a.runs))}
+                   "warmup": a.warmup,
+                   "startup_ms": summarise(without_warmup(run_startup(a.browser, a.work, a.runs + a.warmup),
+                                                          a.warmup)),
+                   "memory_1_tab_mb": summarise(without_warmup(run_memory(a.browser, a.work, a.runs + a.warmup,
+                                                                          1), a.warmup)),
+                   "memory_20_tabs_mb": summarise(without_warmup(run_memory(a.browser, a.work,
+                                                                            a.runs + a.warmup, 20), a.warmup)),
+                   "idle_cpu_pct": summarise(without_warmup(run_idle_cpu(a.browser, a.work, a.runs + a.warmup),
+                                                            a.warmup))}
+        if a.profiles:
+            results["startup_4_profiles_ms"] = summarise(without_warmup(
+                run_startup_profiles(a.browser, a.work, a.runs + a.warmup), a.warmup))
     except BenchError as exc:
         print(f"bench: {exc}", file=sys.stderr)
         return 1

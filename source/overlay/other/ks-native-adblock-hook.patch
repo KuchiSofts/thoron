@@ -1778,10 +1778,10 @@ index af9b6f1dc58174281ec64b74c578a3639888ce86..198ab30e882fb2fd51c0b88e79088925
                            /*edge_padding=*/trailing_decorations_edge_padding);
  
 diff --git a/chrome/browser/prefs/browser_prefs.cc b/chrome/browser/prefs/browser_prefs.cc
-index fdd05fad32252be538eef299e830625a6a3c96ba..aa5f98e99cf986671e5f42386ca0528819330251 100644
+index fdd05fad32252be538eef299e830625a6a3c96ba..c154b06bdecbdc43cb7eef2510ba46080319c784 100644
 --- a/chrome/browser/prefs/browser_prefs.cc
 +++ b/chrome/browser/prefs/browser_prefs.cc
-@@ -2049,6 +2049,32 @@ void RegisterLocalState(PrefRegistrySimple* registry) {
+@@ -2049,6 +2049,35 @@ void RegisterLocalState(PrefRegistrySimple* registry) {
  void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry,
                            const std::string& locale) {
    TRACE_EVENT0("browser", "chrome::RegisterProfilePrefs");
@@ -1807,6 +1807,9 @@ index fdd05fad32252be538eef299e830625a6a3c96ba..aa5f98e99cf986671e5f42386ca05288
 +  // P5.77: the mailboxes added by address and password (each password
 +  // encrypted by the system).
 +  registry->RegisterListPref("thoron_mail.imap_accounts");
++  // P5.80: the Google accounts a person wants counted (X-notifier's list),
++  // each password encrypted by the system.
++  registry->RegisterListPref("thoron_mail.google_accounts");
 +  // Thoron's own toolbar buttons (P5.78): their order, left to right, where
 +  // they are next to each other ("mail,adblock"; "" is that default). A
 +  // person changes it by moving a button with the mouse.
@@ -6261,10 +6264,10 @@ index 0000000000000000000000000000000000000000..d0fafbafa75adc4e08b11c75f203035c
 +#endif  // CHROME_BROWSER_UI_WEBUI_THORON_ADBLOCK_UI_H_
 diff --git a/chrome/browser/ui/webui/thoron_mail_ui.cc b/chrome/browser/ui/webui/thoron_mail_ui.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..920b75ec00c86e2bccdd5fba373d10df35004fa9
+index 0000000000000000000000000000000000000000..cebae34cd06dbc0d969628be42e1bc2ac00a80db
 --- /dev/null
 +++ b/chrome/browser/ui/webui/thoron_mail_ui.cc
-@@ -0,0 +1,1107 @@
+@@ -0,0 +1,1417 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -6290,6 +6293,10 @@ index 0000000000000000000000000000000000000000..920b75ec00c86e2bccdd5fba373d10df
 +#include "chrome/browser/notifications/notification_display_service_factory.h"
 +#include "chrome/browser/notifications/notification_handler.h"
 +#include "chrome/browser/profiles/profile.h"
++#include "base/strings/utf_string_conversions.h"
++#include "net/base/url_util.h"
++#include "ui/base/clipboard/clipboard_buffer.h"
++#include "ui/base/clipboard/scoped_clipboard_writer.h"
 +#include "chrome/browser/signin/identity_manager_factory.h"
 +#include "components/signin/public/identity_manager/accounts_in_cookie_jar_info.h"
 +#include "components/signin/public/identity_manager/identity_manager.h"
@@ -6405,6 +6412,10 @@ index 0000000000000000000000000000000000000000..920b75ec00c86e2bccdd5fba373d10df
 +    Register("removeImapAccount", &MailHandler::RemoveImapAccount);
 +    Register("exportBackup", &MailHandler::ExportBackup);
 +    Register("importBackup", &MailHandler::ImportBackup);
++    Register("importGoogleAccounts", &MailHandler::ImportGoogleAccounts);
++    Register("removeGoogleAccount", &MailHandler::RemoveGoogleAccount);
++    Register("signInGoogle", &MailHandler::SignInGoogle);
++    Register("copyGooglePassword", &MailHandler::CopyGooglePassword);
 +    Register("openManage", &MailHandler::OpenManage);
 +    Register("menuReady", &MailHandler::MenuReady);
 +    Register("closeMenu", &MailHandler::CloseMenu);
@@ -6466,6 +6477,24 @@ index 0000000000000000000000000000000000000000..920b75ec00c86e2bccdd5fba373d10df
 +                          .Set("problem", account.problem)
 +                          .Set("latest", std::move(latest)));
 +    }
++    // P5.80: the Google accounts of the person's list, each with whether it is
++    // counted (found at Google, or read as a mailbox) and whether a password
++    // is kept for it. The password itself is not sent.
++    base::ListValue wanted;
++    for (const ThoronMailCenter::GoogleAccount& account :
++         Center().KeptGoogleAccounts()) {
++      const std::string name = thoron_mail::CanonicalAddress(account.email);
++      const bool counted = std::ranges::any_of(
++          service.accounts(), [&](const thoron_mail::MailAccount& found) {
++            return thoron_mail::CanonicalAddress(found.email) == name;
++          });
++      wanted.Append(base::DictValue()
++                        .Set("email", account.email)
++                        .Set("alias", account.alias)
++                        .Set("counted", counted)
++                        .Set("password", !account.password.empty() ||
++                                             !account.secret.empty()));
++    }
 +    base::ListValue intervals;
 +    for (int minutes : thoron_mail::MailService::kIntervals) {
 +      intervals.Append(minutes);
@@ -6479,6 +6508,7 @@ index 0000000000000000000000000000000000000000..920b75ec00c86e2bccdd5fba373d10df
 +    ResolveJavascriptCallback(
 +        args[0], base::DictValue()
 +                     .Set("accounts", std::move(accounts))
++                     .Set("wanted", std::move(wanted))
 +                     .Set("choices", std::move(choices))
 +                     .Set("totalNew", service.total_new())
 +                     // how often new mail made a sound and a notice (the
@@ -6564,6 +6594,62 @@ index 0000000000000000000000000000000000000000..920b75ec00c86e2bccdd5fba373d10df
 +        args[1].GetString(), args[2].GetString(),
 +        base::BindOnce(&MailHandler::AnswerImported, weak_factory_.GetWeakPtr(),
 +                       args[0].GetString()));
++  }
++
++  // P5.80: the Google accounts of a list (X-notifier's file, read by the
++  // page): [{email, alias, password}] gives {error, google, mailboxes}.
++  void ImportGoogleAccounts(const base::ListValue& args) {
++    AllowJavascript();
++    const base::ListValue* given =
++        args.size() >= 2 && args[0].is_string() ? args[1].GetIfList() : nullptr;
++    if (!given) {
++      return;
++    }
++    std::vector<ThoronMailCenter::GoogleAccount> accounts;
++    for (const base::Value& value : *given) {
++      const base::DictValue* entry = value.GetIfDict();
++      const std::string* email = entry ? entry->FindString("email") : nullptr;
++      if (!email) {
++        continue;
++      }
++      ThoronMailCenter::GoogleAccount account;
++      account.email = *email;
++      if (const std::string* alias = entry->FindString("alias")) {
++        account.alias = *alias;
++      }
++      if (const std::string* password = entry->FindString("password")) {
++        account.password = *password;
++      }
++      accounts.push_back(std::move(account));
++    }
++    const ThoronMailCenter::GoogleImported done =
++        Center().ImportGoogleAccounts(std::move(accounts));
++    ResolveJavascriptCallback(args[0], base::DictValue()
++                                           .Set("error", done.error)
++                                           .Set("google", done.google)
++                                           .Set("mailboxes", done.mailboxes));
++  }
++
++  void RemoveGoogleAccount(const base::ListValue& args) {
++    if (!args.empty() && args[0].is_string()) {
++      Center().RemoveGoogleAccount(args[0].GetString());
++    }
++  }
++
++  void SignInGoogle(const base::ListValue& args) {
++    if (!args.empty() && args[0].is_string()) {
++      Center().SignInGoogle(args[0].GetString());
++    }
++  }
++
++  // [address] gives whether its kept password is on the clipboard now. The
++  // password itself is never sent to the page.
++  void CopyGooglePassword(const base::ListValue& args) {
++    AllowJavascript();
++    if (args.size() >= 2 && args[0].is_string() && args[1].is_string()) {
++      ResolveJavascriptCallback(
++          args[0], base::Value(Center().CopyGooglePassword(args[1].GetString())));
++    }
 +  }
 +
 +  void OpenManage(const base::ListValue& args) {
@@ -6814,6 +6900,20 @@ index 0000000000000000000000000000000000000000..920b75ec00c86e2bccdd5fba373d10df
 +constexpr char kImapAccountsPref[] = "thoron_mail.imap_accounts";
 +// A backup is small; a file larger than this is not one.
 +constexpr size_t kMostBackupBytes = 4 * 1024 * 1024;
++// P5.80: the Google accounts a person wants counted: a list of {email,
++// alias, secret}; `secret` is the password encrypted by the system, in
++// base64.
++constexpr char kGoogleAccountsPref[] = "thoron_mail.google_accounts";
++constexpr size_t kMostGoogleAccounts = 40;
++
++// A Google app password: 16 letters, written with or without spaces.
++bool LooksLikeAppPassword(const std::string& password) {
++  std::string letters;
++  base::RemoveChars(password, " ", &letters);
++  return letters.size() == 16 && std::ranges::all_of(letters, [](char c) {
++    return c >= 'a' && c <= 'z';
++  });
++}
 +
 +bool IsAddress(const std::string& email) {
 +  const size_t at = email.find('@');
@@ -6994,6 +7094,186 @@ index 0000000000000000000000000000000000000000..920b75ec00c86e2bccdd5fba373d10df
 +  }
 +}
 +
++std::vector<ThoronMailCenter::GoogleAccount>
++ThoronMailCenter::KeptGoogleAccounts() const {
++  std::vector<GoogleAccount> accounts;
++  for (const base::Value& value :
++       profile_->GetPrefs()->GetList(kGoogleAccountsPref)) {
++    const base::DictValue* dict = value.GetIfDict();
++    const std::string* email = dict ? dict->FindString("email") : nullptr;
++    if (!email || !IsAddress(*email)) {
++      continue;
++    }
++    GoogleAccount account;
++    account.email = *email;
++    if (const std::string* alias = dict->FindString("alias")) {
++      account.alias = *alias;
++    }
++    if (const std::string* secret = dict->FindString("secret")) {
++      account.secret = *secret;
++      std::string encrypted;
++      if (encryptor_ && base::Base64Decode(*secret, &encrypted) &&
++          !encryptor_->DecryptString(encrypted, &account.password)) {
++        account.password.clear();
++      }
++    }
++    accounts.push_back(std::move(account));
++  }
++  return accounts;
++}
++
++bool ThoronMailCenter::KeepGoogleAccounts(
++    const std::vector<GoogleAccount>& accounts) {
++  if (!encryptor_) {
++    return false;
++  }
++  base::ListValue kept;
++  for (const GoogleAccount& account : accounts) {
++    base::DictValue entry =
++        base::DictValue().Set("email", account.email).Set("alias", account.alias);
++    if (!account.password.empty()) {
++      std::string encrypted;
++      if (!encryptor_->EncryptString(account.password, &encrypted)) {
++        return false;
++      }
++      entry.Set("secret", base::Base64Encode(encrypted));
++    } else if (!account.secret.empty()) {
++      // a password that could not be read now is kept as it is
++      entry.Set("secret", account.secret);
++    }
++    kept.Append(std::move(entry));
++  }
++  profile_->GetPrefs()->SetList(kGoogleAccountsPref, std::move(kept));
++  return true;
++}
++
++int ThoronMailCenter::MergeGoogleAccounts(std::vector<GoogleAccount> given) {
++  if (!encryptor_) {
++    return -1;
++  }
++  std::vector<GoogleAccount> accounts = KeptGoogleAccounts();
++  int taken = 0;
++  for (GoogleAccount& account : given) {
++    account.email = std::string(
++        base::TrimWhitespaceASCII(account.email, base::TRIM_ALL));
++    if (!IsAddress(account.email) || account.password.size() > 1024 ||
++        account.alias.size() > 200 || !base::IsStringUTF8(account.alias)) {
++      continue;
++    }
++    account.secret.clear();
++    const std::string name = thoron_mail::CanonicalAddress(account.email);
++    auto known = std::ranges::find_if(accounts, [&](const GoogleAccount& other) {
++      return thoron_mail::CanonicalAddress(other.email) == name;
++    });
++    if (known != accounts.end()) {
++      if (!account.alias.empty()) {
++        known->alias = account.alias;
++      }
++      if (!account.password.empty()) {
++        known->password = account.password;
++      }
++    } else if (accounts.size() < kMostGoogleAccounts) {
++      accounts.push_back(std::move(account));
++    } else {
++      continue;
++    }
++    ++taken;
++  }
++  return KeepGoogleAccounts(accounts) ? taken : -1;
++}
++
++ThoronMailCenter::GoogleImported ThoronMailCenter::ImportGoogleAccounts(
++    std::vector<GoogleAccount> given) {
++  GoogleImported done;
++  if (!encryptor_) {
++    done.error = "locked";
++    return done;
++  }
++  // An app password opens the mailbox itself, whether or not Thoron is signed
++  // in to the account at Google: such an account is a mailbox as well. It
++  // stays in the list, so it is not lost when the mail server does not take
++  // the password after all.
++  std::vector<thoron_mail::ImapAccount> mailboxes = service_->imap_accounts();
++  std::vector<GoogleAccount> listed;
++  for (GoogleAccount& account : given) {
++    listed.push_back(account);
++    if (!LooksLikeAppPassword(account.password)) {
++      continue;
++    }
++    const std::string name = thoron_mail::CanonicalAddress(account.email);
++    if (std::ranges::any_of(mailboxes,
++                            [&](const thoron_mail::ImapAccount& other) {
++                              return thoron_mail::CanonicalAddress(
++                                         other.email) == name;
++                            }) ||
++        mailboxes.size() >= thoron_mail::MailService::kMostImapAccounts) {
++      continue;
++    }
++    thoron_mail::ImapAccount mailbox;
++    mailbox.email = account.email;
++    mailbox.host = "imap.gmail.com";
++    mailbox.user = account.email;
++    base::RemoveChars(account.password, " ", &mailbox.password);
++    mailbox.webmail = "https://mail.google.com/mail/";
++    if (std::optional<thoron_mail::ImapAccount> checked =
++            CheckedAccount(std::move(mailbox))) {
++      mailboxes.push_back(std::move(*checked));
++      ++done.mailboxes;
++    }
++  }
++  done.google = MergeGoogleAccounts(std::move(listed));
++  if (done.google < 0 || (done.mailboxes > 0 && !KeepImapAccounts(mailboxes))) {
++    done.error = "locked";
++    done.google = std::max(done.google, 0);
++  }
++  return done;
++}
++
++void ThoronMailCenter::RemoveGoogleAccount(const std::string& email) {
++  if (!encryptor_) {
++    return;
++  }
++  std::vector<GoogleAccount> accounts = KeptGoogleAccounts();
++  const size_t before = accounts.size();
++  std::erase_if(accounts, [&](const GoogleAccount& account) {
++    return account.email == email;
++  });
++  if (accounts.size() != before) {
++    KeepGoogleAccounts(accounts);
++  }
++}
++
++void ThoronMailCenter::SignInGoogle(const std::string& email) {
++  // only for an address of the list: a page cannot have any address opened
++  const std::vector<GoogleAccount> accounts = KeptGoogleAccounts();
++  if (std::ranges::none_of(accounts, [&](const GoogleAccount& account) {
++        return account.email == email;
++      })) {
++    return;
++  }
++  const GURL url = net::AppendQueryParameter(
++      GURL("https://accounts.google.com/AddSession?service=mail&continue="
++           "https%3A%2F%2Fmail.google.com%2Fmail%2F"),
++      "Email", email);
++  NavigateParams params(profile_, url, ui::PAGE_TRANSITION_LINK);
++  params.disposition = WindowOpenDisposition::kNewForegroundTab;
++  params.window_action = NavigateParams::WindowAction::kShowWindow;
++  Navigate(&params);
++}
++
++bool ThoronMailCenter::CopyGooglePassword(const std::string& email) {
++  for (const GoogleAccount& account : KeptGoogleAccounts()) {
++    if (account.email == email && !account.password.empty()) {
++      ui::ScopedClipboardWriter writer(ui::ClipboardBuffer::kCopyPaste);
++      writer.WriteText(base::UTF8ToUTF16(account.password));
++      // not kept in the clipboard's history or sent to other devices
++      writer.MarkAsConfidential();
++      return true;
++    }
++  }
++  return false;
++}
++
 +void ThoronMailCenter::OpenPage(const GURL& url) {
 +  if (!url.is_valid() || !url.SchemeIs(url::kHttpsScheme)) {
 +    return;
@@ -7076,6 +7356,16 @@ index 0000000000000000000000000000000000000000..920b75ec00c86e2bccdd5fba373d10df
 +    }
 +    accounts.Append(std::move(entry));
 +  }
++  // P5.80: the Google accounts of the person's list
++  base::ListValue google;
++  for (const GoogleAccount& account : KeptGoogleAccounts()) {
++    base::DictValue entry =
++        base::DictValue().Set("email", account.email).Set("alias", account.alias);
++    if (with_passwords && !account.password.empty()) {
++      entry.Set("password", account.password);
++    }
++    google.Append(std::move(entry));
++  }
 +  PrefService* prefs = profile_->GetPrefs();
 +  return base::DictValue()
 +      .Set("format", thoron_mail::kBackupFormat)
@@ -7088,7 +7378,8 @@ index 0000000000000000000000000000000000000000..920b75ec00c86e2bccdd5fba373d10df
 +               .Set("choices", std::move(choices))
 +               .Set("ignored", prefs->GetList("thoron_mail.ignored").Clone())
 +               .Set("order", prefs->GetString("thoron.toolbar_order")))
-+      .Set("accounts", std::move(accounts));
++      .Set("accounts", std::move(accounts))
++      .Set("google", std::move(google));
 +}
 +
 +void ThoronMailCenter::ExportBackup(bool with_passwords,
@@ -7181,6 +7472,28 @@ index 0000000000000000000000000000000000000000..920b75ec00c86e2bccdd5fba373d10df
 +        order && (*order == "mail,adblock" || *order == "adblock,mail")) {
 +      prefs->SetString("thoron.toolbar_order", *order);
 +    }
++  }
++  // P5.80: the Google accounts of the person's list. One the backup names
++  // without its password keeps the password it has here.
++  if (const base::ListValue* list = dict->FindList("google")) {
++    std::vector<GoogleAccount> google;
++    for (const base::Value& value : *list) {
++      const base::DictValue* entry = value.GetIfDict();
++      const std::string* email = entry ? entry->FindString("email") : nullptr;
++      if (!email) {
++        continue;
++      }
++      GoogleAccount account;
++      account.email = *email;
++      if (const std::string* alias = entry->FindString("alias")) {
++        account.alias = *alias;
++      }
++      if (const std::string* password = entry->FindString("password")) {
++        account.password = *password;
++      }
++      google.push_back(std::move(account));
++    }
++    MergeGoogleAccounts(std::move(google));
 +  }
 +  // The mailboxes: those of the backup, then those there were that it does
 +  // not name. One the backup names without its password keeps the password
@@ -7374,10 +7687,10 @@ index 0000000000000000000000000000000000000000..920b75ec00c86e2bccdd5fba373d10df
 +WEB_UI_CONTROLLER_TYPE_IMPL(ThoronMailMenuUI)
 diff --git a/chrome/browser/ui/webui/thoron_mail_ui.h b/chrome/browser/ui/webui/thoron_mail_ui.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..1cd0ce6112acb6bab698b0419d5d4984400dd932
+index 0000000000000000000000000000000000000000..71237049bdd05890afff06c7c984b6eb8aaeb690
 --- /dev/null
 +++ b/chrome/browser/ui/webui/thoron_mail_ui.h
-@@ -0,0 +1,161 @@
+@@ -0,0 +1,196 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -7446,6 +7759,36 @@ index 0000000000000000000000000000000000000000..1cd0ce6112acb6bab698b0419d5d4984
 +  // True once passwords can be kept (the system's encryption is there).
 +  bool can_keep_passwords() const { return !!encryptor_; }
 +
++  // P5.80: the Google accounts a person wants counted, as X-notifier keeps
++  // them: the address, the name the person gave it, and its password. They
++  // are kept in the profile (the password encrypted by the system), are
++  // part of the backup, and are shown with whether each is counted.
++  struct GoogleAccount {
++    std::string email;
++    std::string alias;
++    std::string password;
++    // the password as it is kept, for one that cannot be read just now
++    std::string secret;
++  };
++  struct GoogleImported {
++    // "" or "locked": the system's encryption is not there
++    std::string error;
++    int google = 0;
++    int mailboxes = 0;
++  };
++  // Takes the accounts of a list (X-notifier's file) into the list, where one
++  // that is there already takes the new name and password. One whose password
++  // is an app password is a mailbox as well (its mail is read with it).
++  GoogleImported ImportGoogleAccounts(std::vector<GoogleAccount> accounts);
++  std::vector<GoogleAccount> KeptGoogleAccounts() const;
++  void RemoveGoogleAccount(const std::string& email);
++  // Opens Google's page to sign in to an account of the list, the address
++  // filled in.
++  void SignInGoogle(const std::string& email);
++  // Puts the kept password of an account of the list on the clipboard, for
++  // the person to paste on Google's page. It is not given to any page.
++  bool CopyGooglePassword(const std::string& email);
++
 +  // Opens the account of `index`: Gmail's inbox of a Google account, the mail
 +  // page of a mailbox (when it has one). Its new mail is counted from now.
 +  void OpenAccount(int index);
@@ -7474,6 +7817,11 @@ index 0000000000000000000000000000000000000000..1cd0ce6112acb6bab698b0419d5d4984
 +  void PlayNewMailSound();
 +
 +  void OnEncryptor(scoped_refptr<os_crypt_async::Encryptor> encryptor);
++  // Keeps the list of Google accounts in the profile.
++  bool KeepGoogleAccounts(const std::vector<GoogleAccount>& accounts);
++  // Puts `given` into the list; how many were taken, or -1 when the list
++  // cannot be kept.
++  int MergeGoogleAccounts(std::vector<GoogleAccount> given);
 +  // The mailboxes kept in the profile, their passwords decrypted.
 +  std::vector<thoron_mail::ImapAccount> KeptImapAccounts() const;
 +  // Keeps `accounts` in the profile and looks at them.
@@ -9400,10 +9748,10 @@ index 0000000000000000000000000000000000000000..4c249e10c731f7b7fc3e2bf12a29b82e
 +#endif  // COMPONENTS_THORON_MAIL_MAIL_FEED_H_
 diff --git a/components/thoron_mail/mail_page.cc b/components/thoron_mail/mail_page.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..3c7f785a4473a08a267301b8cc5f33071c43dd9b
+index 0000000000000000000000000000000000000000..4f0d237c681b492df1b07cea202345f7ca119bdf
 --- /dev/null
 +++ b/components/thoron_mail/mail_page.cc
-@@ -0,0 +1,932 @@
+@@ -0,0 +1,1152 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -9508,6 +9856,8 @@ index 0000000000000000000000000000000000000000..3c7f785a4473a08a267301b8cc5f3307
 +  .watch-row { display: flex; align-items: center; gap: 8px; }
 +  .watch-row label { flex: 1; min-inline-size: 0; }
 +  .watch-row label span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
++  .watch-row .name { flex: 1; min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
++  .watch-row .state { flex: none; color: var(--soft, inherit); }
 +  #add-panel { padding: 4px 16px 12px; max-block-size: 480px; overflow-y: auto; }
 +  #add-panel h3 { font-size: 12px; font-weight: 500; color: var(--accent); margin: 14px 0 6px; }
 +  /* the M-Notifier's own page, in a tab: everything at once, in a column */
@@ -9577,6 +9927,12 @@ index 0000000000000000000000000000000000000000..3c7f785a4473a08a267301b8cc5f3307
 +    </select></div>
 +  <h3 data-t>Accounts to watch</h3>
 +  <div id="watch"></div>
++  <div id="wanted-box" hidden>
++    <h3 data-t>Google accounts of your list</h3>
++    <div id="wanted"></div>
++    <p class="hint" data-t>An account is counted while Thoron is signed in to it at Google. "Sign in" opens the Google page with the address filled in.</p>
++    <p class="hint" id="wanted-state" role="status"></p>
++  </div>
 +  <h3 data-t>Backup</h3>
 +  <div id="backup-bubble"><button id="manage" type="button" data-t>Accounts and backup...</button></div>
 +  <div id="backup" hidden>
@@ -9587,8 +9943,9 @@ index 0000000000000000000000000000000000000000..3c7f785a4473a08a267301b8cc5f3307
 +    <div class="buttons">
 +      <button id="export" type="button" class="main" data-t>Save a backup...</button>
 +      <button id="import" type="button" data-t>Read a backup...</button>
++      <button id="import-xn" type="button" data-t>Read a file of X-notifier...</button>
 +    </div>
-+    <input id="import-file" type="file" accept=".json,.thoron,application/json" hidden>
++    <input id="import-file" type="file" accept=".json,.thoron,.xn,application/json" hidden>
 +    <p class="hint" data-t>Save it into your Google Drive folder, or any folder that is synced, to keep it in the cloud.</p>
 +    <p class="hint" id="backup-state" role="status"></p>
 +  </div>
@@ -9760,6 +10117,50 @@ index 0000000000000000000000000000000000000000..3c7f785a4473a08a267301b8cc5f3307
 +    'Без кодовой фразы записать пароли в файл как есть'],
 +  'Save a backup...': ['Guardar una copia...', 'Enregistrer une sauvegarde...', 'Sicherung speichern...',
 +                       'Salvar um backup...', 'Сохранить копию...'],
++  'Read a file of X-notifier...': ['Leer un archivo de X-notifier...', 'Lire un fichier de X-notifier...',
++                                   'Datei von X-notifier einlesen...', 'Ler um arquivo do X-notifier...',
++                                   'Прочитать файл X-notifier...'],
++  'This file of X-notifier needs its passphrase: type it above and read it again.': [
++    'Este archivo de X-notifier necesita su contraseña: escríbela arriba y vuelve a leerlo.',
++    'Ce fichier de X-notifier demande sa phrase secrète : saisissez-la ci-dessus et relisez-le.',
++    'Diese Datei von X-notifier braucht ihr Kennwort: Geben Sie es oben ein und lesen Sie sie erneut ein.',
++    'Este arquivo do X-notifier precisa da sua senha: digite-a acima e leia-o de novo.',
++    'Этому файлу X-notifier нужен его пароль: введите его выше и прочитайте файл снова.'],
++  'The passphrase does not open this file of X-notifier.': [
++    'La contraseña no abre este archivo de X-notifier.',
++    "La phrase secrète n'ouvre pas ce fichier de X-notifier.",
++    'Das Kennwort öffnet diese Datei von X-notifier nicht.',
++    'A senha não abre este arquivo do X-notifier.',
++    'Пароль не открывает этот файл X-notifier.'],
++  'Read from X-notifier. Google accounts:': ['Leído de X-notifier. Cuentas de Google:',
++                                             'Lu depuis X-notifier. Comptes Google :',
++                                             'Aus X-notifier eingelesen. Google-Konten:',
++                                             'Lido do X-notifier. Contas do Google:',
++                                             'Прочитано из X-notifier. Аккаунтов Google:'],
++  'as mailboxes by app password:': ['como buzones con contraseña de aplicación:',
++                                    "comme boîtes avec mot de passe d'application :",
++                                    'als Postfächer mit App-Passwort:', 'como caixas com senha de app:',
++                                    'как ящики с паролем приложения:'],
++  'left out (not mail):': ['omitidas (no son correo):', 'ignorées (pas du courrier) :',
++                           'ausgelassen (keine E-Mail):', 'deixadas de fora (não são e-mail):',
++                           'пропущено (не почта):'],
++  'Google accounts of your list': ['Cuentas de Google de tu lista', 'Comptes Google de votre liste',
++                                   'Google-Konten Ihrer Liste', 'Contas do Google da sua lista',
++                                   'Аккаунты Google из вашего списка'],
++  'An account is counted while Thoron is signed in to it at Google. "Sign in" opens the Google page with the address filled in.': [
++    'Una cuenta se cuenta mientras Thoron tenga la sesión iniciada en ella en Google. "Iniciar sesión" abre la página de Google con la dirección ya escrita.',
++    "Un compte est compté tant que Thoron y est connecté chez Google. « Se connecter » ouvre la page de Google avec l'adresse déjà saisie.",
++    'Ein Konto wird gezählt, solange Thoron bei Google darin angemeldet ist. "Anmelden" öffnet die Seite von Google mit der eingetragenen Adresse.',
++    'Uma conta é contada enquanto o Thoron estiver conectado a ela no Google. "Entrar" abre a página do Google com o endereço preenchido.',
++    'Аккаунт учитывается, пока Thoron вошёл в него в Google. «Войти» открывает страницу Google с уже вписанным адресом.'],
++  'Counted': ['Contada', 'Compté', 'Wird gezählt', 'Contada', 'Учитывается'],
++  'Sign in': ['Iniciar sesión', 'Se connecter', 'Anmelden', 'Entrar', 'Войти'],
++  'Copy password': ['Copiar contraseña', 'Copier le mot de passe', 'Passwort kopieren', 'Copiar senha',
++                    'Скопировать пароль'],
++  'The password is on the clipboard.': ['La contraseña está en el portapapeles.',
++                                        'Le mot de passe est dans le presse-papiers.',
++                                        'Das Passwort ist in der Zwischenablage.',
++                                        'A senha está na área de transferência.', 'Пароль в буфере обмена.'],
 +  'Read a backup...': ['Leer una copia...', 'Lire une sauvegarde...', 'Sicherung einlesen...', 'Ler um backup...',
 +                       'Прочитать копию...'],
 +  'Save it into your Google Drive folder, or any folder that is synced, to keep it in the cloud.': [
@@ -10050,6 +10451,46 @@ index 0000000000000000000000000000000000000000..3c7f785a4473a08a267301b8cc5f3307
 +    }
 +    watch.append(row);
 +  }
++  // P5.80: the Google accounts of the person's list (X-notifier's file), on the M-Notifier's own page
++  const wanted = next.wanted || [];
++  $('wanted-box').hidden = !PAGE || !wanted.length;
++  const list = $('wanted');
++  list.replaceChildren();
++  for (const account of wanted) {
++    const row = make('div', 'watch-row');
++    row.dataset.email = account.email;
++    row.append(make('span', 'name', account.alias ? `${account.alias} (${account.email})` : account.email));
++    if (account.counted) {
++      row.append(make('span', 'state', t('Counted')));
++    } else {
++      const signIn = make('button', '', t('Sign in'));
++      signIn.type = 'button';
++      signIn.addEventListener('click', () => chrome.send('signInGoogle', [account.email]));
++      row.append(signIn);
++    }
++    if (account.password && !account.counted) {
++      const copy = make('button', '', t('Copy password'));
++      copy.type = 'button';
++      copy.addEventListener('click', async () => {
++        let done = false;
++        try {
++          done = await sendWithPromise('copyGooglePassword', account.email);
++        } catch {
++          return;
++        }
++        $('wanted-state').textContent = done ? t('The password is on the clipboard.') : '';
++      });
++      row.append(copy);
++    }
++    const remove = make('button', '', t('Remove'));
++    remove.type = 'button';
++    remove.addEventListener('click', () => {
++      chrome.send('removeGoogleAccount', [account.email]);
++      refresh();
++    });
++    row.append(remove);
++    list.append(row);
++  }
 +}
 +
 +// --- A mailbox by address and password (P5.77) ---
@@ -10209,9 +10650,135 @@ index 0000000000000000000000000000000000000000..3c7f785a4473a08a267301b8cc5f3307
 +  }
 +}
 +
++// --- X-notifier's file of accounts (P5.80) ---
++// Its text: "[---<info>---]" and a line; "[---<preferences>---]" and lines of name, kind and value;
++// "[---<accounts>---]" and a line for each account; "[------]". The info line and the account lines are
++// encrypted with the file's passphrase: AES in counter mode, the first 8 bytes the start of the counter, all in
++// base64. The key is the passphrase's first 32 bytes, encrypted once with themselves. The file is read here, in
++// the page; the browser is given the accounts.
++const XN_START = '[---<info>---]';
++
++async function xnKey(passphrase) {
++  const raw = new Uint8Array(32);
++  raw.set(new TextEncoder().encode(passphrase).subarray(0, 32));
++  const first = await crypto.subtle.importKey('raw', raw, 'AES-CTR', false, ['encrypt']);
++  // one block encrypted: the counter is the block, the text 16 zero bytes
++  const half = new Uint8Array(await crypto.subtle.encrypt(
++      {name: 'AES-CTR', counter: raw.slice(0, 16), length: 64}, first, new Uint8Array(16)));
++  const key = new Uint8Array(32);
++  key.set(half);
++  key.set(half, 16);
++  return crypto.subtle.importKey('raw', key, 'AES-CTR', false, ['decrypt']);
++}
++
++async function xnDecrypt(key, line) {
++  const bytes = Uint8Array.from(atob(line.trim()), (c) => c.charCodeAt(0));
++  if (bytes.length < 8) {
++    return '';
++  }
++  const counter = new Uint8Array(16);
++  counter.set(bytes.subarray(0, 8));
++  const plain = await crypto.subtle.decrypt({name: 'AES-CTR', counter, length: 64}, key, bytes.subarray(8));
++  return new TextDecoder().decode(plain);
++}
++
++// What the file holds: {error} ("bad", "passphrase", "wrong"), or its Google accounts as {email, alias,
++// password} and how many other entries (not mail) it has.
++async function xnRead(text, passphrase) {
++  const sections = {};
++  const body = text.replace(/\r\n/g, '\n');
++  const pattern = /\[---(.+?)---\]\n([\s\S]+?)\n(?=\[--)/g;
++  for (let found = pattern.exec(body); found; found = pattern.exec(body)) {
++    sections[found[1]] = found[2];
++  }
++  if (!sections['<info>'] || !sections['<accounts>']) {
++    return {error: 'bad'};
++  }
++  if (!passphrase) {
++    return {error: 'passphrase'};
++  }
++  let key;
++  let token = '';
++  try {
++    key = await xnKey(passphrase);
++    token = await xnDecrypt(key, sections['<info>']);
++  } catch {
++    return {error: 'bad'};
++  }
++  if (!/^\d+$/.test(token)) {
++    return {error: 'wrong'};
++  }
++  // the names people gave their accounts
++  const alias = new Map();
++  for (const line of (sections['<preferences>'] || '').split('\n')) {
++    const [name, , value] = line.split('\t');
++    const found = /^accounts\.\[gmail#(.+?)\]\.alias$/.exec(name || '');
++    if (found && value) {
++      alias.set(found[1], value);
++    }
++  }
++  const accounts = [];
++  let other = 0;
++  for (const line of sections['<accounts>'].split('\n')) {
++    let parts = [];
++    try {
++      parts = (await xnDecrypt(key, line)).split('\t');
++    } catch {
++      continue;
++    }
++    // the kind, the user, the password, and the file's own token: a line without it is not of this file
++    if (parts.length < 4 || parts[3] !== token) {
++      continue;
++    }
++    const user = parts[1].trim();
++    if (parts[0] !== 'gmail' || !user) {
++      other++;
++      continue;
++    }
++    accounts.push({email: user.includes('@') ? user : `${user}@gmail.com`, alias: alias.get(parts[1]) || '',
++                   password: parts[2]});
++  }
++  return {accounts, other};
++}
++
++async function readXnotifier(text) {
++  const say = (words) => {
++    $('backup-state').textContent = words;
++  };
++  const errors = {
++    passphrase: 'This file of X-notifier needs its passphrase: type it above and read it again.',
++    wrong: 'The passphrase does not open this file of X-notifier.',
++    bad: 'This is not a backup of Thoron M-Notifier.',
++    locked: 'Passwords cannot be kept yet. Try again in a moment.',
++  };
++  const read = await xnRead(text, $('backup-pass').value);
++  if (read.error) {
++    say(t(errors[read.error] || errors.bad));
++    return;
++  }
++  let answer = {error: 'bad', google: 0, mailboxes: 0};
++  try {
++    answer = await sendWithPromise('importGoogleAccounts', read.accounts);
++  } catch {
++    return;
++  }
++  if (answer.error) {
++    say(t(errors[answer.error] || errors.bad));
++    return;
++  }
++  say(`${t('Read from X-notifier. Google accounts:')} ${answer.google}; ${t('as mailboxes by app password:')} ` +
++      `${answer.mailboxes}; ${t('left out (not mail):')} ${read.other}`);
++  refresh();
++}
++
 +async function readBackup(file) {
 +  if (!file || file.size > 4 * 1024 * 1024) {
 +    $('backup-state').textContent = t('This is not a backup of Thoron M-Notifier.');
++    return;
++  }
++  const whole = await file.text();
++  if (whole.trimStart().startsWith(XN_START)) {
++    await readXnotifier(whole);
 +    return;
 +  }
 +  let answer = {error: 'bad', accounts: 0};
@@ -10285,6 +10852,7 @@ index 0000000000000000000000000000000000000000..3c7f785a4473a08a267301b8cc5f3307
 +});
 +$('export').addEventListener('click', saveBackup);
 +$('import').addEventListener('click', () => $('import-file').click());
++$('import-xn').addEventListener('click', () => $('import-file').click());
 +$('import-file').addEventListener('change', () => {
 +  readBackup($('import-file').files[0]);
 +  $('import-file').value = '';
@@ -10362,10 +10930,10 @@ index 0000000000000000000000000000000000000000..529372e73e8bc78edd93e438e343ad21
 +#endif  // COMPONENTS_THORON_MAIL_MAIL_PAGE_H_
 diff --git a/components/thoron_mail/mail_service.cc b/components/thoron_mail/mail_service.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..df8b7fb45b66767f0da74171e198cad19a9dcbc3
+index 0000000000000000000000000000000000000000..4f9509e26062794c57e5f5a695ff3b46cca99fd5
 --- /dev/null
 +++ b/components/thoron_mail/mail_service.cc
-@@ -0,0 +1,598 @@
+@@ -0,0 +1,618 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -10377,6 +10945,7 @@ index 0000000000000000000000000000000000000000..df8b7fb45b66767f0da74171e198cad1
 +#include "base/command_line.h"
 +#include "base/functional/bind.h"
 +#include "base/strings/string_number_conversions.h"
++#include "base/strings/string_util.h"
 +#include "components/prefs/pref_service.h"
 +#include "net/base/load_flags.h"
 +#include "net/base/url_util.h"
@@ -10464,6 +11033,24 @@ index 0000000000000000000000000000000000000000..df8b7fb45b66767f0da74171e198cad1
 +        })");
 +
 +}  // namespace
++
++std::string CanonicalAddress(std::string_view email) {
++  std::string out =
++      base::ToLowerASCII(base::TrimWhitespaceASCII(email, base::TRIM_ALL));
++  const size_t at = out.rfind('@');
++  if (at == std::string::npos) {
++    return out;
++  }
++  std::string name = out.substr(0, at);
++  std::string domain = out.substr(at + 1);
++  if (domain == "googlemail.com") {
++    domain = "gmail.com";
++  }
++  if (domain == "gmail.com") {
++    std::erase(name, '.');
++  }
++  return name + "@" + domain;
++}
 +
 +MailService::MailService(PrefService* prefs, FactoryGetter factory)
 +    : prefs_(prefs), factory_(std::move(factory)) {}
@@ -10889,7 +11476,8 @@ index 0000000000000000000000000000000000000000..df8b7fb45b66767f0da74171e198cad1
 +    }
 +    // an address is shown once: a Google account of the same name stays
 +    if (std::ranges::none_of(next_, [&](const MailAccount& known) {
-+          return known.email == account.email;
++          return CanonicalAddress(known.email) ==
++                 CanonicalAddress(account.email);
 +        })) {
 +      next_.push_back(std::move(account));
 +    }
@@ -10966,10 +11554,10 @@ index 0000000000000000000000000000000000000000..df8b7fb45b66767f0da74171e198cad1
 +}  // namespace thoron_mail
 diff --git a/components/thoron_mail/mail_service.h b/components/thoron_mail/mail_service.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..8f9275f25b5719e14a4a6d2bd35b6851c9461900
+index 0000000000000000000000000000000000000000..3e4c28764458836945e8dccad2197a69c8ba1cd8
 --- /dev/null
 +++ b/components/thoron_mail/mail_service.h
-@@ -0,0 +1,197 @@
+@@ -0,0 +1,203 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -10981,6 +11569,7 @@ index 0000000000000000000000000000000000000000..8f9275f25b5719e14a4a6d2bd35b6851
 +#include <optional>
 +#include <set>
 +#include <string>
++#include <string_view>
 +#include <vector>
 +
 +#include "base/functional/callback.h"
@@ -11015,6 +11604,11 @@ index 0000000000000000000000000000000000000000..8f9275f25b5719e14a4a6d2bd35b6851
 +// (not on the first look, which only learns what is there). Its two settings,
 +// "thoron_mail.notify" and "thoron_mail.interval_minutes", are registered with
 +// the profile's (chrome/browser/prefs/browser_prefs.cc).
++// The address a mailbox is known by, however it is written: in lower case,
++// and for Gmail without the dots Gmail ignores and with one name for its two
++// domains (P5.80).
++std::string CanonicalAddress(std::string_view email);
++
 +class MailService {
 + public:
 +  using FactoryGetter =
@@ -11039,7 +11633,7 @@ index 0000000000000000000000000000000000000000..8f9275f25b5719e14a4a6d2bd35b6851
 +  static constexpr int kIntervals[] = {1, 2, 5, 10, 15, 30};
 +  static constexpr int kDefaultInterval = 2;
 +  // the most accounts looked at (u/0 to u/9)
-+  static constexpr int kMostAccounts = 10;
++  static constexpr int kMostAccounts = 30;
 +
 +  MailService(PrefService* prefs, FactoryGetter factory);
 +  MailService(const MailService&) = delete;

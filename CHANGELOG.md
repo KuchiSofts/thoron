@@ -127,6 +127,10 @@ Explanations live in the design docs under `docs/design/`.
 - **Privacy:** `docs/security/NETWORK_REDUCTION.md`: the work order for removing the Google contacts a fresh profile does not need, each with its cause and a tested stop.
 - **QA tools:** `netlog_hosts.py` names the caller, time and answer of every request and fails when a host that must stay away is contacted.
 - **QA tools:** `mail_signin_check.py` checks that Thoron M-Notifier asks Gmail with a Google sign-in in the profile and not without.
+- **Mail:** Thoron M-Notifier reads X-notifier's file of accounts (`chrome.xn`, with its passphrase) and keeps the Google accounts in a list, their passwords encrypted by the system.
+- **Mail:** the list shows which Google accounts are counted; "Sign in" opens Google's page with the address filled in, "Copy password" puts the kept password on the clipboard.
+- **Mail:** the M-Notifier's backup holds the list of Google accounts.
+- **QA tools:** `mail_xn_check.py` and `xn_file.py` check the reading of X-notifier's file with made-up accounts.
 - **QA tools:** `language_detect_check.py` checks that a page's language is found with no downloaded model.
 - **Security:** `docs/security/UPSTREAM_AUDIT_M158.md` reviews every finding in upstream's 18 commits behind the 158 series.
 - **Security:** `audit_diff` also reports extension-install, sandbox, encryption and installer changes, new flags and CI workflows.
@@ -206,6 +210,8 @@ Explanations live in the design docs under `docs/design/`.
 
 ### Changed
 
+- **Mail:** up to 30 Google accounts are counted; Thoron M-Notifier stopped after 10.
+- **Mail:** a Gmail address written another way (dots, capitals, `googlemail.com`) is the same account.
 - **Privacy:** a profile nobody signed in to Google with no longer contacts Google's optimization guide, sign-in check, time service or search engine at start.
 - **Privacy:** the New Tab page's Google bar and doodle, suggestions fetched ahead and the "AI Mode" question are asked for only while somebody is signed in to Google.
 - **Mail:** Thoron M-Notifier looks at Gmail only while somebody is signed in to Google in the profile; other mailboxes are looked at as before.

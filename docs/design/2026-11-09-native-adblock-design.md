@@ -2312,6 +2312,45 @@ response's body. Thoron is the browser, so it does it for every page:
   browser's own), the tools check (the colour-blind colours where a page names its light and dark shade at
   once).
 
+### 12.73 X-notifier's file of accounts, and a list of Google accounts (P5.80, 2026-11-16)
+
+- **Why (the owner):** "I want to be able to save all the email accounts like in X-notifier, and like this
+  file from X-notifier": a person who used X-notifier has a file of accounts sealed with a passphrase and
+  expects Thoron M-Notifier to take it, keep the accounts and save them again.
+- **The file** (`chrome.xn`): text in sections. `[---<info>---]` and a line holding the file's token
+  (digits); `[---<preferences>---]` and lines of name, kind and value, among them the name a person gave an
+  account; `[---<accounts>---]` and a line for each account with its kind, user, password and the token;
+  `[------]`. The info line and the account lines are encrypted with the passphrase: AES in counter mode,
+  the first 8 bytes where the counter starts, in base64; the key is the passphrase's first 32 bytes
+  encrypted once with themselves. Only the form is used, none of X-notifier's code;
+  `tools/qa/xn_file.py` writes and reads it for the checks.
+- **Where it is read:** in the M-Notifier's page, with the browser's own cryptography for pages. The
+  browser process is given the accounts, never the file: a file from outside is not parsed where a mistake
+  would cost most. A wrong passphrase is known by the token (it is not digits), and a line that does not
+  end in the file's token is left out.
+- **What is taken:** the entries of the kind "gmail" (a user written without "@" is a Gmail address);
+  other kinds (forums, scripts) are not mail and are left out, and the page says how many.
+- **The list:** each account's address, the name it had, and its password encrypted by the system, as the
+  browser keeps its own passwords (`thoron_mail.google_accounts`). X-notifier signs in to Google by itself
+  with these passwords, in the browser's own session, and signs out again when the order of accounts does
+  not fit; that is brittle and is the likely cause of Google sign-outs seen with it. Thoron M-Notifier does
+  not sign in for anybody. An account is counted while Thoron is signed in to it at Google, and the list
+  shows which are: "Sign in" opens Google's own page with the address filled in, and "Copy password" puts
+  the kept password on the clipboard for that page (written by the browser, marked as confidential, never
+  sent to a page). A sign-in at Google lasts, so this is done once for an account.
+- **App passwords:** a password of 16 letters is the shape of an app password, which opens the mailbox
+  itself: such an account is also added as a mailbox (12.71), and stays in the list in case the mail server
+  does not take it.
+- **One account, one line:** addresses are compared the way Gmail does (capitals, dots, `googlemail.com`),
+  so an account found at Google and the same one as a mailbox or in the list are one.
+- **Thirty accounts:** the M-Notifier asked Gmail for at most 10 accounts; a person with more had the rest
+  left out without a word. It is 30 now.
+- **Backup:** the M-Notifier's own backup (12.71) holds the list: without passwords, with them, or sealed.
+- **Checked:** `mail_xn_check.py`, with a made-up file and stand-ins for Gmail and a mail server: a wrong
+  passphrase, the reading, no password as text in the profile or in what the page is told, counted or
+  not, twelve accounts, the sign-in page only for an address of the list, the list after a restart, and
+  the backup.
+
 ## 13. Credits
 
 The procedural operators and the rest of the filter syntax are uBlock Origin's (with forms from Adblock

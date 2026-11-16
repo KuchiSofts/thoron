@@ -60,6 +60,20 @@ You are not limited to the Google accounts Thoron is signed in to. In the menu c
 Under **Counting**, "Of Gmail, count": the whole inbox, only the Primary tab, or the inbox and spam. Spam is
 never counted unless you choose that.
 
+## Coming from X-notifier
+
+X-notifier can save its accounts to a file with a passphrase (its Export). Thoron M-Notifier reads that file:
+
+1. Open Thoron M-Notifier's page (**Accounts and backup...** in its menu).
+2. Under **Backup**, type the file's passphrase and choose **Read a file of X-notifier...**.
+3. Your Google accounts appear under **Google accounts of your list**, each with its name and its password
+   kept encrypted. One that Thoron is signed in to at Google says **Counted**. For the others, **Sign in**
+   opens Google's page with the address filled in, and **Copy password** puts its password on the clipboard
+   to paste there. You do this once for an account; Google keeps the sign-in.
+
+Thoron M-Notifier does not sign in to Google by itself the way X-notifier does: that is what signs people
+out. Up to 30 Google accounts are counted. Entries of X-notifier that are not mail are left out.
+
 ## Backup
 
 On Thoron M-Notifier's page, under **Backup**:
@@ -68,6 +82,7 @@ On Thoron M-Notifier's page, under **Backup**:
   holds the passwords safely. Without one it holds no passwords, unless you tick that you want them in it as
   they are.
 - **Read a backup...** brings them back, on this PC or another.
+- The list of Google accounts (see above) is in the backup too.
 - Save the file into your Google Drive folder, or any folder that is synced, and it is in the cloud.
 
 ## Coming

@@ -6,7 +6,7 @@
 
 **A fast, secure and private browser for Windows, based on Thorium and Chromium.**
 
-[![Status](https://img.shields.io/badge/status-pre--release-F72F8E?style=flat-square)](#roadmap) <!-- progress-badge:start -->[![Roadmap progress](https://img.shields.io/badge/roadmap-55%25-7B2FF7?style=flat-square)](#roadmap)<!-- progress-badge:end --> [![Platforms](https://img.shields.io/badge/platforms-Windows%20first-24292f?style=flat-square)](#platforms) [![CPU](https://img.shields.io/badge/cpu-x64%20%7C%20ARM64-24292f?style=flat-square)](#platforms) [![License](https://img.shields.io/badge/license-BSD--3--Clause-24292f?style=flat-square)](LICENSE.md)
+[![Status](https://img.shields.io/badge/status-pre--release-F72F8E?style=flat-square)](#roadmap) <!-- progress-badge:start -->[![Roadmap progress](https://img.shields.io/badge/roadmap-56%25-7B2FF7?style=flat-square)](#roadmap)<!-- progress-badge:end --> [![Platforms](https://img.shields.io/badge/platforms-Windows%20first-24292f?style=flat-square)](#platforms) [![CPU](https://img.shields.io/badge/cpu-x64%20%7C%20ARM64-24292f?style=flat-square)](#platforms) [![License](https://img.shields.io/badge/license-BSD--3--Clause-24292f?style=flat-square)](LICENSE.md)
 
 [Why Thoron](#why-thoron) · [Features](#features) · [Install and update](#install-and-update) · [Versions](#versions) · [Roadmap](#roadmap) · [Platforms](#platforms) · [Verify](#verifying-downloads) · [Security](#security) · [Contributing](#contributing) · [Credits](#credits) · [Wiki](https://github.com/KuchiSofts/thoron/wiki)
 
@@ -78,7 +78,7 @@ changed in each version is in the [changelog](CHANGELOG.md), one line per change
 Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always current.
 
 <!-- roadmap:start -->
-**Overall:** `███████████░░░░░░░░░` 115 of 208 tasks done (55%) · roadmap updated 2026-11-12
+**Overall:** `███████████░░░░░░░░░` 116 of 209 tasks done (56%) · roadmap updated 2026-11-12
 
 | Area | Progress | Done | Status |
 |---|---|---|---|
@@ -88,7 +88,7 @@ Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always curre
 | [P2b - ARM64](ROADMAP.md#p2b---arm64) | `░░░░░░░░░░░░░░░░░░░░` | 0/5 | 🔄 In progress |
 | [P3 - Updater v1 + Import](ROADMAP.md#p3---updater-v1--import) | `█░░░░░░░░░░░░░░░░░░░` | 1/21 | 🔄 In progress |
 | [P4 - Updater v2](ROADMAP.md#p4---updater-v2) | `░░░░░░░░░░░░░░░░░░░░` | 0/11 | ⬜ Not started |
-| [P5 - Quality](ROADMAP.md#p5---quality) | `█████████████████░░░` | 66/79 | 🔄 In progress |
+| [P5 - Quality](ROADMAP.md#p5---quality) | `█████████████████░░░` | 67/80 | 🔄 In progress |
 | [Security (S)](ROADMAP.md#security-s) | `███████████░░░░░░░░░` | 9/16 | 🔄 In progress |
 | [Quality & performance (Q)](ROADMAP.md#quality--performance-q) | `███░░░░░░░░░░░░░░░░░` | 1/7 | 🔄 In progress |
 | [Docs (D)](ROADMAP.md#docs-d) | `████████████░░░░░░░░` | 6/10 | 🔄 In progress |
@@ -288,6 +288,7 @@ Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always curre
 - [x] **P5.76** Thoron M-Notifier: the name; next to the address bar or in it (or both), with a position, as Thoron adblock's shield; new mail counted since the person last opened the account's inbox (the counter resets there), spam never counted; X-notifier's settings (what the icon counts, how often, notices and their sound, where mail opens, the accounts watched)
 - [x] **P5.78** Thoron's own icons, the browser's way: the shield's and the envelope's colours are the browser theme's; their counts are drawn as an extension's badge in the corner of a larger image (toolbar) or next to the icon (address bar), so the icon stays in view; both are moved with the mouse, among the three places of the toolbar and before or after each other (kept as `thoron.toolbar_order`), in the address bar around each other; the M-Notifier only counts unless asked for more (a sound of its own for new mail, on; a notice, off; the messages listed in the menu, off), and its menu and Thoron adblock's take the theme's colours
 - [x] **P5.79** `chrome://adblock` as a dashboard in the browser's own design: a header that stays (the shield, on / paused / off, one search over settings, lists, countries and sites), eight tabs kept in the address (Overview, Settings, Filter lists, My filters, My rules, Sites, Logger, Backup) with counts, cards and switches as the browser's settings have them, the browser theme's colours with the page's own behind them (a person's theme and accent still win), marks for unsaved changes, empty states that say what to do; the menu of the shield in the same look
+- [x] **P5.80** Thoron M-Notifier reads X-notifier's file of accounts (`chrome.xn`, sealed with a passphrase) and keeps a list of the Google accounts a person wants counted: the address, the name it had and its password, encrypted by the system; each is shown as counted while Thoron is signed in to it at Google, with "Sign in" (Google's page, the address filled in) and "Copy password" when it is not; an account whose password is an app password is read as a mailbox as well; the list is part of the M-Notifier's backup; up to 30 Google accounts are counted (it stopped after 10), and a Gmail address written another way is the same account
 - [ ] **P5.77** Thoron M-Notifier for Outlook/Hotmail, Yahoo and Proton Mail, with the person's own sign-in where the service allows it
 - [x] **P5.30** Native ad blocking, a page in Settings that a person can work with: one switch for the blocker; the filter lists with a checkbox each; add a list by its address and remove it again; "My filters", the person's own rules in the syntax of the lists; the sites where blocking is off
 

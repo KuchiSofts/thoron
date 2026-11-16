@@ -148,10 +148,12 @@ class InstallModesTests(unittest.TestCase):
         self.assertIn(ti.guid_struct(ti.THORON_IDS["toast_activator_clsid"]), out)
         self.assertIn(ti.THORON_IDS["sandbox_sid_prefix"], out)
 
-    def test_interface_iids_stay_with_the_checked_in_midl_output(self):
+    def test_interface_iids_are_thorons_own(self):
+        # P2.19: MIDL's dynamic GUIDs put Thoron's IDs into the build (test_thoron_com_ids.py), so the install
+        # mode registers those, not upstream's that the checked-in MIDL output holds
         out = ti.edit_install_modes(INSTALL_MODES)
-        self.assertIn("{0xbb19a0e5", out)
-        self.assertIn("{0xe0b03e2d", out)
+        self.assertNotIn("{0xbb19a0e5", out)
+        self.assertNotIn("{0xe0b03e2d", out)
 
     def test_new_ids_differ_from_each_other_and_from_thorium(self):
         values = [v.upper() for k, v in ti.THORON_IDS.items() if k != "sandbox_sid_prefix"]
@@ -354,7 +356,8 @@ class ApplyTests(unittest.TestCase):
         from tools.build.tests.test_thoron_linux_names import LINUX_FIXTURES
         from tools.build.tests.test_thoron_overlay_edits import OVERLAY_FIXTURES
         from tools.build.tests.test_thoron_surface_edits import SURFACE_FIXTURES
-        for rel, text in {**LINUX_FIXTURES, **OVERLAY_FIXTURES, **SURFACE_FIXTURES}.items():
+        from tools.build.tests.test_thoron_com_ids import COM_FIXTURES
+        for rel, text in {**LINUX_FIXTURES, **OVERLAY_FIXTURES, **SURFACE_FIXTURES, **COM_FIXTURES}.items():
             (self.src / rel).parent.mkdir(parents=True, exist_ok=True)
             (self.src / rel).write_bytes(text.encode("utf-8"))
 

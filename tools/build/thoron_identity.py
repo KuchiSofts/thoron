@@ -15,8 +15,9 @@ Thorium and keeps its own profile:
   - the icons, from `branding/thoron/`;
   - the Windows program file `thoron.exe` (P2.20) and, on Linux, the `thoron` program, the
     `thoron-browser` package, desktop file and the profile folder `~/.config/thoron` (P2.4, P2.21).
-The COM *interface* IDs stay as upstream's: they are compiled into the checked-in MIDL output and
-are only registered by system-level installs (ROADMAP P2.19).
+  - the COM interface IDs a system-level install registers (`IElevator2Chromium` and
+    `ISystemTraceSessionChromium`, ROADMAP P2.19): a placeholder in the IDL and MIDL's `dynamic_guids` in
+    the `midl()` target put Thoron's own IDs into the build, so the checked-in MIDL output stays as it is.
 
 Every edit is anchored: a missing anchor stops the tool before any file is written. Running it again
 is a no-op.
@@ -30,6 +31,9 @@ import sys
 from pathlib import Path
 
 INSTALL_MODES_PATH = "chrome/install_static/chromium_install_modes.h"
+# Upstream's IDs of the two COM interfaces a system-level install registers (ROADMAP P2.19).
+ELEVATOR_OLD = "BB19A0E5-00C6-4966-94B2-5AFEC6FED93A"
+TRACING_OLD = "E0B03E2D-7682-4D83-B9FF-4574AF720500"
 BRANDING_PATH = "chrome/app/theme/chromium/BRANDING"
 
 # Generated once for Thoron (2026-11-08) and fixed here so every build is identical.
@@ -38,6 +42,10 @@ THORON_IDS = {
     "active_setup_guid": "{C11EF3BA-7841-46B8-8709-A6A46AD4A917}",
     "toast_activator_clsid": "5F7AE246-B5EB-4BE2-8E25-762A896E0A5D",
     "elevator_clsid": "262D272B-85DD-42A9-9DB0-479774CF1ADC",
+    # P2.19, 2026-11-17: the interfaces a system-level install registers (Chromium's are
+    # {BB19A0E5-00C6-4966-94B2-5AFEC6FED93A} and {E0B03E2D-7682-4D83-B9FF-4574AF720500}).
+    "elevator_iid": "FF416EBA-F45C-49B0-92BF-0B2DAD51A4C5",
+    "tracing_service_iid": "C9B1E9B2-B984-441A-A3E9-A70D9AAB855C",
     "tracing_service_clsid": "AE5771C0-8CDA-4982-BABC-4080F3C0D2E5",
     "old_tracing_iid": "054AF894-044A-42BE-BE37-C8414D146382",
     "sandbox_sid_prefix": "S-1-15-2-410603446-659394758-2458910261-1759236400-866594459-1279508806-",
@@ -244,6 +252,9 @@ def _install_mode_edits() -> list[tuple[str, str, str]]:
         ("elevator_clsid", r"(\.elevator_clsid = )" + _STRUCT, r"\g<1>" + guid_struct(ids["elevator_clsid"])),
         ("tracing_service_clsid", r"(\.tracing_service_clsid = )" + _STRUCT,
          r"\g<1>" + guid_struct(ids["tracing_service_clsid"])),
+        ("elevator_iid", r"(\.elevator_iid = )" + _STRUCT, r"\g<1>" + guid_struct(ids["elevator_iid"])),
+        ("tracing_service_iid", r"(\.tracing_service_iid = )" + _STRUCT,
+         r"\g<1>" + guid_struct(ids["tracing_service_iid"])),
         ("old tracing IIDs", r"(kOldTracingServiceIids = std::to_array<IID>\(\{)(?:\s*//[^\n]*)*\s*" + _STRUCT + r"\s*,?",
          lambda m: m.group(1) + old_iid),
         ("sandbox_sid_prefix", r'(\.sandbox_sid_prefix =\s*)(?:L"[^"]*"\s*)+(?=,)',
@@ -259,7 +270,8 @@ def edit_install_modes(text: str) -> str:
             missing.append(f"{name} ({n} matches)")
     if missing:
         raise IdentityError(f"{INSTALL_MODES_PATH}: anchors not found exactly once: {', '.join(missing)}")
-    return text
+    # the comment that names the elevator's interface ID, where there is one
+    return text.replace("// {" + ELEVATOR_OLD + "}.", "// {" + THORON_IDS["elevator_iid"] + "}.")
 
 
 _NL = r"\r?\n"
@@ -570,6 +582,46 @@ def _edit_names(rel: str, text: str, spec: dict, always_forbid: list[str]) -> st
     return text
 
 
+def _dynamic_guid(old: str, new: str) -> str:
+    return (f"\n  # Thoron (P2.19): its own interface ID, so a system-level Thoron and Thorium share no COM\n"
+            f"  # registration; the checked-in MIDL output keeps upstream's, which MIDL replaces at build time.\n"
+            f"  # The installer registers the Ole Automation marshaler and the type library for it, never the\n"
+            f"  # custom proxy/stub, which MIDL does not regenerate for a dynamic interface ID: so that is left\n"
+            f"  # out of the comparison (midl.py, ignore_proxy_stub).\n"
+            f"  dynamic_guids = \"ignore_proxy_stub,PLACEHOLDER-GUID-{old}={new}\"\n}}")
+
+
+# P2.19: Thoron's own COM interface IDs through MIDL's dynamic GUIDs (build/toolchain/win/midl.gni).
+COM_EDITS = {
+    "chrome/elevation_service/elevation_service_idl.idl": {"replace": [
+        (f"uuid({ELEVATOR_OLD})", f"uuid(PLACEHOLDER-GUID-{ELEVATOR_OLD})", 1)]},
+    "chrome/elevation_service/BUILD.gn": {"replace": [
+        ("  writes_tlb = true\n}", "  writes_tlb = true\n" + _dynamic_guid(ELEVATOR_OLD, THORON_IDS["elevator_iid"]), 1)]},
+    "chrome/windows_services/elevated_tracing_service/tracing_service_idl.idl": {"replace": [
+        (f"uuid({TRACING_OLD})", f"uuid(PLACEHOLDER-GUID-{TRACING_OLD})", 1)]},
+    "chrome/windows_services/elevated_tracing_service/BUILD.gn": {"replace": [
+        ("  writes_tlb = true\n}",
+         "  writes_tlb = true\n" + _dynamic_guid(TRACING_OLD, THORON_IDS["tracing_service_iid"]), 1)]},
+}
+
+
+# With dynamic GUIDs MIDL compiles the IDL made in gen/, and the files it writes name that path in their first
+# comment; the checked-in output must say the same for MIDL's comparison to hold. Only that comment changes
+# (the type library is byte for byte the same).
+for _idl in ("chrome/elevation_service/elevation_service_idl",
+             "chrome/windows_services/elevated_tracing_service/tracing_service_idl"):
+    for _arch in ("x64", "x86", "arm64"):
+        for _suffix in (".h", "_i.c", "_p.c"):
+            _name = _idl.rsplit("/", 1)[1]
+            COM_EDITS[f"third_party/win_build_output/midl/{_idl.rsplit('/', 1)[0]}/{_arch}/{_name}{_suffix}"] = {
+                "replace": [(f"Compiler settings for ../../{_idl}.idl:", f"Compiler settings for gen/{_idl}.idl:", 1)]}
+
+
+def edit_com_ids(rel: str, text: str) -> str:
+    """Thoron's own COM interface IDs in one IDL or build file (ROADMAP P2.19)."""
+    return _edit_names(rel, text, COM_EDITS[rel], [])
+
+
 def edit_exe_names(rel: str, text: str) -> str:
     """Rename the Windows program file in one build file (ROADMAP P2.20)."""
     return _edit_names(rel, text, EXE_EDITS[rel], [r"thorium\.exe"])
@@ -671,7 +723,7 @@ def apply(src: Path, repo: Path, string_files: list[str] | None = None, dry_run:
             continue
         if new != text:
             planned[path] = new.encode("utf-8")
-    for rel in dict.fromkeys([*EXE_EDITS, *LINUX_EDITS, *OVERLAY_EDITS, *SURFACE_EDITS]):
+    for rel in dict.fromkeys([*EXE_EDITS, *LINUX_EDITS, *OVERLAY_EDITS, *SURFACE_EDITS, *COM_EDITS]):
         path = src / rel
         if not path.is_file():
             problems.append(f"missing {rel}")
@@ -682,6 +734,7 @@ def apply(src: Path, repo: Path, string_files: list[str] | None = None, dry_run:
             new = edit_linux_names(rel, new) if rel in LINUX_EDITS else new
             new = edit_overlay(rel, new) if rel in OVERLAY_EDITS else new
             new = edit_surface(rel, new) if rel in SURFACE_EDITS else new
+            new = edit_com_ids(rel, new) if rel in COM_EDITS else new
         except IdentityError as exc:
             problems.append(str(exc))
             continue

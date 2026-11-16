@@ -78,13 +78,13 @@ changed in each version is in the [changelog](CHANGELOG.md), one line per change
 Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always current.
 
 <!-- roadmap:start -->
-**Overall:** `█████████████░░░░░░░` 139 of 209 tasks done (67%) · roadmap updated 2026-11-12
+**Overall:** `█████████████░░░░░░░` 140 of 209 tasks done (67%) · roadmap updated 2026-11-12
 
 | Area | Progress | Done | Status |
 |---|---|---|---|
 | [P0 - Foundation](ROADMAP.md#p0---foundation) | `████████████████████` | 11/11 | ✅ Done |
 | [P1 - Build environment](ROADMAP.md#p1---build-environment) | `██████████████████░░` | 9/10 | 🔄 In progress |
-| [P2 - First release](ROADMAP.md#p2---first-release) | `████████░░░░░░░░░░░░` | 11/26 | 🔄 In progress |
+| [P2 - First release](ROADMAP.md#p2---first-release) | `█████████░░░░░░░░░░░` | 12/26 | 🔄 In progress |
 | [P2b - ARM64](ROADMAP.md#p2b---arm64) | `░░░░░░░░░░░░░░░░░░░░` | 0/5 | 🔄 In progress |
 | [P3 - Updater v1 + Import](ROADMAP.md#p3---updater-v1--import) | `█████████░░░░░░░░░░░` | 9/21 | 🔄 In progress |
 | [P4 - Updater v2](ROADMAP.md#p4---updater-v2) | `█████████░░░░░░░░░░░` | 5/11 | 🔄 In progress |
@@ -154,7 +154,7 @@ Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always curre
 - [x] **P2.16** No silent Web Store installs: Thorium's default apps install uBlock Origin from the Chrome Web Store into every new profile, contacting Google when the profile is created; Thoron ships its bundled, SHA-256-pinned uBlock Origin instead and installs nothing from the network without the user's consent
 - [x] **P2.17** Privacy review of the inherited build configuration, for example `enable_rlz = true` (Google's promotional RLZ library) and any other upstream GN arg that adds network contact or tracking
 - [x] **P2.18** uBlock Origin runs on 158: check whether `chrome.storage.managed.get` also hangs in the release configuration and for normally installed extensions; fix it (patch or configuration); verify cosmetic filtering with a normally installed extension in a visible window
-- [ ] **P2.19** Thoron's own COM interface IDs (IElevator, tracing service): regenerate the checked-in MIDL output; needed before system-level installs, which register those interfaces
+- [x] **P2.19** Thoron's own COM interface IDs (IElevator, tracing service): regenerate the checked-in MIDL output; needed before system-level installs, which register those interfaces
 - [x] **P2.20** Program and installer file names: `thoron.exe` instead of `thorium.exe`, the installer name, and no Thorium updater remnants (`thor_ver`)
 - [ ] **P2.21** Linux program and package names: `thoron` instead of `thorium` for the binary, the `.deb`/`.rpm` packages, the `.desktop` file and the icons; the developer test shell and the prebuilt `pak` tool are not packaged
 - [ ] **P2.22** Linux dark mode on 158: check whether Chromium 158 follows a GTK theme switch on its own; if not, write Thoron's own fix (the Thorium patch was not carried over, see `docs/build/M158_REBASE.md`)

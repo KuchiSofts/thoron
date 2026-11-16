@@ -13,7 +13,7 @@ def account(email, unread, latest, new=0, watched=True):
 GOOD = {"accounts": [account("alice@example.com", 3, [{"from": "Sender 1", "link": "https://mail.google.com/x"},
                                                        {"from": "Sender 2", "link": "https://mail.google.com/y"}]),
                      account("bob@example.com", 0, [])], "total": 3, "totalNew": 0, "problem": "",
-        "choices": dict(mc.DEFAULT_CHOICES)}
+        "choices": dict(mc.DEFAULT_CHOICES), "notify": False}
 
 
 class StepTests(unittest.TestCase):
@@ -40,6 +40,17 @@ class StepTests(unittest.TestCase):
         self.assertTrue(mc.new_problems(dict(state, totalNew=0)))
         state["accounts"][0]["latest"][1]["isNew"] = True
         self.assertTrue(mc.new_problems(state))
+
+    def test_notices_are_off_until_asked_for(self):
+        self.assertIn("notices", mc.accounts_problems(dict(GOOD, notify=True))[0])
+
+    def test_alerts(self):
+        first = {"sounds": 1, "notices": 0}
+        quiet, loud = {"sounds": 1, "notices": 0}, {"sounds": 1, "notices": 1}
+        self.assertEqual(mc.alerts_problems(first, quiet, loud), [])
+        self.assertTrue(mc.alerts_problems({"sounds": 0, "notices": 1}, quiet, loud))
+        self.assertTrue(mc.alerts_problems(first, quiet, {"sounds": 2, "notices": 1}))
+        self.assertTrue(mc.alerts_problems(first, quiet, {"sounds": 1, "notices": 0}))
 
     def test_seen(self):
         seen = {"accounts": [account("alice@example.com", 4, [{}, {}, {}], new=0)], "totalNew": 0}

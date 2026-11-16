@@ -15356,10 +15356,10 @@ index 0000000000000000000000000000000000000000..bb5e6c8789e8a4e07c5d7069027b5132
 +}
 diff --git a/components/thoron_adblock/popup_page.html b/components/thoron_adblock/popup_page.html
 new file mode 100644
-index 0000000000000000000000000000000000000000..fcdde57ed0efa7a8c10dc98dc91669ae382a98eb
+index 0000000000000000000000000000000000000000..2467cf41411f9cbaffcf16cf1edf2a7cf6e9a080
 --- /dev/null
 +++ b/components/thoron_adblock/popup_page.html
-@@ -0,0 +1,308 @@
+@@ -0,0 +1,317 @@
 +<!doctype html>
 +<!-- Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +     found in the LICENSE file. -->
@@ -15373,20 +15373,29 @@ index 0000000000000000000000000000000000000000..fcdde57ed0efa7a8c10dc98dc91669ae
 +<title>Thoron adblock</title>
 +<style>
 +  @import url(chrome://resources/css/text_defaults_md.css);
++  /* the browser theme's colours (P5.78): the accent follows it */
++  @import url(chrome://theme/colors.css?sets=ui,chrome);
 +  :root {
 +    --line: color-mix(in srgb, currentColor 14%, transparent);
 +    --soft: color-mix(in srgb, currentColor 60%, transparent);
-+    --accent: #7235da;
++    --accent: var(--color-sys-primary, #7235da);
++    --on-accent: var(--color-sys-on-primary, #fff);
 +    --on: #1e8e3e;
 +    --off: #9aa0a6;
-+    --switch-on: #1a73e8;
++    --switch-on: var(--color-sys-primary, #1a73e8);
 +  }
 +  /* uBlock Origin's theme: as the system, unless <html data-theme> says light or dark */
-+  :root[data-theme=light] { color-scheme: light; }
-+  :root[data-theme=dark] { color-scheme: dark; --accent: #b097fa; --on: #81c995; --switch-on: #8ab4f8; }
++  :root[data-theme=light] { color-scheme: light; --accent: #7235da; --on-accent: #fff; --switch-on: #1a73e8; }
++  :root[data-theme=dark] { color-scheme: dark; --accent: #b097fa; --on-accent: #1b1036; --on: #81c995;
++                           --switch-on: #8ab4f8; }
 +  @media (prefers-color-scheme: dark) {
-+    :root:not([data-theme=light]) { --accent: #b097fa; --on: #81c995; --switch-on: #8ab4f8; }
++    :root:not([data-theme=light]) { --accent: var(--color-sys-primary, #b097fa);
++                                    --on-accent: var(--color-sys-on-primary, #1b1036); --on: #81c995;
++                                    --switch-on: var(--color-sys-primary, #8ab4f8); }
 +  }
++  /* Thoron adblock's shield, in the accent */
++  .shield-fill { fill: var(--accent); }
++  .shield-mark { fill: var(--on-accent); }
 +  html, body { margin: 0; }
 +  body { inline-size: 320px; font-size: 13px; user-select: none; }
 +  header {
@@ -15528,8 +15537,8 @@ index 0000000000000000000000000000000000000000..fcdde57ed0efa7a8c10dc98dc91669ae
 +<body>
 +<header>
 +  <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true">
-+    <path fill="#0D9488" stroke="none" d="M10 1.8l6.3 2.3c.3.1.5.4.5.7v4.6c0 4-2.7 7.4-6.5 8.7a.9.9 0 0 1-.6 0C5.9 16.8 3.2 13.4 3.2 9.4V4.8c0-.3.2-.6.5-.7z"/>
-+    <path fill="#FFFFFF" stroke="none" d="M6.4 6.2h7.2v2H11v5.6H9V8.2H6.4z"/>
++    <path class="shield-fill" stroke="none" d="M10 1.8l6.3 2.3c.3.1.5.4.5.7v4.6c0 4-2.7 7.4-6.5 8.7a.9.9 0 0 1-.6 0C5.9 16.8 3.2 13.4 3.2 9.4V4.8c0-.3.2-.6.5-.7z"/>
++    <path class="shield-mark" stroke="none" d="M6.4 6.2h7.2v2H11v5.6H9V8.2H6.4z"/>
 +  </svg>
 +  <span class="name">Thoron adblock</span>
 +  <span class="site" id="site"></span>
@@ -19148,10 +19157,10 @@ index 0000000000000000000000000000000000000000..8ca3ab6f12cffec05fc98fb17aa21f44
 +#endif  // COMPONENTS_THORON_ADBLOCK_RENDERER_DOCUMENT_AGENT_H_
 diff --git a/components/thoron_adblock/settings_page.html b/components/thoron_adblock/settings_page.html
 new file mode 100644
-index 0000000000000000000000000000000000000000..c1fab713d4b56b06a817732cebbe28335259f062
+index 0000000000000000000000000000000000000000..33a6722ca309b35d265225f348648b9ff65fd1a6
 --- /dev/null
 +++ b/components/thoron_adblock/settings_page.html
-@@ -0,0 +1,478 @@
+@@ -0,0 +1,483 @@
 +<!doctype html>
 +<!-- Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +     found in the LICENSE file.
@@ -19166,18 +19175,25 @@ index 0000000000000000000000000000000000000000..c1fab713d4b56b06a817732cebbe2833
 +<link rel="icon" href="chrome://theme/current-channel-logo@2x">
 +<style>
 +  @import url(chrome://resources/css/text_defaults_md.css);
++  /* the browser theme's colours (P5.78): the accent follows it */
++  @import url(chrome://theme/colors.css?sets=ui,chrome);
 +  :root {
 +    --line: color-mix(in srgb, currentColor 16%, transparent);
 +    --soft: color-mix(in srgb, currentColor 62%, transparent);
-+    --accent: #7235da;
++    --accent: var(--color-sys-primary, #7235da);
++    --on-accent: var(--color-sys-on-primary, #fff);
 +    --bad: #c5221f;
 +  }
 +  /* uBlock Origin's theme: as the system, unless <html data-theme> says light or dark */
-+  :root[data-theme=light] { color-scheme: light; }
-+  :root[data-theme=dark] { color-scheme: dark; --accent: #b097fa; --bad: #f28b82; }
++  :root[data-theme=light] { color-scheme: light; --accent: #7235da; --on-accent: #fff; }
++  :root[data-theme=dark] { color-scheme: dark; --accent: #b097fa; --on-accent: #1b1036; --bad: #f28b82; }
 +  @media (prefers-color-scheme: dark) {
-+    :root:not([data-theme=light]) { --accent: #b097fa; --bad: #f28b82; }
++    :root:not([data-theme=light]) { --accent: var(--color-sys-primary, #b097fa);
++                                    --on-accent: var(--color-sys-on-primary, #1b1036); --bad: #f28b82; }
 +  }
++  /* Thoron adblock's shield, in the accent */
++  .shield-fill { fill: var(--accent); }
++  .shield-mark { fill: var(--on-accent); }
 +  body { margin: 0; }
 +  main { box-sizing: border-box; max-width: 860px; margin: 0 auto; padding: 32px 24px 64px; }
 +  h1 { font-size: 28px; font-weight: 500; margin: 0 0 8px; }
@@ -19198,9 +19214,7 @@ index 0000000000000000000000000000000000000000..c1fab713d4b56b06a817732cebbe2833
 +    font: inherit; padding: 7px 16px; border-radius: 16px; border: 1px solid var(--line);
 +    background: transparent; color: inherit; cursor: pointer; text-decoration: none; display: inline-block;
 +  }
-+  button.main { background: var(--accent); border-color: var(--accent); color: #fff; }
-+  :root[data-theme=dark] button.main { color: #1b1036; }
-+  @media (prefers-color-scheme: dark) { :root:not([data-theme=light]) button.main { color: #1b1036; } }
++  button.main { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 +  button:disabled { opacity: .5; cursor: default; }
 +  button:focus-visible, .button:focus-visible, input:focus-visible, textarea:focus-visible {
 +    outline: 2px solid var(--accent); outline-offset: 2px;
@@ -19632,10 +19646,10 @@ index 0000000000000000000000000000000000000000..c1fab713d4b56b06a817732cebbe2833
 +</html>
 diff --git a/components/thoron_adblock/settings_page.js b/components/thoron_adblock/settings_page.js
 new file mode 100644
-index 0000000000000000000000000000000000000000..c973590f3e979952e06a6efd385201e30a7de568
+index 0000000000000000000000000000000000000000..2f1d5d6e6cdae022effd59c9f0fff8978273b7aa
 --- /dev/null
 +++ b/components/thoron_adblock/settings_page.js
-@@ -0,0 +1,1849 @@
+@@ -0,0 +1,1850 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -20316,11 +20330,12 @@ index 0000000000000000000000000000000000000000..c973590f3e979952e06a6efd385201e3
 +  svg.setAttribute('viewBox', '0 0 20 20');
 +  // Thoron adblock's shield, as the toolbar draws it (P5.74)
 +  for (const [d, fill] of [['M10 1.8l6.3 2.3c.3.1.5.4.5.7v4.6c0 4-2.7 7.4-6.5 8.7a.9.9 0 0 1-.6 0C5.9 16.8 3.2 ' +
-+                            '13.4 3.2 9.4V4.8c0-.3.2-.6.5-.7z', '#0D9488'],
-+                           ['M6.4 6.2h7.2v2H11v5.6H9V8.2H6.4z', '#FFFFFF']]) {
++                            '13.4 3.2 9.4V4.8c0-.3.2-.6.5-.7z', 'shield-fill'],
++                           ['M6.4 6.2h7.2v2H11v5.6H9V8.2H6.4z', 'shield-mark']]) {
 +    const path = document.createElementNS(SVG_NS, 'path');
 +    path.setAttribute('d', d);
-+    path.setAttribute('fill', fill);
++    // in the accent, as the toolbar draws it in the theme's (P5.78)
++    path.setAttribute('class', fill);
 +    svg.append(path);
 +  }
 +  return svg;

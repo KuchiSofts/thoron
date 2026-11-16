@@ -53,6 +53,23 @@ class StepTests(unittest.TestCase):
         self.assertEqual(mp.position_problems("address-position", "icons", first), [])
         self.assertTrue(mp.position_problems("address-position", "end", [TOOLBAR]))
 
+    def test_drag(self):
+        shield = button("Thoron adblock: nothing to block on this page", 740)
+        left = [button("Thoron M-Notifier: 3 unread", 700), shield]
+        self.assertEqual(mp.drag_problems("x", "mail", left, False), [])
+        self.assertTrue(mp.drag_problems("x", "adblock", left, False))
+        self.assertTrue(mp.drag_problems("x", "mail", left, True))
+        right = [shield, button("Thoron M-Notifier: 3 unread", 780)]
+        self.assertEqual(mp.drag_problems("x", "adblock", right, False), [])
+        self.assertTrue(mp.drag_problems("x", "mail", [shield], False))
+        self.assertEqual(mp.middle(shield), (757, 27))
+
+    def test_the_buttons_right_of_the_address_bar(self):
+        row = [button("Back", -3990), button("Reload", -3950), button("Thoron M-Notifier: 3 unread", -3300),
+               button("Thoron", -3260)]
+        self.assertEqual([b["name"] for b in mp.right_of_bar(row, row[2])], ["Thoron M-Notifier: 3 unread", "Thoron"])
+        self.assertEqual(mp.right_of_bar(row[:1], row[0]), row[:1])
+
     def test_the_security_chip_is_not_one_of_the_icons(self):
         chip = button("View site information", 120, y=14, w=24, h=24)
         star = button("Bookmark this tab", 530, y=14, w=24, h=24)

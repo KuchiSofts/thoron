@@ -106,6 +106,19 @@ Explanations live in the design docs under `docs/design/`.
 - **QA tools:** `adblock_resources_check.py` checks signed scriptlet updates offline.
 - **About:** `chrome://credits` lists Thorium, uBlock Origin's scriptlets, the filter lists Thoron ships and the patch sources, each with its licence.
 - **QA tools:** `credits_check.py` checks those entries on the credits page.
+- **Icons:** the shield and the envelope take the browser theme's colours; a count is in the icon's corner as an extension's badge (toolbar) or next to the icon (address bar), so the icon stays in view.
+- **Icons:** the shield and the envelope are moved with the mouse: to another place of the toolbar, and before or after each other.
+- **Mail:** Thoron M-Notifier only counts unless asked for more: a sound of its own for new mail (on), a notice (off) and the messages listed in the menu (off) are separate settings.
+- **Mail, Ad blocking:** the M-Notifier's menu and Thoron adblock's pages take the browser theme's colours.
+- **Release tools:** `tools/update/manifest.py` builds and checks the update manifest, schema 1; the format is in `docs/update/MANIFEST.md`.
+- **Release tools:** `manifest.py sign` signs the update manifest with Thoron's Ed25519 key; `verify` refuses a change of any bit.
+- **Security:** `docs/security/THREAT_MODEL.md` lists the threats to the updater, the import and portable encryption, each with its mitigation and test.
+- **Security:** `docs/security/SECURITY_RELEASES.md` is the runbook for a security release: what to watch, triage, fast track, checks, checklist.
+- **Docs:** `docs/qa/CRASH_TRIAGE.md` says where crash dumps are, how to read one, and that a dump never leaves the PC; publishing symbols is recommended.
+- **Docs:** `docs/qa/ARM_BETA_CHECKLIST.md` and the "ARM64 beta report" issue form tell ARM testers what to run and report, with nothing personal.
+- **QA tools:** `soak.py` opens and closes tabs for hours and fails when the browser's settled memory keeps growing.
+- **QA tools:** `sandbox_check.py` proves from Windows itself that the sandbox is on, with a `--no-sandbox` control.
+- **QA tools:** `widevine_check.py` (online) checks that Widevine is not shipped and is fetched and works when a page needs it.
 - **Mail:** the mail notifier is now Thoron M-Notifier: next to the address bar or in it, where you choose.
 - **Mail:** Thoron M-Notifier counts new mail since you last opened the account's inbox, and never spam; it has its own settings (what it counts, how often, notices and their sound, where mail opens, which accounts).
 - **QA tools:** `mail_place_check.py` checks where the M-Notifier's envelope is and what it says.

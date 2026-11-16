@@ -21,17 +21,19 @@ account you are signed in to in Thoron (Gmail and Google Workspace).
 
 ## Use it
 
-- **The envelope:** teal with a red count while there is new mail. Click it for the menu:
-  - each account with its new and unread mail and its newest messages (sender, subject, when; new ones have a
-    red dot);
-  - click an account's address to open its inbox (and reset its count), or a message to open it;
+- **The envelope:** in the browser's own colour, with the count in its corner while there is new mail (next to
+  it in the address bar). Click it for the menu:
+  - each account with its new and unread mail; click an account to open its inbox (and reset its count);
   - **Check now**, **Add an account**.
+- **Move it with the mouse:** drag the envelope to another place of the toolbar, or past Thoron adblock's
+  shield to change their order.
 - **Settings** (the gear in the menu):
   - **Show it** next to the address bar, in the address bar, or in both; and where: right after the address bar,
     after the extensions or next to the menu; with the address bar's other icons, before them or at the far end;
   - **The icon counts** new mail since you looked, or all unread mail;
   - **Look every** 1 to 30 minutes;
-  - **Tell me of new mail**, **With a sound**;
+  - **Play a sound for new mail** (on), **Show a notice for new mail** (off) and **List the messages in this
+    menu** (off): as it comes, it only counts and makes a sound;
   - **Open mail in** the account's open Gmail tab, or a new tab;
   - **Accounts to watch**: one you untick is still listed but not counted, and you are not told of its mail.
 - To turn it off entirely, set "Thoron M-Notifier" to **Disabled** on `chrome://flags/#thoron-mail-notifier`.

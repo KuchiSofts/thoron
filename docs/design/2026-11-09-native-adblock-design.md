@@ -2183,6 +2183,41 @@ response's body. Thoron is the browser, so it does it for every page:
   a signed newer one (in use at once), an older one (refused), a restart (the stored copy is checked again
   and used), another key and no key (the shipped copy; with no key nothing is asked for).
 
+### 12.70 Thoron's icons the browser's way: colours, counts, order, alerts (P5.78, 2026-11-16)
+
+- **Why (the owner):** the M-Notifier should only count, like X-notifier, with a sound and without pop-ups
+  unless asked; both icons should fit the browser's colours and design, show their counts the way Chrome shows
+  an extension's so the icon is not hidden, and be moved with the mouse, also before or after each other.
+- **Colours** (`thoron::ColorsOf`): the browser theme's. The shield is filled with the theme's primary colour
+  while it blocks (its T in the colour that reads on it), the envelope is in it while there is mail to count;
+  a count in the toolbar is in the theme's plainest strong pair (on-surface and surface), so it reads on
+  both. No fixed colour is left in the icons.
+- **Counts:** in the toolbar the button's image is larger than its icon by 8 px, as an extension's (a 28 px
+  image around a 20 px icon; the button's insets are smaller by as much, so the button is as large as the
+  others), and the count is a 14 px badge in the image's bottom right corner with a ring cleared around it
+  (`thoron::WithCountBadge`): it covers a quarter of the icon at most. In the address bar the icons are small,
+  so the count is next to the icon (`thoron::WithCountBeside`) and covers nothing.
+- **Order, by mouse** (`thoron::ToolbarDrag`, `thoron::ArrangeToolbar`): a toolbar button that is dragged goes,
+  while it is dragged, to the nearest of the three places (right after the address bar, after the extensions,
+  next to the menu: the button's own setting) and before or after Thoron's other button there, once the
+  pointer passes that button's middle. The order is the profile's (`thoron.toolbar_order`, "mail,adblock");
+  every window follows it at once. A press that became a drag opens no menu. In the address bar the envelope
+  dragged past the shield changes places with it, and the layout puts the two in that order wherever they
+  are next to each other (the far end, before the other icons, with the other icons).
+- **The M-Notifier only counts** unless asked for more, three separate settings: "Play a sound for new mail"
+  (on: Windows' own new-mail sound, played by the M-Notifier itself, so it comes with or without a notice),
+  "Show a notice for new mail" (off; a notice is silent, the sound being the M-Notifier's) and "List the
+  messages in this menu" (off: the menu shows each account with its counts; a click opens its inbox and
+  counts its new mail from then).
+- **The pages:** the M-Notifier's menu and Thoron adblock's menu and settings read the browser theme's colours
+  (`chrome://theme/colors.css`) and use them, with their old colours as the fallback; a person's own theme or
+  accent on `chrome://adblock` still wins. A kept menu reads the colours again each time it is shown.
+- **Checked** by `mail_check.py` (as it comes: a sound and no notice for new mail; with the notice on and the
+  sound off, a notice and no sound; the checks count the sound and do not make it), `mail_place_check.py` (the
+  envelope dragged past the shield and back, and from the menu to the address bar's end; for the time of a
+  drag the check tells the test browser's own input thread that the button is held, since the browser asks
+  Windows, and no other program sees it) and `adblock_icon_check.py` (the shield's places, size and menu).
+
 ## 13. Credits
 
 The procedural operators and the rest of the filter syntax are uBlock Origin's (with forms from Adblock

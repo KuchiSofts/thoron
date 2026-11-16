@@ -1199,30 +1199,32 @@ index aee2aaf3e11b078a7bf6cce51a44e22942a8246c..f270a8cb160745c6260354feae416765
    map.AddWebUIConfig(std::make_unique<UsbInternalsUIConfig>());
    map.AddWebUIConfig(std::make_unique<user_actions_ui::UserActionsUIConfig>());
 diff --git a/chrome/browser/ui/views/toolbar/BUILD.gn b/chrome/browser/ui/views/toolbar/BUILD.gn
-index e4696aab4ad81244e702e205901840ca5dd9e338..9284e816cf4f6d026e468e318c5d891f6d1ff78d 100644
+index e4696aab4ad81244e702e205901840ca5dd9e338..2501af7a84a8a087ed2de27563a8dc915c5e2320 100644
 --- a/chrome/browser/ui/views/toolbar/BUILD.gn
 +++ b/chrome/browser/ui/views/toolbar/BUILD.gn
-@@ -32,6 +32,9 @@ source_set("toolbar") {
+@@ -32,6 +32,10 @@ source_set("toolbar") {
      "restore_tab_button.h",
      "reload_control.h",
      "split_tabs_button.h",
 +    "thoron_adblock_button.h",
 +    "thoron_mail_button.h",
++    "thoron_toolbar_icons.h",
 +    "thoron_windows_security.h",
      "toolbar_action_hover_card_bubble_view.h",
      "toolbar_action_hover_card_controller.h",
      "toolbar_action_view.h",
-@@ -190,6 +193,9 @@ source_set("impl") {
+@@ -190,6 +194,10 @@ source_set("impl") {
      "reload_button.cc",
      "restore_tab_button.cc",
      "split_tabs_button.cc",
 +    "thoron_adblock_button.cc",
 +    "thoron_mail_button.cc",
++    "thoron_toolbar_icons.cc",
 +    "thoron_windows_security.cc",
      "toolbar_action_hover_card_bubble_view.cc",
      "toolbar_action_hover_card_controller.cc",
      "toolbar_action_view.cc",
-@@ -291,6 +297,8 @@ source_set("impl") {
+@@ -291,6 +299,8 @@ source_set("impl") {
      "//chrome/browser/ui/customize_chrome",
      "//chrome/browser/ui/extensions",
      "//chrome/browser/ui/hats",
@@ -1646,7 +1648,7 @@ index a02ab7d45eba361c16e5abd2da2c9328d73e7120..08c0d31c4025f44c8c0de202ea3352df
        color_utils::DeriveDefaultIconColor(GetForegroundColor())));
    if (!icon.IsEmpty()) {
 diff --git a/chrome/browser/ui/views/location_bar/location_bar_view.cc b/chrome/browser/ui/views/location_bar/location_bar_view.cc
-index af9b6f1dc58174281ec64b74c578a3639888ce86..b575c4b16c7e5864c8532633bb340deafd811174 100644
+index af9b6f1dc58174281ec64b74c578a3639888ce86..198ab30e882fb2fd51c0b88e790889253832aa6a 100644
 --- a/chrome/browser/ui/views/location_bar/location_bar_view.cc
 +++ b/chrome/browser/ui/views/location_bar/location_bar_view.cc
 @@ -63,6 +63,10 @@
@@ -1674,31 +1676,32 @@ index af9b6f1dc58174281ec64b74c578a3639888ce86..b575c4b16c7e5864c8532633bb340dea
  
    std::vector<actions::ActionItem*> page_action_items = {};
    if (browser_) {
-@@ -923,6 +934,42 @@ void LocationBarView::Layout(PassKey) {
+@@ -923,6 +934,63 @@ void LocationBarView::Layout(PassKey) {
      }
    };
  
 +  // Thoron adblock (P5.73): its shield at the far end of the address bar, or
 +  // before the other icons, as chrome://adblock says; else with the others.
++  // `thoron_ads` is the shield wherever it is, `thoron_shield` only where it
++  // is not with the other icons.
++  ContentSettingImageView* thoron_ads = nullptr;
 +  ContentSettingImageView* thoron_shield = nullptr;
 +  std::string thoron_place;
 +  if (base::FeatureList::IsEnabled(thoron_adblock::kThoronNativeAdblock)) {
 +    thoron_place =
 +        thoron_adblock::EngineService::Get().Choice("address-position");
 +    for (ContentSettingImageView* view : content_setting_views_) {
-+      if ((thoron_place == "end" || thoron_place == "start") &&
-+          view->GetType() == ContentSettingImageModel::ImageType::kAds) {
-+        thoron_shield = view;
++      if (view->GetType() == ContentSettingImageModel::ImageType::kAds) {
++        thoron_ads = view;
++        if (thoron_place == "end" || thoron_place == "start") {
++          thoron_shield = view;
++        }
 +      }
 +    }
 +  }
 +  const int thoron_padding = features::IsThorium2024()
 +                                 ? kThoriumContentSettingIntraItemPadding
 +                                 : kContentSettingIntraItemPadding;
-+  if (thoron_shield && thoron_place == "end") {
-+    add_trailing_decoration(thoron_shield, thoron_padding,
-+                            /*edge_padding=*/trailing_decorations_edge_padding);
-+  }
 +  // Thoron M-Notifier (P5.76): at the far end, with the other icons, or
 +  // before them, as its settings say.
 +  ThoronMailAddressIcon* thoron_mail = nullptr;
@@ -1709,19 +1712,39 @@ index af9b6f1dc58174281ec64b74c578a3639888ce86..b575c4b16c7e5864c8532633bb340dea
 +  }
 +  const std::string thoron_mail_place =
 +      thoron_mail ? thoron_mail->position() : std::string();
-+  if (thoron_mail && thoron_mail_place == "end") {
-+    add_trailing_decoration(thoron_mail, thoron_padding,
-+                            /*edge_padding=*/trailing_decorations_edge_padding);
-+  }
++  // Where the two are next to each other they are in the person's order
++  // (P5.78: the envelope left of the shield, or right of it). The icons are
++  // added from the right: the one on the right first.
++  const bool thoron_mail_first = thoron_mail && thoron_mail->before_shield();
++  auto add_thoron = [&](const std::string& place) {
++    views::View* const shield =
++        thoron_shield && thoron_place == place ? thoron_shield : nullptr;
++    views::View* const mail =
++        thoron_mail && thoron_mail_place == place ? thoron_mail : nullptr;
++    for (views::View* view :
++         {thoron_mail_first ? shield : mail, thoron_mail_first ? mail : shield}) {
++      if (view) {
++        add_trailing_decoration(
++            view, thoron_padding,
++            /*edge_padding=*/trailing_decorations_edge_padding);
++      }
++    }
++  };
++  add_thoron("end");
++  // With the other icons, the envelope is next to the shield when the shield
++  // is there too (added in the loop below), else right of them all.
++  const bool thoron_mail_by_shield =
++      thoron_mail && thoron_mail_place == "icons" && thoron_ads &&
++      thoron_ads != thoron_shield && thoron_ads->GetVisible();
 +
    if (features::IsPageActionsElevatedToolbarEnabled()) {
      if (page_action_container_ && page_action_container_->GetVisible()) {
        const bool is_capsule_active = page_action_container_->IsCapsuleActive();
-@@ -955,8 +1002,15 @@ void LocationBarView::Layout(PassKey) {
+@@ -955,15 +1023,36 @@ void LocationBarView::Layout(PassKey) {
    }
    add_trailing_decoration(ai_mode_hint_label_, /*intra_item_padding=*/0,
                            /*edge_padding=*/trailing_decorations_edge_padding);
-+  if (thoron_mail && thoron_mail_place == "icons") {
++  if (thoron_mail && thoron_mail_place == "icons" && !thoron_mail_by_shield) {
 +    add_trailing_decoration(thoron_mail, thoron_padding,
 +                            /*edge_padding=*/trailing_decorations_edge_padding);
 +  }
@@ -1730,30 +1753,35 @@ index af9b6f1dc58174281ec64b74c578a3639888ce86..b575c4b16c7e5864c8532633bb340dea
 +    if (view == thoron_shield) {
 +      continue;
 +    }
++    // the envelope right of the shield (added before it)
++    if (thoron_mail_by_shield && view == thoron_ads && !thoron_mail_first) {
++      add_trailing_decoration(
++          thoron_mail, thoron_padding,
++          /*edge_padding=*/trailing_decorations_edge_padding);
++    }
      const int intra_item_padding = features::IsThorium2024()
                                         ? kThoriumContentSettingIntraItemPadding
                                         : kContentSettingIntraItemPadding;
-@@ -964,6 +1018,15 @@ void LocationBarView::Layout(PassKey) {
+     add_trailing_decoration(view, intra_item_padding,
                              /*edge_padding=*/trailing_decorations_edge_padding);
++    // the envelope left of the shield (added after it)
++    if (thoron_mail_by_shield && view == thoron_ads && thoron_mail_first) {
++      add_trailing_decoration(
++          thoron_mail, thoron_padding,
++          /*edge_padding=*/trailing_decorations_edge_padding);
++    }
    }
  
-+  if (thoron_shield && thoron_place == "start") {
-+    add_trailing_decoration(thoron_shield, thoron_padding,
-+                            /*edge_padding=*/trailing_decorations_edge_padding);
-+  }
-+  if (thoron_mail && thoron_mail_place == "start") {
-+    add_trailing_decoration(thoron_mail, thoron_padding,
-+                            /*edge_padding=*/trailing_decorations_edge_padding);
-+  }
++  add_thoron("start");
 +
    add_trailing_decoration(clear_all_button_, /*intra_item_padding=*/0,
                            /*edge_padding=*/trailing_decorations_edge_padding);
  
 diff --git a/chrome/browser/prefs/browser_prefs.cc b/chrome/browser/prefs/browser_prefs.cc
-index fdd05fad32252be538eef299e830625a6a3c96ba..9002b8cf915a1d38db7bae1a2b2d13e483465040 100644
+index fdd05fad32252be538eef299e830625a6a3c96ba..2a23dc254c765e9b87427251ae5b6edb016f0e0f 100644
 --- a/chrome/browser/prefs/browser_prefs.cc
 +++ b/chrome/browser/prefs/browser_prefs.cc
-@@ -2049,6 +2049,25 @@ void RegisterLocalState(PrefRegistrySimple* registry) {
+@@ -2049,6 +2049,29 @@ void RegisterLocalState(PrefRegistrySimple* registry) {
  void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry,
                            const std::string& locale) {
    TRACE_EVENT0("browser", "chrome::RegisterProfilePrefs");
@@ -1763,19 +1791,23 @@ index fdd05fad32252be538eef299e830625a6a3c96ba..9002b8cf915a1d38db7bae1a2b2d13e4
 +                               user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
 +  // Thoron: its mail notifier's settings (components/thoron_mail): notices of
 +  // new mail, and how often it looks (minutes).
-+  registry->RegisterBooleanPref("thoron_mail.notify", true);
++  registry->RegisterBooleanPref("thoron_mail.notify", false);
 +  registry->RegisterIntegerPref("thoron_mail.interval_minutes", 2);
 +  // Thoron M-Notifier (P5.76): its named settings ("" is the default of
 +  // each), when each account was last looked at, and the accounts not
 +  // watched.
 +  for (const char* name :
 +       {"thoron_mail.sound", "thoron_mail.count", "thoron_mail.open",
-+        "thoron_mail.place", "thoron_mail.toolbar-position",
-+        "thoron_mail.address-position"}) {
++        "thoron_mail.messages", "thoron_mail.place",
++        "thoron_mail.toolbar-position", "thoron_mail.address-position"}) {
 +    registry->RegisterStringPref(name, std::string());
 +  }
 +  registry->RegisterDictionaryPref("thoron_mail.looked");
 +  registry->RegisterListPref("thoron_mail.ignored");
++  // Thoron's own toolbar buttons (P5.78): their order, left to right, where
++  // they are next to each other ("mail,adblock"; "" is that default). A
++  // person changes it by moving a button with the mouse.
++  registry->RegisterStringPref("thoron.toolbar_order", std::string());
    // User prefs. Please keep this list alphabetized.
    AccessibilityLabelsService::RegisterProfilePrefs(registry);
    registry->RegisterBooleanPref(prefs::kRendererAccessibilityEnabled, true);
@@ -2003,10 +2035,10 @@ index 0000000000000000000000000000000000000000..5ace492dd1a60c29b3c3dd04efae2228
 +#endif  // CHROME_BROWSER_UI_BROWSER_WEB_CONTENTS_DELEGATE_THORON_ADBLOCK_SHORTCUTS_H_
 diff --git a/chrome/browser/ui/views/toolbar/thoron_adblock_button.cc b/chrome/browser/ui/views/toolbar/thoron_adblock_button.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..3b9d865b1e9ebc0717a93d83796fc73eab802b98
+index 0000000000000000000000000000000000000000..ac3c9d6ba381bf48c4fcd679226b76b66168983d
 --- /dev/null
 +++ b/chrome/browser/ui/views/toolbar/thoron_adblock_button.cc
-@@ -0,0 +1,633 @@
+@@ -0,0 +1,641 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -2038,6 +2070,7 @@ index 0000000000000000000000000000000000000000..3b9d865b1e9ebc0717a93d83796fc73e
 +#include "chrome/browser/ui/webui/top_chrome/webui_contents_wrapper.h"
 +#include "chrome/browser/ui/webui/webui_embedding_context.h"
 +#include "components/content_settings/core/browser/host_content_settings_map.h"
++#include "components/prefs/pref_service.h"
 +#include "components/strings/grit/components_strings.h"
 +#include "components/thoron_adblock/blocked_count.h"
 +#include "components/thoron_adblock/engine_service.h"
@@ -2068,12 +2101,8 @@ index 0000000000000000000000000000000000000000..3b9d865b1e9ebc0717a93d83796fc73e
 +
 +namespace {
 +
-+// The badge as uBlock Origin draws it: red, white text, at most four
-+// characters ("999", "1k", "12k").
-+constexpr SkColor kBadgeBackground = SkColorSetRGB(0xD9, 0x30, 0x25);
-+constexpr SkColor kBadgeText = SK_ColorWHITE;
-+// Thoron's teal: the shield while it blocks (white reads well on it).
-+constexpr SkColor kShieldOn = SkColorSetRGB(0x0D, 0x94, 0x88);
++// The count has at most four characters ("999", "1k", "12k"). Its colours and
++// the shield's are the browser theme's (P5.78, thoron::ColorsOf).
 +// The menu closes when anything else is pressed, the shields too: a press
 +// within this long of it closing is the one that closed it, and does not open
 +// it again.
@@ -2144,7 +2173,7 @@ index 0000000000000000000000000000000000000000..3b9d865b1e9ebc0717a93d83796fc73e
 +}
 +
 +// Thoron adblock's own shield (P5.74): Thoron's T in a shield, filled with
-+// Thoron's teal while it blocks. Where it does not, an outline in the toolbar's
++// the theme's accent while it blocks. Where it does not, an outline in the toolbar's
 +// own colour: with the T where there is nothing to block (not a web page), with
 +// a slash where the site is allowed, and with two bars while blocking is off
 +// for every site. Drawn on a 20 x 20 grid, as large as the icons next to it.
@@ -2162,10 +2191,16 @@ index 0000000000000000000000000000000000000000..3b9d865b1e9ebc0717a93d83796fc73e
 +
 +class ShieldSource : public gfx::CanvasImageSource {
 + public:
-+  ShieldSource(int size, ShieldLook look, SkColor off_color)
++  ShieldSource(int size,
++               ShieldLook look,
++               SkColor off_color,
++               SkColor on_color,
++               SkColor on_mark)
 +      : gfx::CanvasImageSource(gfx::Size(size, size)),
 +        look_(look),
-+        off_color_(off_color) {}
++        off_color_(off_color),
++        on_color_(on_color),
++        on_mark_(on_mark) {}
 +
 +  void Draw(gfx::Canvas* canvas) override {
 +    const float s = size().width() / 20.0f;
@@ -2188,7 +2223,7 @@ index 0000000000000000000000000000000000000000..3b9d865b1e9ebc0717a93d83796fc73e
 +    outline.close();
 +    cc::PaintFlags body;
 +    body.setAntiAlias(true);
-+    body.setColor(on ? kShieldOn : off_color_);
++    body.setColor(on ? on_color_ : off_color_);
 +    if (!on) {
 +      body.setStyle(cc::PaintFlags::kStroke_Style);
 +      body.setStrokeWidth(1.5f * s);
@@ -2198,7 +2233,7 @@ index 0000000000000000000000000000000000000000..3b9d865b1e9ebc0717a93d83796fc73e
 +
 +    cc::PaintFlags mark;
 +    mark.setAntiAlias(true);
-+    mark.setColor(on ? SK_ColorWHITE : off_color_);
++    mark.setColor(on ? on_mark_ : off_color_);
 +    auto rect = [s](float x, float y, float w, float h) {
 +      return gfx::RectF(x * s, y * s, w * s, h * s);
 +    };
@@ -2230,43 +2265,36 @@ index 0000000000000000000000000000000000000000..3b9d865b1e9ebc0717a93d83796fc73e
 + private:
 +  const ShieldLook look_;
 +  const SkColor off_color_;
++  const SkColor on_color_;
++  const SkColor on_mark_;
 +};
 +
++// The shield, `size` px, in the colours of `view`'s theme. In the toolbar
++// (`area` larger than `size`) it is in the middle of an image `area` px wide
++// and high, as an extension's, with the count in the image's corner: the
++// shield stays in view. In the address bar (`area` is `size`) the count is
++// right of the shield: its icons are small.
 +ui::ImageModel DrawShield(const Shield& shield,
 +                          const views::View* view,
 +                          int size,
++                          int area,
 +                          SkColor off_color) {
++  const thoron::IconColors colors = thoron::ColorsOf(view->GetColorProvider());
 +  // The shield fills its place as the icons next to it do (P5.73).
 +  const gfx::ImageSkia icon(
-+      std::make_unique<ShieldSource>(size, LookOf(shield), off_color),
++      std::make_unique<ShieldSource>(size, LookOf(shield), off_color,
++                                     colors.accent, colors.on_accent),
 +      gfx::Size(size, size));
 +  // the setting of chrome://adblock, as in uBlock Origin
 +  const bool badge = thoron_adblock::EngineService::Get().Option("badge");
 +  const std::string text =
 +      shield.off() || !badge ? std::string() : BadgeText(shield.count);
-+  if (text.empty()) {
-+    return ui::ImageModel::FromImageSkia(icon);
++  if (area == size) {
++    return ui::ImageModel::FromImageSkia(
++        thoron::WithCountBeside(icon, text, colors.accent));
 +  }
-+  // The count as an extension's badge, over the shield. The badge's image
-+  // places an icon as if it were an extension's (16 px), which put the shield
-+  // (as large as the icons next to it) 2 px right of and below its place: it
-+  // is given an empty 16 px icon and draws only the badge.
-+  SkBitmap empty;
-+  empty.allocN32Pixels(16, 16);
-+  empty.eraseColor(SK_ColorTRANSPARENT);
-+  auto source = std::make_unique<IconWithBadgeImageSource>(
-+      gfx::Size(size, size),
-+      base::BindRepeating(
-+          [](const views::View* view) -> const ui::ColorProvider* {
-+            return view->GetColorProvider();
-+          },
-+          base::Unretained(view)));
-+  source->SetIcon(gfx::Image(gfx::ImageSkia::CreateFrom1xBitmap(empty)));
-+  source->SetBadge(std::make_unique<IconWithBadgeImageSource::Badge>(
-+      text, kBadgeText, kBadgeBackground));
-+  const gfx::ImageSkia count(std::move(source), gfx::Size(size, size));
-+  return ui::ImageModel::FromImageSkia(
-+      gfx::ImageSkiaOperations::CreateSuperimposedImage(icon, count));
++  return ui::ImageModel::FromImageSkia(thoron::WithCountBadge(
++      icon, area, text, colors.badge, colors.badge_text));
 +}
 +
 +}  // namespace
@@ -2366,7 +2394,8 @@ index 0000000000000000000000000000000000000000..3b9d865b1e9ebc0717a93d83796fc73e
 +  if (tooltip) {
 +    *tooltip = ShieldTooltip(shield);
 +  }
-+  return DrawShield(shield, view, size, off_color);
++  // the address bar's: the image is the icon itself
++  return DrawShield(shield, view, size, /*area=*/size, off_color);
 +}
 +
 +ThoronAdblockButton::ThoronAdblockButton(BrowserWindowInterface* browser)
@@ -2387,6 +2416,28 @@ index 0000000000000000000000000000000000000000..3b9d865b1e9ebc0717a93d83796fc73e
 +          base::BindRepeating(&ThoronAdblockButton::OnStateChanged,
 +                              base::Unretained(this)));
 +  SetVisible(thoron_adblock::EngineService::Get().ShieldInToolbar());
++  // The image is larger than the shield, as an extension's (the count is in
++  // its corner): the button's insets are smaller by as much, so the button is
++  // as large as the others.
++  SetLayoutInsetDelta(gfx::Insets(-thoron::kToolbarImageMargin / 2));
++  // Moved with the mouse (P5.78): where it is is chrome://adblock's setting,
++  // its place among Thoron's buttons the profile's.
++  drag_ = std::make_unique<thoron::ToolbarDrag>(
++      this, thoron::kAdblockId, prefs(), base::BindRepeating([] {
++        return thoron_adblock::EngineService::Get().Choice("toolbar-position");
++      }),
++      base::BindRepeating([](const std::string& where) {
++        thoron_adblock::EngineService::Get().SetChoice("toolbar-position",
++                                                       where);
++      }));
++  if (PrefService* settings = prefs()) {
++    order_registrar_.Init(settings);
++    // base::Unretained is safe: the registrar ends with this button.
++    order_registrar_.Add(
++        thoron::kToolbarOrderPref,
++        base::BindRepeating(&ThoronAdblockButton::ApplyPosition,
++                            base::Unretained(this)));
++  }
 +  // The icon is drawn once the button is in a window (ToolbarButton calls
 +  // UpdateIcon() when the theme is known).
 +}
@@ -2403,6 +2454,7 @@ index 0000000000000000000000000000000000000000..3b9d865b1e9ebc0717a93d83796fc73e
 +  const Shield shield = ShieldFor(web_contents());
 +  const ui::ImageModel image =
 +      DrawShield(shield, this, GetIconSize(),
++                 GetIconSize() + thoron::kToolbarImageMargin,
 +                 GetForegroundColor(ButtonState::STATE_DISABLED));
 +  for (auto state : kButtonStates) {
 +    SetImageModel(state, image);
@@ -2447,53 +2499,41 @@ index 0000000000000000000000000000000000000000..3b9d865b1e9ebc0717a93d83796fc73e
 +}
 +
 +void ThoronAdblockButton::ApplyPosition() {
-+  ToolbarView* toolbar = views::AsViewClass<ToolbarView>(parent());
-+  if (!toolbar) {
++  // with Thoron's other buttons, in their order (P5.78)
++  thoron::ArrangeToolbar(views::AsViewClass<ToolbarView>(parent()));
++}
++
++PrefService* ThoronAdblockButton::prefs() const {
++  Profile* profile = browser_ ? browser_->GetProfile() : nullptr;
++  // kept, also from an off-the-record window
++  return profile ? profile->GetOriginalProfile()->GetPrefs() : nullptr;
++}
++
++bool ThoronAdblockButton::OnMousePressed(const ui::MouseEvent& event) {
++  drag_->Pressed(event);
++  return ToolbarButton::OnMousePressed(event);
++}
++
++bool ThoronAdblockButton::OnMouseDragged(const ui::MouseEvent& event) {
++  if (drag_->Dragged(event)) {
++    return true;
++  }
++  return ToolbarButton::OnMouseDragged(event);
++}
++
++void ThoronAdblockButton::OnMouseReleased(const ui::MouseEvent& event) {
++  if (drag_->Ended()) {
++    // the press moved the shield: it opens no menu
++    OnClickCanceled(event);
++    SetState(STATE_NORMAL);
 +    return;
 +  }
-+  const std::string where =
-+      thoron_adblock::EngineService::Get().Choice("toolbar-position");
-+  // The toolbar has no getters for its extensions and its menu: they are
-+  // found by their kind.
-+  auto child_named = [toolbar](std::string_view name) -> views::View* {
-+    for (views::View* child : toolbar->children()) {
-+      if (child->GetClassName() == name) {
-+        return child;
-+      }
-+    }
-+    return nullptr;
-+  };
-+  views::View* after = nullptr;   // the shield right after this one
-+  views::View* before = nullptr;  // or right before this one
-+  if (where == "menu") {
-+    before = child_named("BrowserAppMenuButton");
-+  } else if (where == "extensions") {
-+    after = child_named("ExtensionsToolbarDesktop");
-+  }
-+  if (!after && !before) {
-+    after = toolbar->location_bar_view();
-+  }
-+  views::View* anchor = after ? after : before;
-+  if (!anchor || anchor->parent() != toolbar) {
-+    return;
-+  }
-+  const std::optional<size_t> mine = toolbar->GetIndexOf(this);
-+  std::optional<size_t> index = toolbar->GetIndexOf(anchor);
-+  if (!mine || !index) {
-+    return;
-+  }
-+  // the shield's own place is taken out first
-+  size_t target = *index;
-+  if (*mine < target) {
-+    --target;
-+  }
-+  if (after) {
-+    ++target;
-+  }
-+  if (target != *mine) {
-+    toolbar->ReorderChildView(this, target);
-+    toolbar->InvalidateLayout();
-+  }
++  ToolbarButton::OnMouseReleased(event);
++}
++
++void ThoronAdblockButton::OnMouseCaptureLost() {
++  drag_->Ended();
++  ToolbarButton::OnMouseCaptureLost();
 +}
 +
 +void ThoronAdblockButton::OnStateChanged() {
@@ -2642,10 +2682,10 @@ index 0000000000000000000000000000000000000000..3b9d865b1e9ebc0717a93d83796fc73e
 +END_METADATA
 diff --git a/chrome/browser/ui/views/toolbar/thoron_adblock_button.h b/chrome/browser/ui/views/toolbar/thoron_adblock_button.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..5223aea01a4d55eb4f860673adad0aebb59256b4
+index 0000000000000000000000000000000000000000..56f1169612ca2b0a1bfbc458c4dab99e6e682bb0
 --- /dev/null
 +++ b/chrome/browser/ui/views/toolbar/thoron_adblock_button.h
-@@ -0,0 +1,128 @@
+@@ -0,0 +1,143 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -2662,7 +2702,9 @@ index 0000000000000000000000000000000000000000..5223aea01a4d55eb4f860673adad0aeb
 +#include "base/time/time.h"
 +#include "base/timer/timer.h"
 +#include "chrome/browser/ui/tabs/tab_strip_model_observer.h"
++#include "chrome/browser/ui/views/toolbar/thoron_toolbar_icons.h"
 +#include "chrome/browser/ui/views/toolbar/toolbar_button.h"
++#include "components/prefs/pref_change_registrar.h"
 +#include "components/thoron_adblock/menu_opener.h"
 +#include "content/public/browser/web_contents_observer.h"
 +#include "third_party/skia/include/core/SkColor.h"
@@ -2672,6 +2714,7 @@ index 0000000000000000000000000000000000000000..5223aea01a4d55eb4f860673adad0aeb
 +#include "ui/views/widget/widget_observer.h"
 +
 +class BrowserWindowInterface;
++class PrefService;
 +class ThoronMenuBubbleManager;
 +
 +namespace content {
@@ -2684,10 +2727,11 @@ index 0000000000000000000000000000000000000000..5223aea01a4d55eb4f860673adad0aeb
 +}
 +
 +// The blocker's shield for the page of `tab`, as the address bar and the
-+// toolbar show it (P5.71): Thoron's teal while it blocks there, `off_color`
-+// where it does not (not a web page, off for the site or for every site), and
-+// the count of what it blocked on the page as a badge. `tooltip`, when given,
-+// gets what the shield says. `view` draws it (its colours).
++// toolbar show it (P5.71): filled with the theme's accent while it blocks
++// there (P5.78), `off_color` where it does not (not a web page, off for the
++// site or for every site), and the count of what it blocked on the page in
++// its corner. `tooltip`, when given, gets what the shield says. `view` draws
++// it (its colours).
 +ui::ImageModel ThoronAdblockShield(content::WebContents* tab,
 +                                   const views::View* view,
 +                                   int size,
@@ -2723,6 +2767,14 @@ index 0000000000000000000000000000000000000000..5223aea01a4d55eb4f860673adad0aeb
 +  // the pointer over the shield: the menu's page is loaded ahead
 +  void OnMouseEntered(const ui::MouseEvent& event) override;
 +  void AddedToWidget() override;
++  // The shield is moved with the mouse (P5.78, thoron::ToolbarDrag).
++  bool OnMousePressed(const ui::MouseEvent& event) override;
++  bool OnMouseDragged(const ui::MouseEvent& event) override;
++  void OnMouseReleased(const ui::MouseEvent& event) override;
++  void OnMouseCaptureLost() override;
++
++  // The profile's settings (the order of Thoron's buttons is kept there).
++  PrefService* prefs() const;
 +
 +  // TabStripModelObserver:
 +  void OnTabStripModelChanged(
@@ -2770,16 +2822,19 @@ index 0000000000000000000000000000000000000000..5223aea01a4d55eb4f860673adad0aeb
 +  base::CallbackListSubscription blocked_subscription_;
 +  // the switch for every site (P5.70) and the options (P5.71)
 +  base::CallbackListSubscription blocking_subscription_;
++  // moving the shield with the mouse, and the order when it changes (P5.78)
++  std::unique_ptr<thoron::ToolbarDrag> drag_;
++  PrefChangeRegistrar order_registrar_;
 +  base::WeakPtrFactory<ThoronAdblockButton> weak_factory_{this};
 +};
 +
 +#endif  // CHROME_BROWSER_UI_VIEWS_TOOLBAR_THORON_ADBLOCK_BUTTON_H_
 diff --git a/chrome/browser/ui/views/toolbar/thoron_mail_button.cc b/chrome/browser/ui/views/toolbar/thoron_mail_button.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..dc67ad6e572863cd4889879570c8f525b03a0e4a
+index 0000000000000000000000000000000000000000..4b48b326eb3c6d01134088e98f326f8a524ab628
 --- /dev/null
 +++ b/chrome/browser/ui/views/toolbar/thoron_mail_button.cc
-@@ -0,0 +1,380 @@
+@@ -0,0 +1,488 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -2805,6 +2860,7 @@ index 0000000000000000000000000000000000000000..dc67ad6e572863cd4889879570c8f525
 +#include "chrome/browser/ui/views/toolbar/toolbar_view.h"
 +#include "chrome/browser/ui/webui/thoron_mail_ui.h"
 +#include "chrome/browser/ui/webui/top_chrome/webui_contents_wrapper.h"
++#include "components/prefs/pref_service.h"
 +#include "components/strings/grit/components_strings.h"
 +#include "components/vector_icons/vector_icons.h"
 +#include "content/public/browser/web_contents.h"
@@ -2827,11 +2883,8 @@ index 0000000000000000000000000000000000000000..dc67ad6e572863cd4889879570c8f525
 +
 +namespace {
 +
-+// The badge as on Thoron adblock's shield: red, white text.
-+constexpr SkColor kBadgeBackground = SkColorSetRGB(0xD9, 0x30, 0x25);
-+constexpr SkColor kBadgeText = SK_ColorWHITE;
-+// Thoron's teal: the envelope while there is mail to count.
-+constexpr SkColor kMailOn = SkColorSetRGB(0x0D, 0x94, 0x88);
++// The envelope's colours and its count's are the browser theme's (P5.78,
++// thoron::ColorsOf), as the shield's.
 +constexpr base::TimeDelta kReopenGuard = base::Milliseconds(300);
 +constexpr base::TimeDelta kShowAnyway = base::Milliseconds(250);
 +
@@ -2867,36 +2920,31 @@ index 0000000000000000000000000000000000000000..dc67ad6e572863cd4889879570c8f525
 +  return text;
 +}
 +
-+// The envelope, teal with the count while there is mail to count.
++// The envelope, `size` px, in the theme's accent while there is mail to
++// count. In the toolbar (`area` larger than `size`) it is in the middle of an
++// image `area` px wide and high with the count in the image's corner, as an
++// extension's badge: the envelope stays in view. In the address bar (`area`
++// is `size`) the count is right of the envelope: its icons are small.
 +ui::ImageModel Envelope(const thoron_mail::MailService& service,
 +                        const views::View* view,
 +                        int size,
++                        int area,
 +                        SkColor plain) {
++  const thoron::IconColors colors = thoron::ColorsOf(view->GetColorProvider());
 +  const int count = service.icon_count();
 +  const gfx::ImageSkia icon = gfx::CreateVectorIcon(
-+      vector_icons::kMailIcon, size, count > 0 ? kMailOn : plain);
-+  const std::string text = BadgeText(count);
-+  if (text.empty()) {
-+    return ui::ImageModel::FromImageSkia(icon);
++      vector_icons::kMailIcon, size, count > 0 ? colors.accent : plain);
++  if (area == size) {
++    return ui::ImageModel::FromImageSkia(
++        thoron::WithCountBeside(icon, BadgeText(count), colors.accent));
 +  }
-+  // the count laid over the envelope, as on the shield (an empty 16 px icon:
-+  // the badge's image places an icon as if it were an extension's)
-+  SkBitmap empty;
-+  empty.allocN32Pixels(16, 16);
-+  empty.eraseColor(SK_ColorTRANSPARENT);
-+  auto source = std::make_unique<IconWithBadgeImageSource>(
-+      gfx::Size(size, size),
-+      base::BindRepeating(
-+          [](const views::View* view) -> const ui::ColorProvider* {
-+            return view->GetColorProvider();
-+          },
-+          base::Unretained(view)));
-+  source->SetIcon(gfx::Image(gfx::ImageSkia::CreateFrom1xBitmap(empty)));
-+  source->SetBadge(std::make_unique<IconWithBadgeImageSource::Badge>(
-+      text, kBadgeText, kBadgeBackground));
-+  return ui::ImageModel::FromImageSkia(
-+      gfx::ImageSkiaOperations::CreateSuperimposedImage(
-+          icon, gfx::ImageSkia(std::move(source), gfx::Size(size, size))));
++  return ui::ImageModel::FromImageSkia(thoron::WithCountBadge(
++      icon, area, BadgeText(count), colors.badge, colors.badge_text));
++}
++
++PrefService* PrefsOf(BrowserWindowInterface* browser) {
++  Profile* profile = browser ? browser->GetProfile() : nullptr;
++  return profile ? profile->GetOriginalProfile()->GetPrefs() : nullptr;
 +}
 +
 +}  // namespace
@@ -2997,9 +3045,71 @@ index 0000000000000000000000000000000000000000..dc67ad6e572863cd4889879570c8f525
 +  }
 +  mail_observation_.Observe(service);
 +  SetVisible(service->Choice("place") != "address");
++  // The image is larger than the envelope, as an extension's (the count is in
++  // its corner): the button's insets are smaller by as much.
++  SetLayoutInsetDelta(gfx::Insets(-thoron::kToolbarImageMargin / 2));
++  // base::Unretained is safe: the drag and the registrar end with this button.
++  drag_ = std::make_unique<thoron::ToolbarDrag>(
++      this, thoron::kMailId, prefs(),
++      base::BindRepeating(&ThoronMailButton::toolbar_position,
++                          base::Unretained(this)),
++      base::BindRepeating(
++          [](ThoronMailButton* button, const std::string& where) {
++            if (thoron_mail::MailService* mail = ServiceOf(button->browser_)) {
++              mail->SetChoice("toolbar-position", where);
++            }
++          },
++          base::Unretained(this)));
++  if (PrefService* settings = prefs()) {
++    order_registrar_.Init(settings);
++    order_registrar_.Add(thoron::kToolbarOrderPref,
++                         base::BindRepeating(&ThoronMailButton::ApplyPlace,
++                                             base::Unretained(this)));
++  }
 +}
 +
 +ThoronMailButton::~ThoronMailButton() = default;
++
++PrefService* ThoronMailButton::prefs() const {
++  return PrefsOf(browser_);
++}
++
++std::string ThoronMailButton::toolbar_position() const {
++  thoron_mail::MailService* service = ServiceOf(browser_);
++  return service ? service->Choice("toolbar-position")
++                 : std::string("extensions");
++}
++
++bool ThoronMailButton::OnMousePressed(const ui::MouseEvent& event) {
++  if (drag_) {
++    drag_->Pressed(event);
++  }
++  return ToolbarButton::OnMousePressed(event);
++}
++
++bool ThoronMailButton::OnMouseDragged(const ui::MouseEvent& event) {
++  if (drag_ && drag_->Dragged(event)) {
++    return true;
++  }
++  return ToolbarButton::OnMouseDragged(event);
++}
++
++void ThoronMailButton::OnMouseReleased(const ui::MouseEvent& event) {
++  if (drag_ && drag_->Ended()) {
++    // the press moved the envelope: it opens no menu
++    OnClickCanceled(event);
++    SetState(STATE_NORMAL);
++    return;
++  }
++  ToolbarButton::OnMouseReleased(event);
++}
++
++void ThoronMailButton::OnMouseCaptureLost() {
++  if (drag_) {
++    drag_->Ended();
++  }
++  ToolbarButton::OnMouseCaptureLost();
++}
 +
 +void ThoronMailButton::UpdateIcon() {
 +  thoron_mail::MailService* service = ServiceOf(browser_);
@@ -3008,6 +3118,7 @@ index 0000000000000000000000000000000000000000..dc67ad6e572863cd4889879570c8f525
 +  }
 +  const ui::ImageModel image =
 +      Envelope(*service, this, GetIconSize(),
++               GetIconSize() + thoron::kToolbarImageMargin,
 +               GetForegroundColor(ButtonState::STATE_NORMAL));
 +  for (auto state : kButtonStates) {
 +    SetImageModel(state, image);
@@ -3041,47 +3152,8 @@ index 0000000000000000000000000000000000000000..dc67ad6e572863cd4889879570c8f525
 +    return;
 +  }
 +  SetVisible(service->Choice("place") != "address");
-+  const std::string where = service->Choice("toolbar-position");
-+  // The toolbar has no getters for its extensions and its menu: they are
-+  // found by their kind (as for the shield).
-+  auto child_named = [toolbar](std::string_view name) -> views::View* {
-+    for (views::View* child : toolbar->children()) {
-+      if (child->GetClassName() == name) {
-+        return child;
-+      }
-+    }
-+    return nullptr;
-+  };
-+  views::View* after = nullptr;
-+  views::View* before = nullptr;
-+  if (where == "menu") {
-+    before = child_named("BrowserAppMenuButton");
-+  } else if (where == "extensions") {
-+    after = child_named("ExtensionsToolbarDesktop");
-+  }
-+  if (!after && !before) {
-+    after = toolbar->location_bar_view();
-+  }
-+  views::View* anchor = after ? after : before;
-+  if (!anchor || anchor->parent() != toolbar) {
-+    return;
-+  }
-+  const std::optional<size_t> mine = toolbar->GetIndexOf(this);
-+  const std::optional<size_t> index = toolbar->GetIndexOf(anchor);
-+  if (!mine || !index) {
-+    return;
-+  }
-+  size_t target = *index;
-+  if (*mine < target) {
-+    --target;
-+  }
-+  if (after) {
-+    ++target;
-+  }
-+  if (target != *mine) {
-+    toolbar->ReorderChildView(this, target);
-+    toolbar->InvalidateLayout();
-+  }
++  // with Thoron's other buttons, in their order (P5.78)
++  thoron::ArrangeToolbar(toolbar);
 +}
 +
 +// --- In the address bar ---
@@ -3109,9 +3181,90 @@ index 0000000000000000000000000000000000000000..dc67ad6e572863cd4889879570c8f525
 +  }
 +  mail_observation_.Observe(service);
 +  SetVisible(service->Choice("place") != "toolbar");
++  if (PrefService* settings = prefs()) {
++    order_registrar_.Init(settings);
++    // base::Unretained is safe: the registrar ends with this icon.
++    order_registrar_.Add(
++        thoron::kToolbarOrderPref,
++        base::BindRepeating(&ThoronMailAddressIcon::OnOrderChanged,
++                            base::Unretained(this)));
++  }
 +}
 +
 +ThoronMailAddressIcon::~ThoronMailAddressIcon() = default;
++
++PrefService* ThoronMailAddressIcon::prefs() const {
++  return PrefsOf(browser_);
++}
++
++bool ThoronMailAddressIcon::before_shield() const {
++  return thoron::MailBeforeAdblock(prefs());
++}
++
++void ThoronMailAddressIcon::OnOrderChanged() {
++  if (parent()) {
++    parent()->InvalidateLayout();
++  }
++}
++
++bool ThoronMailAddressIcon::OnMousePressed(const ui::MouseEvent& event) {
++  pressed_ = event.IsOnlyLeftMouseButton();
++  dragging_ = false;
++  press_ = event.location();
++  return views::ImageButton::OnMousePressed(event);
++}
++
++bool ThoronMailAddressIcon::OnMouseDragged(const ui::MouseEvent& event) {
++  if (!pressed_ || !parent()) {
++    return views::ImageButton::OnMouseDragged(event);
++  }
++  if (!dragging_) {
++    if (!views::View::ExceededDragThreshold(event.location() - press_)) {
++      return views::ImageButton::OnMouseDragged(event);
++    }
++    dragging_ = true;
++  }
++  // The shield next to this icon: the address bar's icon whose words are
++  // Thoron adblock's. Past its middle, the two change places.
++  gfx::Point pointer = event.location();
++  views::View::ConvertPointToTarget(this, parent(), &pointer);
++  for (views::View* sibling : parent()->children()) {
++    if (sibling == this || !sibling->GetVisible() ||
++        !sibling->GetRenderedTooltipText(gfx::Point()).starts_with(
++            u"Thoron adblock")) {
++      continue;
++    }
++    const bool first = pointer.x() < sibling->x() + sibling->width() / 2;
++    if (first != before_shield()) {
++      thoron::SetToolbarOrder(
++          prefs(), first ? std::vector<std::string>{thoron::kMailId,
++                                                    thoron::kAdblockId}
++                         : std::vector<std::string>{thoron::kAdblockId,
++                                                    thoron::kMailId});
++    }
++    break;
++  }
++  return true;
++}
++
++void ThoronMailAddressIcon::OnMouseReleased(const ui::MouseEvent& event) {
++  const bool was_drag = dragging_;
++  pressed_ = false;
++  dragging_ = false;
++  if (was_drag) {
++    // the press moved the envelope: it opens no menu
++    OnClickCanceled(event);
++    SetState(STATE_NORMAL);
++    return;
++  }
++  views::ImageButton::OnMouseReleased(event);
++}
++
++void ThoronMailAddressIcon::OnMouseCaptureLost() {
++  pressed_ = false;
++  dragging_ = false;
++  views::ImageButton::OnMouseCaptureLost();
++}
 +
 +std::string ThoronMailAddressIcon::position() const {
 +  thoron_mail::MailService* service = ServiceOf(browser_);
@@ -3147,9 +3300,19 @@ index 0000000000000000000000000000000000000000..dc67ad6e572863cd4889879570c8f525
 +  }
 +  const int size =
 +      GetLayoutConstant(LayoutConstant::kLocationBarTrailingIconSize);
-+  SetImageModel(views::Button::STATE_NORMAL,
-+                Envelope(*service, this, size,
-+                         GetColorProvider()->GetColor(kColorOmniboxResultsIcon)));
++  // the address bar's: the image is the icon itself, and its count beside it
++  const ui::ImageModel image =
++      Envelope(*service, this, size, /*area=*/size,
++               GetColorProvider()->GetColor(kColorOmniboxResultsIcon));
++  SetImageModel(views::Button::STATE_NORMAL, image);
++  // as wide as what is drawn
++  const gfx::Size wanted(image.Size().width() + 4, size + 4);
++  if (GetPreferredSize() != wanted) {
++    SetPreferredSize(wanted);
++    if (parent()) {
++      parent()->InvalidateLayout();
++    }
++  }
 +  const std::u16string tooltip = Tooltip(*service);
 +  SetTooltipText(tooltip);
 +  GetViewAccessibility().SetName(tooltip);
@@ -3162,10 +3325,10 @@ index 0000000000000000000000000000000000000000..dc67ad6e572863cd4889879570c8f525
 +END_METADATA
 diff --git a/chrome/browser/ui/views/toolbar/thoron_mail_button.h b/chrome/browser/ui/views/toolbar/thoron_mail_button.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..b8ef8e2b5c4b0d997b90fd3a4a0d9ad7e28a17cf
+index 0000000000000000000000000000000000000000..efc858541ae4ee285119397e060f3d7ce29f6f98
 --- /dev/null
 +++ b/chrome/browser/ui/views/toolbar/thoron_mail_button.h
-@@ -0,0 +1,92 @@
+@@ -0,0 +1,122 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -3178,12 +3341,15 @@ index 0000000000000000000000000000000000000000..b8ef8e2b5c4b0d997b90fd3a4a0d9ad7
 +#include "base/memory/raw_ptr.h"
 +#include "base/memory/weak_ptr.h"
 +#include "base/scoped_observation.h"
++#include "chrome/browser/ui/views/toolbar/thoron_toolbar_icons.h"
 +#include "chrome/browser/ui/views/toolbar/toolbar_button.h"
++#include "components/prefs/pref_change_registrar.h"
 +#include "components/thoron_mail/mail_service.h"
 +#include "ui/base/metadata/metadata_header_macros.h"
 +#include "ui/views/controls/button/image_button.h"
 +
 +class BrowserWindowInterface;
++class PrefService;
 +class ThoronMailMenu;
 +
 +// Thoron M-Notifier in the toolbar (P5.75, P5.76): an envelope with the count
@@ -3205,14 +3371,25 @@ index 0000000000000000000000000000000000000000..b8ef8e2b5c4b0d997b90fd3a4a0d9ad7
 +  // ToolbarButton:
 +  void UpdateIcon() override;
 +  void AddedToWidget() override;
++  // The envelope is moved with the mouse (P5.78, thoron::ToolbarDrag).
++  bool OnMousePressed(const ui::MouseEvent& event) override;
++  bool OnMouseDragged(const ui::MouseEvent& event) override;
++  void OnMouseReleased(const ui::MouseEvent& event) override;
++  void OnMouseCaptureLost() override;
 +
 +  // thoron_mail::MailService::Observer:
 +  void OnMailChanged() override;
 +
++  // The profile's settings, and where in the toolbar its setting puts the
++  // envelope ("extensions", "address", "menu").
++  PrefService* prefs() const;
++  std::string toolbar_position() const;
++
 + private:
 +  void ButtonPressed();
 +  // Shown or not, and where in the toolbar: after the extensions, right after
-+  // the address bar, or next to the menu.
++  // the address bar, or next to the menu; with Thoron's other buttons in
++  // their order.
 +  void ApplyPlace();
 +
 +  const raw_ptr<BrowserWindowInterface> browser_;
@@ -3220,6 +3397,8 @@ index 0000000000000000000000000000000000000000..b8ef8e2b5c4b0d997b90fd3a4a0d9ad7
 +  base::ScopedObservation<thoron_mail::MailService,
 +                          thoron_mail::MailService::Observer>
 +      mail_observation_{this};
++  std::unique_ptr<thoron::ToolbarDrag> drag_;
++  PrefChangeRegistrar order_registrar_;
 +  base::WeakPtrFactory<ThoronMailButton> weak_factory_{this};
 +};
 +
@@ -3239,9 +3418,17 @@ index 0000000000000000000000000000000000000000..b8ef8e2b5c4b0d997b90fd3a4a0d9ad7
 +  // Where among the address bar's icons: "icons" (with the others), "start"
 +  // (before them) or "end" (at the far end).
 +  std::string position() const;
++  // Left of Thoron adblock's shield where the two are next to each other (the
++  // order of Thoron's buttons, P5.78).
++  bool before_shield() const;
 +
 +  // views::ImageButton:
 +  void OnThemeChanged() override;
++  // Moved with the mouse past the shield next to it, the two change places.
++  bool OnMousePressed(const ui::MouseEvent& event) override;
++  bool OnMouseDragged(const ui::MouseEvent& event) override;
++  void OnMouseReleased(const ui::MouseEvent& event) override;
++  void OnMouseCaptureLost() override;
 +
 +  // thoron_mail::MailService::Observer:
 +  void OnMailChanged() override;
@@ -3249,15 +3436,659 @@ index 0000000000000000000000000000000000000000..b8ef8e2b5c4b0d997b90fd3a4a0d9ad7
 + private:
 +  void ButtonPressed();
 +  void Update();
++  PrefService* prefs() const;
++  void OnOrderChanged();
 +
 +  const raw_ptr<BrowserWindowInterface> browser_;
 +  std::unique_ptr<ThoronMailMenu> menu_;
 +  base::ScopedObservation<thoron_mail::MailService,
 +                          thoron_mail::MailService::Observer>
 +      mail_observation_{this};
++  PrefChangeRegistrar order_registrar_;
++  gfx::Point press_;
++  bool pressed_ = false;
++  bool dragging_ = false;
 +};
 +
 +#endif  // CHROME_BROWSER_UI_VIEWS_TOOLBAR_THORON_MAIL_BUTTON_H_
+diff --git a/chrome/browser/ui/views/toolbar/thoron_toolbar_icons.cc b/chrome/browser/ui/views/toolbar/thoron_toolbar_icons.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..c29c740e97c5f6a88786fe6cae5082626e4bfe47
+--- /dev/null
++++ b/chrome/browser/ui/views/toolbar/thoron_toolbar_icons.cc
+@@ -0,0 +1,498 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "chrome/browser/ui/views/toolbar/thoron_toolbar_icons.h"
++
++#include <algorithm>
++#include <memory>
++#include <optional>
++#include <string_view>
++#include <utility>
++
++#include "base/strings/string_split.h"
++#include "base/strings/string_util.h"
++#include "base/strings/utf_string_conversions.h"
++#include "cc/paint/paint_flags.h"
++#include "chrome/browser/ui/views/toolbar/thoron_adblock_button.h"
++#include "chrome/browser/ui/views/toolbar/thoron_mail_button.h"
++#include "chrome/browser/ui/views/toolbar/toolbar_view.h"
++#include "components/prefs/pref_service.h"
++#include "components/thoron_adblock/engine_service.h"
++#include "third_party/skia/include/core/SkBlendMode.h"
++#include "ui/color/color_id.h"
++#include "ui/color/color_provider.h"
++#include "ui/events/event.h"
++#include "ui/gfx/canvas.h"
++#include "ui/gfx/font_list.h"
++#include "ui/gfx/geometry/insets.h"
++#include "ui/gfx/geometry/rect.h"
++#include "ui/gfx/image/canvas_image_source.h"
++#include "ui/gfx/render_text.h"
++#include "ui/views/style/typography.h"
++#include "ui/views/style/typography_provider.h"
++#include "ui/views/view.h"
++#include "ui/views/view_utils.h"
++
++namespace thoron {
++
++namespace {
++
++// An icon in the middle of a larger image, and a count in the image's bottom
++// right corner (WithCountBadge).
++class BadgedIconSource : public gfx::CanvasImageSource {
++ public:
++  BadgedIconSource(const gfx::ImageSkia& icon,
++                   int area,
++                   const std::string& text,
++                   SkColor background,
++                   SkColor foreground)
++      : gfx::CanvasImageSource(gfx::Size(area, area)),
++        icon_(icon),
++        text_(base::UTF8ToUTF16(text)),
++        background_(background),
++        foreground_(foreground) {}
++
++  void Draw(gfx::Canvas* canvas) override {
++    const int area = size().width();
++    canvas->DrawImageInt(icon_, (area - icon_.width()) / 2,
++                         (area - icon_.height()) / 2);
++    if (text_.empty()) {
++      return;
++    }
++    // as an extension's badge
++    constexpr int height = 14;
++    const gfx::FontList font = views::TypographyProvider::Get().GetFont(
++        views::style::CONTEXT_BADGE, views::style::STYLE_SECONDARY);
++    constexpr int kPadding = 2;
++    const int text_width =
++        std::min(area - 2 * kPadding, gfx::Canvas::GetStringWidth(text_, font));
++    const int width = std::max(height, text_width + 2 * kPadding);
++    const gfx::Rect badge(area - width, area - height, width, height);
++    constexpr int radius = 4;
++
++    cc::PaintFlags fill;
++    fill.setAntiAlias(true);
++    fill.setStyle(cc::PaintFlags::kFill_Style);
++    fill.setColor(background_);
++    // the icon is cleared a little around the count, as around an extension's
++    cc::PaintFlags clear = fill;
++    clear.setBlendMode(SkBlendMode::kClear);
++    gfx::Rect ring = badge;
++    ring.Inset(-1);
++    canvas->DrawRoundRect(ring, radius + 1, clear);
++    canvas->DrawRoundRect(badge, radius, fill);
++
++    gfx::Rect text_rect = badge;
++    const int top = (height - font.GetHeight()) / 2;
++    const int left = (width - text_width) / 2;
++    text_rect.Inset(gfx::Insets::TLBR(top, left,
++                                      (height - font.GetHeight()) - top,
++                                      (width - text_width) - left));
++    std::unique_ptr<gfx::RenderText> text = gfx::RenderText::CreateRenderText();
++    text->SetHorizontalAlignment(gfx::ALIGN_CENTER);
++    text->SetCursorEnabled(false);
++    text->SetFontList(font);
++    text->SetColor(foreground_);
++    text->SetText(text_);
++    text->SetDisplayRect(text_rect);
++    text->Draw(canvas);
++  }
++
++ private:
++  const gfx::ImageSkia icon_;
++  const std::u16string text_;
++  const SkColor background_;
++  const SkColor foreground_;
++};
++
++gfx::FontList CountFont() {
++  return views::TypographyProvider::Get()
++      .GetFont(views::style::CONTEXT_BADGE, views::style::STYLE_SECONDARY)
++      .DeriveWithWeight(gfx::Font::Weight::MEDIUM);
++}
++
++// An icon and a count right of it (WithCountBeside).
++class IconWithCountSource : public gfx::CanvasImageSource {
++ public:
++  static constexpr int kGap = 3;
++
++  IconWithCountSource(const gfx::ImageSkia& icon,
++                      const std::u16string& text,
++                      int text_width,
++                      SkColor color)
++      : gfx::CanvasImageSource(
++            gfx::Size(icon.width() + kGap + text_width, icon.height())),
++        icon_(icon),
++        text_(text),
++        text_width_(text_width),
++        color_(color) {}
++
++  void Draw(gfx::Canvas* canvas) override {
++    canvas->DrawImageInt(icon_, 0, 0);
++    const gfx::FontList font = CountFont();
++    std::unique_ptr<gfx::RenderText> text = gfx::RenderText::CreateRenderText();
++    text->SetHorizontalAlignment(gfx::ALIGN_LEFT);
++    text->SetCursorEnabled(false);
++    text->SetFontList(font);
++    text->SetColor(color_);
++    text->SetText(text_);
++    text->SetDisplayRect(gfx::Rect(icon_.width() + kGap,
++                                   (icon_.height() - font.GetHeight()) / 2,
++                                   text_width_, font.GetHeight()));
++    text->Draw(canvas);
++  }
++
++ private:
++  const gfx::ImageSkia icon_;
++  const std::u16string text_;
++  const int text_width_;
++  const SkColor color_;
++};
++
++// One of Thoron's buttons in a toolbar: which, and where its setting puts it.
++struct Item {
++  raw_ptr<views::View> view;
++  std::string id;
++  std::string where;
++};
++
++std::vector<Item> ItemsOf(ToolbarView* toolbar, PrefService** prefs) {
++  std::vector<Item> items;
++  for (views::View* child : toolbar->children()) {
++    if (auto* shield = views::AsViewClass<ThoronAdblockButton>(child)) {
++      items.push_back({shield, kAdblockId,
++                       thoron_adblock::EngineService::Get().Choice(
++                           "toolbar-position")});
++      if (prefs) {
++        *prefs = shield->prefs();
++      }
++    } else if (auto* mail = views::AsViewClass<ThoronMailButton>(child)) {
++      items.push_back({mail, kMailId, mail->toolbar_position()});
++      if (prefs) {
++        *prefs = mail->prefs();
++      }
++    }
++  }
++  return items;
++}
++
++// The toolbar has no getters for its extensions and its menu: they are found
++// by their kind.
++views::View* ChildNamed(ToolbarView* toolbar, std::string_view name) {
++  for (views::View* child : toolbar->children()) {
++    if (child->GetClassName() == name) {
++      return child;
++    }
++  }
++  return nullptr;
++}
++
++views::View* Extensions(ToolbarView* toolbar) {
++  return ChildNamed(toolbar, "ExtensionsToolbarDesktop");
++}
++
++views::View* Menu(ToolbarView* toolbar) {
++  return ChildNamed(toolbar, "BrowserAppMenuButton");
++}
++
++// Moves `view` right after `anchor` (or right before it). True when it moved.
++bool MoveNextTo(ToolbarView* toolbar,
++                views::View* view,
++                views::View* anchor,
++                bool after) {
++  const std::optional<size_t> mine = toolbar->GetIndexOf(view);
++  const std::optional<size_t> index = toolbar->GetIndexOf(anchor);
++  if (!mine || !index || view == anchor) {
++    return false;
++  }
++  // the view's own place is taken out first
++  size_t target = *index;
++  if (*mine < target) {
++    --target;
++  }
++  if (after) {
++    ++target;
++  }
++  if (target == *mine) {
++    return false;
++  }
++  toolbar->ReorderChildView(view, target);
++  return true;
++}
++
++size_t RankOf(const std::vector<std::string>& order, const std::string& id) {
++  return std::find(order.begin(), order.end(), id) - order.begin();
++}
++
++}  // namespace
++
++IconColors ColorsOf(const ui::ColorProvider* provider) {
++  // A count is in the theme's plainest strong pair, so it reads on the shield
++  // (filled with the accent) and on the envelope alike.
++  return {provider->GetColor(ui::kColorSysPrimary),
++          provider->GetColor(ui::kColorSysOnPrimary),
++          provider->GetColor(ui::kColorSysOnSurface),
++          provider->GetColor(ui::kColorSysSurface)};
++}
++
++gfx::ImageSkia WithCountBadge(const gfx::ImageSkia& icon,
++                              int area,
++                              const std::string& text,
++                              SkColor background,
++                              SkColor foreground) {
++  if (text.empty() && area == icon.width()) {
++    return icon;
++  }
++  return gfx::ImageSkia(std::make_unique<BadgedIconSource>(icon, area, text,
++                                                           background,
++                                                           foreground),
++                        gfx::Size(area, area));
++}
++
++gfx::ImageSkia WithCountBeside(const gfx::ImageSkia& icon,
++                               const std::string& text,
++                               SkColor color) {
++  if (text.empty()) {
++    return icon;
++  }
++  const std::u16string count = base::UTF8ToUTF16(text);
++  const int text_width = gfx::Canvas::GetStringWidth(count, CountFont());
++  return gfx::ImageSkia(
++      std::make_unique<IconWithCountSource>(icon, count, text_width, color),
++      gfx::Size(icon.width() + IconWithCountSource::kGap + text_width,
++                icon.height()));
++}
++
++std::vector<std::string> ToolbarOrder(const PrefService* prefs) {
++  std::vector<std::string> order;
++  if (prefs) {
++    for (const std::string& id :
++         base::SplitString(prefs->GetString(kToolbarOrderPref), ",",
++                           base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY)) {
++      if ((id == kAdblockId || id == kMailId) &&
++          std::find(order.begin(), order.end(), id) == order.end()) {
++        order.push_back(id);
++      }
++    }
++  }
++  // unless a person chose: the envelope, then the shield
++  for (const char* id : {kMailId, kAdblockId}) {
++    if (std::find(order.begin(), order.end(), id) == order.end()) {
++      order.push_back(id);
++    }
++  }
++  return order;
++}
++
++void SetToolbarOrder(PrefService* prefs,
++                     const std::vector<std::string>& order) {
++  if (prefs) {
++    prefs->SetString(kToolbarOrderPref, base::JoinString(order, ","));
++  }
++}
++
++bool MailBeforeAdblock(const PrefService* prefs) {
++  const std::vector<std::string> order = ToolbarOrder(prefs);
++  return RankOf(order, kMailId) < RankOf(order, kAdblockId);
++}
++
++void ArrangeToolbar(ToolbarView* toolbar) {
++  if (!toolbar) {
++    return;
++  }
++  PrefService* prefs = nullptr;
++  std::vector<Item> items = ItemsOf(toolbar, &prefs);
++  const std::vector<std::string> order = ToolbarOrder(prefs);
++  std::sort(items.begin(), items.end(), [&order](const Item& a, const Item& b) {
++    return RankOf(order, a.id) < RankOf(order, b.id);
++  });
++  views::View* const address = toolbar->location_bar_view();
++  views::View* const extensions = Extensions(toolbar);
++  views::View* const menu = Menu(toolbar);
++  // Right after the address bar and after the extensions, each goes right
++  // after the one before it; next to the menu, each right before the menu.
++  views::View* after_address = address;
++  views::View* after_extensions = extensions;
++  bool moved = false;
++  for (const Item& item : items) {
++    if (item.where == "menu" && menu) {
++      moved |= MoveNextTo(toolbar, item.view, menu, /*after=*/false);
++      continue;
++    }
++    views::View*& previous = item.where == "extensions" && extensions
++                                 ? after_extensions
++                                 : after_address;
++    if (!previous || previous->parent() != toolbar) {
++      continue;
++    }
++    moved |= MoveNextTo(toolbar, item.view, previous, /*after=*/true);
++    previous = item.view;
++  }
++  if (moved) {
++    toolbar->InvalidateLayout();
++  }
++}
++
++ToolbarDrag::ToolbarDrag(views::View* button,
++                         const char* id,
++                         PrefService* prefs,
++                         GetPlace get_place,
++                         SetPlace set_place)
++    : button_(button),
++      id_(id),
++      prefs_(prefs),
++      get_place_(std::move(get_place)),
++      set_place_(std::move(set_place)) {}
++
++ToolbarDrag::~ToolbarDrag() = default;
++
++void ToolbarDrag::Pressed(const ui::MouseEvent& event) {
++  pressed_ = event.IsOnlyLeftMouseButton();
++  dragging_ = false;
++  start_ = event.location();
++}
++
++bool ToolbarDrag::Dragged(const ui::MouseEvent& event) {
++  if (!pressed_) {
++    return false;
++  }
++  if (!dragging_) {
++    if (!views::View::ExceededDragThreshold(event.location() - start_)) {
++      return false;
++    }
++    dragging_ = true;
++  }
++  Place(event);
++  return true;
++}
++
++bool ToolbarDrag::Ended() {
++  const bool was_drag = dragging_;
++  pressed_ = false;
++  dragging_ = false;
++  return was_drag;
++}
++
++void ToolbarDrag::Place(const ui::MouseEvent& event) {
++  ToolbarView* toolbar = views::AsViewClass<ToolbarView>(button_->parent());
++  if (!toolbar) {
++    return;
++  }
++  gfx::Point pointer = event.location();
++  views::View::ConvertPointToTarget(button_, toolbar, &pointer);
++  const int x = pointer.x();
++  const int width = button_->width();
++  // Where a view is when this button is somewhere right of it (the address
++  // bar takes up the room a button leaves): the same wherever the button is
++  // now, so the answer does not change as the button moves.
++  auto left_of = [this, width](const views::View* view) {
++    return view->x() - (view->x() > button_->x() ? width : 0);
++  };
++  std::vector<Item> others = ItemsOf(toolbar, nullptr);
++  std::erase_if(others, [this](const Item& item) {
++    return item.view == button_ || !item.view->GetVisible();
++  });
++
++  // The three places, each from where its first button would be to the end of
++  // Thoron's buttons there.
++  struct Slot {
++    const char* where;
++    int left;
++    int right;
++  };
++  std::vector<Slot> slots;
++  auto add_slot = [&](const char* where, int left) {
++    int right = left + width;
++    for (const Item& other : others) {
++      if (other.where == where) {
++        right += other.view->width();
++      }
++    }
++    slots.push_back({where, left, right});
++  };
++  views::View* const address = toolbar->location_bar_view();
++  const int address_end = address ? left_of(address) + address->width() : 0;
++  if (address) {
++    add_slot("address", address_end);
++  }
++  if (views::View* extensions = Extensions(toolbar)) {
++    if (extensions->GetVisible()) {
++      add_slot("extensions", left_of(extensions) + extensions->width());
++    } else {
++      // No extension is shown: "after the extensions" is right after what is
++      // right after the address bar.
++      int left = address_end;
++      for (const Item& other : others) {
++        if (other.where == "address") {
++          left += other.view->width();
++        }
++      }
++      add_slot("extensions", left);
++    }
++  }
++  if (views::View* menu = Menu(toolbar)) {
++    // the menu stays where it is: Thoron's buttons end at it
++    int left = menu->x() - width;
++    for (const Item& other : others) {
++      if (other.where == "menu") {
++        left -= other.view->width();
++      }
++    }
++    add_slot("menu", left);
++  }
++  if (slots.empty()) {
++    return;
++  }
++  const std::string current = get_place_.Run();
++  auto distance = [x](const Slot& slot) {
++    return x < slot.left ? slot.left - x : (x > slot.right ? x - slot.right : 0);
++  };
++  const Slot* nearest = nullptr;
++  for (const Slot& slot : slots) {
++    // of two as near, the one the button is in: it does not flicker
++    if (!nearest || distance(slot) < distance(*nearest) ||
++        (distance(slot) == distance(*nearest) && current == slot.where)) {
++      nearest = &slot;
++    }
++  }
++  const std::string where = nearest->where;
++
++  // Before or after Thoron's other buttons there: before the first whose
++  // middle (as it is shown now) is right of the pointer. The pointer has to
++  // pass a button's middle to change places with it, so nothing flickers.
++  std::vector<std::string> order = ToolbarOrder(prefs_);
++  const std::vector<std::string> before = order;
++  std::vector<const Item*> there;
++  for (const Item& other : others) {
++    if (other.where == where) {
++      there.push_back(&other);
++    }
++  }
++  if (!there.empty()) {
++    std::sort(there.begin(), there.end(), [](const Item* a, const Item* b) {
++      return a->view->x() < b->view->x();
++    });
++    std::erase(order, id_);
++    auto at = order.end();
++    for (const Item* other : there) {
++      at = std::find(order.begin(), order.end(), other->id);
++      if (x < other->view->x() + other->view->width() / 2) {
++        break;
++      }
++      at = at == order.end() ? at : at + 1;
++    }
++    order.insert(at, id_);
++  }
++
++  if (order != before) {
++    SetToolbarOrder(prefs_, order);
++  }
++  if (where != current) {
++    set_place_.Run(where);
++  }
++  if (order != before || where != current) {
++    ArrangeToolbar(toolbar);
++  }
++}
++
++}  // namespace thoron
+diff --git a/chrome/browser/ui/views/toolbar/thoron_toolbar_icons.h b/chrome/browser/ui/views/toolbar/thoron_toolbar_icons.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..c99c61ad71350bc675c895fa987b6e85e513e9fe
+--- /dev/null
++++ b/chrome/browser/ui/views/toolbar/thoron_toolbar_icons.h
+@@ -0,0 +1,128 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef CHROME_BROWSER_UI_VIEWS_TOOLBAR_THORON_TOOLBAR_ICONS_H_
++#define CHROME_BROWSER_UI_VIEWS_TOOLBAR_THORON_TOOLBAR_ICONS_H_
++
++#include <string>
++#include <vector>
++
++#include "base/functional/callback.h"
++#include "base/memory/raw_ptr.h"
++#include "third_party/skia/include/core/SkColor.h"
++#include "ui/gfx/geometry/point.h"
++#include "ui/gfx/image/image_skia.h"
++
++class PrefService;
++class ToolbarView;
++
++namespace ui {
++class ColorProvider;
++class MouseEvent;
++}  // namespace ui
++
++namespace views {
++class View;
++}
++
++// What Thoron's own icons share (P5.78): Thoron adblock's shield and Thoron
++// M-Notifier's envelope, in the toolbar and in the address bar. Their colours
++// are the browser theme's, their counts are drawn as Chrome draws an
++// extension's badge (in the corner, so the icon stays in view), and in the
++// toolbar a person moves them with the mouse.
++namespace thoron {
++
++// The colours, from the browser's theme: an icon that has something to say
++// (the shield while it blocks, the envelope with new mail) and what is drawn
++// on it; a count's background and its digits.
++struct IconColors {
++  SkColor accent;
++  SkColor on_accent;
++  SkColor badge;
++  SkColor badge_text;
++};
++IconColors ColorsOf(const ui::ColorProvider* provider);
++
++// How much larger than its icon a toolbar button's image is, as an
++// extension's (a 28 px image around a 20 px icon): the count sits in the
++// corner of the image and covers a quarter of the icon at most. The button's
++// insets are smaller by half of this, so the button is as large as the others.
++inline constexpr int kToolbarImageMargin = 8;
++
++// `icon` in the middle of an image `area` px wide and high, with `text` (a
++// count; "" for none) in its bottom right corner as an extension's badge,
++// 14 px high: for the toolbar. A ring around the count is cleared, so it reads
++// on any icon.
++gfx::ImageSkia WithCountBadge(const gfx::ImageSkia& icon,
++                              int area,
++                              const std::string& text,
++                              SkColor background,
++                              SkColor foreground);
++
++// `icon` with `text` (a count; "" for none) right of it, in `color`: for the
++// address bar, whose icons are small (a count over one would hide it). The
++// image is as high as the icon and wider by the count.
++gfx::ImageSkia WithCountBeside(const gfx::ImageSkia& icon,
++                               const std::string& text,
++                               SkColor color);
++
++// The order of Thoron's buttons, left to right, where they are next to each
++// other (the same place in the toolbar or in the address bar): the ids below,
++// kept in the profile ("thoron.toolbar_order", "mail,adblock"). A person
++// changes it by moving a button with the mouse.
++inline constexpr char kToolbarOrderPref[] = "thoron.toolbar_order";
++inline constexpr char kAdblockId[] = "adblock";
++inline constexpr char kMailId[] = "mail";
++std::vector<std::string> ToolbarOrder(const PrefService* prefs);
++void SetToolbarOrder(PrefService* prefs, const std::vector<std::string>& order);
++// True when the envelope is left of the shield.
++bool MailBeforeAdblock(const PrefService* prefs);
++
++// Puts Thoron's buttons of `toolbar` where their settings say (right after
++// the address bar, after the extensions, next to the menu), in their order.
++void ArrangeToolbar(ToolbarView* toolbar);
++
++// One of Thoron's toolbar buttons moved with the mouse: while it is dragged
++// it goes to the place nearest the pointer (one of the three above) and
++// before or after Thoron's other button there, at once, and that is kept (the
++// button's own setting of its place, and the order). A press that became a
++// drag is no click.
++class ToolbarDrag {
++ public:
++  using GetPlace = base::RepeatingCallback<std::string()>;
++  using SetPlace = base::RepeatingCallback<void(const std::string&)>;
++
++  // `button` is one of Thoron's buttons in a ToolbarView, known as `id`;
++  // `get_place` and `set_place` read and write its setting of where it is.
++  ToolbarDrag(views::View* button,
++              const char* id,
++              PrefService* prefs,
++              GetPlace get_place,
++              SetPlace set_place);
++  ToolbarDrag(const ToolbarDrag&) = delete;
++  ToolbarDrag& operator=(const ToolbarDrag&) = delete;
++  ~ToolbarDrag();
++
++  // From the button's mouse handlers. Dragged() is true once the press is a
++  // drag (the button then handles the event itself); Ended() is true when
++  // the press that ends was a drag.
++  void Pressed(const ui::MouseEvent& event);
++  bool Dragged(const ui::MouseEvent& event);
++  bool Ended();
++
++ private:
++  void Place(const ui::MouseEvent& event);
++
++  const raw_ptr<views::View> button_;
++  const std::string id_;
++  const raw_ptr<PrefService> prefs_;
++  const GetPlace get_place_;
++  const SetPlace set_place_;
++  gfx::Point start_;
++  bool pressed_ = false;
++  bool dragging_ = false;
++};
++
++}  // namespace thoron
++
++#endif  // CHROME_BROWSER_UI_VIEWS_TOOLBAR_THORON_TOOLBAR_ICONS_H_
 diff --git a/chrome/browser/ui/views/toolbar/thoron_windows_security.cc b/chrome/browser/ui/views/toolbar/thoron_windows_security.cc
 new file mode 100644
 index 0000000000000000000000000000000000000000..97dfc3f6866ed7ab120bee39f31f6d56acdad4b0
@@ -3425,15 +4256,16 @@ index 0000000000000000000000000000000000000000..558496fec9e4a001292ba9cbd6982267
 +#endif  // CHROME_BROWSER_UI_VIEWS_TOOLBAR_THORON_WINDOWS_SECURITY_H_
 diff --git a/chrome/browser/ui/webui/thoron_adblock_popup_ui.cc b/chrome/browser/ui/webui/thoron_adblock_popup_ui.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..03563def7a66dc6c61c525fd671849a3389c3575
+index 0000000000000000000000000000000000000000..0b342a54356736ad76223031729cb8ff539c7256
 --- /dev/null
 +++ b/chrome/browser/ui/webui/thoron_adblock_popup_ui.cc
-@@ -0,0 +1,680 @@
+@@ -0,0 +1,685 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
 +#include "chrome/browser/ui/webui/thoron_adblock_popup_ui.h"
 +
++#include "chrome/browser/ui/webui/theme_source.h"
 +#include "chrome/browser/ui/webui/thoron_adblock_site_javascript.h"
 +
 +#include <algorithm>
@@ -4086,6 +4918,10 @@ index 0000000000000000000000000000000000000000..03563def7a66dc6c61c525fd671849a3
 +    : TopChromeWebUIController(web_ui, /*enable_chrome_send=*/true) {
 +  content::URLDataSource::Add(Profile::FromWebUI(web_ui),
 +                              std::make_unique<MenuDataSource>());
++  // the browser theme's colours for the page (chrome://theme/colors.css)
++  content::URLDataSource::Add(
++      Profile::FromWebUI(web_ui),
++      std::make_unique<ThemeSource>(Profile::FromWebUI(web_ui)));
 +  web_ui->AddMessageHandler(std::make_unique<MenuHandler>(this));
 +}
 +
@@ -4251,10 +5087,10 @@ index 0000000000000000000000000000000000000000..775954638d4dbf1764c678318776e97d
 +#endif  // CHROME_BROWSER_UI_WEBUI_THORON_ADBLOCK_SITE_JAVASCRIPT_H_
 diff --git a/chrome/browser/ui/webui/thoron_adblock_ui.cc b/chrome/browser/ui/webui/thoron_adblock_ui.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..f5389c1a468f4ff2aa41c9c86984186dd4d3c5e5
+index 0000000000000000000000000000000000000000..d6d984f04362bd567d45388ed42da08bfb6558cc
 --- /dev/null
 +++ b/chrome/browser/ui/webui/thoron_adblock_ui.cc
-@@ -0,0 +1,857 @@
+@@ -0,0 +1,862 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -4288,6 +5124,7 @@ index 0000000000000000000000000000000000000000..f5389c1a468f4ff2aa41c9c86984186d
 +#include "content/public/browser/reload_type.h"
 +#include "components/content_settings/core/browser/host_content_settings_map.h"
 +#include "components/content_settings/core/common/content_settings_pattern.h"
++#include "chrome/browser/ui/webui/theme_source.h"
 +#include "chrome/browser/ui/webui/thoron_adblock_site_javascript.h"
 +#include "components/thoron_adblock/blocked_count.h"
 +#include "content/public/browser/page.h"
@@ -5108,6 +5945,10 @@ index 0000000000000000000000000000000000000000..f5389c1a468f4ff2aa41c9c86984186d
 +    : content::WebUIController(web_ui) {
 +  content::URLDataSource::Add(Profile::FromWebUI(web_ui),
 +                              std::make_unique<ThoronAdblockDataSource>());
++  // the browser theme's colours for the page (chrome://theme/colors.css)
++  content::URLDataSource::Add(
++      Profile::FromWebUI(web_ui),
++      std::make_unique<ThemeSource>(Profile::FromWebUI(web_ui)));
 +  web_ui->AddMessageHandler(std::make_unique<ThoronAdblockHandler>());
 +}
 +
@@ -5161,10 +6002,10 @@ index 0000000000000000000000000000000000000000..d0fafbafa75adc4e08b11c75f203035c
 +#endif  // CHROME_BROWSER_UI_WEBUI_THORON_ADBLOCK_UI_H_
 diff --git a/chrome/browser/ui/webui/thoron_mail_ui.cc b/chrome/browser/ui/webui/thoron_mail_ui.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..2cee496a92e584683bf3c74ae197d6bbbcac6834
+index 0000000000000000000000000000000000000000..e3d5c078323404b3c3abbee2c8d3d6066c17551b
 --- /dev/null
 +++ b/chrome/browser/ui/webui/thoron_mail_ui.cc
-@@ -0,0 +1,455 @@
+@@ -0,0 +1,500 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -5173,6 +6014,7 @@ index 0000000000000000000000000000000000000000..2cee496a92e584683bf3c74ae197d6bb
 +#include <string>
 +#include <utility>
 +
++#include "base/command_line.h"
 +#include "base/feature_list.h"
 +#include "base/functional/bind.h"
 +#include "base/memory/ref_counted_memory.h"
@@ -5181,6 +6023,7 @@ index 0000000000000000000000000000000000000000..2cee496a92e584683bf3c74ae197d6bb
 +#include "base/strings/string_util.h"
 +#include "base/strings/utf_string_conversions.h"
 +#include "base/values.h"
++#include "build/build_config.h"
 +#include "chrome/browser/notifications/notification_display_service.h"
 +#include "chrome/browser/notifications/notification_display_service_factory.h"
 +#include "chrome/browser/notifications/notification_handler.h"
@@ -5190,6 +6033,7 @@ index 0000000000000000000000000000000000000000..2cee496a92e584683bf3c74ae197d6bb
 +#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 +#include "chrome/browser/ui/browser_window/public/browser_window_interface_iterator.h"
 +#include "chrome/browser/ui/tabs/tab_strip_model.h"
++#include "chrome/browser/ui/webui/theme_source.h"
 +#include "components/thoron_mail/features.h"
 +#include "components/thoron_mail/mail_page.h"
 +#include "content/public/browser/navigation_controller.h"
@@ -5209,6 +6053,13 @@ index 0000000000000000000000000000000000000000..2cee496a92e584683bf3c74ae197d6bb
 +#include "ui/message_center/public/cpp/notification_types.h"
 +#include "ui/message_center/public/cpp/notifier_id.h"
 +#include "url/gurl.h"
++
++#if BUILDFLAG(IS_WIN)
++#include <windows.h>
++
++#include <mmsystem.h>
++#pragma comment(lib, "winmm.lib")
++#endif
 +#if BUILDFLAG(IS_CHROMEOS)
 +#include "ash/constants/notifier_catalogs.h"
 +#endif
@@ -5334,7 +6185,7 @@ index 0000000000000000000000000000000000000000..2cee496a92e584683bf3c74ae197d6bb
 +      intervals.Append(minutes);
 +    }
 +    base::DictValue choices;
-+    for (const char* name : {"sound", "count", "open", "place",
++    for (const char* name : {"sound", "count", "open", "messages", "place",
 +                             "toolbar-position", "address-position"}) {
 +      choices.Set(name, service.Choice(name));
 +    }
@@ -5343,6 +6194,10 @@ index 0000000000000000000000000000000000000000..2cee496a92e584683bf3c74ae197d6bb
 +                     .Set("accounts", std::move(accounts))
 +                     .Set("choices", std::move(choices))
 +                     .Set("totalNew", service.total_new())
++                     // how often new mail made a sound and a notice (the
++                     // offline checks cannot hear or see them)
++                     .Set("sounds", Center().sounds_played())
++                     .Set("notices", Center().notices_shown())
 +                     .Set("total", service.total_unread())
 +                     .Set("checking", service.checking())
 +                     .Set("lastCheck", JsTime(service.last_check()))
@@ -5520,6 +6375,23 @@ index 0000000000000000000000000000000000000000..2cee496a92e584683bf3c74ae197d6bb
 +  Navigate(&params);
 +}
 +
++void ThoronMailCenter::PlayNewMailSound() {
++  // The offline checks (a local server stands in for Gmail) count the sound
++  // and do not make it.
++  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
++          "thoron-mail-feeds-for-testing")) {
++    return;
++  }
++#if BUILDFLAG(IS_WIN)
++  // Windows' own sound for new mail (the person's sound scheme), else its
++  // plain notice sound. Not waited for.
++  if (!::PlaySoundW(L"MailBeep", nullptr,
++                    SND_ALIAS | SND_ASYNC | SND_NODEFAULT)) {
++    ::MessageBeep(MB_ICONASTERISK);
++  }
++#endif
++}
++
 +void ThoronMailCenter::OpenSignIn(bool add) {
 +  const GURL url(
 +      add ? "https://accounts.google.com/AddSession?service=mail&continue="
@@ -5535,9 +6407,18 @@ index 0000000000000000000000000000000000000000..2cee496a92e584683bf3c74ae197d6bb
 +void ThoronMailCenter::OnNewMail(
 +    const thoron_mail::MailAccount& account,
 +    const std::vector<thoron_mail::MailMessage>& messages) {
++  if (messages.empty()) {
++    return;
++  }
++  // The sound is the M-Notifier's own, so it comes with or without a notice
++  // (P5.78); a notice is then silent, or there would be two.
++  if (service_->Choice("sound") == "on") {
++    PlayNewMailSound();
++    ++sounds_played_;
++  }
 +  NotificationDisplayService* display =
 +      NotificationDisplayServiceFactory::GetForProfile(profile_);
-+  if (!service_->notify() || messages.empty() || !display) {
++  if (!service_->notify() || !display) {
 +    return;
 +  }
 +  auto notice = [&](const std::string& id, const std::u16string& title,
@@ -5551,9 +6432,10 @@ index 0000000000000000000000000000000000000000..2cee496a92e584683bf3c74ae197d6bb
 +                  center->OpenGmail(url, index);
 +                },
 +                base::Unretained(this), open, account.index));
-+    // the person's choice: a notice with its sound, or a silent one
++    // silent: the sound is the M-Notifier's own (above)
 +    message_center::RichNotificationData data;
-+    data.silent = service_->Choice("sound") == "off";
++    data.silent = true;
++    ++notices_shown_;
 +    message_center::Notification notification(
 +        message_center::NOTIFICATION_TYPE_SIMPLE, id, title, text,
 +        ui::ImageModel(), base::UTF8ToUTF16(account.email),
@@ -5605,6 +6487,10 @@ index 0000000000000000000000000000000000000000..2cee496a92e584683bf3c74ae197d6bb
 +    : TopChromeWebUIController(web_ui, /*enable_chrome_send=*/true) {
 +  content::URLDataSource::Add(Profile::FromWebUI(web_ui),
 +                              std::make_unique<MailDataSource>());
++  // the browser theme's colours for the menu (chrome://theme/colors.css)
++  content::URLDataSource::Add(
++      Profile::FromWebUI(web_ui),
++      std::make_unique<ThemeSource>(Profile::FromWebUI(web_ui)));
 +  web_ui->AddMessageHandler(std::make_unique<MailHandler>(this));
 +}
 +
@@ -5622,10 +6508,10 @@ index 0000000000000000000000000000000000000000..2cee496a92e584683bf3c74ae197d6bb
 +WEB_UI_CONTROLLER_TYPE_IMPL(ThoronMailMenuUI)
 diff --git a/chrome/browser/ui/webui/thoron_mail_ui.h b/chrome/browser/ui/webui/thoron_mail_ui.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..4d7b6faa0b086ca0e9df9c1efd5fc94ae66cbdf9
+index 0000000000000000000000000000000000000000..7598c518e12a24a75e1573e3374295901d64b163
 --- /dev/null
 +++ b/chrome/browser/ui/webui/thoron_mail_ui.h
-@@ -0,0 +1,90 @@
+@@ -0,0 +1,100 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -5663,6 +6549,10 @@ index 0000000000000000000000000000000000000000..4d7b6faa0b086ca0e9df9c1efd5fc94a
 +  ~ThoronMailCenter() override;
 +
 +  thoron_mail::MailService& service() { return *service_; }
++  // How often new mail made a sound and a notice since the browser started
++  // (for the offline checks, which cannot hear or see them).
++  int sounds_played() const { return sounds_played_; }
++  int notices_shown() const { return notices_shown_; }
 +
 +  // Opens `url` (Gmail's own, else nothing) in a window of the profile: in
 +  // the tab that shows account `index` when there is one, else a new tab.
@@ -5675,8 +6565,14 @@ index 0000000000000000000000000000000000000000..4d7b6faa0b086ca0e9df9c1efd5fc94a
 +                 const std::vector<thoron_mail::MailMessage>& messages) override;
 +
 + private:
++  // The sound of new mail (P5.78): the M-Notifier's own, so it is heard
++  // with or without a notice.
++  void PlayNewMailSound();
++
 +  const raw_ptr<Profile> profile_;
 +  std::unique_ptr<thoron_mail::MailService> service_;
++  int sounds_played_ = 0;
++  int notices_shown_ = 0;
 +};
 +
 +class ThoronMailMenuUI;
@@ -6036,10 +6932,10 @@ index 0000000000000000000000000000000000000000..a7392581a4f0aaf050ae158e808198db
 +#endif  // COMPONENTS_THORON_MAIL_MAIL_FEED_H_
 diff --git a/components/thoron_mail/mail_page.cc b/components/thoron_mail/mail_page.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..e8208c6029b58773b617cd339141e271bbc9b27b
+index 0000000000000000000000000000000000000000..283cc6a7c50f2a8e96740fcf47815fef6249166b
 --- /dev/null
 +++ b/components/thoron_mail/mail_page.cc
-@@ -0,0 +1,407 @@
+@@ -0,0 +1,441 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -6049,74 +6945,91 @@ index 0000000000000000000000000000000000000000..e8208c6029b58773b617cd339141e271
 +
 +namespace {
 +
++// The menu takes its colours and its font from the browser (P5.78): the
++// theme's colours (chrome://theme/colors.css) and the text defaults of the
++// browser's own pages, so it looks like a part of the browser in every theme.
 +constexpr char kHtml[] = R"thoron(<!doctype html>
 +<html dir="ltr">
 +<head>
 +<meta charset="utf-8">
 +<title>Thoron M-Notifier</title>
++<link rel="stylesheet" href="chrome://resources/css/text_defaults_md.css">
++<link rel="stylesheet" id="theme" href="chrome://theme/colors.css?sets=ui,chrome">
 +<style>
-+  :root { color-scheme: light dark; --line: color-mix(in srgb, currentColor 14%, transparent);
-+          --soft: color-mix(in srgb, currentColor 62%, transparent); --accent: #0d9488; --new: #d93025; }
-+  body { margin: 0; inline-size: 380px; font: 13px/1.4 system-ui, "Segoe UI", sans-serif; background: Canvas;
-+         color: CanvasText; }
-+  header { display: flex; align-items: center; gap: 8px; padding: 12px 12px 10px 14px;
++  :root { color-scheme: light dark;
++          --bg: var(--color-sys-base-container-elevated, var(--color-sys-surface, Canvas));
++          --fg: var(--color-sys-on-surface, CanvasText);
++          --soft: var(--color-sys-on-surface-subtle, color-mix(in srgb, CanvasText 62%, transparent));
++          --line: var(--color-sys-divider, color-mix(in srgb, CanvasText 14%, transparent));
++          --accent: var(--color-sys-primary, #0b57d0);
++          --on-accent: var(--color-sys-on-primary, #fff);
++          --chip: var(--color-sys-tonal-container, color-mix(in srgb, var(--accent) 18%, transparent));
++          --on-chip: var(--color-sys-on-tonal-container, var(--fg));
++          --hover: var(--color-sys-state-hover-on-subtle, color-mix(in srgb, CanvasText 8%, transparent)); }
++  body { margin: 0; inline-size: 360px; background: var(--bg); color: var(--fg); line-height: 20px; }
++  header { display: flex; align-items: center; gap: 8px; padding: 12px 8px 10px 16px;
 +           border-block-end: 1px solid var(--line); }
-+  header svg { flex: none; }
-+  header .name { font-weight: 600; font-size: 14px; white-space: nowrap; }
++  header svg.logo { flex: none; fill: none; stroke: var(--accent); stroke-width: 1.8; stroke-linecap: round;
++                    stroke-linejoin: round; }
++  header .name { font-weight: 500; font-size: 14px; white-space: nowrap; }
 +  header .total { color: var(--soft); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-+  button { font: inherit; padding: 5px 12px; border-radius: 14px; border: 1px solid var(--line);
-+           background: transparent; color: inherit; cursor: pointer; }
-+  button:hover { border-color: var(--accent); }
-+  button.icon { padding: 4px; border-radius: 50%; inline-size: 30px; block-size: 30px; display: grid;
-+                place-items: center; border-color: transparent; }
-+  button.icon:hover, button.icon[aria-pressed=true] { background: var(--line); }
++  button { font: inherit; color: inherit; background: transparent; border: 1px solid var(--line); cursor: pointer;
++           padding: 6px 16px; border-radius: 100px; }
++  button:hover { background: var(--hover); }
++  button.main { background: var(--accent); color: var(--on-accent); border-color: transparent; font-weight: 500; }
++  button.main:hover { background: color-mix(in srgb, var(--accent) 88%, var(--fg)); }
++  button.icon { padding: 0; border: 0; border-radius: 50%; inline-size: 32px; block-size: 32px; display: grid;
++                place-items: center; }
++  button.icon[aria-pressed=true] { background: var(--chip); color: var(--on-chip); }
 +  button.icon svg { inline-size: 18px; block-size: 18px; fill: none; stroke: currentColor; stroke-width: 1.8;
 +                    stroke-linecap: round; stroke-linejoin: round; }
 +  button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--accent);
 +                                                                     outline-offset: 2px; }
-+  main { max-block-size: 460px; overflow-y: auto; }
-+  .account { padding: 10px 14px; border-block-end: 1px solid var(--line); }
-+  .account .top { display: flex; align-items: center; gap: 8px; }
-+  .account .email { flex: 1; min-inline-size: 0; text-align: start; border: 0; padding: 2px 0; font-weight: 600;
-+                    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-radius: 6px; }
-+  .account .email:hover { color: var(--accent); }
++  main { max-block-size: 480px; overflow-y: auto; padding: 4px 0; }
++  .account { border-block-end: 1px solid var(--line); }
++  .account:last-child { border-block-end: 0; }
 +  .account.off { opacity: .55; }
-+  .badge { min-inline-size: 20px; padding: 1px 7px; border-radius: 10px; font-size: 12px; font-weight: 600;
-+           text-align: center; white-space: nowrap; }
-+  .badge.new { background: var(--new); color: #fff; }
-+  .badge.unread { background: var(--line); color: var(--soft); }
-+  .message { display: block; inline-size: 100%; text-align: start; border: 0; border-radius: 8px; padding: 6px 8px;
-+             margin-block-start: 4px; }
-+  .message:hover { background: var(--line); }
++  .row { display: flex; align-items: center; gap: 12px; inline-size: 100%; box-sizing: border-box; border: 0;
++         border-radius: 0; padding: 8px 16px; text-align: start; }
++  .row .face { flex: none; inline-size: 28px; block-size: 28px; border-radius: 50%; background: var(--chip);
++               color: var(--on-chip); display: grid; place-items: center; font-weight: 500;
++               text-transform: uppercase; }
++  .row .email { flex: 1; min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
++  .count { flex: none; min-inline-size: 22px; padding: 0 7px; border-radius: 100px; font-size: 12px;
++           font-weight: 500; text-align: center; white-space: nowrap; box-sizing: border-box; }
++  .count.new { background: var(--accent); color: var(--on-accent); }
++  .count.unread { color: var(--soft); border: 1px solid var(--line); }
++  .message { display: block; inline-size: 100%; box-sizing: border-box; text-align: start; border: 0;
++             border-radius: 0; padding: 6px 16px 6px 56px; }
 +  .message .line { display: flex; gap: 8px; align-items: center; }
-+  .message .dot { inline-size: 8px; block-size: 8px; border-radius: 50%; background: var(--new); flex: none; }
-+  .message .from { font-weight: 600; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
++  .message .dot { inline-size: 8px; block-size: 8px; border-radius: 50%; background: var(--accent); flex: none;
++                  margin-inline-start: -16px; margin-inline-end: 0; }
++  .message .from { font-weight: 500; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 +  .message .when { color: var(--soft); flex: none; font-size: 12px; }
 +  .message .subject, .message .snippet { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 +  .message .snippet { color: var(--soft); font-size: 12px; }
-+  .more, .note { color: var(--soft); font-size: 12px; margin: 6px 8px 0; }
-+  .empty { padding: 18px 14px; color: var(--soft); }
-+  footer { padding: 10px 14px 12px; display: flex; align-items: center; gap: 8px;
++  .more { color: var(--soft); font-size: 12px; margin: 2px 16px 8px 56px; }
++  .empty { padding: 20px 16px; color: var(--soft); }
++  .empty p { margin: 0 0 12px; }
++  footer { padding: 10px 16px 12px; display: flex; align-items: center; gap: 8px;
 +           border-block-start: 1px solid var(--line); }
 +  #state { color: var(--soft); font-size: 12px; margin-inline-start: auto; }
-+  #settings { padding: 4px 14px 12px; }
-+  #settings h3 { font-size: 12px; font-weight: 600; color: var(--soft); margin: 12px 0 4px; text-transform: none; }
-+  .setting { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 5px 0; }
-+  .setting select { max-inline-size: 210px; }
-+  label.check { display: flex; align-items: center; gap: 8px; padding: 5px 0; }
-+  input[type=checkbox] { accent-color: var(--accent); inline-size: 16px; block-size: 16px; margin: 0; }
-+  select { font: inherit; padding: 3px 6px; border-radius: 8px; border: 1px solid var(--line); background: Canvas;
-+           color: inherit; }
++  #settings { padding: 4px 16px 12px; max-block-size: 480px; overflow-y: auto; }
++  #settings h3 { font-size: 12px; font-weight: 500; color: var(--accent); margin: 14px 0 4px; }
++  .setting { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 4px 0; }
++  .setting select { max-inline-size: 200px; }
++  label.check { display: flex; align-items: center; gap: 10px; padding: 5px 0; }
++  input[type=checkbox] { accent-color: var(--accent); inline-size: 16px; block-size: 16px; margin: 0; flex: none; }
++  select { font: inherit; padding: 4px 8px; border-radius: 8px; border: 1px solid var(--line);
++           background: var(--bg); color: inherit; }
++  .hint { color: var(--soft); font-size: 12px; margin: 2px 0 0; }
 +  [hidden] { display: none !important; }
 +</style>
 +</head>
 +<body>
 +<header>
-+  <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true">
-+    <rect x="2" y="4" width="16" height="12" rx="2.5" fill="#0d9488"/>
-+    <path d="M3.5 6l6.5 4.6L16.5 6" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round"
-+      stroke-linejoin="round"/>
-+  </svg>
++  <svg class="logo" width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
++    <rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M4 7.5l8 5.5 8-5.5"/></svg>
 +  <span class="name">Thoron M-Notifier</span>
 +  <span class="total" id="total"></span>
 +  <button id="check" class="icon" type="button" title="Check now" aria-label="Check now">
@@ -6126,6 +7039,17 @@ index 0000000000000000000000000000000000000000..e8208c6029b58773b617cd339141e271
 +</header>
 +<main id="accounts"></main>
 +<section id="settings" hidden>
++  <h3 data-t>Alerts</h3>
++  <label class="check"><input type="checkbox" id="sound"><span data-t>Play a sound for new mail</span></label>
++  <label class="check"><input type="checkbox" id="notify"><span data-t>Show a notice for new mail</span></label>
++  <label class="check"><input type="checkbox" id="messages"><span data-t>List the messages in this menu</span></label>
++  <h3 data-t>Counting</h3>
++  <div class="setting"><label for="count" data-t>The icon counts</label>
++    <select id="count" data-choice="count">
++      <option value="new">New mail since I looked</option>
++      <option value="unread">All unread mail</option>
++    </select></div>
++  <div class="setting"><label for="interval" data-t>Look every</label><select id="interval"></select></div>
 +  <h3 data-t>Where</h3>
 +  <div class="setting"><label for="place" data-t>Show it</label>
 +    <select id="place" data-choice="place">
@@ -6145,16 +7069,7 @@ index 0000000000000000000000000000000000000000..e8208c6029b58773b617cd339141e271
 +      <option value="start">Before the other icons</option>
 +      <option value="end">At the far end</option>
 +    </select></div>
-+  <h3 data-t>Counting</h3>
-+  <div class="setting"><label for="count" data-t>The icon counts</label>
-+    <select id="count" data-choice="count">
-+      <option value="new">New mail since I looked</option>
-+      <option value="unread">All unread mail</option>
-+    </select></div>
-+  <div class="setting"><label for="interval" data-t>Look every</label><select id="interval"></select></div>
-+  <h3 data-t>Notices</h3>
-+  <label class="check"><input type="checkbox" id="notify"><span data-t>Tell me of new mail</span></label>
-+  <label class="check"><input type="checkbox" id="sound"><span data-t>With a sound</span></label>
++  <p class="hint" data-t>You can also move the icon with the mouse.</p>
 +  <h3 data-t>Opening</h3>
 +  <div class="setting"><label for="open" data-t>Open mail in</label>
 +    <select id="open" data-choice="open">
@@ -6196,16 +7111,26 @@ index 0000000000000000000000000000000000000000..e8208c6029b58773b617cd339141e271
 +  'Settings': ['Ajustes', 'Paramètres', 'Einstellungen', 'Configurações', 'Настройки'],
 +  'Add an account': ['Añadir una cuenta', 'Ajouter un compte', 'Konto hinzufügen', 'Adicionar uma conta',
 +                     'Добавить аккаунт'],
-+  'Tell me of new mail': ['Avisarme del correo nuevo', 'Me prévenir des nouveaux messages',
-+                          'Über neue E-Mails benachrichtigen', 'Avisar-me de novos e-mails', 'Сообщать о новых письмах'],
-+  'With a sound': ['Con un sonido', 'Avec un son', 'Mit einem Ton', 'Com um som', 'Со звуком'],
++  'Alerts': ['Avisos', 'Alertes', 'Hinweise', 'Alertas', 'Оповещения'],
++  'Play a sound for new mail': ['Reproducir un sonido con el correo nuevo', 'Jouer un son pour les nouveaux messages',
++                                'Bei neuen E-Mails einen Ton abspielen', 'Tocar um som para novos e-mails',
++                                'Звуковой сигнал о новых письмах'],
++  'Show a notice for new mail': ['Mostrar un aviso con el correo nuevo',
++                                 'Afficher une notification pour les nouveaux messages',
++                                 'Bei neuen E-Mails eine Benachrichtigung anzeigen',
++                                 'Mostrar um aviso para novos e-mails', 'Показывать уведомление о новых письмах'],
++  'List the messages in this menu': ['Listar los mensajes en este menú', 'Lister les messages dans ce menu',
++                                     'Die Nachrichten in diesem Menü auflisten', 'Listar as mensagens neste menu',
++                                     'Показывать письма в этом меню'],
++  'You can also move the icon with the mouse.': [
++    'También puedes mover el icono con el ratón.', "Vous pouvez aussi déplacer l'icône avec la souris.",
++    'Sie können das Symbol auch mit der Maus verschieben.', 'Você também pode mover o ícone com o mouse.',
++    'Значок можно также перетащить мышью.'],
 +  'Look every': ['Comprobar cada', 'Vérifier toutes les', 'Prüfen alle', 'Verificar a cada', 'Проверять каждые'],
 +  'min': ['min', 'min', 'Min.', 'min', 'мин'],
 +  'new': ['nuevos', 'nouveaux', 'neu', 'novos', 'новых'],
 +  'unread': ['sin leer', 'non lus', 'ungelesen', 'não lidos', 'непрочитанных'],
 +  'more unread': ['más sin leer', 'autres non lus', 'weitere ungelesen', 'outros não lidos', 'ещё непрочитанных'],
-+  'No unread mail': ['Ningún correo sin leer', 'Aucun message non lu', 'Keine ungelesenen E-Mails',
-+                     'Nenhum e-mail não lido', 'Нет непрочитанных писем'],
 +  'Sign in to Gmail': ['Iniciar sesión en Gmail', 'Se connecter à Gmail', 'Bei Gmail anmelden', 'Entrar no Gmail',
 +                       'Войти в Gmail'],
 +  'You are not signed in to Gmail in this browser.': [
@@ -6251,7 +7176,6 @@ index 0000000000000000000000000000000000000000..e8208c6029b58773b617cd339141e271
 +                              'Новые письма с моего последнего просмотра'],
 +  'All unread mail': ['Todo el correo sin leer', 'Tous les messages non lus', 'Alle ungelesenen E-Mails',
 +                      'Todos os e-mails não lidos', 'Все непрочитанные письма'],
-+  'Notices': ['Avisos', 'Notifications', 'Benachrichtigungen', 'Avisos', 'Уведомления'],
 +  'Opening': ['Apertura', 'Ouverture', 'Öffnen', 'Abertura', 'Открытие'],
 +  'Open mail in': ['Abrir el correo en', 'Ouvrir le courrier dans', 'E-Mails öffnen in', 'Abrir o e-mail em',
 +                   'Открывать почту в'],
@@ -6312,7 +7236,7 @@ index 0000000000000000000000000000000000000000..e8208c6029b58773b617cd339141e271
 +      empty.append(make('p', '', t('Gmail could not be reached. Thoron tries again by itself.')));
 +    } else if (next.lastCheck) {
 +      empty.append(make('p', '', t('You are not signed in to Gmail in this browser.')));
-+      const signIn = make('button', '', t('Sign in to Gmail'));
++      const signIn = make('button', 'main', t('Sign in to Gmail'));
 +      signIn.type = 'button';
 +      signIn.addEventListener('click', () => chrome.send('signIn'));
 +      empty.append(signIn);
@@ -6321,28 +7245,30 @@ index 0000000000000000000000000000000000000000..e8208c6029b58773b617cd339141e271
 +    }
 +    box.append(empty);
 +  }
++  // only the accounts and their counts, as X-notifier, unless the messages are asked for
++  const listed = next.choices.messages === 'on';
 +  for (const account of next.accounts) {
 +    const card = make('section', account.watched ? 'account' : 'account off');
-+    const top = make('div', 'top');
-+    // the address opens the inbox, and the new mail is counted from then
-+    const email = make('button', 'email', account.email);
-+    email.type = 'button';
-+    email.title = t('Open the inbox (the new mail is counted from then)');
-+    email.addEventListener('click', () => chrome.send('openInbox', [account.index]));
-+    top.append(email);
++    // the account opens its inbox, and its new mail is counted from then
++    const row = make('button', 'row');
++    row.type = 'button';
++    row.title = t('Open the inbox (the new mail is counted from then)');
++    row.addEventListener('click', () => chrome.send('openInbox', [account.index]));
++    row.append(make('span', 'face', (account.email || '?').slice(0, 1)), make('span', 'email', account.email));
 +    if (account.new) {
-+      top.append(make('span', 'badge new', `${account.new} ${t('new')}`));
++      row.append(make('span', 'count new', String(account.new)));
 +    }
-+    top.append(make('span', 'badge unread', `${account.unread} ${t('unread')}`));
-+    card.append(top);
-+    if (!account.unread) {
-+      card.append(make('p', 'note', t('No unread mail')));
-+    }
-+    for (const message of account.latest.slice(0, 5)) {
-+      card.append(showMessage(message, account.index));
-+    }
-+    if (account.unread > 5) {
-+      card.append(make('p', 'more', `+${account.unread - 5} ${t('more unread')}`));
++    const unread = make('span', 'count unread', String(account.unread));
++    unread.title = `${account.unread} ${t('unread')}`;
++    row.append(unread);
++    card.append(row);
++    if (listed) {
++      for (const message of account.latest.slice(0, 5)) {
++        card.append(showMessage(message, account.index));
++      }
++      if (account.unread > 5) {
++        card.append(make('p', 'more', `+${account.unread - 5} ${t('more unread')}`));
++      }
 +    }
 +    box.append(card);
 +  }
@@ -6356,7 +7282,7 @@ index 0000000000000000000000000000000000000000..e8208c6029b58773b617cd339141e271
 +  $('address-position-row').hidden = next.choices.place === 'toolbar';
 +  $('notify').checked = next.notify;
 +  $('sound').checked = next.choices.sound !== 'off';
-+  $('sound').disabled = !next.notify;
++  $('messages').checked = next.choices.messages === 'on';
 +  const interval = $('interval');
 +  if (!interval.options.length) {
 +    for (const minutes of next.intervals) {
@@ -6413,6 +7339,8 @@ index 0000000000000000000000000000000000000000..e8208c6029b58773b617cd339141e271
 +$('add').addEventListener('click', () => chrome.send('addAccount'));
 +$('notify').addEventListener('change', () => chrome.send('setNotify', [$('notify').checked]));
 +$('sound').addEventListener('change', () => chrome.send('setChoice', ['sound', $('sound').checked ? 'on' : 'off']));
++$('messages').addEventListener(
++    'change', () => chrome.send('setChoice', ['messages', $('messages').checked ? 'on' : 'off']));
 +$('interval').addEventListener('change', () => chrome.send('setInterval', [Number($('interval').value)]));
 +for (const select of document.querySelectorAll('select[data-choice]')) {
 +  select.addEventListener('change', () => chrome.send('setChoice', [select.dataset.choice, select.value]));
@@ -6424,6 +7352,8 @@ index 0000000000000000000000000000000000000000..e8208c6029b58773b617cd339141e271
 +});
 +addWebUiListener('mail-changed', refresh);
 +addWebUiListener('menu-shown', async () => {
++  // the theme may have changed since this page was kept: its colours are read again
++  $('theme').href = `chrome://theme/colors.css?sets=ui,chrome&version=${Date.now()}`;
 +  await refresh();
 +  chrome.send('menuReady');
 +});
@@ -6473,10 +7403,10 @@ index 0000000000000000000000000000000000000000..529372e73e8bc78edd93e438e343ad21
 +#endif  // COMPONENTS_THORON_MAIL_MAIL_PAGE_H_
 diff --git a/components/thoron_mail/mail_service.cc b/components/thoron_mail/mail_service.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..df124bb6da7abfdfe4c28855126c8404084cea49
+index 0000000000000000000000000000000000000000..2f560ee0d417e2dbe4bb2d83b816f985d9c99fa3
 --- /dev/null
 +++ b/components/thoron_mail/mail_service.cc
-@@ -0,0 +1,435 @@
+@@ -0,0 +1,437 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -6522,6 +7452,8 @@ index 0000000000000000000000000000000000000000..df124bb6da7abfdfe4c28855126c8404
 +    {"sound", {"on", "off", nullptr}},
 +    {"count", {"new", "unread", nullptr}},
 +    {"open", {"reuse", "new", nullptr}},
++    // P5.78: the menu lists the messages, or only the accounts and counts
++    {"messages", {"off", "on", nullptr}},
 +    {"place", {"toolbar", "address", "both"}},
 +    {"toolbar-position", {"extensions", "address", "menu"}},
 +    {"address-position", {"icons", "start", "end"}},
@@ -6914,10 +7846,10 @@ index 0000000000000000000000000000000000000000..df124bb6da7abfdfe4c28855126c8404
 +}  // namespace thoron_mail
 diff --git a/components/thoron_mail/mail_service.h b/components/thoron_mail/mail_service.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..b2be067ebfe37104426659a171dec6c8a431811e
+index 0000000000000000000000000000000000000000..a2a56b7ab705600b965476a769d04d3b2d8a149a
 --- /dev/null
 +++ b/components/thoron_mail/mail_service.h
-@@ -0,0 +1,152 @@
+@@ -0,0 +1,154 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -7025,7 +7957,9 @@ index 0000000000000000000000000000000000000000..b2be067ebfe37104426659a171dec6c8
 +  void SetNotify(bool on);
 +
 +  // P5.76: the settings with named values, the first of each the default:
-+  // "sound" (a notice with its sound: "on", "off"), "count" (the icon counts
++  // "sound" (new mail makes a sound, with or without a notice: "on", "off"),
++  // "messages" (P5.78: the menu lists the unread messages, "on", or only the
++  // accounts with their counts, "off", as X-notifier), "count" (the icon counts
 +  // "new" mail since the person looked, or all "unread"), "open" (mail opens
 +  // in the account's Gmail tab when one is open, "reuse", or a "new" tab),
 +  // "place" (the envelope in the "toolbar", the "address" bar, or "both"),

@@ -14,6 +14,8 @@ notifier's menu is opened as a tab and asked for what it shows. Steps:
     seen      the account's inbox opened from the menu: its new mail is counted from then (0 new, still unread)
     settings  a setting changes (and a value it does not know is refused), and an account not watched is not
               counted
+    alerts    (P5.78) as it comes, the M-Notifier only counts: new mail made a sound and no notice; with the
+              notice switched on and the sound off, the next new mail makes a notice and no sound
     links     a message whose link leads off Gmail is shown without the link
     out       an answer of 401 for the first account (no sign-in) is told as "signed-out", with no account
     broken    a feed that is not XML leaves the notifier working (no account, no crash), and it reads the next
@@ -40,7 +42,7 @@ from tools.qa.cdp import WebSocket  # noqa: E402
 
 MENU_URL = "chrome://mail-notifier.top-chrome/"
 LOOK_S = 4.0
-DEFAULT_CHOICES = {"sound": "on", "count": "new", "open": "reuse", "place": "toolbar",
+DEFAULT_CHOICES = {"sound": "on", "count": "new", "open": "reuse", "messages": "off", "place": "toolbar",
                    "toolbar-position": "extensions", "address-position": "icons"}
 
 
@@ -117,6 +119,21 @@ def accounts_problems(state: dict) -> list[str]:
         out.append(f"accounts: mail there at the first look counts as new ({state.get('totalNew')})")
     if state.get("choices") != DEFAULT_CHOICES:
         out.append(f"accounts: the settings are {state.get('choices')}, not {DEFAULT_CHOICES}")
+    if state.get("notify") is not False:
+        out.append(f"accounts: notices are {state.get('notify')} before anyone asked for them")
+    return out
+
+
+def alerts_problems(first: dict, quiet: dict, loud: dict) -> list[str]:
+    """`first`: after the first new mail, as the M-Notifier comes; `quiet`: before, `loud`: after new mail with
+    the notice on and the sound off."""
+    out = []
+    if first.get("sounds") != 1 or first.get("notices") != 0:
+        out.append(f"alerts: as it comes, new mail made {first.get('sounds')} sound(s) and "
+                   f"{first.get('notices')} notice(s), not 1 and 0")
+    if loud.get("sounds") != quiet.get("sounds") or loud.get("notices", 0) - quiet.get("notices", 0) != 1:
+        out.append(f"alerts: with the notice on and the sound off, sounds went from {quiet.get('sounds')} to "
+                   f"{loud.get('sounds')} and notices from {quiet.get('notices')} to {loud.get('notices')}")
     return out
 
 
@@ -225,6 +242,7 @@ def run(browser: Path, work: Path) -> list[str]:
             time.sleep(2.5)  # the new message came after the first look
             state = look()
             step("new", new_problems(state), state)
+            first_new = state
 
             # the address pressed in the menu: its inbox opens (a tab that goes nowhere here: no network)
             ws.call("Runtime.evaluate", expression="chrome.send('openInbox', [0]); 1")
@@ -245,6 +263,16 @@ def run(browser: Path, work: Path) -> list[str]:
             send("setChoice", "place", "toolbar")
             back = send("setChoice", "count", "new")
             step("settings", settings_problems(changed, refused, unwatched, back), back)
+
+            send("setNotify", True)
+            quiet = send("setChoice", "sound", "off")
+            gmail.answers[0] = (200, feed("alice@example.com", 5, [entry(6, "Another", when=now_utc()),
+                                                                   entry(3, "New one")] + alice))
+            time.sleep(2.5)
+            loud = look()
+            send("setNotify", False)
+            send("setChoice", "sound", "on")
+            step("alerts", alerts_problems(first_new, quiet, loud), loud)
 
             gmail.answers[0] = (200, feed("alice@example.com", 1, [entry(4, "Elsewhere", "https://ads.example.test/x")]))
             state = look()

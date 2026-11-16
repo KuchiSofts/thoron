@@ -58,6 +58,10 @@ CREDITS = ("# Credits\n\nThorium, ungoogled-chromium and Bromite.\n\n" + contrib
 REPO_FILES = {"CHANGELOG.md": CHANGELOG, "CREDITS.md": CREDITS, "LICENSE.md": "BSD 3-Clause License\n",
               "NOTICE": "Thoron - third-party notices\n\nLicences: BSD-3-Clause and GPL-3.0.\n",
               "docs/legal/PATCH_LICENSES.md": INVENTORY,
+              # the other licence records (L.1): they agree, and no patch is without a licence
+              "tools/legal/patch_origins.tsv": "patch\torigin\tlicense\tevidence\n",
+              "source/UPSTREAM.json": json.dumps({"withheld": {"other/thorium-default-api-keys.patch": "0" * 40}}),
+              "docs/legal/UNLICENSED_PATCHES.md": "# Patches without a licence\n\nNone is left.\n",
               "docs/wiki/Home.md": "# Thoron\n\nSee [Versions](Versions).\n"}
 NOW = mf.parse_time("2026-12-01T12:00:00Z")
 DAY = 86400
@@ -1232,6 +1236,20 @@ class CreditsTests(GateTestCase):
         self.f.repo_file("CREDITS.md", CREDITS + "\nIridium.\n")
         self.f.repo_file("NOTICE", "Licences: BSD-3-Clause, GPL-3.0 and MIT.\n")
         self.assertEqual(rel.credits_problems(self.f.repo, PEOPLE), [])
+
+    def test_a_patch_without_a_licence_stops_a_release(self):
+        self.assertEqual(rel.licence_record_problems(self.f.repo), [])
+        rows = patch_licenses.read_table(INVENTORY) + [
+            {"patch": "c.patch", "origin": "Someone", "license": patch_licenses.NOT_STATED, "evidence": "z"}]
+        self.f.repo_file("docs/legal/PATCH_LICENSES.md", patch_licenses.render_table(rows))
+        found = rel.licence_record_problems(self.f.repo)
+        self.assertTrue(found)
+        self.assertTrue(any("c.patch" in p for p in found), found)
+
+    def test_licence_records_that_cannot_be_read_stop_a_release(self):
+        (self.f.repo / "tools/legal/patch_origins.tsv").unlink()
+        self.assertEqual(rel.licence_record_problems(self.f.repo),
+                         ["tools/legal/patch_origins.tsv is not in the repository"])
 
     def test_missing_files_are_problems(self):
         for name in ("CREDITS.md", "NOTICE", "docs/legal/PATCH_LICENSES.md"):

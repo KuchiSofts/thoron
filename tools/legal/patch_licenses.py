@@ -79,7 +79,8 @@ def _clean(text: str, limit: int = 160) -> str:
 
 def classify(patch_text: str, patches_md: str, name: str, projects: dict[str, dict],
              research: dict[str, dict] | None = None) -> dict:
-    head = "\n".join(patch_text.splitlines()[:40])
+    # the header is everything before the first file of the patch, however long its description is
+    head = patch_text.split("\ndiff --git ", 1)[0]
     fields = {k.lower(): v for k, v in HEADER_RE.findall(head)}
     if "license" in fields:
         # a header that agrees with the research or PATCHES.md (for example one written from them by

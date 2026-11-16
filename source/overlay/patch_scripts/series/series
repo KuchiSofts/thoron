@@ -24,8 +24,6 @@ v8: other/v8-linux-snapshot-toolchain.patch
 
 # 10 - Media, codecs, and third_party-facing browser glue.
 other/enable-hevc-ffmpeg-decoding.patch
-other/enable-webrtc-h265-l1t2-l1t3-by-default.patch
-other/enable-mpeg2-ac3-eac3-decoding.patch
 other/thorium-media-switches.patch
 other/widevine-cdm-prebuilt-signatures.patch
 
@@ -56,7 +54,6 @@ other/thorium-chrome-build-targets.patch
 other/thorium-build-config-and-simd.patch
 other/enable-xnnpack-arm-fp16-vector.patch
 other/thorium-build-platform-tools.patch
-other/llvm-optimized-toolchain-build.patch
 
 # 40 - Linux/platform integration, UI debug tools, and shared resource branding.
 other/linux-disable-custom-titlebar-default.patch
@@ -147,7 +144,6 @@ other/thorium-dino-game.patch
 other/allow-insecure-downloads.patch
 other/disable-download-quarantine.patch
 other/notify-shell-after-download-complete.patch
-other/disable-vulkan-gpu-log-warnings.patch
 other/thorium-sandbox-compat.patch
 other/thoriumos-ash-vector-icons.patch
 other/thoriumos-help-app-discovery.patch

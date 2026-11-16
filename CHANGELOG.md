@@ -131,6 +131,9 @@ Explanations live in the design docs under `docs/design/`.
 - **Mail:** the list shows which Google accounts are counted; "Sign in" opens Google's page with the address filled in, "Copy password" puts the kept password on the clipboard.
 - **Mail:** the M-Notifier's backup holds the list of Google accounts.
 - **QA tools:** `mail_xn_check.py` and `xn_file.py` check the reading of X-notifier's file with made-up accounts.
+- **QA tools:** `identity_check.py` reads a build and its installer for every "Thorium" a person can still see.
+- **Legal:** each of the 6 patches without a licence has a written decision; 5 are carried out.
+- **Legal:** `unlicensed_patches.py check` fails when a patch without a licence is not withheld from `source/` or has no decision.
 - **QA tools:** `adblock_hosts_check.py` checks that a list line that only names a host stops that host; `glic_check.py` that no Gemini component is loaded and Settings has no AI page.
 - **QA tools:** `language_detect_check.py` checks that a page's language is found with no downloaded model.
 - **Security:** `docs/security/UPSTREAM_AUDIT_M158.md` reviews every finding in upstream's 18 commits behind the 158 series.
@@ -211,6 +214,14 @@ Explanations live in the design docs under `docs/design/`.
 
 ### Changed
 
+- **Brand:** translations name Thoron in every form of the name, not only the bare word.
+- **Brand:** the installer asks "Do you want to install Thoron?"; flags, version and URLs pages name Thoron.
+- **Brand:** the flags page shows Thoron's logo, the settings pages' dark header a white Thoron mark.
+- **UI:** internal pages read chrome:// in the address bar again; a typed thorium:// still opens.
+- **About:** chrome://credits begins "Thoron is based on Thorium and Chromium", each with its source link.
+- **Install:** the log files are thoron_debug.log and thoron_installer.log.
+- **Media:** AC-3 and E-AC-3 sound is decoded by Thoron's own lines; the old patch, whose author publishes no licence, is gone.
+- **Release:** `release.py prepare` refuses a release while a patch without a licence is in the series.
 - **Privacy:** Chromium's Gemini plumbing is off: its "Gemini in Chrome" component is not loaded and Settings has no Google AI page; the switch `Glic` brings it back.
 - **Mail:** up to 30 Google accounts are counted; Thoron M-Notifier stopped after 10.
 - **Mail:** a Gmail address written another way (dots, capitals, `googlemail.com`) is the same account.
@@ -252,6 +263,8 @@ Explanations live in the design docs under `docs/design/`.
 
 ### Removed
 
+- **Privacy:** the first start no longer opens Thorium's website.
+- **Build:** three patches whose author publishes no licence and that Thoron does not need; a part of a fourth.
 - **UI:** Thorium's hidden `chrome://eggs` and `chrome://robot` pages are gone; `chrome://authors` stays.
 - **Install:** the installer no longer ships Thorium-named files or content shell entries.
 - **Build:** Android-only patches are not carried over to the Chromium 158 series.
@@ -259,6 +272,7 @@ Explanations live in the design docs under `docs/design/`.
 
 ### Security
 
+- **Security:** the flag "Allow Third-Party Extension Downloads" starts with a warning.
 - **Ad blocking:** a phishing list (Phishing URL Blocklist) is among Thoron adblock's default lists, so pages that steal passwords are stopped in every build.
 - **Safe Browsing:** without a Google API key it counts as off instead of being a switch that protects nothing, and the browser asks again before a program is saved.
 - **Ad blocking:** pages the lists name as harmful (malware, phishing) or as ad sites are not opened, as in uBlock Origin; the page shown instead has no scripts and escapes every address.

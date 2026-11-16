@@ -83,6 +83,7 @@ from tools.build import release_args  # noqa: E402
 from tools.credits import contributors  # noqa: E402
 from tools.docs import check_docs  # noqa: E402
 from tools.legal import patch_licenses  # noqa: E402
+from tools.legal import unlicensed_patches  # noqa: E402
 from tools.release import adblock_resources, changelog, package_audit, portable, version as ver  # noqa: E402
 from tools.update import manifest as mf  # noqa: E402
 
@@ -395,6 +396,16 @@ def credits_problems(repo: Path, people: list[dict]) -> list[str]:
         out += [f"NOTICE does not name the licence {licence}, which {PATCH_INVENTORY} lists"
                 for licence in licences if licence not in notice]
     return out
+
+
+def licence_record_problems(repo: Path) -> list[str]:
+    """Why the patch licence records forbid a release (ROADMAP L.1): they disagree, or a patch whose author
+    publishes no licence is still in the series."""
+    try:
+        _, found = unlicensed_patches.check(repo, release=True)
+    except (OSError, ValueError, KeyError) as exc:
+        return [f"the licence records could not be read ({type(exc).__name__})"]
+    return found
 
 
 # --- the wiki (ROADMAP D.9) --------------------------------------------------------------------------------
@@ -796,6 +807,7 @@ def _prepare(a) -> int:
     if chrome_bin is not None:
         problems += [f"portable package: {p}" for p in portable_problems(chrome_bin, version)]
     problems += [f"credits: {p}" for p in credits_problems(a.repo, upstream_contributors(a.contributors))]
+    problems += [f"patch licences: {p}" for p in licence_record_problems(a.repo)]
     problems += [f"wiki: {p}" for p in wiki_problems(a.repo, thoron)]
     changes = None
     try:

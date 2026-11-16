@@ -482,6 +482,15 @@ With `--tree` it also reads the series: every patch has a row, and a header says
 these patches (today this names the patch of finding 2). With `--release` a patch that still has no
 licence is itself a problem; this is the form for the release script.
 
+## Done on 2026-11-16
+
+- Patches 1, 2 and 3 left the series; their files are gone and their research rows removed.
+- Patch 4 left the series. Its four edits were written again from the specification of section 4, as lines of Thoron's own patch (`other/ks-native-adblock-hook.patch`, each marked `// Thoron:`), without the MPEG-2 line. The build answers `MediaSource.isTypeSupported` as before for `ac-3` and `ec-3` and claims no MPEG-2 video. The playback run of section 4 (a file with an AC-3 and an E-AC-3 track) is not made yet.
+- Patch 5 lost its part in `tracked_split_preference.cc`; its header and research row say ungoogled-chromium-windows and Thorium, BSD-3-Clause.
+- The inventory was made again (154 patches, 0 UNKNOWN, 1 NOT STATED); `patch_licenses.py` reads a header up to the first file of a patch (finding 2); the release script runs `unlicensed_patches.py check` with `--release` (finding 1).
+- `source/` is exported with two withheld files: the credentials (L.8) and patch 6.
+- Left: patch 6 (section 6): the owner's question, or the 36 lines come out before the first release; findings 4 to 7 in `PATCH_ORIGINS.md` and `CREDITS.md`.
+
 ## Work order
 
 In this order. The only wait, the author's answer, starts first and runs beside the rest.

@@ -78,7 +78,7 @@ changed in each version is in the [changelog](CHANGELOG.md), one line per change
 Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always current.
 
 <!-- roadmap:start -->
-**Overall:** `███████████░░░░░░░░░` 119 of 209 tasks done (57%) · roadmap updated 2026-11-12
+**Overall:** `███████████░░░░░░░░░` 120 of 209 tasks done (57%) · roadmap updated 2026-11-12
 
 | Area | Progress | Done | Status |
 |---|---|---|---|
@@ -93,7 +93,7 @@ Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always curre
 | [Quality & performance (Q)](ROADMAP.md#quality--performance-q) | `███░░░░░░░░░░░░░░░░░` | 1/7 | 🔄 In progress |
 | [Docs (D)](ROADMAP.md#docs-d) | `████████████░░░░░░░░` | 6/10 | 🔄 In progress |
 | [Legal & licensing (L)](ROADMAP.md#legal--licensing-l) | `████████░░░░░░░░░░░░` | 3/8 | 🔄 In progress |
-| [Branding (B)](ROADMAP.md#branding-b) | `██████████░░░░░░░░░░` | 2/4 | 🔄 In progress |
+| [Branding (B)](ROADMAP.md#branding-b) | `███████████████░░░░░` | 3/4 | 🔄 In progress |
 
 **What's next**
 
@@ -349,7 +349,7 @@ Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always curre
 
 - [x] **B.1** Icon concepts (3 original concepts, previews at 16-256 px on light and dark backgrounds) and the owner's choice
 - [x] **B.2** Final asset set: colour and mono SVG, PNG 16-512, multi-size `.ico`
-- [ ] **B.3** Chromium resource integration: product logos, `.ico`, installer images, Linux icons, About page and new-tab logo
+- [x] **B.3** Chromium resource integration: product logos, `.ico`, installer images, Linux icons, About page and new-tab logo
 - [ ] **B.4** Release-page and social preview visuals
 
 </details>

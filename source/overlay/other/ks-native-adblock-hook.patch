@@ -635,7 +635,7 @@ index 90168a03f4b1df0bf1fa071ce695d6f5348eb499..89d558ef017790ee6527c3d3c0056f30
  <translation id="100957008357583611">Utiliser votre position ?</translation>
  <translation id="1010200102790553230">Charger la page plus tard</translation>
 diff --git a/components/strings/components_strings_de.xtb b/components/strings/components_strings_de.xtb
-index c22f95771120e7bccd3dcdf1e47ca2ee1df0900f..cc7bc6b4f1415a5e10b1b9dae72cfcc746982bcd 100644
+index db63660cd124d5ddced9c210273670b30df5c7cb..79718c14dc43c898ef0aa47f1516be996346e16f 100644
 --- a/components/strings/components_strings_de.xtb
 +++ b/components/strings/components_strings_de.xtb
 @@ -1,6 +1,24 @@
@@ -2030,7 +2030,7 @@ index 90f8e1a51584d6030950ff5627242e3fd6659874..7998cc11454d8beea1cebe6cb25c0d36
                            show_ai_features_section);
  
 diff --git a/chrome/common/chrome_features.cc b/chrome/common/chrome_features.cc
-index 5f138e5c599e49d98327b8899612e8fe57b03721..69f74cbd1ec9feb58fe99aaa99b06feefa5291c5 100644
+index ef50d7b82094582b7670aa9a8ba35a4b12738b88..5018101bf2cbacfd16c0f1b206f7abc1642d1e5e 100644
 --- a/chrome/common/chrome_features.cc
 +++ b/chrome/common/chrome_features.cc
 @@ -525,10 +525,12 @@ BASE_FEATURE(kGlicMessageFirstFre, base::FEATURE_DISABLED_BY_DEFAULT);
@@ -2207,6 +2207,66 @@ index 7763bae3c566545562debf4c5cfeedc396ec277c..52677308df233122a12125298d8a2f2c
  #else
    return false;
  #endif
+diff --git a/media/base/supported_types.cc b/media/base/supported_types.cc
+index 49f9e7b3fcba1c999c14cdcf6ecd0c6b1981e017..f3f211ac6860abf4b94576c8d7e95c8bee78c017 100644
+--- a/media/base/supported_types.cc
++++ b/media/base/supported_types.cc
+@@ -305,7 +305,11 @@ bool IsDecoderDolbyVisionProfileSupported(const VideoType& type) {
+ 
+ bool IsDecoderDolbyAc3Eac3Supported(const AudioType& type) {
+ #if BUILDFLAG(ENABLE_PLATFORM_AC3_EAC3_AUDIO)
+-#if BUILDFLAG(ENABLE_MOJO_AUDIO_DECODER) && \
++#if BUILDFLAG(ENABLE_FFMPEG)
++  // Thoron: the bundled FFmpeg decodes AC-3 and E-AC-3 itself, so the answer
++  // does not depend on a decoder of the system.
++  return true;
++#elif BUILDFLAG(ENABLE_MOJO_AUDIO_DECODER) && \
+     (BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC))
+   return GetSupplementalDecoderAudioTypeCache()->IsProfileSupported(type);
+ #else
+diff --git a/media/ffmpeg/ffmpeg_common.cc b/media/ffmpeg/ffmpeg_common.cc
+index 21b7cd434219d5538dcd29bcfa18c15df921eaf0..c99bb52e945ff67cbd6f7a76a830e155c5bd3a11 100644
+--- a/media/ffmpeg/ffmpeg_common.cc
++++ b/media/ffmpeg/ffmpeg_common.cc
+@@ -213,6 +213,14 @@ AVCodecID AudioCodecToCodecID(AudioCodec audio_codec,
+       return AV_CODEC_ID_PCM_MULAW;
+     case AudioCodec::kOpus:
+       return AV_CODEC_ID_OPUS;
++#if BUILDFLAG(ENABLE_PLATFORM_AC3_EAC3_AUDIO)
++    // Thoron: the two Dolby Digital codecs, for the decoders of the bundled
++    // FFmpeg.
++    case AudioCodec::kAC3:
++      return AV_CODEC_ID_AC3;
++    case AudioCodec::kEAC3:
++      return AV_CODEC_ID_EAC3;
++#endif
+ #if BUILDFLAG(ENABLE_PLATFORM_MPEG_H_AUDIO)
+     case AudioCodec::kMpegHAudio:
+       return AV_CODEC_ID_MPEGH_3D_AUDIO;
+@@ -1111,7 +1119,8 @@ int32_t HashCodecName(const char* codec_name) {
+ 
+ const char* GetAllowedAudioDecoders() {
+ #if BUILDFLAG(USE_PROPRIETARY_CODECS)
+-#define EXTRA_CODECS ",aac"
++// Thoron: with AC-3 and E-AC-3, which the bundled FFmpeg can decode.
++#define EXTRA_CODECS ",aac,ac3,eac3"
+ #else
+ #define EXTRA_CODECS
+ #endif
+diff --git a/media/filters/ffmpeg_glue.cc b/media/filters/ffmpeg_glue.cc
+index a8fb5de0b5a99198c901e81a2df54d7fcb9c7dd2..d134439f071fcda8430f589b0d23c95089033dba 100644
+--- a/media/filters/ffmpeg_glue.cc
++++ b/media/filters/ffmpeg_glue.cc
+@@ -88,7 +88,8 @@ FFmpegGlue::FFmpegGlue(FFmpegURLProtocol* protocol) {
+   static constexpr const char* kAllowedDemuxers =
+       "ogg,matroska,wav,flac,mp3,mov"
+ #if BUILDFLAG(USE_PROPRIETARY_CODECS)
+-      ",aac"
++      // Thoron: with files that are a bare AC-3 or E-AC-3 stream.
++      ",aac,ac3,eac3"
+ #endif
+       ;
+ 
 diff --git a/chrome/browser/ui/browser_web_contents_delegate/thoron_adblock_shortcuts.cc b/chrome/browser/ui/browser_web_contents_delegate/thoron_adblock_shortcuts.cc
 new file mode 100644
 index 0000000000000000000000000000000000000000..52f923f2dd238ef331e1580340a0190ee507a235

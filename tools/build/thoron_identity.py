@@ -6,7 +6,8 @@ and patch series (ROADMAP P2.3).
 It changes what makes the browser a separate product, so it installs and runs side by side with
 Thorium and keeps its own profile:
   - the product name in the UI strings and their translations (only the name: URLs, paths,
-    identifiers and lowercase `thorium` stay untouched);
+    identifiers and lowercase `thorium` stay untouched), and where a person reads it outside the string
+    files: the installer's dialogs, internal pages, the first start, the address bar (ROADMAP B.3);
   - `chromium_install_modes.h`: install and profile folder name (`%LOCALAPPDATA%\\Thoron`), app GUID,
     app ID, ProgIDs, URL scheme, Active Setup GUID, COM class IDs (notifications, elevation,
     tracing), the sandbox AppContainer SID prefix, and the list of old IDs the installer cleans up;
@@ -77,10 +78,16 @@ ICON_MAP = [
   + [("branding/thoron/png/thoron_wordmark_white.png",
       f"components/resources/default_{s}_percent/chromium/product_logo_white.png") for s in (100, 200)] \
   + [(_PNG.format(252), f"{_THEME}/default_100_percent/chromium/thorium_mascot.png"),   # chrome://version, dark
-     (_PNG.format(504), f"{_THEME}/default_200_percent/chromium/thorium_mascot.png")]
+     (_PNG.format(504), f"{_THEME}/default_200_percent/chromium/thorium_mascot.png"),
+     # the small mark next to the title of the settings, history, downloads and extensions pages, dark mode
+     ("branding/thoron/thoron-logo-mono-white.svg", "ui/webui/resources/images/chrome_logo_dark.svg")]
 
 # The product name only: not inside URLs, paths or identifiers, not part of a longer word.
 NAME_RE = re.compile(r"(?<![\w/\\.\-@%])Thorium(?![\w\-/\\])(?!\.\w)")
+# In a translation the name is also inflected ("Thoriumin"), joined with a hyphen ("Thorium-Profil", "ku-Thorium")
+# or set next to another script without a space. Still not renamed: paths, addresses, identifiers and the
+# names of other products (ThoriumOS).
+TRANSLATED_NAME_RE = re.compile(r"(?<![/\\.@%_])Thorium(?![A-Z0-9_/]|\\(?!u[0-9A-Fa-f]{4})|\.[a-z0-9])")
 _STRUCT = r"\{0x[0-9A-Fa-f]+,\s*0x[0-9A-Fa-f]+,\s*0x[0-9A-Fa-f]+,\s*\{(?:0x[0-9A-Fa-f]+,\s*){7}0x[0-9A-Fa-f]+\}\}"
 _GUID = r"\{[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\}"
 
@@ -99,13 +106,14 @@ def guid_struct(guid: str) -> str:
 CREDIT_MARK = "Alex313031"   # a line that names the upstream author is credit text: never renamed
 
 
-def rename_product(text: str) -> tuple[str, int]:
-    out, total = [], 0
+def rename_product(text: str, translated: bool = False) -> tuple[str, int]:
+    """Rename the product in UI strings; `translated` for a translation file (.xtb), where the name has more forms."""
+    name, out, total = TRANSLATED_NAME_RE if translated else NAME_RE, [], 0
     for line in text.splitlines(keepends=True):
         if CREDIT_MARK in line:
             out.append(line)
             continue
-        line, n = NAME_RE.subn("Thoron", line)
+        line, n = name.subn("Thoron", line)
         out.append(line)
         total += n
     return "".join(out), total
@@ -447,11 +455,99 @@ OVERLAY_EDITS = {
          ' origin schemes."', 1),
         ('"Choose the password store backend, instead of using', _W + "the Basic backend stores passwords"
          " without the system keyring's protection. Choose the password store backend, instead of using", 1),
-        ("Enabled for Thorium Portable.", "Used by portable installs.", 2)],
-        "forbid": [r"Thorium Portable"]},
-    # chrome://version: the link to the build variant file is labelled after Thorium (the file path stays)
+        # extensions from any website (docs/security/UPSTREAM_AUDIT_M158.md, section 5): the Android sentence
+        # and "signatures, prompts and policies still apply" go, the warning says what is left
+        ('"Allows downloaded CRX files to be installed when developer mode is enabled on the extensions page.'
+         " CRX signatures, permission prompts, and extension policies still apply. Android also requires"
+         ' experimental extension support. Only enable this for sources you trust."',
+         _W + "with this on and developer mode enabled, any website can offer you an extension that the Chrome"
+         " Web Store has not checked. Only the permission prompt stands before the install, and the file's"
+         " signature does not show who made it. Allows downloaded CRX files to be installed when developer mode"
+         ' is enabled on the extensions page. Only enable this for sources you trust."', 1),
+        ("Enabled for Thorium Portable.", "Used by portable installs.", 2),
+        # the browser's name in the flag texts (ROADMAP B.3)
+        ('"Enables Thorium to automatically', '"Enables Thoron to automatically', 1),
+        ('"Allows Thorium to use the detected', '"Allows Thoron to use the detected', 1),
+        ("strokes. Thorium enables them by default", "strokes. Thoron enables them by default", 1),
+        ('"Thorium Rectangular Tabs UI"', '"Rectangular Tabs UI"', 1),
+        ('"Disable Thorium Secure DNS Fallback"', '"Disable Thoron Secure DNS Fallback"', 1),
+        ('"Disables Thorium\'s fallback', '"Disables Thoron\'s fallback', 1),
+        ('"Controls whether Thorium allows', '"Controls whether Thoron allows', 1),
+        ("for all Thorium instances.", "for all Thoron instances.", 1),
+        (". Thorium flag", ". Thoron flag", 4),
+        ('"Inform Thorium\'s GPU process', '"Inform Thoron\'s GPU process', 1),
+        ("for pairing Thorium to devices", "for pairing Thoron to devices", 1),
+        ('"When moving a Thorium user profile', '"When moving a Thoron user profile', 1)],
+        # what may stay names upstream's own designs (its 2024 interface, its icon set); a new text that
+        # names Thorium stops the run, so it is looked at
+        "forbid": [r"Thorium Portable", r"Thorium(?! 2024| Custom Icons|'s custom icons|[A-Z0-9_])"]},
+    # chrome://version: the link to the build variant file is labelled after Thorium (the file path stays),
+    # so are the tooltips of the two pictures, and the company line links to upstream's repository
     "components/webui/version/resources/about_version.html": {"replace": [
-        (">THORIUM_VERSION.txt</a>", ">BUILD_VARIANT.txt</a>", 1)], "forbid": [r"THORIUM_VERSION"]},
+        (">THORIUM_VERSION.txt</a>", ">BUILD_VARIANT.txt</a>", 1),
+        ('title="Thorium Banner"', 'title="Thoron"', 2),
+        ("Thorium Mascot", "Thoron logo", 6),
+        ('href="https://github.com/Alex313031/thorium">$i18n{company}', f'href="{_GH}">$i18n{{company}}', 1)],
+        "forbid": [r"THORIUM_VERSION", r"Thorium"]},
+}
+
+_MI = "chrome/installer/mini_installer/"
+# Thorium's name where a person still reads it outside the string files (ROADMAP B.3). Texts and pictures
+# only: no registry key, folder or ID is renamed here. What is left of those, and why, is in
+# docs/build/IDENTITY_LEFT.md.
+SURFACE_EDITS = {
+    # the installer asked "Do you want to install Thorium?" under the title "Thorium <version>"; the name
+    # is only shown (dialog title, question, the message for an unsupported processor)
+    _MI + "mini_installer_version.h.template": {"replace": [
+        ('kProductName[] = L"Thorium";', 'kProductName[] = L"Thoron";', 1)], "forbid": [r'L"Thorium"']},
+    # the installer's file properties named upstream's repository
+    _MI + "mini_installer_exe_version.rc.version": {"replace": [
+        ('VALUE "Comments", "https://github.com/Alex313031/Thorium"', f'VALUE "Comments", "{_GH}"', 1)],
+        "forbid": [r"(?i)thorium"]},
+    # chrome://flags: upstream's mark next to the title, and the tooltip of the version
+    "components/webui/flags/resources/app.html.ts": {"replace": [
+        ('<img width="48" height="48" title="Hazard Icon" alt="hazard.svg"'
+         ' src="chrome://resources/images/hazard.svg">',
+         '<img width="48" height="48" alt="" src="chrome://theme/current-channel-logo@2x">', 1),
+        ('title="Thorium Version"', 'title="Thoron version"', 1)],
+        "forbid": [r"Thorium", r"hazard"]},
+    "chrome/browser/flag_descriptions.h": {"replace": [
+        ('"Thorium flag is enabled by default.";', '"Thoron flag is enabled by default.";', 1)],
+        "forbid": [r"Thorium"]},
+    "components/webui/chrome_urls/resources/app.html.ts": {"replace": [
+        ("<h1>Thorium URLs</h1>", "<h1>Thoron URLs</h1>", 1),
+        ("<h2>List of Thorium chrome:// URLs</h2>", "<h2>List of Thoron chrome:// URLs</h2>", 1)],
+        "forbid": [r"Thorium"]},
+    # the title of chrome://dino (the same constant sets it and recognises it)
+    "components/neterror/resources/dino_game/offline.ts": {"replace": [
+        ("ARCADE_MODE2_URL: string = 'Thorium Dino Game';", "ARCADE_MODE2_URL: string = 'Thoron Dino Game';", 1)],
+        "forbid": [r"Thorium"]},
+    # the first start opened upstream's website in a tab: Thoron opens no page of another project by itself
+    "chrome/browser/chrome_browser_main.cc": {
+        "remove": [r"(?m)^ *// Open Welcome page on first run\." + _EOL
+                   + r' *browser_creator_->AddFirstRunTabs\(\{GURL\("https://thorium\.rocks/welcome/"\)\}\);' + _EOL],
+        "forbid": [r"thorium\.rocks", r"AddFirstRunTabs\(\{"]},
+    # the address bar, tab search and copied addresses showed internal pages as thorium://. Off by default now:
+    # they read chrome:// as in Chromium; a typed thorium:// still opens, and the flag turns the display back on
+    "chrome/common/chrome_features.cc": {"replace": [
+        ("BASE_FEATURE(kThoriumInternalUrlSchemeBranding,\n             base::FEATURE_ENABLED_BY_DEFAULT);",
+         "BASE_FEATURE(kThoriumInternalUrlSchemeBranding,\n             base::FEATURE_DISABLED_BY_DEFAULT);", 1)]},
+    # chrome://credits began "Thorium is based on Chromium and is made available as source code here", linked
+    # to upstream's repository. The browser is Thoron and its source is Thoron's; Thorium stays named and linked
+    "tools/licenses/licenses.py": {"replace": [
+        ("'thorium_project': 'Thorium',", "'thorium_project': 'Thoron',", 1),
+        ("'thorium_link': 'https://github.com/Alex313031/thorium',", f"'thorium_link': '{_GH}',", 1)]},
+    "components/webui/about/resources/about_credits_reciprocal.tmpl": {"replace": [
+        ("{{thorium_project}} is based on {{opensource_project}} and",
+         "{{thorium_project}} is based on Thorium and {{opensource_project}} and", 1),
+        ('<a href="{{thorium_link}}">here</a>. Chromium source code',
+         '<a href="{{thorium_link}}">here</a>. Thorium source code is available'
+         ' <a href="https://github.com/Alex313031/thorium">here</a>. Chromium source code', 1)]},
+    # log files: next to the profile (with --enable-logging) and the installer's, in the temporary folder
+    "chrome/common/logging_chrome.cc": {"replace": [
+        ('FILE_PATH_LITERAL("thorium_debug.log")', 'FILE_PATH_LITERAL("thoron_debug.log")', 1)]},
+    "chrome/installer/util/logging_installer.cc": {"replace": [
+        ('FILE_PATH_LITERAL("thorium_installer.log")', 'FILE_PATH_LITERAL("thoron_installer.log")', 1)]},
 }
 
 
@@ -482,6 +578,11 @@ def edit_exe_names(rel: str, text: str) -> str:
 def edit_overlay(rel: str, text: str) -> str:
     """Thoron's edits to one upstream overlay file (ROADMAP S.4)."""
     return _edit_names(rel, text, OVERLAY_EDITS[rel], [])
+
+
+def edit_surface(rel: str, text: str) -> str:
+    """Thorium's name out of one file a person reads the result of (ROADMAP B.3)."""
+    return _edit_names(rel, text, SURFACE_EDITS[rel], [])
 
 
 def edit_linux_names(rel: str, text: str) -> str:
@@ -528,7 +629,7 @@ def apply(src: Path, repo: Path, string_files: list[str] | None = None, dry_run:
     for rel in files:
         path = src / rel
         text = path.read_bytes().decode("utf-8")
-        new, n = rename_product(text)
+        new, n = rename_product(text, translated=rel.endswith(".xtb"))
         if rel == CHROMIUM_STRINGS_PATH:
             try:
                 new = edit_chromium_strings(new)
@@ -570,7 +671,7 @@ def apply(src: Path, repo: Path, string_files: list[str] | None = None, dry_run:
             continue
         if new != text:
             planned[path] = new.encode("utf-8")
-    for rel in dict.fromkeys([*EXE_EDITS, *LINUX_EDITS, *OVERLAY_EDITS]):
+    for rel in dict.fromkeys([*EXE_EDITS, *LINUX_EDITS, *OVERLAY_EDITS, *SURFACE_EDITS]):
         path = src / rel
         if not path.is_file():
             problems.append(f"missing {rel}")
@@ -580,6 +681,7 @@ def apply(src: Path, repo: Path, string_files: list[str] | None = None, dry_run:
             new = edit_exe_names(rel, text) if rel in EXE_EDITS else text
             new = edit_linux_names(rel, new) if rel in LINUX_EDITS else new
             new = edit_overlay(rel, new) if rel in OVERLAY_EDITS else new
+            new = edit_surface(rel, new) if rel in SURFACE_EDITS else new
         except IdentityError as exc:
             problems.append(str(exc))
             continue

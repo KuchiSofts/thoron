@@ -5,8 +5,9 @@ series is built on, checked with [`tools/audit`](../../tools/audit/README.md) an
 (ROADMAP **S.1**). The short form for the release notes is in [section 9](#9-for-the-release-notes).
 
 Status: audited 2026-11-16. 13 findings: 11 fine, 1 fine with a note, 1 needs a change in Thoron (a
-warning on one new flag, [section 5](#5-the-new-switch-for-extensions-from-other-sites)). None needs
-the owner's decision. Nothing is left to be reviewed.
+warning on one new flag, [section 5](#5-the-new-switch-for-extensions-from-other-sites)): the change is
+made in the identity step and is in every build after 158.0.8127.3010. None needs the owner's decision.
+Nothing is left to be reviewed.
 
 How to read it:
 
@@ -109,7 +110,7 @@ since this audit.
 | 5 | `security_disabled`, 2 hits: `--no-sandbox` | `infra/macos/smoke_test.py`, `infra/macos/README.md` | After a failed run the test repeats the failing probe three times, each with one added switch (`--disable-extensions`, `--disable-gpu`, `--no-sandbox`) and a fresh temporary profile, to narrow down a crash. A diagnostic pass never replaces the failed result. The README line describes this. Nothing in the browser or its packages gets the switch | Fine | Not used. Thoron's own test, `tools/build/smoke.py`, proves that the renderer sandbox is in force |
 | 6 | `self_update`, 2 hits: `IsWebstoreUpdateUrl` | `other/developer-crx-installation.patch` | Two conditions of the new function of finding 8: a download whose first or final address is a Web Store update address never takes the new path. No update address is added or changed | Fine | Carried |
 | 7 | `self_update`, 5 hits: `showFullDownloadUrls`; `flags_switches`, 1 hit: `downloads-show-full-url` | `other/downloads-page-enhancements.patch`, `thorium_flag_entries.h` | A match on the name only. The downloads page showed the full address of every download; that is now the feature `kThoriumDownloadsShowFullUrl`, on by default, and the flag turns it off. No network or update code | Fine | Carried unchanged |
-| 8 | `flags_switches`, 2 hits, and security-feature lines: `allow-offstore-extension-downloads` | `other/developer-crx-installation.patch` (the function `OffStoreInstallAllowedByUser` and its three callers), `thorium_flag_entries.h` (2 lines), upstream's `README.md` (1 line) | A new switch, off by default, that lets a `.crx` file downloaded from any website be installed while developer mode is on. Section 5 | **Needs a change in Thoron** | Carried. The flag has no warning in Thoron's form yet |
+| 8 | `flags_switches`, 2 hits, and security-feature lines: `allow-offstore-extension-downloads` | `other/developer-crx-installation.patch` (the function `OffStoreInstallAllowedByUser` and its three callers), `thorium_flag_entries.h` (2 lines), upstream's `README.md` (1 line) | A new switch, off by default, that lets a `.crx` file downloaded from any website be installed while developer mode is on. Section 5 | **Needs a change in Thoron** | Carried. The flag has a warning in Thoron's form since 2026-11-16 (section 8, point 1) |
 | 9 | Security-feature lines: the rest of the 58 lines of the same patch | `other/developer-crx-installation.patch` | An "Install CRX file" button on the extensions page, shown in developer mode. It opens a file picker and installs through the same code as dropping a `.crx` file on that page, which Chromium allows in developer mode: off-store reason "from settings page", with the permission prompt. The patch adds checks to that code: the browser itself now refuses a dropped or picked file when developer mode is off, in Incognito and for supervised profiles; the picker needs a user gesture and accepts only a `.crx` name. The unpacker now names its working copy `extension.crx` instead of the file's own name; the copy is verified as before | Fine | Carried, without 14 lines for an Android page |
 | 10 | `flags_switches`, 1 hit: `disable-thorium-icons` | `other/disable-thorium-icons.patch` | An existing switch gets one more use: the Incognito new-tab page shows Thorium's or Chromium's icon. Both drawings are compiled-in resources (4 new entries in `browser_resources.grd`) and reach the page as data addresses; no network address, no file read while running | Fine | Carried, ported to Chromium 158 |
 | 11 | `flags_switches`, 1 hit: `instant-menu-show` | `other/views-menu-delay.patch`, `thorium_flag_entries.h` | Thorium had set the submenu delay to 1 ms for everyone and ignored the Windows setting. Chromium's values are back (400 ms, or the Windows setting), and the new feature `kThoriumInstantMenus`, off by default, brings the 1 ms back. Menu timing only | Fine | Carried unchanged |
@@ -230,8 +231,11 @@ Limits that remain, for the reviewer to cover by reading:
 
 ## 8. Open points
 
-1. **The warning of section 5** (ROADMAP **S.4**), in `tools/build/thoron_identity.py`, with its test.
-   It is the one change this audit asks for.
+1. **The warning of section 5** (ROADMAP **S.4**): done 2026-11-16 in `OVERLAY_EDITS` of
+   `tools/build/thoron_identity.py`, with its tests in `tools/build/tests/test_thoron_overlay_edits.py`.
+   The text is the wording of section 5 followed by upstream's "Only enable this for sources you
+   trust."; the Android sentence and "CRX signatures, permission prompts, and extension policies still
+   apply" are gone. Still to do: look at it in `chrome://flags` of the next build.
 2. **ARM64** (finding 12). No ARM64 build exists yet
    ([`ARM_BETA_CHECKLIST.md`](../qa/ARM_BETA_CHECKLIST.md)). When the first one is made, record which
    system builds it and whether V8's control-flow integrity is on in the result: on a Linux machine

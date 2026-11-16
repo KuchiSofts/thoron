@@ -15,6 +15,7 @@ that study (it was shown as "Vortex Mono"); all three are in [`concepts/2026-11-
 |---|---|
 | `thoron-logo.svg` | Primary colour logo |
 | `thoron-logo-mono.svg` | Single-colour mark on a transparent background (three blades with gaps and the core), for monochrome or symbolic icons; recolour as needed |
+| `thoron-logo-mono-white.svg` | The same mark in white, 24 px: the small mark next to the title of the settings, history, downloads and extensions pages in dark mode (the identity step puts it in place of Chromium's) |
 | `png/thoron_<size>.png`, `thoron.ico` | Generated raster sizes (16-512 px) and the Windows multi-size icon: regenerate, never edit by hand |
 | `png/thoron_wordmark.png`, `png/thoron_wordmark_white.png` | The mark plus the name "thoron" (342 x 64), dark and white text, where Chromium shows a product wordmark: regenerate, never edit by hand |
 

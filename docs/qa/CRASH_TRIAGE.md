@@ -154,8 +154,8 @@ of loaded modules, which shows what security software is installed.
 4. **Maintainers never ask for a dump in public.** They ask for text: the reason, the process, the top
    frames. Before pasting, the user name is taken out of any path (`C:\Users\<name>\...` on Windows,
    the home folder on Linux).
-5. **Nor for anything from `User Data`,** and not for `chrome_debug.log`, which names the pages that
-   were open.
+5. **Nor for anything from `User Data`,** and not for the browser's log file there (`thoron_debug.log`;
+   `thorium_debug.log` in builds up to 158.0.8127.3010), which names the pages that were open.
 6. **A maintainer's own dumps** from test runs stay in a private local folder that is not cloud-synced
    and are deleted when the triage is done, as profile copies are (`WINDOWS.md`, "Upgrading").
 7. **When only the dump could answer the question,** the answer is to reproduce the crash. Thoron has

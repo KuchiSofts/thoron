@@ -169,12 +169,14 @@ def run(minutes: float, seed: int, out: Path | None, slow: float, report_every: 
     inputs = corpus()
     end = time.monotonic() + minutes * 60
     next_report = time.monotonic() + report_every
-    count, crashes, hangs, slowest = 0, [], [], 0.0
+    count, crashes, hangs, slowest, slowest_seed = 0, [], [], 0.0, None
     print(f"fuzz: seed {seed}, {len(inputs)} inputs to start from, {minutes:g} minute(s)", flush=True)
     while time.monotonic() < end:
         input_seed = seed + count
         data = mutate(random.Random(input_seed), inputs)
-        started = time.perf_counter()
+        # The reader's own processor time: on a busy PC the wall clock also counts the time this process
+        # waited for a processor, which says nothing about the input (a loop that never ends still counts).
+        started = time.process_time()
         try:
             check(data)
         except Exception as exc:                                 # anything at all is a finding
@@ -183,8 +185,12 @@ def run(minutes: float, seed: int, out: Path | None, slow: float, report_every: 
             if out is not None:
                 out.mkdir(parents=True, exist_ok=True)
                 (out / f"crash-{input_seed}.bin").write_bytes(data)
-        took = time.perf_counter() - started
-        slowest = max(slowest, took)
+        took = time.process_time() - started
+        if took > slowest:
+            slowest, slowest_seed = took, input_seed
+            if took > 1.0:
+                print(f"fuzz: slowest so far: seed {input_seed}, {took * 1000:.0f} ms of processor time",
+                      flush=True)
         if took > slow:
             hangs.append(input_seed)
             print(f"fuzz: HANG at seed {input_seed}: {took:.1f} s", flush=True)
@@ -194,9 +200,10 @@ def run(minutes: float, seed: int, out: Path | None, slow: float, report_every: 
         count += 1
         if time.monotonic() >= next_report:
             print(f"fuzz: {count} inputs, {len(crashes)} crash(es), {len(hangs)} hang(s), slowest "
-                  f"{slowest * 1000:.0f} ms", flush=True)
+                  f"{slowest * 1000:.0f} ms (seed {slowest_seed})", flush=True)
             next_report += report_every
-    return {"seed": seed, "inputs": count, "crashes": crashes, "hangs": hangs, "slowest_ms": round(slowest * 1000)}
+    return {"seed": seed, "inputs": count, "crashes": crashes, "hangs": hangs, "slowest_ms": round(slowest * 1000),
+            "slowest_seed": slowest_seed}
 
 
 def main(argv: list[str]) -> int:
@@ -220,7 +227,8 @@ def main(argv: list[str]) -> int:
     seed = a.seed if a.seed is not None else int(time.time())
     result = run(a.minutes, seed, a.out, a.slow)
     print(f"fuzz: done, {result['inputs']} inputs from seed {result['seed']}, {len(result['crashes'])} crash(es), "
-          f"{len(result['hangs'])} hang(s), slowest {result['slowest_ms']} ms", flush=True)
+          f"{len(result['hangs'])} hang(s), slowest {result['slowest_ms']} ms of processor time (seed "
+          f"{result['slowest_seed']})", flush=True)
     for found in result["crashes"] + result["hangs"]:
         print(f"fuzz: repeat with --repeat {found}")
     return 0 if not result["crashes"] and not result["hangs"] else 1

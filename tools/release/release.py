@@ -13,8 +13,11 @@
                  (v0.1.1; with no tag yet the first is 0.1.1; fetch the tags first) (P2.24);
                - BUILDINFO does not name the source tag, the commit under it, a tree with nothing
                  uncommitted and the Chromium tag, or the build tree has no whole text of the GPL (L.2);
-               - the build's browser folder (--chrome-bin, default Chrome-bin in the out dir) cannot be
-                 made into the portable package (tools/release/portable.py) (P2.8);
+               - the build's browser folder (--chrome-bin, default Chrome-bin in the out dir), its
+                 launcher (--launcher, default thoron_launcher.exe in the out dir) or its updater
+                 (--updater, default thoron_update.exe in the out dir) cannot be made into the portable
+                 package (tools/release/portable.py), or the variant is not one it is made for or not
+                 the one the build record names (P2.8, P3.12);
                - CREDITS.md and NOTICE of --repo are not current: the list of upstream contributors is
                  made again (asked from GitHub with gh, read only, or read from --contributors) and must
                  be the one in CREDITS.md, every origin of the patch licence inventory must be credited
@@ -51,7 +54,8 @@ signature, and a manifest is signed again, with new dates, while its release is 
     py -3 -I tools/release/release.py prepare --src <chromium src> --out <out dir> --platform win
         --variant win-x64-avx2 --previous <last release> --buildinfo BUILDINFO.json --dist <folder>
         --repo . --since <last release tag> --chromium-old <version> [--sevenzip 7za.exe]
-        [--chrome-bin <browser folder>] [--contributors <saved list>]
+        [--chrome-bin <browser folder>] [--launcher <thoron_launcher.exe>] [--updater <thoron_update.exe>]
+        [--contributors <saved list>]
         [--minisign-key <key file>] [--security security.json] [--highlights highlights.md]
         [--manifest-key <key file> --manifest-public-key <base64> --gh-repo KuchiSofts/thoron
          (--previous-manifest <last update.json> | --first-manifest --min-updater-version <build version>)
@@ -313,28 +317,37 @@ def release_commit(dist: Path) -> str:
 
 # --- the portable package (ROADMAP P2.8) -------------------------------------------------------------------
 
-def portable_problems(chrome_bin: Path, version: str) -> list[str]:
-    """Why the build's browser folder cannot become the portable package of this release, as
-    tools/release/portable.py judges it; empty when it can. Found before anything is packaged."""
+def portable_problems(chrome_bin: Path, version: str, variant: str, launcher: Path, updater: Path,
+                      built_for: str | None = None) -> list[str]:
+    """Why the build's browser folder, launcher and updater cannot become the portable package of this
+    release, as tools/release/portable.py judges them; empty when they can. Found before anything is
+    packaged. `built_for`: the variant the build record names; the package's `variant` file tells the
+    launcher which processors the build runs on, so it must be the build's own."""
+    out = [] if variant in portable.VARIANTS else [
+        f"the variant {variant} has no portable package: its launcher knows {' and '.join(portable.VARIANTS)}"]
+    if built_for is not None and built_for != variant:
+        out.append(f"the build record says the build is for {built_for}, and the release is for {variant}: the "
+                   "package would tell its launcher the wrong processors")
+    out += [f"{p} (--launcher and --updater name them)" for p in portable.parts_problems(launcher, updater)]
     if not chrome_bin.is_dir():
-        return [f"the browser folder {chrome_bin.name} is not there (--chrome-bin names it)"]
+        return out + [f"the browser folder {chrome_bin.name} is not there (--chrome-bin names it)"]
     try:
         names = portable.files(chrome_bin)
-        out = portable.source_problems(names)
-        if not out and portable.browser_version(names) != version:
-            out.append(f"the browser folder holds version {portable.browser_version(names)}, and the build is "
-                       f"{version}")
+        found = portable.source_problems(names)
+        if not found and portable.browser_version(names) != version:
+            found.append(f"the browser folder holds version {portable.browser_version(names)}, and the build is "
+                         f"{version}")
     except portable.PortableError as exc:
-        return [str(exc)]
-    return out
+        found = [str(exc)]
+    return out + found
 
 
-def add_portable(chrome_bin: Path, dist: Path, version: str, variant: str) -> Path:
+def add_portable(chrome_bin: Path, dist: Path, version: str, variant: str, launcher: Path, updater: Path) -> Path:
     """The portable .zip of the release, made by tools/release/portable.py in the release folder. The
     folder it is zipped from, which that call has just made, is taken away again: a release folder holds
     files only."""
     try:
-        made = portable.build(chrome_bin, dist, variant)
+        made = portable.build(chrome_bin, dist, variant, launcher, updater)
     except portable.PortableError as exc:
         raise ReleaseError(f"portable package: {exc}") from None
     shutil.rmtree(made["package"])
@@ -454,9 +467,11 @@ def wiki_commands(gh_repo: str) -> list[str]:
 
 
 def assemble(out: Path, dist: Path, version: str, variant: str, buildinfo: Path, chrome_bin: Path | None = None,
-             licences: dict[str, bytes] | None = None) -> list[Path]:
+             licences: dict[str, bytes] | None = None, launcher: Path | None = None,
+             updater: Path | None = None) -> list[Path]:
     """Fills the release folder. With `chrome_bin` the portable package of a Windows build is made beside
-    the installer, and with `licences` the licence bundle; SHA256SUMS lists every file."""
+    the installer, with the launcher and the updater the build wrote into `out` unless others are named;
+    with `licences` the licence bundle. SHA256SUMS lists every file."""
     if not _VARIANT.match(variant):
         raise ReleaseError(f"variant must look like win-x64-avx2, got {variant!r}")
     if dist.exists() and any(dist.iterdir()):
@@ -470,7 +485,8 @@ def assemble(out: Path, dist: Path, version: str, variant: str, buildinfo: Path,
         shutil.copy2(out / installer, target)
         files.append(target)
     if chrome_bin is not None and platform == "win":
-        files.append(add_portable(chrome_bin, dist, version, variant))
+        files.append(add_portable(chrome_bin, dist, version, variant, launcher or out / portable.BUILT_LAUNCHER,
+                                  updater or out / portable.UPDATER))
     info = dist / f"BUILDINFO-{version}-{variant}.json"
     shutil.copy2(buildinfo, info)
     files.append(info)
@@ -818,12 +834,14 @@ def _prepare(a) -> int:
     thoron = read_thoron_version(a.src)
     chromium_new = ver.split(version)[0] if read_version(a.src)[1] else None
     chrome_bin = (a.chrome_bin or a.out / CHROME_BIN) if a.platform == "win" else None
+    launcher, updater = a.launcher or a.out / portable.BUILT_LAUNCHER, a.updater or a.out / portable.UPDATER
     problems += [f"Thoron version: {p}" for p in thoron_version_problems(thoron, ver.release_tags(a.repo))]
     problems += [f"BUILDINFO: {p}" for p in source_problems(info, thoron, chromium_new)]
     licences, found = licence_texts(a.repo, a.src)
     problems += [f"licences: {p}" for p in found]
     if chrome_bin is not None:
-        problems += [f"portable package: {p}" for p in portable_problems(chrome_bin, version)]
+        problems += [f"portable package: {p}"
+                     for p in portable_problems(chrome_bin, version, a.variant, launcher, updater, info.get("variant"))]
     problems += [f"credits: {p}" for p in credits_problems(a.repo, upstream_contributors(a.contributors))]
     problems += [f"patch licences: {p}" for p in licence_record_problems(a.repo)]
     problems += [f"performance: {p}" for p in performance_problems(a.repo, a.bench, thoron)]
@@ -859,7 +877,7 @@ def _prepare(a) -> int:
     if a.dist.exists() and any(a.dist.iterdir()):
         raise ReleaseError(f"{a.dist} is not empty; a release folder is never overwritten")
     try:
-        files = assemble(a.out, a.dist, version, a.variant, a.buildinfo, chrome_bin, licences)
+        files = assemble(a.out, a.dist, version, a.variant, a.buildinfo, chrome_bin, licences, launcher, updater)
         source = {"tag": info["source_tag"], "commit": info["thoron_commit"], "chromium_tag": info["chromium_tag"],
                   "licences": licence_bundle_name(version)}
         notes = changelog.render(version, a.chromium_old, chromium_new, a.repo, a.since,
@@ -923,6 +941,10 @@ def main(argv: list[str], run=None) -> int:
     a_.add_argument("--sevenzip", default="7z")
     a_.add_argument("--chrome-bin", type=Path, help=f"the build's browser folder, which becomes the portable "
                     f"package; default: {CHROME_BIN} in the out dir")
+    a_.add_argument("--launcher", type=Path, help=f"the portable package's launcher; default: "
+                    f"{portable.BUILT_LAUNCHER} in the out dir")
+    a_.add_argument("--updater", type=Path, help=f"the updater put beside the browser in the portable package; "
+                    f"default: {portable.UPDATER} in the out dir")
     a_.add_argument("--contributors", type=Path, help="a saved list of upstream's contributors, as "
                     "tools/credits/contributors.py --from-json reads it; default: ask GitHub (read only)")
     a_.add_argument("--minisign-key", type=Path)

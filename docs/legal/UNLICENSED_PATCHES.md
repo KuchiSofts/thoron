@@ -273,8 +273,8 @@ GPL-3.0 release, but the repository has not changed since 2024, so an answer is 
   extensions once. A profile always used with the switches is not affected: upstream's portable
   launchers pass both
   ([`windows-browser.cmd`](https://github.com/gz83/thorium/blob/efc0fffc256e7402ad4c3dc38ae1e5754221c03d/infra/portable/launchers/windows-browser.cmd)).
-  Thoron's own portable launcher passes neither (`tools/release/portable.py`, line 72), so no Thoron
-  package depends on the part.
+  Thoron's own portable launcher, `Thoron.exe`, passes neither: it adds only `--user-data-dir`
+  (`components/thoron_update/launcher/thoron_launcher_win.cc`), so no Thoron package depends on the part.
 - The part is half a solution in this tree. The other protected settings (home page, start pages,
   default search, pinned tabs) are checked in `tracked_atomic_preference.cc` (lines 83-89), which has no
   such condition, so they are reset in the same situation with or without the part.

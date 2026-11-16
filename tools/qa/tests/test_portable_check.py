@@ -15,16 +15,18 @@ from unittest import mock
 
 from tools.qa import portable_check as pc
 from tools.release import portable as po
+from tools.release.tests.test_portable import parts
 
 PACKAGE = Path("C:\\scratch\\a folder\\ThoronPortable")
+VERSION = "158.0.1.2"
 
 
 def good(package: Path = PACKAGE, **changes) -> dict:
+    browser = package / "Application" / VERSION / "thoron.exe"
     found = {"launcher": 0, "launcher_s": 0.2, "port_file": True, "local_state": True, "preferences": True,
-             "executable_path": str(package / "Application" / "thoron.exe"),
-             "process": str(package / "Application" / "thoron.exe"),
+             "executable_path": str(browser), "process": str(browser),
              "profile_path": str(package / "User Data" / "Default"),
-             "command_line": f'"{package}\\Application\\thoron.exe" --host-resolver-rules="{pc.OFFLINE}" --flag',
+             "command_line": f'"{browser}" --host-resolver-rules="{pc.OFFLINE}" --flag',
              "before": 16, "after": 17, "saved": 17, "left": 0, "key": "the Windows account (DPAPI)"}
     found.update(changes)
     return found
@@ -44,30 +46,38 @@ class JudgementTests(unittest.TestCase):
         for folder in (cases["signs"]["first"], cases["signs"]["second"]):
             for sign in "&%!":
                 self.assertIn(sign, folder)
+        self.assertIn("%TEMP%", cases["signs"]["first"])     # a .cmd launcher could not start from there
         for folder in every:        # names Windows can make
             self.assertFalse(set(folder) & set('<>:"/\\|?*'), folder)
             self.assertFalse(folder.endswith((" ", ".")), folder)
 
     def test_the_start_line_is_a_double_click_with_arguments(self):
         line = pc.start_line(PACKAGE)
-        self.assertTrue(line.startswith(f'"{PACKAGE / "Thoron.cmd"}" --headless=new '))
+        self.assertTrue(line.startswith(f'"{PACKAGE / "Thoron.exe"}" --headless=new '))
         self.assertIn(f'"--host-resolver-rules={pc.OFFLINE}"', line)
         self.assertIn("--remote-debugging-address=127.0.0.1 --remote-debugging-port=0", line)
         self.assertNotIn("user-data-dir", line)     # the profile's place is the launcher's business alone
 
+    def test_the_program_is_the_one_in_the_version_folder(self):
+        self.assertEqual(pc.program(PACKAGE, VERSION), PACKAGE / "Application" / VERSION / "thoron.exe")
+
     def test_a_good_start(self):
-        self.assertEqual(pc.start_problems(PACKAGE, good()), [])
+        self.assertEqual(pc.start_problems(PACKAGE, VERSION, good()), [])
         if os.name == "nt":         # Windows does not tell upper and lower case apart
-            upper = good(executable_path=str(PACKAGE / "Application" / "thoron.exe").upper())
-            self.assertEqual(pc.start_problems(PACKAGE, upper), [])
+            upper = good(executable_path=str(pc.program(PACKAGE, VERSION)).upper())
+            self.assertEqual(pc.start_problems(PACKAGE, VERSION, upper), [])
 
     def test_what_a_start_can_get_wrong(self):
         elsewhere = "C:\\somewhere\\Thoron\\User Data\\Default"
         cases = {
             "the run failed: DevTools did not start": good(error="DevTools did not start"),
             "it waits for the browser": good(launcher=None),
-            "the launcher ended with 1": good(launcher=1),
+            "the launcher ended with 3 (this processor cannot run the package's variant), and said: AVX2":
+                good(launcher=3, said="AVX2"),
+            "the launcher ended with 2 (no browser in the package)": good(launcher=2),
+            "the launcher ended with 1 (an exit status it does not give)": good(launcher=1),
             "the browser names a program": good(executable_path="C:\\other\\Application\\thoron.exe"),
+            "the browser names a program ": good(executable_path=str(PACKAGE / "Application" / "thoron.exe")),
             "Windows names a program": good(process="C:\\other\\Application\\thoron.exe"),
             "its profile is not the one in the folder": good(profile_path=elsewhere),
             "did not reach the browser whole": good(command_line="thoron.exe --host-resolver-rules=MAP"),
@@ -78,16 +88,17 @@ class JudgementTests(unittest.TestCase):
         }
         for want, found in cases.items():
             with self.subTest(want):
-                self.assertTrue([p for p in pc.start_problems(PACKAGE, found) if want in p],
-                                pc.start_problems(PACKAGE, found))
-        self.assertEqual(len(pc.start_problems(PACKAGE, {})), 8)    # nothing seen: everything is a problem
+                self.assertTrue([p for p in pc.start_problems(PACKAGE, VERSION, found) if want.strip() in p],
+                                pc.start_problems(PACKAGE, VERSION, found))
+        self.assertTrue(pc.start_problems(PACKAGE, "158.0.1.3", good()))       # another version started
+        self.assertEqual(len(pc.start_problems(PACKAGE, VERSION, {})), 8)   # nothing seen: everything is a problem
 
     def test_a_drive_letter_on_the_folder(self):
         drive = Path("C:\\")
-        found = good(drive, process=str(PACKAGE / "Application" / "thoron.exe"))
-        self.assertEqual(pc.start_problems(drive, found, real=PACKAGE), [])
-        self.assertTrue(pc.start_problems(drive, found))    # without the folder behind the letter it is elsewhere
-        self.assertTrue(pc.start_problems(drive, good(PACKAGE), real=PACKAGE))  # the profile must be the letter's
+        found = good(drive, process=str(pc.program(PACKAGE, VERSION)))
+        self.assertEqual(pc.start_problems(drive, VERSION, found, real=PACKAGE), [])
+        self.assertTrue(pc.start_problems(drive, VERSION, found))   # without the folder behind the letter: elsewhere
+        self.assertTrue(pc.start_problems(drive, VERSION, good(PACKAGE), real=PACKAGE))  # the profile: the letter's
 
     def test_the_setting(self):
         self.assertEqual(pc.setting_problems(good(), 16, 17), [])
@@ -99,11 +110,13 @@ class JudgementTests(unittest.TestCase):
         self.assertEqual(len(pc.setting_problems({}, 16, 17)), 3)
 
     def test_the_folder(self):
-        top = ["Application", "README.txt", "Thoron.cmd", "User Data"]
-        browser = ["158.0.1.2/chrome.dll", "thoron.exe"]
+        top = ["Application", "README.txt", "Thoron.exe", "User Data", "variant"]
+        browser = [f"{VERSION}/{VERSION}/chrome.dll", f"{VERSION}/thoron.exe", f"{VERSION}/thoron_update.exe",
+                   "current"]
         self.assertEqual(pc.folder_problems(top, ["Thoron spaces"], [], browser, browser), [])
         self.assertTrue(pc.folder_problems(top + ["debug.log"], ["Thoron spaces"], [], browser, browser))
-        self.assertTrue(pc.folder_problems(top[:3], ["Thoron spaces"], [], browser, browser))   # no profile there
+        self.assertTrue(pc.folder_problems(top + ["Thoron.cmd"], ["Thoron spaces"], [], browser, browser))
+        self.assertTrue(pc.folder_problems(top[:3] + top[4:], ["Thoron spaces"], [], browser, browser))  # no profile
         self.assertIn("beside", pc.folder_problems(top, ["Thoron spaces", "User Data"], [], browser, browser)[0])
         self.assertIn("working directory", pc.folder_problems(top, ["Thoron spaces"], ["User Data"], browser, browser)[0])
         self.assertIn("debug.log", pc.folder_problems(top, ["Thoron spaces"], [], browser, browser + ["debug.log"])[0])
@@ -160,10 +173,10 @@ class JudgementTests(unittest.TestCase):
     def test_unpacking_the_zip(self):
         with tempfile.TemporaryDirectory() as tmp:
             src = Path(tmp) / "Chrome-bin"
-            for name in ("thoron.exe", "158.0.1.2/chrome.dll"):
+            for name in ("thoron.exe", f"{VERSION}/chrome.dll"):
                 (src / name).parent.mkdir(parents=True, exist_ok=True)
                 (src / name).write_bytes(b"x")
-            made = po.build(src, Path(tmp) / "dist", "win-x64-avx2")
+            made = po.build(src, Path(tmp) / "dist", "win-x64-avx2", *parts(Path(tmp) / "out"))
             self.assertEqual(pc.unpack(made["zip"], Path(tmp) / "a place", made["package"]), [])
             (made["package"] / "Application" / "more.dll").write_bytes(b"x")    # the .zip is not this package's
             self.assertEqual(pc.unpack(made["zip"], Path(tmp) / "another", made["package"]),
@@ -173,7 +186,7 @@ class JudgementTests(unittest.TestCase):
         out = io.StringIO()
         with mock.patch.object(pc, "supported", return_value=False), contextlib.redirect_stdout(out), \
                 mock.patch.object(pc, "run", side_effect=AssertionError("nothing may be started")):
-            self.assertEqual(pc.main(["--chrome-bin", "x", "--work", "y"]), 0)
+            self.assertEqual(pc.main(["--chrome-bin", "x", "--launcher", "l", "--updater", "u", "--work", "y"]), 0)
         self.assertIn("does not apply", out.getvalue())
 
     def test_the_verdict(self):
@@ -181,9 +194,16 @@ class JudgementTests(unittest.TestCase):
             out = io.StringIO()
             with tempfile.TemporaryDirectory() as tmp, mock.patch.object(pc, "supported", return_value=True), \
                     mock.patch.object(pc, "run", return_value=problems) as run, contextlib.redirect_stdout(out):
-                self.assertEqual(pc.main(["--chrome-bin", tmp, "--work", tmp, "--case", "signs"]), code)
-            self.assertEqual(run.call_args.args[2:], ("win-x64-avx2", False, "signs"))
+                self.assertEqual(pc.main(["--chrome-bin", tmp, "--launcher", str(Path(tmp) / "l.exe"), "--updater",
+                                          str(Path(tmp) / "u.exe"), "--work", tmp, "--case", "signs"]), code)
+            self.assertEqual([Path(p).name for p in run.call_args.args[1:3]], ["l.exe", "u.exe"])
+            self.assertEqual(run.call_args.args[4:], ("win-x64-avx2", False, "signs"))
             self.assertIn(f"PORTABLE CHECK: {word}", out.getvalue())
+
+    def test_only_the_variants_the_launcher_knows(self):
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            pc.main(["--chrome-bin", "x", "--launcher", "l", "--updater", "u", "--work", "y",
+                     "--variant", "win-x64-avx512"])
 
 
 @unittest.skipUnless(os.name == "nt", "Windows processes")

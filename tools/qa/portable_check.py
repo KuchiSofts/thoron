@@ -1,17 +1,22 @@
 #!/usr/bin/env python3
 # Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be found in the LICENSE file.
-"""The Windows portable package, started for real and offline (ROADMAP P2.8). Windows only.
+"""The Windows portable package, started for real and offline (ROADMAP P2.8, P3.12). Windows only.
 
-The package is built from a build's Chrome-bin folder (tools/release/portable.py) and its .zip is unpacked into
-folders whose names are hard on a launcher. The browser is started there through the launcher only, as a double
-click starts it: headless, with DevTools on 127.0.0.1, with no network (every host name resolves to nothing), and
-with its temporary folder pointed into the scratch folder, so that what it leaves there can be seen. Steps:
+The package is built from a build's Chrome-bin folder, its launcher and its updater (tools/release/portable.py)
+and its .zip is unpacked into folders whose names are hard on a launcher. The browser is started there through
+the launcher Thoron.exe only, as a double click starts it: headless, with DevTools on 127.0.0.1, with no network
+(every host name resolves to nothing), and with its temporary folder pointed into the scratch folder, so that
+what it leaves there can be seen. The launcher's messages go to a file in the scratch folder instead of a
+window. Steps:
 
-    package   the package is built, passes its audits, and nothing is started from one that does not
-  in a folder with spaces, one named in several scripts (accented Latin, Cyrillic, CJK) and one with & % ! ^ ( ):
+    package   the package is built, the folder and its .zip pass their audits, and nothing is started from one
+              that does not
+  in a folder with spaces, one named in several scripts (accented Latin, Cyrillic, CJK) and one with & % ! ^ ( )
+  and %TEMP%:
     first     the .zip unpacks to the package's files; the launcher ends at once and the browser runs; its
-              program and its profile are in the folder (the browser says so, Windows says so, and the DevTools
-              port file, Local State and Preferences are there); the profile is new, and a setting is changed
+              program (the version `Application\\current` names) and its profile are in the folder (the browser
+              says so, Windows says so, and the DevTools port file, Local State and Preferences are there); the
+              profile is new, and a setting is changed
     again     a second start reads the setting back
     moved     the folder moved and renamed: the same profile, the setting still there
     folder    nothing appeared beside the package, in the working directory or in the browser's own folder
@@ -23,7 +28,8 @@ with its temporary folder pointed into the scratch folder, so that what it leave
               and the temporary folder are reported
 
 Only a process whose program file is inside the scratch folder is ever closed, and everything made is removed.
-    py -3 -I tools/qa/portable_check.py --chrome-bin <out>\\Chrome-bin --work <scratch dir> [--drive-root]
+    py -3 -I tools/qa/portable_check.py --chrome-bin <out>\\Chrome-bin --launcher <out>\\thoron_launcher.exe
+        --updater <out>\\thoron_update.exe --work <scratch dir> [--drive-root]
 Exit status 0 only when every step passes (or the check does not apply, on another system).
 """
 import argparse
@@ -55,6 +61,10 @@ ARGUMENTS = ("--headless=new", "--no-first-run", "--disable-background-networkin
              "--remote-debugging-port=0", "about:blank")
 REAL_KEY = "Software\\Thoron"       # under the current user: where the browser engine keeps a few values
 LAUNCHER_S = 30
+# What the launcher's exit status means (components/thoron_update/launcher).
+LAUNCHER_EXITS = {2: "no browser in the package", 3: "this processor cannot run the package's variant",
+                  4: "the start failed, or the profile folder could not be made"}
+SAID = "launcher-said.txt"          # in the scratch folder: the launcher's message, instead of a window
 NEEDED = ("executable_path", "profile_path")      # what chrome://version must have filled in before it is read
 VERSION_JS = ("JSON.stringify(Object.fromEntries(['executable_path', 'profile_path', 'command_line'].map((id) => "
               "[id, ((document.getElementById(id) || {}).textContent || '').trim()])))")
@@ -76,7 +86,7 @@ def cases() -> list[dict]:
     return [
         {"name": "spaces", "first": "a folder  with spaces", "second": "another place", "value": 17},
         {"name": "scripts", "first": f"{latin} {cyrillic} {cjk}", "second": f"{cjk} {cyrillic}", "value": 19},
-        {"name": "signs", "first": "R&D 100% (new)! a^b", "second": "50% & more! it's (2)", "value": 21},
+        {"name": "signs", "first": "R&D 100% (new)! a^b %TEMP%", "second": "50% & more! it's (2) %OS%", "value": 21},
     ]
 
 
@@ -85,20 +95,27 @@ def start_line(package: Path) -> str:
     return f'"{package / po.LAUNCHER}" ' + " ".join(ARGUMENTS)
 
 
+def program(package: Path, version: str) -> Path:
+    """The browser the launcher starts: the one in the version folder `Application\\current` names."""
+    return package / po.BROWSER_DIR / version / po.PROGRAM
+
+
 def same(found: str | None, want: Path) -> bool:
     return bool(found) and os.path.normcase(os.path.normpath(found.strip())) == os.path.normcase(str(want))
 
 
-def start_problems(package: Path, found: dict, real: Path | None = None) -> list[str]:
+def start_problems(package: Path, version: str, found: dict, real: Path | None = None) -> list[str]:
     """What one start got wrong. `real`: the folder a drive letter stands for, when `package` is its root."""
     out = [f"the run failed: {found['error']}"] if "error" in found else []
     if found.get("launcher") is None:
         out.append(f"the launcher had not ended after {LAUNCHER_S} s: it waits for the browser")
     elif found["launcher"] != 0:
-        out.append(f"the launcher ended with {found['launcher']}")
+        meaning = LAUNCHER_EXITS.get(found["launcher"], "an exit status it does not give")
+        said = f", and said: {found['said']}" if found.get("said") else ""
+        out.append(f"the launcher ended with {found['launcher']} ({meaning}){said}")
     homes = [package] + ([real] if real else [])
     for key, who in (("executable_path", "the browser"), ("process", "Windows")):
-        if not any(same(found.get(key), home / po.BROWSER_DIR / po.PROGRAM) for home in homes):
+        if not any(same(found.get(key), program(home, version)) for home in homes):
             out.append(f"{who} names a program that is not the one in the folder")
     if not same(found.get("profile_path"), package / po.PROFILE_DIR / "Default"):
         out.append("the browser says its profile is not the one in the folder")
@@ -130,7 +147,7 @@ def folder_problems(package: list[str], beside: list[str], working: list[str], b
                     browser_after: list[str]) -> list[str]:
     """Names only: the package's top, its parent folder, the working directory, the browser's own folder."""
     out = []
-    extra = sorted(set(package) - {po.LAUNCHER, po.README, po.BROWSER_DIR, po.PROFILE_DIR})
+    extra = sorted(set(package) - {*po.TOP, po.PROFILE_DIR})
     if extra or po.PROFILE_DIR not in package:
         out.append(f"the package's folder holds {sorted(package)}")
     if len(beside) != 1:
@@ -440,9 +457,13 @@ def one_start(package: Path, working: Path, temp: Path, change: int | None, belo
     found: dict = {}
     profile = package / po.PROFILE_DIR
     (profile / "DevToolsActivePort").unlink(missing_ok=True)    # one left by the last start names a closed port
+    said = temp.parent / SAID
+    said.unlink(missing_ok=True)
+    env = dict(os.environ, TEMP=str(temp), TMP=str(temp), THORON_LAUNCHER_MESSAGE_FILE=str(said))
+    env.pop("THORON_LAUNCHER_ASSUME_CPU", None)                 # the processor is the PC's own
     began = time.monotonic()
-    launcher = subprocess.Popen(start_line(package), cwd=working, env=dict(os.environ, TEMP=str(temp), TMP=str(temp)),
-                                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    launcher = subprocess.Popen(start_line(package), cwd=working, env=env, stdin=subprocess.DEVNULL,
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                 creationflags=subprocess.CREATE_NO_WINDOW)
     port = browser = None
     sockets = []
@@ -450,9 +471,13 @@ def one_start(package: Path, working: Path, temp: Path, change: int | None, belo
         try:
             found["launcher"] = launcher.wait(timeout=LAUNCHER_S)
         except subprocess.TimeoutExpired:
-            launcher.kill()                                     # the launcher's own cmd.exe, started just above
+            launcher.kill()                                     # the launcher, started just above
             found["launcher"] = None
         found["launcher_s"] = round(time.monotonic() - began, 1)
+        if said.is_file():
+            found["said"] = said.read_text(encoding="utf-16-le", errors="replace")
+        if found["launcher"]:
+            raise RuntimeError("the launcher started nothing")
         port = devtools_port(profile)
         found["port_file"] = True
         running = own_processes(belongs)
@@ -509,7 +534,7 @@ def only(program: Path):
 
 
 def run_case(case: dict, made: dict, root: Path, working: Path, temp: Path, step) -> None:
-    name, value = case["name"], case["value"]
+    name, value, version = case["name"], case["value"], made["version"]
     place = root / case["first"]
     problems = unpack(made["zip"], place, made["package"])
     package = place / po.FOLDER
@@ -517,12 +542,12 @@ def run_case(case: dict, made: dict, root: Path, working: Path, temp: Path, step
         step(f"{name}/first", problems, "nothing was started")
         return
     browser_before = po.files(package / po.BROWSER_DIR)
-    found = one_start(package, working, temp, value, only(package / po.BROWSER_DIR / po.PROGRAM))
-    step(f"{name}/first", start_problems(package, found) + setting_problems(found, DEFAULT, value),
+    found = one_start(package, working, temp, value, only(program(package, version)))
+    step(f"{name}/first", start_problems(package, version, found) + setting_problems(found, DEFAULT, value),
          f"the launcher ended after {found.get('launcher_s')} s; program and profile in the folder; a new profile, "
          f"setting {found.get('before')} -> {found.get('after')}; its key is kept by {found.get('key')}")
-    found = one_start(package, working, temp, None, only(package / po.BROWSER_DIR / po.PROGRAM))
-    step(f"{name}/again", start_problems(package, found) + setting_problems(found, value, None),
+    found = one_start(package, working, temp, None, only(program(package, version)))
+    step(f"{name}/again", start_problems(package, version, found) + setting_problems(found, value, None),
          f"the setting read back: {found.get('before')}")
     moved = root / case["second"] / f"Thoron {name}"
     moved.parent.mkdir()
@@ -535,9 +560,9 @@ def run_case(case: dict, made: dict, root: Path, working: Path, temp: Path, step
                 step(f"{name}/moved", [f"the folder could not be moved: {e.strerror}"], "")
                 return
             time.sleep(0.5)
-    found = one_start(moved, working, temp, None, only(moved / po.BROWSER_DIR / po.PROGRAM))
+    found = one_start(moved, working, temp, None, only(program(moved, version)))
     old = mentions(moved / po.PROFILE_DIR, case["first"])
-    step(f"{name}/moved", start_problems(moved, found) + setting_problems(found, value, None),
+    step(f"{name}/moved", start_problems(moved, version, found) + setting_problems(found, value, None),
          f"the same profile in the new place, setting {found.get('before')}; settings that still name the old "
          f"place: {old or 'none'}")
     step(f"{name}/folder",
@@ -562,9 +587,9 @@ def run_root(made: dict, root: Path, working: Path, temp: Path, step) -> None:
         return
     try:
         drive = Path(f"{letter}:\\")
-        mine = (only(drive / po.BROWSER_DIR / po.PROGRAM), only(package / po.BROWSER_DIR / po.PROGRAM))
+        mine = (only(program(drive, made["version"])), only(program(package, made["version"])))
         found = one_start(drive, working, temp, 23, lambda image: any(test(image) for test in mine))
-        problems = start_problems(drive, found, real=package) + setting_problems(found, DEFAULT, 23)
+        problems = start_problems(drive, made["version"], found, real=package) + setting_problems(found, DEFAULT, 23)
     finally:
         subprocess.run(["subst", f"{letter}:", "/d"], capture_output=True)
     if os.path.exists(f"{letter}:\\"):
@@ -577,7 +602,8 @@ def run_root(made: dict, root: Path, working: Path, temp: Path, step) -> None:
     shutil.rmtree(place, ignore_errors=True)
 
 
-def run(chrome_bin: Path, work: Path, variant: str, drive_root: bool, case: str | None) -> list[str]:
+def run(chrome_bin: Path, launcher: Path, updater: Path, work: Path, variant: str, drive_root: bool,
+        case: str | None) -> list[str]:
     problems: list[str] = []
 
     def step(name: str, found: list[str], detail: str) -> None:
@@ -591,15 +617,16 @@ def run(chrome_bin: Path, work: Path, variant: str, drive_root: bool, case: str 
         working.mkdir()
         temp.mkdir()
         try:
-            made = po.build(chrome_bin, root / "dist", variant)
+            made = po.build(chrome_bin, root / "dist", variant, launcher, updater)
         except (po.PortableError, OSError) as e:
             step("package", [str(e)], "not built")
             return problems
-        browser = made["package"] / po.BROWSER_DIR      # audited as `package_audit.py --dir` lists it
-        audits = po.audit(made["package"]) + package_audit.audit(
+        browser = made["package"] / po.BROWSER_DIR / made["version"]      # as `package_audit.py --dir` lists it
+        audits = po.audit(made["package"], variant) + po.audit(made["zip"]) + package_audit.audit(
             [str(p.relative_to(browser)) for p in browser.rglob("*")], "win")
-        step("package", audits, f"{made['files']} files, Thoron {made['version']}, a .zip of "
-                                f"{made['zip'].stat().st_size / 1e6:.0f} MB; the portable audit and package_audit.py pass")
+        step("package", audits, f"{made['files']} files, Thoron {made['version']} ({variant}), a .zip of "
+                                f"{made['zip'].stat().st_size / 1e6:.0f} MB; the portable audit of the folder and "
+                                "of the .zip and package_audit.py pass")
         if audits:
             return problems         # nothing is started from a package that fails its audit
         before = {"names": names_in(real_places()), "keys": registry_keys()}
@@ -627,8 +654,10 @@ def run(chrome_bin: Path, work: Path, variant: str, drive_root: bool, case: str 
 def main(argv: list[str]) -> int:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--chrome-bin", required=True, type=Path, help="a build's Chrome-bin folder; it is only read")
+    p.add_argument("--launcher", required=True, type=Path, help=f"the build's {po.BUILT_LAUNCHER}")
+    p.add_argument("--updater", required=True, type=Path, help=f"the build's {po.UPDATER}")
     p.add_argument("--work", required=True, type=Path, help="scratch folder; what is made there is removed again")
-    p.add_argument("--variant", default="win-x64-avx2")
+    p.add_argument("--variant", default="win-x64-avx2", choices=po.VARIANTS)
     p.add_argument("--drive-root", action="store_true", help="also start from the root of a `subst` drive letter")
     p.add_argument("--case", choices=[c["name"] for c in cases()], help="only this folder")
     a = p.parse_args(argv)
@@ -638,7 +667,8 @@ def main(argv: list[str]) -> int:
         print("PORTABLE CHECK: does not apply here (the package is for Windows)")
         return 0
     a.work.mkdir(parents=True, exist_ok=True)
-    problems = run(a.chrome_bin.resolve(), a.work.resolve(), a.variant, a.drive_root, a.case)
+    problems = run(a.chrome_bin.resolve(), a.launcher.resolve(), a.updater.resolve(), a.work.resolve(), a.variant,
+                   a.drive_root, a.case)
     for problem in problems:
         print(problem)
     print("PORTABLE CHECK: PASSED" if not problems else f"PORTABLE CHECK: FAILED ({len(problems)} problem(s))")

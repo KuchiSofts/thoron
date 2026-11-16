@@ -24,6 +24,7 @@ from tools.release import changelog
 from tools.release import package_audit
 from tools.release import release as rel
 from tools.release import version as ver
+from tools.release.tests.test_portable import program
 from tools.update import manifest as mf
 
 UPSTREAM_ARGS = 'target_os = "win"\nbundle_widevine_cdm = true\nenable_rlz = true\n'
@@ -100,6 +101,9 @@ class Fixture:
         (self.out / "args.gn").write_text(ra.compose(UPSTREAM_ARGS, "win", "test"), encoding="ascii")
         (self.out / "mini_installer.exe").write_bytes(b"installer bytes")
         (self.out / "chrome.7z").write_bytes(b"7z")
+        # the portable package's launcher (a window program) and updater (a console program), as built
+        (self.out / "thoron_launcher.exe").write_bytes(program(2, tail=b"launcher"))
+        (self.out / "thoron_update.exe").write_bytes(program(3, tail=b"updater"))
         self.buildinfo = root / "BUILDINFO.json"
         self.buildinfo.write_text('{"variant": "win-x64-avx2"}', encoding="utf-8")
 
@@ -657,7 +661,8 @@ class DryRunTests(ReleaseTestCase):
         with zipfile.ZipFile(dist / LICENCES) as bundle:
             self.assertEqual(bundle.read("licenses/GPL-3.0.txt").decode("utf-8"), GPL)
         with zipfile.ZipFile(dist / PORTABLE) as package:
-            self.assertIn("ThoronPortable/Application/thoron.exe", package.namelist())
+            self.assertIn(f"ThoronPortable/Application/{BUILD}/thoron.exe", package.namelist())
+            self.assertIn("ThoronPortable/Thoron.exe", package.namelist())
         self.assertEqual(rel.publish_problems(dist, THORON, GH_REPO, self.f.public, NOW), [])
         calls = []
         with mock.patch.object(rel.subprocess, "run", side_effect=AssertionError("publish ran a program")):
@@ -1126,7 +1131,8 @@ class SourceTests(GateTestCase):
 
 
 class PortableStepTests(GateTestCase):
-    """P2.8: prepare calls tools/release/portable.py, and the release holds the portable .zip."""
+    """P2.8, P3.12: prepare calls tools/release/portable.py with the build's launcher and updater, and the
+    release holds the portable .zip."""
 
     def test_the_release_holds_the_portable_zip_and_no_unpacked_package(self):
         self.assertEqual(self.f.prepare()[0], 0)
@@ -1134,14 +1140,68 @@ class PortableStepTests(GateTestCase):
         self.assertFalse([p for p in self.f.dist.iterdir() if p.is_dir()])
         with zipfile.ZipFile(self.f.dist / PORTABLE) as package:
             self.assertEqual(package.namelist(), [
-                f"ThoronPortable/Application/{BUILD}/chrome.dll", "ThoronPortable/Application/thoron.exe",
-                "ThoronPortable/README.txt", "ThoronPortable/Thoron.cmd"])
-            self.assertEqual(package.read("ThoronPortable/Application/thoron.exe"), b"program")
+                f"ThoronPortable/Application/{BUILD}/{BUILD}/chrome.dll",
+                f"ThoronPortable/Application/{BUILD}/thoron.exe",
+                f"ThoronPortable/Application/{BUILD}/thoron_update.exe", "ThoronPortable/Application/current", "ThoronPortable/README.txt", "ThoronPortable/Thoron.exe",
+                "ThoronPortable/variant"])
+            self.assertEqual(package.read(f"ThoronPortable/Application/{BUILD}/thoron.exe"), b"program")
+            self.assertEqual(package.read("ThoronPortable/Thoron.exe"),
+                             (self.f.out / "thoron_launcher.exe").read_bytes())
+            self.assertEqual(package.read(f"ThoronPortable/Application/{BUILD}/thoron_update.exe"),
+                             (self.f.out / "thoron_update.exe").read_bytes())
+            self.assertEqual(package.read("ThoronPortable/Application/current"), f"{BUILD}\n".encode("ascii"))
+            self.assertEqual(package.read("ThoronPortable/variant"), f"{VARIANT}\n".encode("ascii"))
+        self.assertEqual(rel.portable.audit(self.f.dist / PORTABLE), [])
         digest = hashlib.sha256((self.f.dist / PORTABLE).read_bytes()).hexdigest()
         self.assertIn(f"{digest}  {PORTABLE}\n", (self.f.dist / "SHA256SUMS").read_text(encoding="utf-8"))
         self.assertEqual(rel.package_files(self.f.dist, BUILD, VARIANT),
                          {"installed": self.f.dist / INSTALLER, "portable": self.f.dist / PORTABLE})
         self.assertEqual(sorted(p.name for p in (self.f.out / rel.CHROME_BIN).iterdir()), [BUILD, "thoron.exe"])
+
+    def test_a_launcher_or_an_updater_that_may_not_be_packaged_is_refused(self):
+        launcher, updater = self.f.out / "thoron_launcher.exe", self.f.out / "thoron_update.exe"
+        good = launcher.read_bytes(), updater.read_bytes()
+        for name, launcher_bytes, updater_bytes, says in (
+                ("a console launcher", good[1], good[1], "portable package: the launcher thoron_launcher.exe must "
+                                                         "be a window program"),
+                ("a 32-bit launcher", program(2, machine=0x14C), good[1], "portable package: the launcher "
+                                                                          "thoron_launcher.exe is not a program "
+                                                                          "for x64"),
+                ("a script for an updater", good[0], b"@echo off\r\n", "portable package: the updater "
+                                                                       "thoron_update.exe is not a Windows "
+                                                                       "program")):
+            with self.subTest(name):
+                launcher.write_bytes(launcher_bytes)
+                updater.write_bytes(updater_bytes)
+                self.refused(says)
+        launcher.write_bytes(good[0])
+        updater.unlink()
+        self.refused("portable package: the updater thoron_update.exe is missing (--launcher and --updater name them)")
+
+    def test_the_launcher_and_the_updater_can_be_named(self):
+        elsewhere = Path(self.f.tmp.name) / "parts"
+        elsewhere.mkdir()
+        for name in ("thoron_launcher.exe", "thoron_update.exe"):
+            shutil.move(self.f.out / name, elsewhere / f"signed {name}")
+        self.refused("portable package: the launcher thoron_launcher.exe is missing")
+        self.assertEqual(self.f.prepare("--launcher", elsewhere / "signed thoron_launcher.exe",
+                                        "--updater", elsewhere / "signed thoron_update.exe")[0], 0)
+        with zipfile.ZipFile(self.f.dist / PORTABLE) as package:
+            self.assertEqual(package.read("ThoronPortable/Thoron.exe"),
+                             (elsewhere / "signed thoron_launcher.exe").read_bytes())
+
+    def test_a_variant_the_launcher_does_not_know_gets_no_portable_package(self):
+        self.refused("portable package: the variant win-x64-avx512 has no portable package: its launcher knows "
+                     "win-x64-avx2 and win-x64-sse4", "--variant", "win-x64-avx512")
+
+    def test_the_variant_must_be_the_one_the_build_was_made_for(self):
+        self.f.record(variant="win-x64-sse4")
+        self.refused("portable package: the build record says the build is for win-x64-sse4, and the release is "
+                     "for win-x64-avx2: the package would tell its launcher the wrong processors")
+
+    def test_a_browser_folder_that_already_holds_an_updater_is_refused(self):
+        self.f.browser({"thoron.exe": b"program", f"{BUILD}/chrome.dll": b"dll", "thoron_update.exe": b"x"})
+        self.refused("portable package: the browser folder already holds thoron_update.exe")
 
     def test_a_browser_folder_that_may_not_be_packaged_is_refused(self):
         good = {"thoron.exe": b"program", f"{BUILD}/chrome.dll": b"dll"}

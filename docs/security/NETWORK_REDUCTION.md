@@ -67,7 +67,9 @@ longer asked for the time (section 3).
   detection behind the offer to translate, the permission-prompt predictions, and Safe Browsing's
   on-device phishing check (ROADMAP **S.14**). Open a page in a foreign language and see that
   translation is still offered. If something a person needs is lost, the alternative is to keep the
-  feature and stop single models, which is a larger patch.
+  feature and stop single models, which is a larger patch. For Safe Browsing it is settled: the
+  phishing model (number 25) no longer arrives, client-side phishing detection ends with it and is
+  dropped, and the lists block as before ([SAFE_BROWSING.md](SAFE_BROWSING.md), section 3.5).
 - **Also gone (measured).** The component `OptimizationHints`: with the switch, 17 components arrive
   in the profile instead of 18, and the component updater makes 18 update checks and 17 downloads
   instead of 20 and 19.
@@ -308,7 +310,7 @@ These are not part of this work order:
 | Contact | Why it stays |
 |---|---|
 | `update.googleapis.com` from 60 s on, and the component downloads | The component updater brings security data: certificate revocations, the certificate transparency log list, the file type rules for downloads. Which components Thoron wants is a later review; `--disable-component-update` stops all of them (verified) and is too blunt as a default |
-| `safebrowsing.googleapis.com` | ROADMAP **S.14** decides about Safe Browsing |
+| `safebrowsing.googleapis.com` | ROADMAP **S.14**: kept, in a build with a key Thoron owns, and off in a build without one ([SAFE_BROWSING.md](SAFE_BROWSING.md)) |
 | `ublockorigin.github.io`, `malware-filter.gitlab.io` | Thoron adblock's filter lists: the blocking a person wants, fetched without cookies |
 
 ## 5. Checking a build

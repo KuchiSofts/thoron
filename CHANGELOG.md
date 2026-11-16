@@ -131,6 +131,7 @@ Explanations live in the design docs under `docs/design/`.
 - **Mail:** the list shows which Google accounts are counted; "Sign in" opens Google's page with the address filled in, "Copy password" puts the kept password on the clipboard.
 - **Mail:** the M-Notifier's backup holds the list of Google accounts.
 - **QA tools:** `mail_xn_check.py` and `xn_file.py` check the reading of X-notifier's file with made-up accounts.
+- **QA tools:** `adblock_hosts_check.py` checks that a list line that only names a host stops that host; `glic_check.py` that no Gemini component is loaded and Settings has no AI page.
 - **QA tools:** `language_detect_check.py` checks that a page's language is found with no downloaded model.
 - **Security:** `docs/security/UPSTREAM_AUDIT_M158.md` reviews every finding in upstream's 18 commits behind the 158 series.
 - **Security:** `audit_diff` also reports extension-install, sandbox, encryption and installer changes, new flags and CI workflows.
@@ -210,6 +211,7 @@ Explanations live in the design docs under `docs/design/`.
 
 ### Changed
 
+- **Privacy:** Chromium's Gemini plumbing is off: its "Gemini in Chrome" component is not loaded and Settings has no Google AI page; the switch `Glic` brings it back.
 - **Mail:** up to 30 Google accounts are counted; Thoron M-Notifier stopped after 10.
 - **Mail:** a Gmail address written another way (dots, capitals, `googlemail.com`) is the same account.
 - **Privacy:** a profile nobody signed in to Google with no longer contacts Google's optimization guide, sign-in check, time service or search engine at start.
@@ -237,6 +239,7 @@ Explanations live in the design docs under `docs/design/`.
 
 ### Fixed
 
+- **Ad blocking:** a list line that only names a host, or a hosts file's line, stops that host, as in uBlock Origin; lists written that way stopped no page.
 - **Tools:** the profile rehearsal also sees a profile written a moment ago when the drive's clock runs ahead.
 - **Ad blocking:** ads in frames are blocked; a frame's own document was loaded without being checked.
 - **Ad blocking:** on a new profile, switches and settings changed before the first list update are kept.
@@ -256,6 +259,7 @@ Explanations live in the design docs under `docs/design/`.
 
 ### Security
 
+- **Safe Browsing:** without a Google API key it counts as off instead of being a switch that protects nothing, and the browser asks again before a program is saved.
 - **Ad blocking:** pages the lists name as harmful (malware, phishing) or as ad sites are not opened, as in uBlock Origin; the page shown instead has no scripts and escapes every address.
 - **Ad blocking:** a list update is recorded before it is read, so a bad list cannot close the browser at every start.
 - **Ad blocking:** only uBlock Origin's own lists may use trusted scriptlets; report-sending `$csp` rules are refused.

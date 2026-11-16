@@ -3638,10 +3638,10 @@ index 0000000000000000000000000000000000000000..5aeba22af3be4716ff8b31316d08da4a
 +}
 diff --git a/components/thoron_adblock/engine.rs b/components/thoron_adblock/engine.rs
 new file mode 100644
-index 0000000000000000000000000000000000000000..b91a935be724a9318eced19e4caa6de312bff757
+index 0000000000000000000000000000000000000000..ffd7fc609c9dabd9add78c0bf509bf2d6cc4ba82
 --- /dev/null
 +++ b/components/thoron_adblock/engine.rs
-@@ -0,0 +1,1437 @@
+@@ -0,0 +1,1474 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -4245,6 +4245,43 @@ index 0000000000000000000000000000000000000000..b91a935be724a9318eced19e4caa6de3
 +        let mut e = engine_from_rules(rules);
 +        assert_eq!(e.use_resources(RESOURCES), 4);
 +        e
++    }
++
++    #[test]
++    fn a_line_that_only_names_a_host_stops_that_host() {
++        let e = engine_from_rules(
++            "phish.example\n0.0.0.0 hosts-file.example\n127.0.0.1 localhost.localdomain\n0.0.0.0 commented.example # why\n\
++             /ads/*\n! a comment.example\nexample.org##.banner\n192.0.2.7\nlocalhost\nxn--80ak6aa92e.xn--p1ai\n",
++        );
++        // the page itself, under any name of that host, and what a page asks of it
++        assert!(e.blocks_page("https://phish.example/login"));
++        assert!(e.blocks_page("http://www.phish.example/"));
++        assert!(e.should_block("https://phish.example/x.js", "https://news.example/", "script"));
++        assert!(e.blocks_page("http://hosts-file.example/"));
++        assert!(e.blocks_page("https://commented.example/"));
++        assert!(e.blocks_page("https://xn--80ak6aa92e.xn--p1ai/"));
++        // only that host: not a page that mentions it, not another one, not the machine's own names
++        assert!(!e.blocks_page("https://news.example/?next=phish.example"));
++        assert!(!e.blocks_page("https://news.example/"));
++        assert!(!e.blocks_page("http://localhost.localdomain/"));
++        assert!(!e.blocks_page("http://192.0.2.7/"));
++    }
++
++    #[test]
++    fn what_is_and_is_not_a_plain_host_line() {
++        use crate::engine_core::{host_of_plain_line as host, plain_hosts_as_rules};
++        assert_eq!(host("ads.example.com"), Some("ads.example.com"));
++        assert_eq!(host("  Ads.Example.COM \r"), Some("Ads.Example.COM"));
++        assert_eq!(host("0.0.0.0 ads.example.com"), Some("ads.example.com"));
++        assert_eq!(host("127.0.0.1\tads.example.com  # note"), Some("ads.example.com"));
++        for not in ["||ads.example.com^", "ads.example.com/path", "example.com##.ad", "@@ads.example.com", "! ads.example.com",
++                    "ads.example.com$script", "localhost", "192.0.2.7", "ads..example.com", ".example.com", "ab.c",
++                    "0.0.0.0 ads.example.com more", "10.0.0.1 router.example.com", "*.example.com", ""] {
++            assert_eq!(host(not), None, "{not}");
++        }
++        // a list without such lines is not copied
++        assert!(matches!(plain_hosts_as_rules("||a.example^\n/ads/*\n"), std::borrow::Cow::Borrowed(_)));
++        assert_eq!(plain_hosts_as_rules("||a.example^\nb.example\n"), "||a.example^\n||b.example^$all\n");
 +    }
 +
 +    #[test]
@@ -5081,10 +5118,10 @@ index 0000000000000000000000000000000000000000..b91a935be724a9318eced19e4caa6de3
 +}
 diff --git a/components/thoron_adblock/engine_core.rs b/components/thoron_adblock/engine_core.rs
 new file mode 100644
-index 0000000000000000000000000000000000000000..d15ea2b4cbf49a5d30bbc8c0a419b9b46422411c
+index 0000000000000000000000000000000000000000..90dc70ae9f730d82ac59474898d6b48bea4d5804
 --- /dev/null
 +++ b/components/thoron_adblock/engine_core.rs
-@@ -0,0 +1,537 @@
+@@ -0,0 +1,597 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -5182,6 +5219,66 @@ index 0000000000000000000000000000000000000000..d15ea2b4cbf49a5d30bbc8c0a419b9b4
 +    std::borrow::Cow::Owned(out)
 +}
 +
++/// The host a line names when it is nothing but a host name ("ads.example.com"), or a line of a hosts
++/// file ("0.0.0.0 ads.example.com"). uBlock Origin reads such a line as a rule for that whole host, and
++/// lists of harmful sites are written this way; a parser of filter rules alone takes it for a piece of
++/// text to look for in addresses, which never stops a page.
++pub fn host_of_plain_line(line: &str) -> Option<&str> {
++    let line = line.trim();
++    let mut name = line;
++    if let Some((first, rest)) = line.split_once([' ', '\t']) {
++        // a hosts file's line: an address of this machine, the name, perhaps a comment
++        if !matches!(first, "0.0.0.0" | "127.0.0.1" | "::" | "::1" | "0") {
++            return None;
++        }
++        let rest = rest.trim_start();
++        name = rest.split([' ', '\t', '#']).next().unwrap_or("");
++        let after = rest[name.len()..].trim_start();
++        if !after.is_empty() && !after.starts_with('#') {
++            return None;
++        }
++    }
++    if name.len() < 4 || name.len() > 253 || name.starts_with(['.', '-']) || name.ends_with(['.', '-']) {
++        return None;
++    }
++    if name.contains("..") || !name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'.' || b == b'_') {
++        return None;
++    }
++    // the last part is a top-level domain: letters, or an encoded one ("xn--p1ai"); never a number (an
++    // address) and never one part alone ("localhost")
++    let (rest, last) = name.rsplit_once('.')?;
++    let letters = last.len() >= 2 && last.bytes().all(|b| b.is_ascii_alphabetic());
++    if rest.is_empty() || !(letters || last.starts_with("xn--")) {
++        return None;
++    }
++    // names a hosts file gives the machine itself
++    if matches!(name, "localhost.localdomain" | "local.host") {
++        return None;
++    }
++    Some(name)
++}
++
++/// A list's text with every line that only names a host written as the rule for that host, on pages and in
++/// pages (`||host^$all`, as the lists of harmful sites that are written as rules have it).
++pub fn plain_hosts_as_rules(text: &str) -> std::borrow::Cow<'_, str> {
++    if !text.lines().any(|line| host_of_plain_line(line).is_some()) {
++        return std::borrow::Cow::Borrowed(text);
++    }
++    let mut out = String::with_capacity(text.len() + text.len() / 4);
++    for line in text.lines() {
++        match host_of_plain_line(line) {
++            Some(host) => {
++                out.push_str("||");
++                out.push_str(host);
++                out.push_str("^$all");
++            }
++            None => out.push_str(line),
++        }
++        out.push('\n');
++    }
++    std::borrow::Cow::Owned(out)
++}
++
 +/// The lists file by list, as (id, text). Text before the first marker has the id "".
 +pub fn split_lists(text: &str) -> Vec<(&str, &str)> {
 +    let mut lists = Vec::new();
@@ -5218,7 +5315,7 @@ index 0000000000000000000000000000000000000000..d15ea2b4cbf49a5d30bbc8c0a419b9b4
 +        let mut ids = Vec::new();
 +        for (id, text) in split_lists(rules) {
 +            let options = ParseOptions { permissions: list_permissions(id), ..Default::default() };
-+            set.add_filter_list(text.to_string(), options);
++            set.add_filter_list(plain_hosts_as_rules(text).into_owned(), options);
 +            ids.push(id.to_string());
 +        }
 +        Explainer { engine: adblock::Engine::new_with_filter_set(set), ids }
@@ -5248,7 +5345,7 @@ index 0000000000000000000000000000000000000000..d15ea2b4cbf49a5d30bbc8c0a419b9b4
 +    let mut set = FilterSet::new(false);
 +    for (id, text) in split_lists(rules) {
 +        let options = ParseOptions { permissions: list_permissions(id), ..Default::default() };
-+        set.add_filter_list(text.to_string(), options);
++        set.add_filter_list(plain_hosts_as_rules(text).into_owned(), options);
 +    }
 +    set
 +}

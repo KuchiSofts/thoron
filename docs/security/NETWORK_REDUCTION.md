@@ -388,8 +388,12 @@ Measured on the build, one run each:
   `accounts.google.com`, `www.google.com` and `mail.google.com`. There is no time request and no
   connection ahead of a request, and the component updater's first request comes at 60 s.
 - **New Tab page, 150 s:** none of those four, `www.gstatic.com` or `ogads-pa.clients6.google.com`.
-- **Left:** the extensions other programs register (2.8, ROADMAP **P2.16**), the component updater,
-  Safe Browsing's list (ROADMAP **S.14**) and Thoron adblock's lists.
+- **Left:** the extensions other programs register (2.8), the component updater, Safe Browsing's list
+  (ROADMAP **S.14**) and Thoron adblock's lists.
+- **Decided for 2.8 (ROADMAP P2.16):** the registration is still read. An extension another program
+  registered for Google Chrome that a person approved in Thoron would be removed if Thoron stopped
+  reading it. With those registrations set aside (`extensions.block_external_extensions`) a run of 100 s
+  had no extension request at all, so Thoron itself asks for none.
 
 Two offline checks hold what a log of a fresh profile cannot show:
 [`mail_signin_check.py`](../../tools/qa/mail_signin_check.py) (Gmail is asked with a Google account in the

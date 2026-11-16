@@ -1892,6 +1892,28 @@ index ee59bb3290f824d9850e4869d4081d0f470c4200..197ac9ccf70e902ae117405186286178
    base::RepeatingCallbackList<void(base::FilePath)> manifest_ready_callbacks_;
    base::WeakPtrFactory<ManifestAssetManagerDelegateImpl> weak_ptr_factory_{
        this};
+diff --git a/chrome/browser/extensions/glic_util.cc b/chrome/browser/extensions/glic_util.cc
+index 30d062911dfcfc6f7c3b1b1ae9d7980c3f87c9b8..0b4b520498817c06ff86a754e456513f0e4e6068 100644
+--- a/chrome/browser/extensions/glic_util.cc
++++ b/chrome/browser/extensions/glic_util.cc
+@@ -5,12 +5,16 @@
+ #include "chrome/browser/extensions/glic_util.h"
+ 
+ #include "base/feature_list.h"
++#include "chrome/common/chrome_features.h"
+ #include "extensions/common/extension_features.h"
+ 
+ namespace extensions {
+ 
+ bool IsApiGlicPrivateEnabled() {
+-  return base::FeatureList::IsEnabled(extensions_features::kApiGlicPrivate);
++  // Thoron (S.16): the component extension goes with the feature's main
++  // switch, which is off.
++  return base::FeatureList::IsEnabled(extensions_features::kApiGlicPrivate) &&
++         base::FeatureList::IsEnabled(features::kGlic);
+ }
+ 
+ }  // namespace extensions
 diff --git a/chrome/browser/navigation_predictor/search_engine_preconnector.cc b/chrome/browser/navigation_predictor/search_engine_preconnector.cc
 index 0b665fddd4da7e9b28b5a4ce98a1d01cc5631952..74a1e2ce9bb08b7095914876f045fb2d6fa5211a 100644
 --- a/chrome/browser/navigation_predictor/search_engine_preconnector.cc
@@ -1987,6 +2009,44 @@ index b57d6384773d0cb86893859066b219dec90c6d70..79f4f51a573f145e90604d3ee56549a7
    bool enable_animated_logo =
        base::FeatureList::IsEnabled(ntp_features::kNtpAnimatedDoodles) &&
        !gfx::Animation::PrefersReducedMotion();
+diff --git a/chrome/browser/ui/webui/settings/settings_ui.cc b/chrome/browser/ui/webui/settings/settings_ui.cc
+index 90f8e1a51584d6030950ff5627242e3fd6659874..7998cc11454d8beea1cebe6cb25c0d367ddca813 100644
+--- a/chrome/browser/ui/webui/settings/settings_ui.cc
++++ b/chrome/browser/ui/webui/settings/settings_ui.cc
+@@ -688,9 +688,13 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
+   // Within the AI subpage are separate sections for Glic, for GEIC, and for all
+   // other AI features. The visibility of these is separately controlled, but
+   // we want to show the subpage if any of them are enabled.
++  // Thoron (S.16): Settings has no Google AI page while the feature's main
++  // switch is off.
+   html_source->AddBoolean("showAiPage",
+-                          show_glic_section || show_ai_features_section ||
+-                              enable_ai_mode_search || show_geic_section);
++                          base::FeatureList::IsEnabled(features::kGlic) &&
++                              (show_glic_section ||
++                               show_ai_features_section ||
++                               enable_ai_mode_search || show_geic_section));
+   html_source->AddBoolean("showAiPageAiFeatureSection",
+                           show_ai_features_section);
+ 
+diff --git a/chrome/common/chrome_features.cc b/chrome/common/chrome_features.cc
+index 5f138e5c599e49d98327b8899612e8fe57b03721..69f74cbd1ec9feb58fe99aaa99b06feefa5291c5 100644
+--- a/chrome/common/chrome_features.cc
++++ b/chrome/common/chrome_features.cc
+@@ -525,10 +525,12 @@ BASE_FEATURE(kGlicMessageFirstFre, base::FEATURE_DISABLED_BY_DEFAULT);
+ // IMPORTANT: this feature should never be expired! It is used as the main
+ // kill-switch for Glic and can be used in the future to handle unsupported
+ // Chrome versions.
++// Thoron (S.16): off. Chromium's Gemini plumbing is not loaded or shown in a
++// browser that does not offer it; this one switch brings all of it back.
+ BASE_FEATURE(kGlic,
+ #if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN) || BUILDFLAG(IS_CHROMEOS) || \
+     BUILDFLAG(IS_ANDROID)
+-             base::FEATURE_ENABLED_BY_DEFAULT
++             base::FEATURE_DISABLED_BY_DEFAULT
+ #else
+              base::FEATURE_DISABLED_BY_DEFAULT
+ #endif
 diff --git a/components/network_time/network_time_tracker.cc b/components/network_time/network_time_tracker.cc
 index 3bb0f02378021fc2703be508d95af77c65bdaa23..c25ed8a13a85c1ab9ae240ad79e53d76f68ee28c 100644
 --- a/components/network_time/network_time_tracker.cc
@@ -2068,6 +2128,53 @@ index e3c4e6e900020c5ad7b1073a260210d33395eb45..b3761eaa43b4ee928a1703e618712054
  
  // Enables the prediction of optimization targets.
  BASE_FEATURE(kOptimizationTargetPrediction, base::FEATURE_ENABLED_BY_DEFAULT);
+diff --git a/components/safe_browsing/core/common/BUILD.gn b/components/safe_browsing/core/common/BUILD.gn
+index d5fec59c9a5fa8169b234fd868d74185a8f89835..8c08cd4f919ae89ee4db9c8169c1420e0d27e6d4 100644
+--- a/components/safe_browsing/core/common/BUILD.gn
++++ b/components/safe_browsing/core/common/BUILD.gn
+@@ -16,6 +16,7 @@ static_library("safe_browsing_prefs") {
+     ":switches",
+     "//components/pref_registry",
+     "//components/prefs",
++    "//google_apis",
+     "//net",
+   ]
+ 
+diff --git a/components/safe_browsing/core/common/safe_browsing_prefs.cc b/components/safe_browsing/core/common/safe_browsing_prefs.cc
+index a78cbc6f414ac74e912c19f4c86cb2fa87827510..a5b6146f5f6c50a67c1e580455c7ae48bf1fe2e9 100644
+--- a/components/safe_browsing/core/common/safe_browsing_prefs.cc
++++ b/components/safe_browsing/core/common/safe_browsing_prefs.cc
+@@ -3,6 +3,7 @@
+ // found in the LICENSE file.
+ 
+ #include "components/safe_browsing/core/common/safe_browsing_prefs.h"
++#include "google_apis/google_api_keys.h"
+ 
+ #include "base/check_op.h"
+ #include "base/command_line.h"
+@@ -251,7 +252,10 @@ void SetSafeBrowsingState(PrefService* prefs,
+ }
+ 
+ bool IsSafeBrowsingEnabled(const PrefService& prefs) {
+-  return prefs.GetBoolean(prefs::kSafeBrowsingEnabled);
++  // Thoron (S.14): without an API key Google answers none of Safe Browsing's
++  // requests, so it protects nothing; it then counts as off.
++  return google_apis::HasAPIKeyConfigured() &&
++         prefs.GetBoolean(prefs::kSafeBrowsingEnabled);
+ }
+ 
+ bool IsEnhancedProtectionEnabled(const PrefService& prefs) {
+@@ -363,8 +367,9 @@ void RegisterProfilePrefs(PrefRegistrySimple* registry) {
+       prefs::kSafeBrowsingEsbProtegoPingWithTokenLastLogTime, base::Time());
+   registry->RegisterTimePref(
+       prefs::kSafeBrowsingEsbProtegoPingWithoutTokenLastLogTime, base::Time());
++  // Thoron (S.14): on only in a build that has an API key for it.
+   registry->RegisterBooleanPref(
+-      prefs::kSafeBrowsingEnabled, true,
++      prefs::kSafeBrowsingEnabled, google_apis::HasAPIKeyConfigured(),
+       user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+   if (base::FeatureList::IsEnabled(kEsbAsASyncedSetting)) {
+     registry->RegisterBooleanPref(
 diff --git a/components/signin/public/base/signin_switches.cc b/components/signin/public/base/signin_switches.cc
 index 70bc2b4b6ff3e5226378bd77c5eeeca98a7aa0e9..186bb7da115063740c8c21541f327a6da76dd57e 100644
 --- a/components/signin/public/base/signin_switches.cc

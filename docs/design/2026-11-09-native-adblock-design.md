@@ -2351,6 +2351,25 @@ response's body. Thoron is the browser, so it does it for every page:
   not, twelve accounts, the sign-in page only for an address of the list, the list after a restart, and
   the backup.
 
+### 12.74 Lines that only name a host (S.14, 2026-11-16)
+
+- **Found by measuring:** the optional phishing list was fetched and stopped none of its own hosts, while
+  the malware list stopped all of them. The malware list is written as rules (`||host^$all`); the
+  phishing list, like many lists of harmful sites, is plain host names, one a line.
+- **Cause:** the rule parser takes a line that is only a host name for a piece of text to look for in
+  addresses. That can stop a request inside a page, and never the page itself.
+- **As uBlock Origin:** a line that is nothing but a host name ("ads.example.com"), or a line of a hosts
+  file ("0.0.0.0 ads.example.com", with or without a comment), is the rule for that whole host, on pages
+  and in pages. Thoron adblock rewrites such a line to `||host^$all` before the parser sees it
+  (`engine_core.rs`, `plain_hosts_as_rules`), for every list and for "My filters".
+- **What is not such a line:** anything with a path, an option, a wildcard, a cosmetic part or a comment
+  mark; a number (an address); one word alone ("localhost"); the names a hosts file gives the machine
+  itself. As in uBlock Origin, a pattern that happens to look like a host name ("banner.gif") is read as
+  a host; lists write such patterns with a separator.
+- **Checked:** two engine tests (the page, another name of the host, a request in a page; a page that
+  only mentions the host stays open) and `adblock_hosts_check.py` end to end, with the server not asked
+  for a stopped page.
+
 ## 13. Credits
 
 The procedural operators and the rest of the filter syntax are uBlock Origin's (with forms from Adblock

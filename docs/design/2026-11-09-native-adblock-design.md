@@ -2102,6 +2102,36 @@ response's body. Thoron is the browser, so it does it for every page:
   screen, Windows UI Automation): the envelope in the toolbar, the address bar or both, what it says as mail
   comes and the inbox is opened, and each position.
 
+### 12.66 CNAME uncloaking (P5.18, 2026-11-16)
+
+- **Why:** a tracker can hide under a site's own name: `metrics.news.example` is, in DNS, a name for the
+  tracker's host, so a rule for the tracker never sees the request. uBlock Origin finds these only in Firefox
+  (which lets an extension ask DNS); in Chromium no extension can. Brave does it in its own engine.
+- **How, at no extra cost:** the network service tells the browser a host's canonical names with each answer
+  (`URLResponseHead::dns_aliases`, from the lookup it made anyway). The watcher between a request and the page
+  (`RedirectWatcher`) holds an answer that came with such a name until the engine has looked at it: the
+  alias's origin (`https://<alias>/`, as uBlock Origin replays it) is checked against the lists for the same
+  page and type (`EngineService::BlocksAlias`, `engine_core::blocks_alias`). Blocked: the page never gets the
+  answer, and the request is on the shield's count. No DNS lookup of Thoron's own: nothing more leaves the
+  PC, and with a proxy (where the proxy looks names up) nothing changes.
+- **Learned:** the host found hiding a tracker is remembered (in memory, two hours as uBlock Origin's
+  `cnameMaxTTL`, 500 hosts at most, forgotten when the lists or "My filters" change), and its next requests
+  are blocked before they leave (`EngineService::IsCloak` in the request proxy). Only the first request to
+  such a host reaches it.
+- **Not checked** (as uBlock Origin's defaults): a canonical name of the site's own (`cnameIgnore1stParty`:
+  `www.example.com` at `example.com`'s servers), a request an exception rule of the lists allows
+  (`cnameIgnoreExceptions`: a list that keeps a site's own address working wins), a request "My rules"
+  allow, and pages and frames themselves (`cnameIgnoreRootDocument`). Eight names per answer at most.
+- **Cost:** most answers carry no canonical name of another site and go on at once; one that does waits for
+  one look-up of the engine on the UI thread, as a redirect already does. The setting "Uncloak canonical
+  names" (Privacy, on by default, as uBlock Origin's on Firefox) turns it off. Measured (the check's cost
+  step, 30 images of each host in turns): 0.9 ms in the middle for an answer with a canonical name that is
+  looked at and let through, 0.8 ms for one without.
+- **Checked** by `tools/qa/adblock_cname_check.py`: a switch the browser accepts only for answers from
+  127.0.0.1 gives the canonical names DNS would; the hidden tracker is blocked, its next request never leaves,
+  a name no list names, one of the site's own and an excepted host load, and the setting turns it off and on.
+  The engine's part is unit-tested (`a_tracker_under_a_site_s_own_name_is_found_by_its_canonical_name`).
+
 ## 13. Credits
 
 The procedural operators and the rest of the filter syntax are uBlock Origin's (with forms from Adblock

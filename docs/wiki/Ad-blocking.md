@@ -127,7 +127,8 @@ few days, again as soon as the network is back, and after the computer wakes up.
 Open `chrome://adblock`.
 
 - **Settings:** as in uBlock Origin. Show the count on the shield; privacy options (no pre-fetching, no
-  hyperlink auditing, WebRTC without local IP addresses, no CSP reports); what every site gets by default
+  hyperlink auditing, WebRTC without local IP addresses, no CSP reports, uncloaking canonical names); what
+  every site gets by default
   (no hiding, no large media, no remote fonts, no JavaScript, no third-party scripts or frames: uBlock
   Origin's "medium mode"), which the menu's switches change for one
   site; ignoring hide rules written for every site; the size of "large media"; "Block element..." in
@@ -187,6 +188,11 @@ scripts that only uBlock Origin's own lists may use, unless you allow it for you
   empty success, so the site does not notice (Google Docs needs this, or it keeps reconnecting). Thoron
   adblock gives the same answer at the network as well, so it holds for a page that started before its
   rules were ready, and for the page's workers.
+- **Trackers hidden under a site's own name are found.** Some sites give a tracker one of their own names
+  (`metrics.news.example`), so a rule for the tracker never sees it. Thoron adblock reads the real name the
+  network learns anyway, blocks the tracker, and blocks that name from the start next time. uBlock Origin can
+  do this only in Firefox. No extra DNS lookups are made. "Uncloak canonical names" in the settings turns it
+  off.
 
 ## uBlock Origin
 

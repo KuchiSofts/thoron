@@ -3993,10 +3993,10 @@ index 0000000000000000000000000000000000000000..775954638d4dbf1764c678318776e97d
 +#endif  // CHROME_BROWSER_UI_WEBUI_THORON_ADBLOCK_SITE_JAVASCRIPT_H_
 diff --git a/chrome/browser/ui/webui/thoron_adblock_ui.cc b/chrome/browser/ui/webui/thoron_adblock_ui.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..84d097bec5aeda64eeb92bd9eba60e5ddd098cfb
+index 0000000000000000000000000000000000000000..f5389c1a468f4ff2aa41c9c86984186dd4d3c5e5
 --- /dev/null
 +++ b/chrome/browser/ui/webui/thoron_adblock_ui.cc
-@@ -0,0 +1,856 @@
+@@ -0,0 +1,857 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -4503,7 +4503,8 @@ index 0000000000000000000000000000000000000000..84d097bec5aeda64eeb92bd9eba60e5d
 +    PrefService* prefs = Profile::FromWebUI(web_ui())->GetPrefs();
 +    base::DictValue settings;
 +    for (const char* name :
-+         {"badge", "block-csp-reports", "ignore-generic", "default-media",
++         {"badge", "block-csp-reports", "cname-uncloak", "ignore-generic",
++          "default-media",
 +          "default-cosmetic", "default-fonts", "default-3p-script",
 +          "default-3p-frame", "auto-update", "context-menu", "advanced",
 +          "colorblind", "no-tooltips", "toolbar-shield", "address-shield"}) {

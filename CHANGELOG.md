@@ -96,6 +96,8 @@ Explanations live in the design docs under `docs/design/`.
 - **QA tools:** `windows_security_check.py` checks that with a stand-in window, off the screen.
 - **Mail:** Thoron's own mail notifier: unread Gmail of every signed-in Google account in the toolbar, with notices of new mail and no password.
 - **QA tools:** `mail_check.py` checks the notifier against a local stand-in for Gmail.
+- **Ad blocking:** trackers hidden under a site's own name (CNAME cloaking) are found and blocked, as uBlock Origin does only in Firefox; "Uncloak canonical names" in `chrome://adblock` turns it off.
+- **QA tools:** `adblock_cname_check.py` checks CNAME uncloaking offline.
 - **Mail:** the mail notifier is now Thoron M-Notifier: next to the address bar or in it, where you choose.
 - **Mail:** Thoron M-Notifier counts new mail since you last opened the account's inbox, and never spam; it has its own settings (what it counts, how often, notices and their sound, where mail opens, which accounts).
 - **QA tools:** `mail_place_check.py` checks where the M-Notifier's envelope is and what it says.

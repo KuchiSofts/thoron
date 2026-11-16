@@ -3634,10 +3634,10 @@ index 0000000000000000000000000000000000000000..5aeba22af3be4716ff8b31316d08da4a
 +}
 diff --git a/components/thoron_adblock/engine.rs b/components/thoron_adblock/engine.rs
 new file mode 100644
-index 0000000000000000000000000000000000000000..d1c47172b7d45f04a40d7c332a8d8cd3d7475235
+index 0000000000000000000000000000000000000000..b91a935be724a9318eced19e4caa6de312bff757
 --- /dev/null
 +++ b/components/thoron_adblock/engine.rs
-@@ -0,0 +1,1402 @@
+@@ -0,0 +1,1437 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -3765,6 +3765,12 @@ index 0000000000000000000000000000000000000000..d1c47172b7d45f04a40d7c332a8d8cd3
 +        /// True when the lists block the page at `url` itself (strict blocking): a rule for whole
 +        /// pages (`$doc`, `$all`) or one that names its whole host matches it.
 +        fn blocks_page(self: &Engine, url: &str) -> bool;
++
++        /// CNAME uncloaking (P5.18): true when the lists block `alias_url`, the address of a request
++        /// to `url` at one of its host's canonical names (DNS), unless an exception rule of the lists
++        /// spares the request to `url` itself.
++        fn blocks_alias(self: &Engine, url: &str, alias_url: &str, source_url: &str, request_type: &str,
++                        method: &str) -> bool;
 +
 +        /// "My rules" (uBlock Origin's dynamic filtering, dynamic.rs), read from their text.
 +        type DynamicRules;
@@ -4038,6 +4044,12 @@ index 0000000000000000000000000000000000000000..d1c47172b7d45f04a40d7c332a8d8cd3
 +        self.0.as_ref().is_some_and(|f| engine_core::blocks_page(f, url))
 +    }
 +
++    fn blocks_alias(&self, url: &str, alias_url: &str, source_url: &str, request_type: &str, method: &str) -> bool {
++        self.0
++            .as_ref()
++            .is_some_and(|f| engine_core::blocks_alias(f, url, alias_url, source_url, request_type, method))
++    }
++
 +    fn clean_url(&self, url: &str, source_url: &str, request_type: &str) -> String {
 +        self.decide(url, source_url, request_type, "GET", true).clean_url
 +    }
@@ -4244,6 +4256,29 @@ index 0000000000000000000000000000000000000000..d1c47172b7d45f04a40d7c332a8d8cd3
 +        assert!(!e.should_block("https://ads.example/allowed.js", "https://news.example/", "script"));
 +        assert!(e.should_block("https://track.example/p.gif", "https://news.example/", "image"));
 +        assert!(!e.should_block("https://track.example/p.gif", "https://track.example/", "image")); // first-party
++    }
++
++    #[test]
++    fn a_tracker_under_a_site_s_own_name_is_found_by_its_canonical_name() {
++        let e = engine_from_rules(
++            "||cloak-tracker.example^\n||cloak-tracker.example^$third-party,image\n\
++             @@||spared.news.example^\n||cdn-only.example^$script\n",
++        );
++        let page = "https://news.example/";
++        // metrics.news.example is a name for cloak-tracker.example in DNS
++        assert!(e.blocks_alias("https://metrics.news.example/t.js", "https://cloak-tracker.example/", page, "script", "GET"));
++        assert!(e.blocks_alias("https://metrics.news.example/p.gif", "https://cloak-tracker.example/", page, "image", "GET"));
++        // an alias no list names, and an exception of the lists for the request itself
++        assert!(!e.blocks_alias("https://www.news.example/a.js", "https://news.example.cdn-host.example/", page, "script", "GET"));
++        assert!(!e.blocks_alias("https://spared.news.example/t.js", "https://cloak-tracker.example/", page, "script", "GET"));
++        // the rule's options hold for the alias: scripts only
++        assert!(e.blocks_alias("https://a.news.example/x.js", "https://cdn-only.example/", page, "script", "GET"));
++        assert!(!e.blocks_alias("https://a.news.example/x.png", "https://cdn-only.example/", page, "image", "GET"));
++        // addresses that are not ones, and no engine
++        assert!(!e.blocks_alias("not a url", "https://cloak-tracker.example/", page, "script", "GET"));
++        assert!(!e.blocks_alias("https://metrics.news.example/t.js", "nothing", page, "script", "GET"));
++        assert!(!Engine(None, fakes::Cache::default()).blocks_alias(
++            "https://metrics.news.example/t.js", "https://cloak-tracker.example/", page, "script", "GET"));
 +    }
 +
 +    #[test]
@@ -5042,10 +5077,10 @@ index 0000000000000000000000000000000000000000..d1c47172b7d45f04a40d7c332a8d8cd3
 +}
 diff --git a/components/thoron_adblock/engine_core.rs b/components/thoron_adblock/engine_core.rs
 new file mode 100644
-index 0000000000000000000000000000000000000000..9285e93448507acd8689d031151b21db1362c932
+index 0000000000000000000000000000000000000000..d15ea2b4cbf49a5d30bbc8c0a419b9b46422411c
 --- /dev/null
 +++ b/components/thoron_adblock/engine_core.rs
-@@ -0,0 +1,516 @@
+@@ -0,0 +1,537 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -5404,6 +5439,27 @@ index 0000000000000000000000000000000000000000..9285e93448507acd8689d031151b21db
 +    Request::new(url, url, "document", "GET").is_ok_and(|page| filters.engine.check_network_request(&page).should_block())
 +}
 +
++/// CNAME uncloaking (P5.18), as uBlock Origin on Firefox and Brave do it. The request to `url` was let
++/// through; `alias_url` is its address at one of the host's canonical names, the name DNS gave for it
++/// (a tracker hidden under a site's own subdomain). True when the lists block the alias, unless an
++/// exception rule of the lists spares the request itself (uBlock Origin's `cnameIgnoreExceptions`):
++/// a list that allows a site's own address keeps it working whatever its name in DNS.
++pub fn blocks_alias(
++    filters: &Filters,
++    url: &str,
++    alias_url: &str,
++    source_url: &str,
++    request_type: &str,
++    method: &str,
++) -> bool {
++    let Ok(request) = Request::new(url, source_url, request_type, method) else { return false };
++    if filters.engine.check_network_request_subset(&request, true, true).exception.is_some() {
++        return false;
++    }
++    let Ok(alias) = Request::new(alias_url, source_url, request_type, method) else { return false };
++    filters.engine.check_network_request(&alias).should_block()
++}
++
 +/// The address a `$uritransform` rule makes of a request's own, or "".
 +pub fn transform(filters: &Filters, url: &str, source_url: &str, request_type: &str) -> String {
 +    filters.transforms.apply(url, source_url, request_type).unwrap_or_default()
@@ -5730,10 +5786,10 @@ index 0000000000000000000000000000000000000000..f48ae9a58c33eb08b4e5ec7ec657261c
 +}
 diff --git a/components/thoron_adblock/engine_service.cc b/components/thoron_adblock/engine_service.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..2e2daca2c25a0d42df6079ac0d049e1a0ad66d33
+index 0000000000000000000000000000000000000000..d6a59e2b3aa1c89acf174ffd2c25ad5379471952
 --- /dev/null
 +++ b/components/thoron_adblock/engine_service.cc
-@@ -0,0 +1,1635 @@
+@@ -0,0 +1,1700 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -5884,6 +5940,8 @@ index 0000000000000000000000000000000000000000..2e2daca2c25a0d42df6079ac0d049e1a
 +};
 +constexpr OptionDefault kOptions[] = {
 +    {"badge", true},           {"block-csp-reports", false},
++    // CNAME uncloaking (P5.18), uBlock Origin's "Uncloak canonical names"
++    {"cname-uncloak", true},
 +    {"ignore-generic", false}, {"default-media", false},
 +    {"default-cosmetic", false}, {"default-fonts", false},
 +    {"default-3p-script", false}, {"default-3p-frame", false},
@@ -6841,6 +6899,7 @@ index 0000000000000000000000000000000000000000..2e2daca2c25a0d42df6079ac0d049e1a
 +  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 +  if (engine && (*engine)->is_valid()) {
 +    engine_ = std::move(engine);
++    cloaks_.clear();
 +  }
 +  // The pages that waited for the engine go on (PageBlockThrottle): after
 +  // this call, as going on starts their requests.
@@ -6869,6 +6928,7 @@ index 0000000000000000000000000000000000000000..2e2daca2c25a0d42df6079ac0d049e1a
 +  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 +  if (engine->is_valid()) {
 +    engine_ = std::move(engine);
++    cloaks_.clear();  // other lists: what was found is looked for again
 +    // other lists: the logger's "Why?" reads them again when next asked
 +    ResetExplainer();
 +  }
@@ -6890,6 +6950,7 @@ index 0000000000000000000000000000000000000000..2e2daca2c25a0d42df6079ac0d049e1a
 +  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 +  started_ = true;
 +  engine_ = std::move(engine);
++  cloaks_.clear();
 +}
 +
 +EngineService::Decision EngineService::Check(
@@ -6921,6 +6982,65 @@ index 0000000000000000000000000000000000000000..2e2daca2c25a0d42df6079ac0d049e1a
 +  }
 +  return {found.blocked, std::string(found.stand_in), std::move(instead),
 +          std::string(found.header_tests)};
++}
++
++bool EngineService::BlocksAlias(const GURL& url,
++                                const std::string& alias,
++                                const GURL& source,
++                                network::mojom::RequestDestination destination,
++                                std::string_view method) const {
++  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
++  if (!Active() || !Option("cname-uncloak") || !IsBlockableScheme(url) ||
++      !source.is_valid() || !base::IsStringASCII(method) || alias.empty() ||
++      alias.size() > 253) {
++    return false;
++  }
++  // the alias's origin, as uBlock Origin replays it (`cnameReplayFullURL` off)
++  const GURL at(base::StrCat({url.scheme(), "://", alias, "/"}));
++  if (!at.is_valid() || at.HostIsIPAddress() || at.host() == url.host()) {
++    return false;
++  }
++  const std::string& u = url.spec();
++  const std::string& a = at.spec();
++  const std::string& s = source.spec();
++  const std::string_view t = RequestType(destination);
++  return (*engine_)->blocks_alias(
++      rust::Str(u.data(), u.size()), rust::Str(a.data(), a.size()),
++      rust::Str(s.data(), s.size()), rust::Str(t.data(), t.size()),
++      rust::Str(method.data(), method.size()));
++}
++
++void EngineService::RememberCloak(std::string_view host) {
++  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
++  constexpr base::TimeDelta kKept = base::Hours(2);
++  constexpr size_t kMost = 500;
++  const base::TimeTicks now = base::TimeTicks::Now();
++  if (host.empty()) {
++    return;
++  }
++  if (cloaks_.size() >= kMost) {
++    std::erase_if(cloaks_, [now](const auto& kept) { return kept.second <= now; });
++  }
++  if (cloaks_.size() >= kMost) {
++    // the one that goes first
++    auto oldest = cloaks_.begin();
++    for (auto it = cloaks_.begin(); it != cloaks_.end(); ++it) {
++      if (it->second < oldest->second) {
++        oldest = it;
++      }
++    }
++    cloaks_.erase(oldest);
++  }
++  cloaks_[std::string(host)] = now + kKept;
++}
++
++bool EngineService::IsCloak(std::string_view host) const {
++  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
++  if (cloaks_.empty() || !Option("cname-uncloak")) {
++    return false;
++  }
++  const auto it = cloaks_.find(host);
++  return it != cloaks_.end() && it->second > base::TimeTicks::Now();
 +}
 +
 +// static
@@ -7362,6 +7482,7 @@ index 0000000000000000000000000000000000000000..2e2daca2c25a0d42df6079ac0d049e1a
 +  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 +  if (change.error.empty() && change.engine && (*change.engine)->is_valid()) {
 +    engine_ = std::move(change.engine);
++    cloaks_.clear();  // other lists or own filters: looked for again
 +    // other lists or own filters: "Why?" reads them again when next asked
 +    ResetExplainer();
 +  }
@@ -7371,10 +7492,10 @@ index 0000000000000000000000000000000000000000..2e2daca2c25a0d42df6079ac0d049e1a
 +}  // namespace thoron_adblock
 diff --git a/components/thoron_adblock/engine_service.h b/components/thoron_adblock/engine_service.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..648d353b5d076aff3f7f12b583b0e2c53bc52ec1
+index 0000000000000000000000000000000000000000..3f248b4f7289eec49b2429e70cdc0f3ee4010e7c
 --- /dev/null
 +++ b/components/thoron_adblock/engine_service.h
-@@ -0,0 +1,495 @@
+@@ -0,0 +1,517 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -7458,6 +7579,25 @@ index 0000000000000000000000000000000000000000..648d353b5d076aff3f7f12b583b0e2c5
 +                 const GURL& source,
 +                 network::mojom::RequestDestination destination,
 +                 std::string_view method) const;
++
++  // CNAME uncloaking (P5.18), as uBlock Origin on Firefox and Brave do it.
++  // A tracker can hide under a site's own name (metrics.news.example is, in
++  // DNS, a name for a tracker's host); the network tells the browser the
++  // host's canonical names with the answer, at no extra cost. True when the
++  // lists block the request to `url` at the canonical name `alias` (its
++  // origin, as uBlock Origin replays it), unless an exception rule of the
++  // lists spares the request itself. False while "cname-uncloak" is off.
++  bool BlocksAlias(const GURL& url,
++                   const std::string& alias,
++                   const GURL& source,
++                   network::mojom::RequestDestination destination,
++                   std::string_view method) const;
++  // The host of a request found to be such a tracker: its next requests are
++  // blocked before they leave (IsCloak), with no DNS answer to wait for. Kept
++  // in memory for two hours (uBlock Origin's `cnameMaxTTL`), 500 hosts at
++  // most, and forgotten when the lists or the person's filters change.
++  void RememberCloak(std::string_view host);
++  bool IsCloak(std::string_view host) const;
 +
 +  // True when a server's answer with `headers` ends the request whose
 +  // decision carried `tests` (Decision::header_tests). An answer the browser
@@ -7671,7 +7811,8 @@ index 0000000000000000000000000000000000000000..648d353b5d076aff3f7f12b583b0e2c5
 +  // The settings of chrome://adblock, as in uBlock Origin, by name: "badge"
 +  // (the shield shows what was blocked; on unless switched off),
 +  // "block-csp-reports" (reports a page's security policy asks for are not
-+  // sent), "ignore-generic" (hide rules for every site are not used), and
++  // sent), "cname-uncloak" (trackers hidden under a site's own name are found
++  // by their canonical name; on unless switched off), "ignore-generic" (hide rules for every site are not used), and
 +  // "default-media", "default-cosmetic", "default-fonts" (the menu's switch of
 +  // that name on for every site), "auto-update" (the lists are checked on
 +  // their own), "context-menu" ("Block element..." in the page's context
@@ -7863,6 +8004,8 @@ index 0000000000000000000000000000000000000000..648d353b5d076aff3f7f12b583b0e2c5
 +  // The download of a list that is being added; one at a time.
 +  std::unique_ptr<ListFetch> add_fetch_;
 +  std::optional<rust::Box<Engine>> engine_;
++  // RememberCloak's hosts, and until when each is kept.
++  std::map<std::string, base::TimeTicks, std::less<>> cloaks_;
 +  SEQUENCE_CHECKER(sequence_checker_);
 +  base::WeakPtrFactory<EngineService> weak_factory_{this};
 +};
@@ -10180,10 +10323,10 @@ index 0000000000000000000000000000000000000000..d95a04c967cb90b8b678d3c68d76da87
 +}
 diff --git a/components/thoron_adblock/i18n.js b/components/thoron_adblock/i18n.js
 new file mode 100644
-index 0000000000000000000000000000000000000000..67540badd3f88a123ab0ae7612cd8fdc84dff8db
+index 0000000000000000000000000000000000000000..36623286180a8eacaa8f340bb5ebfa145361ce85
 --- /dev/null
 +++ b/components/thoron_adblock/i18n.js
-@@ -0,0 +1,1278 @@
+@@ -0,0 +1,1284 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -10403,6 +10546,12 @@ index 0000000000000000000000000000000000000000..67540badd3f88a123ab0ae7612cd8fdc
 +   `CSP-Berichte blockieren (was die Sicherheitsrichtlinie einer Seite an ihre Server meldet)`,
 +   `Bloquear relatórios CSP (o que a política de segurança de uma página informa aos seus servidores)`,
 +   `Блокировать отчёты CSP (то, что политика безопасности страницы сообщает её серверам)`],
++  [`Uncloak canonical names: find trackers hidden under a site's own name`,
++   `Desenmascarar los nombres canónicos: encontrar los rastreadores ocultos bajo el propio nombre de un sitio`,
++   `Démasquer les noms canoniques : trouver les traqueurs cachés sous le nom même d'un site`,
++   `Kanonische Namen aufdecken: Tracker finden, die sich unter dem eigenen Namen einer Website verstecken`,
++   `Desmascarar os nomes canônicos: encontrar os rastreadores escondidos sob o próprio nome de um site`,
++   `Раскрывать канонические имена: находить трекеры, скрытые под собственным именем сайта`],
 +  [`Default behavior`, `Comportamiento predeterminado`, `Comportement par défaut`, `Standardverhalten`,
 +   `Comportamento padrão`, `Поведение по умолчанию`],
 +  [`For every site. The switches in the menu of the shield change it for one site.`,
@@ -16654,10 +16803,10 @@ index 0000000000000000000000000000000000000000..bb8de3e4e6d332ea6a25da72e32beb5f
 +}
 diff --git a/components/thoron_adblock/proxying_url_loader_factory.cc b/components/thoron_adblock/proxying_url_loader_factory.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..71ff2511ecf6e5028a2b3a74305e97f23844de07
+index 0000000000000000000000000000000000000000..707e0564cbd261ce03be933db0e93f20d1142f2b
 --- /dev/null
 +++ b/components/thoron_adblock/proxying_url_loader_factory.cc
-@@ -0,0 +1,365 @@
+@@ -0,0 +1,375 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -16931,6 +17080,13 @@ index 0000000000000000000000000000000000000000..71ff2511ecf6e5028a2b3a74305e97f2
 +    decision.blocked = true;
 +    decision.stand_in.clear();
 +  }
++  // CNAME uncloaking (P5.18): a host an earlier answer showed to be a tracker
++  // under the site's own name; "My rules" can still allow it.
++  if (!decision.blocked && dynamic != 2 &&
++      EngineService::Get().IsCloak(request.url.host())) {
++    decision.blocked = true;
++    decision.stand_in.clear();
++  }
 +  // The menu's switches for the page's site: no fonts at all, and no audio or
 +  // video file larger than the setting allows (judged by its answer, below).
 +  using Destination = network::mojom::RequestDestination;
@@ -17001,7 +17157,10 @@ index 0000000000000000000000000000000000000000..71ff2511ecf6e5028a2b3a74305e97f2
 +                          EngineService::Get().ReplaceRulesFor(
 +                              decision.clean_url.is_valid() ? decision.clean_url
 +                                                            : request.url,
-+                              source, request.destination)},
++                              source, request.destination),
++                          /*uncloak=*/dynamic != 2 &&
++                              EngineService::Get().Option("cname-uncloak"),
++                          request.method},
 +                         std::move(loader_receiver), std::move(client),
 +                         std::move(target_loader),
 +                         std::move(watcher_client_receiver));
@@ -17493,10 +17652,10 @@ index 0000000000000000000000000000000000000000..93d4b7aef64a8427c748e773c0b2a3d0
 +}
 diff --git a/components/thoron_adblock/redirect_watcher.cc b/components/thoron_adblock/redirect_watcher.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..d1486a5a01665a766e8ea53ea647b4c6f3053e5e
+index 0000000000000000000000000000000000000000..bc0822acacdb1b9acbbbcba0243e100fb8d249a7
 --- /dev/null
 +++ b/components/thoron_adblock/redirect_watcher.cc
-@@ -0,0 +1,334 @@
+@@ -0,0 +1,451 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -17504,12 +17663,18 @@ index 0000000000000000000000000000000000000000..d1486a5a01665a766e8ea53ea647b4c6
 +
 +#include "components/thoron_adblock/body_rewriter.h"
 +
++#include <algorithm>
++#include <string>
 +#include <utility>
++#include <vector>
 +
++#include "base/command_line.h"
 +#include "base/functional/bind.h"
 +#include "base/location.h"
 +#include "base/no_destructor.h"
 +#include "base/task/sequenced_task_runner.h"
++#include "base/strings/string_split.h"
++#include "base/strings/string_util.h"
 +#include "base/task/thread_pool.h"
 +#include "components/thoron_adblock/blocked_count.h"
 +#include "components/thoron_adblock/engine_service.h"
@@ -17517,6 +17682,7 @@ index 0000000000000000000000000000000000000000..d1486a5a01665a766e8ea53ea647b4c6
 +#include "content/public/browser/browser_task_traits.h"
 +#include "content/public/browser/browser_thread.h"
 +#include "net/base/net_errors.h"
++#include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 +#include "net/http/http_response_headers.h"
 +#include "services/network/public/cpp/url_loader_completion_status.h"
 +
@@ -17542,6 +17708,72 @@ index 0000000000000000000000000000000000000000..d1486a5a01665a766e8ea53ea647b4c6
 +          {base::TaskPriority::USER_BLOCKING,
 +           base::TaskShutdownBehavior::SKIP_ON_SHUTDOWN}));
 +  return *runner;
++}
++
++// CNAME uncloaking (P5.18): the canonical names of the host of `url` the
++// answer `head` came with that are worth asking the lists about: not the host
++// itself, and not one of its own site (uBlock Origin's `cnameIgnore1stParty`:
++// www.example.com at example.com's servers is no tracker). For the offline
++// checks a switch gives the names of hosts a local server answers for (only
++// then: from 127.0.0.1).
++std::vector<std::string> AliasesToCheck(
++    const GURL& url,
++    const network::mojom::URLResponseHead& head) {
++  constexpr size_t kMost = 8;
++  std::vector<std::string> names = head.dns_aliases;
++  const base::CommandLine& line = *base::CommandLine::ForCurrentProcess();
++  if (line.HasSwitch("thoron-adblock-cname-for-testing") &&
++      head.remote_endpoint.address().IsLoopback()) {
++    // "host=alias,host2=alias2"
++    for (const std::string& pair : base::SplitString(
++             line.GetSwitchValueASCII("thoron-adblock-cname-for-testing"), ",",
++             base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY)) {
++      const size_t at = pair.find('=');
++      if (at != std::string::npos && pair.substr(0, at) == url.host()) {
++        names.push_back(pair.substr(at + 1));
++      }
++    }
++  }
++  std::vector<std::string> found;
++  for (std::string& name : names) {
++    name = base::ToLowerASCII(base::TrimString(name, ".", base::TRIM_TRAILING));
++    const GURL at("https://" + name + "/");
++    if (name.empty() || name == url.host() || !at.is_valid() ||
++        at.HostIsIPAddress() ||
++        net::registry_controlled_domains::SameDomainOrHost(
++            url, at,
++            net::registry_controlled_domains::INCLUDE_PRIVATE_REGISTRIES) ||
++        std::ranges::find(found, name) != found.end()) {
++      continue;
++    }
++    found.push_back(name);
++    if (found.size() == kMost) {
++      break;
++    }
++  }
++  return found;
++}
++
++// On the UI thread, where the engine is: true when one of `aliases` of the
++// host of `url` is a tracker the lists block. The host is then remembered,
++// so that its next requests are blocked before they leave, and the request
++// is on the page's count.
++bool CheckAliasesOnUI(GURL url,
++                      std::vector<std::string> aliases,
++                      RedirectWatcher::Context context) {
++  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
++  EngineService& engine = EngineService::Get();
++  for (const std::string& alias : aliases) {
++    if (engine.BlocksAlias(url, alias, context.source, context.destination,
++                           context.method)) {
++      engine.RememberCloak(url.host());
++      if (context.frame) {
++        RecordBlocked(context.frame, url, context.destination);
++      }
++      return true;
++    }
++  }
++  return false;
 +}
 +
 +// On the UI thread, where the engine is: what to do with a redirect to `url`.
@@ -17624,6 +17856,49 @@ index 0000000000000000000000000000000000000000..d1486a5a01665a766e8ea53ea647b4c6
 +  if (EndedByAnswer(head)) {
 +    return;
 +  }
++  // CNAME uncloaking (P5.18): an answer from a host that DNS names otherwise
++  // waits for the engine; nothing more from the network reaches the client
++  // meanwhile. Most answers carry no such name and go on at once.
++  if (context_.uncloak && head &&
++      (!head->dns_aliases.empty() ||
++       base::CommandLine::ForCurrentProcess()->HasSwitch(
++           "thoron-adblock-cname-for-testing"))) {
++    std::vector<std::string> aliases = AliasesToCheck(context_.url, *head);
++    if (!aliases.empty()) {
++      target_client_receiver_.Pause();
++      content::GetUIThreadTaskRunner({})->PostTaskAndReplyWithResult(
++          FROM_HERE,
++          base::BindOnce(&CheckAliasesOnUI, context_.url, std::move(aliases),
++                         context_),
++          base::BindOnce(&RedirectWatcher::OnAliasesChecked,
++                         weak_factory_.GetWeakPtr(), std::move(head),
++                         std::move(body), std::move(cached_metadata)));
++      return;
++    }
++  }
++  Deliver(std::move(head), std::move(body), std::move(cached_metadata));
++}
++
++void RedirectWatcher::OnAliasesChecked(
++    network::mojom::URLResponseHeadPtr head,
++    mojo::ScopedDataPipeConsumerHandle body,
++    std::optional<mojo_base::BigBuffer> cached_metadata,
++    bool blocked) {
++  if (!client_.is_bound() || !target_client_receiver_.is_bound()) {
++    return;  // the request ended meanwhile
++  }
++  if (blocked) {
++    EndBlocked();
++    return;
++  }
++  target_client_receiver_.Resume();
++  Deliver(std::move(head), std::move(body), std::move(cached_metadata));
++}
++
++void RedirectWatcher::Deliver(
++    network::mojom::URLResponseHeadPtr head,
++    mojo::ScopedDataPipeConsumerHandle body,
++    std::optional<mojo_base::BigBuffer> cached_metadata) {
 +  if (context_.max_media_bytes > 0 && head &&
 +      head->content_length > context_.max_media_bytes) {
 +    if (context_.frame) {
@@ -17712,6 +17987,7 @@ index 0000000000000000000000000000000000000000..d1486a5a01665a766e8ea53ea647b4c6
 +    redirect_info.new_url = decision.clean_url;
 +  }
 +  context_.url = redirect_info.new_url;
++  context_.method = redirect_info.new_method;
 +  target_client_receiver_.Resume();
 +  client_->OnReceiveRedirect(redirect_info, std::move(head));
 +}
@@ -17833,10 +18109,10 @@ index 0000000000000000000000000000000000000000..d1486a5a01665a766e8ea53ea647b4c6
 +}  // namespace thoron_adblock
 diff --git a/components/thoron_adblock/redirect_watcher.h b/components/thoron_adblock/redirect_watcher.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..9cba5fb115145b58de9f07eff569afa79c2f9c4d
+index 0000000000000000000000000000000000000000..db3add91602e5b294a29195b544771cdffa89b2b
 --- /dev/null
 +++ b/components/thoron_adblock/redirect_watcher.h
-@@ -0,0 +1,159 @@
+@@ -0,0 +1,174 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -17906,6 +18182,11 @@ index 0000000000000000000000000000000000000000..9cba5fb115145b58de9f07eff569afa7
 +    // `$replace` for the answer (EngineService::ReplaceRulesFor); "" for none.
 +    // Not carried to an address the request is redirected to.
 +    std::string replace_rules;
++    // CNAME uncloaking (P5.18): the answer's canonical names are held against
++    // the lists (not when "My rules" allow the request), with the request's
++    // method.
++    bool uncloak = false;
++    std::string method;
 +  };
 +
 +  // Called on the UI thread with the four pipe ends of one request:
@@ -17956,6 +18237,16 @@ index 0000000000000000000000000000000000000000..9cba5fb115145b58de9f07eff569afa7
 +  void OnRedirectChecked(net::RedirectInfo redirect_info,
 +                         network::mojom::URLResponseHeadPtr head,
 +                         EngineService::Decision decision);
++
++  // The answer goes to the client (after the checks of OnReceiveResponse).
++  void Deliver(network::mojom::URLResponseHeadPtr head,
++               mojo::ScopedDataPipeConsumerHandle body,
++               std::optional<mojo_base::BigBuffer> cached_metadata);
++  // CNAME uncloaking: the engine has looked at the answer's canonical names.
++  void OnAliasesChecked(network::mojom::URLResponseHeadPtr head,
++                        mojo::ScopedDataPipeConsumerHandle body,
++                        std::optional<mojo_base::BigBuffer> cached_metadata,
++                        bool blocked);
 +
 +  // Each side of the request closes on its own; what closes on one end is
 +  // closed on the other, as if the watcher were not there.
@@ -18593,10 +18884,10 @@ index 0000000000000000000000000000000000000000..8ca3ab6f12cffec05fc98fb17aa21f44
 +#endif  // COMPONENTS_THORON_ADBLOCK_RENDERER_DOCUMENT_AGENT_H_
 diff --git a/components/thoron_adblock/settings_page.html b/components/thoron_adblock/settings_page.html
 new file mode 100644
-index 0000000000000000000000000000000000000000..ad3dd042f0486ef9edb8b2b3c184efaf84dacc26
+index 0000000000000000000000000000000000000000..c1fab713d4b56b06a817732cebbe28335259f062
 --- /dev/null
 +++ b/components/thoron_adblock/settings_page.html
-@@ -0,0 +1,476 @@
+@@ -0,0 +1,478 @@
 +<!doctype html>
 +<!-- Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +     found in the LICENSE file.
@@ -18859,6 +19150,8 @@ index 0000000000000000000000000000000000000000..ad3dd042f0486ef9edb8b2b3c184efaf
 +      <span>Prevent WebRTC from leaking local IP addresses</span></label>
 +    <label class="option"><input type="checkbox" data-setting="block-csp-reports">
 +      <span>Block CSP reports (what a page's security policy reports to its servers)</span></label>
++    <label class="option"><input type="checkbox" data-setting="cname-uncloak">
++      <span>Uncloak canonical names: find trackers hidden under a site's own name</span></label>
 +    <h3>Default behavior</h3>
 +    <p>For every site. The switches in the menu of the shield change it for one site.</p>
 +    <label class="option"><input type="checkbox" data-setting="default-cosmetic">
@@ -19075,10 +19368,10 @@ index 0000000000000000000000000000000000000000..ad3dd042f0486ef9edb8b2b3c184efaf
 +</html>
 diff --git a/components/thoron_adblock/settings_page.js b/components/thoron_adblock/settings_page.js
 new file mode 100644
-index 0000000000000000000000000000000000000000..806396e86aa8632bbc5f1f89047d939d2d66c29f
+index 0000000000000000000000000000000000000000..c973590f3e979952e06a6efd385201e30a7de568
 --- /dev/null
 +++ b/components/thoron_adblock/settings_page.js
-@@ -0,0 +1,1848 @@
+@@ -0,0 +1,1849 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -20179,7 +20472,8 @@ index 0000000000000000000000000000000000000000..806396e86aa8632bbc5f1f89047d939d
 +// --- Backup, restore, reset (as uBlock Origin's) ---
 +const BACKUP_FORMAT = 'thoron-adblock-backup';
 +const SETTING_DEFAULTS = {badge: true, prefetch: false, 'hyperlink-auditing': false, webrtc: false,
-+                          'block-csp-reports': false, 'default-cosmetic': false, 'default-media': false,
++                          'block-csp-reports': false, 'cname-uncloak': true, 'default-cosmetic': false,
++                          'default-media': false,
 +                          'default-fonts': false, javascript: false, 'ignore-generic': false,
 +                          'default-3p-script': false, 'default-3p-frame': false, 'auto-update': true,
 +                          'context-menu': true, advanced: true, 'media-kb': 50, colorblind: false,

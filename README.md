@@ -78,7 +78,7 @@ changed in each version is in the [changelog](CHANGELOG.md), one line per change
 Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always current.
 
 <!-- roadmap:start -->
-**Overall:** `██████████░░░░░░░░░░` 102 of 206 tasks done (50%) · roadmap updated 2026-11-12
+**Overall:** `██████████░░░░░░░░░░` 103 of 206 tasks done (50%) · roadmap updated 2026-11-12
 
 | Area | Progress | Done | Status |
 |---|---|---|---|
@@ -88,7 +88,7 @@ Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always curre
 | [P2b - ARM64](ROADMAP.md#p2b---arm64) | `░░░░░░░░░░░░░░░░░░░░` | 0/5 | ⬜ Not started |
 | [P3 - Updater v1 + Import](ROADMAP.md#p3---updater-v1--import) | `░░░░░░░░░░░░░░░░░░░░` | 0/21 | ⬜ Not started |
 | [P4 - Updater v2](ROADMAP.md#p4---updater-v2) | `░░░░░░░░░░░░░░░░░░░░` | 0/11 | ⬜ Not started |
-| [P5 - Quality](ROADMAP.md#p5---quality) | `████████████████░░░░` | 61/77 | 🔄 In progress |
+| [P5 - Quality](ROADMAP.md#p5---quality) | `████████████████░░░░` | 62/77 | 🔄 In progress |
 | [Security (S)](ROADMAP.md#security-s) | `██████████░░░░░░░░░░` | 8/16 | 🔄 In progress |
 | [Quality & performance (Q)](ROADMAP.md#quality--performance-q) | `███░░░░░░░░░░░░░░░░░` | 1/7 | 🔄 In progress |
 | [Docs (D)](ROADMAP.md#docs-d) | `████████░░░░░░░░░░░░` | 4/10 | 🔄 In progress |
@@ -228,7 +228,7 @@ Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always curre
 - [x] **P5.15** Native ad blocking, lists: compiled lists bundled in each release, safe background updates, validation that never falls back to "allow everything"
 - [ ] **P5.16** Native ad blocking, UI: per-site switch in page info and Settings; local blocked-count badge
 - [x] **P5.17** Native ad blocking, proof: the measurements in the design's section 9 (blocking, speed, CPU, memory, breakage) and fuzzing; on by default only when all pass
-- [ ] **P5.18** Native ad blocking, later: CNAME uncloaking
+- [x] **P5.18** Native ad blocking, later: CNAME uncloaking
 - [x] **P5.19** Native ad blocking, resources and stand-ins: uBlock Origin's scriptlets and redirect resources taken from the pinned package at build time; a blocked request with a `$redirect` or `redirect-rule` filter is answered with the harmless stand-in instead of an error
 - [x] **P5.20** Native ad blocking, scriptlets and site-specific cosmetic filtering: sent to the renderer with the document and applied at document start; trusted scriptlets only from uBlock Origin's own lists
 - [x] **P5.21** Native ad blocking, generic cosmetic filtering: the page reports its classes and ids, the engine answers with the selectors to hide

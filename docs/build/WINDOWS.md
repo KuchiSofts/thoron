@@ -253,6 +253,23 @@ py -3 -I tools\migrate\import_profile.py --from "$env:LOCALAPPDATA\Thorium\User 
 Then use Thoron and keep Thorium closed as a backup: two copies of a profile used online at the
 same time can make sites sign one of them out, and both sync as the same device.
 
+**Bringing the open tabs of another browser.** The whole-profile copy above already brings
+Thorium's windows and tabs. From another browser of the Chromium family (Chrome, for example), the
+open windows, tabs, tab groups and each tab's history can be copied into a Thoron profile that has
+started once. Close both browsers first; the other browser's files are only read:
+
+```powershell
+py -3 -I tools\migrate\sessions.py read --profile "$env:LOCALAPPDATA\Google\Chrome\User Data\Default"
+py -3 -I tools\migrate\sessions.py import --from "$env:LOCALAPPDATA\Google\Chrome\User Data\Default" --to "$env:LOCALAPPDATA\Thoron\User Data\Default" --set-aside --restore-on-next-start
+```
+
+`read` prints what would come over, as JSON. `import` keeps Thoron's own last session in a folder
+inside `Sessions` (`--set-aside`) and makes the next start of Thoron open the imported windows once
+(`--restore-on-next-start`), without changing the start-up setting. The groups come over as
+Thoron's own: their link to the other browser's saved groups is left out, because Thoron would
+otherwise close a group it does not know. A minimized window opens as a normal one, as Thoron does
+with its own session.
+
 **Moving over an install made before the rename.** Thoron builds from before ROADMAP **P2.20**
 installed `thorium.exe` and took over Thorium's `App Paths` entry. After installing a newer build
 over such an install (with Thoron closed and backed up), run this once:

@@ -21,3 +21,7 @@
 
 # The browser source overlay is kept byte for byte: its tree hash is verified (tools/build/source_tree.py).
 source/overlay/** -text
+
+# Golden session files written by browsers (SNSS) are binary.
+tools/migrate/tests/data/sessions/*/Session_* binary
+tools/migrate/tests/data/sessions/*/Tabs_* binary

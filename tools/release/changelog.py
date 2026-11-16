@@ -74,6 +74,36 @@ def sort_security(fixes: list[dict]) -> list[dict]:
     return sorted(fixes, key=lambda f: (SEVERITIES.index(f["severity"]), f["cve"]))
 
 
+def security_problems(fixes) -> list[str]:
+    """Why `fixes` is not a security list (the content of security.json); empty when it is one."""
+    if not isinstance(fixes, list) or not fixes:
+        return ["a security list is a JSON list of at least one fix (leave it out when there is none)"]
+    out = []
+    for number, fix in enumerate(fixes, 1):
+        if not isinstance(fix, dict):
+            out.append(f"fix {number}: must be an object with cve, severity and title")
+            continue
+        for key in ("cve", "severity", "title"):
+            value = fix.get(key)
+            if not isinstance(value, str) or not value.strip() or "\n" in value or "\r" in value:
+                out.append(f"fix {number}: {key} must be one line of text")
+            elif key == "severity" and value not in SEVERITIES:
+                out.append(f"fix {number}: severity must be one of {', '.join(SEVERITIES)}")
+    return out
+
+
+def read_security(path: Path) -> list[dict]:
+    """The security list of a file (security.json), or NotesError naming everything wrong with it."""
+    try:
+        fixes = json.loads(path.read_text(encoding="utf-8-sig"))      # a byte order mark is not content
+    except ValueError as exc:
+        raise NotesError(f"{path.name} is not JSON: {exc}") from None
+    found = security_problems(fixes)
+    if found:
+        raise NotesError(f"{path.name}: " + "; ".join(found))
+    return fixes
+
+
 def _log(repo: Path, since: str) -> list[dict]:
     out = subprocess.run(["git", "-C", str(repo), "log", "--no-merges", "--reverse",
                           "--format=%an%x1f%s%x1f%b%x1e", f"{since}..HEAD"],
@@ -176,7 +206,7 @@ def main(argv: list[str]) -> int:
                   if a.series_old and a.series_new else None)
         text = render(a.version, a.chromium_old, a.chromium_new, a.repo, a.since, a.upstream, a.upstream_since,
                       series,
-                      json.loads(a.security.read_text(encoding="utf-8")) if a.security else None,
+                      read_security(a.security) if a.security else None,
                       a.sha256sums.read_text(encoding="utf-8").splitlines() if a.sha256sums else None,
                       a.highlights.read_text(encoding="utf-8") if a.highlights else None)
     except (NotesError, OSError, ValueError, subprocess.CalledProcessError) as exc:

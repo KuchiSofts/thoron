@@ -8,9 +8,8 @@ follow it from the first notice to the draft release. The targets are those of t
 - **14 days** from a new Chrome major version.
 
 Status: written 2026-11-16. No drill has been run yet (section 8). There is no public release yet, so
-the release step still lacks its key (ROADMAP **P2.11**) and the update manifest (**P3.1**); the steps
-that depend on them say so. What a fix must not break is in the
-[threat model](THREAT_MODEL.md).
+the release step still lacks its keys (ROADMAP **P2.11**); the steps that depend on them say so. What a
+fix must not break is in the [threat model](THREAT_MODEL.md).
 
 ## 1. What to watch
 
@@ -69,7 +68,8 @@ Commands are run from the repository root in the build window of
 
 **Start**
 
-1. Note day 0, the new Chromium version and the list of fixes. Write `security.json` (section 5).
+1. Note day 0, the new Chromium version and the list of fixes. Write `security.json` and, when a fix
+   is exploited in the wild, `highlights.md` (section 5).
 2. Open the tracking issue. Check the machine:
    `py -3 -I tools\build\pipeline.py preflight --root <build root> --need-gb 250`.
 
@@ -152,36 +152,43 @@ Commands are run from the repository root in the build window of
 
 **Release**
 
-13. Package and sign. `prepare` stops on a release configuration, a version or installer contents
-    that fail, and never overwrites a release folder:
+13. Package, write the notes and sign, in one command. `prepare` stops on a release configuration, a
+    version or installer contents that fail, and never overwrites a release folder. `--security` and
+    `--highlights` put the fixes and the hand-written opening into `NOTES.md` (section 5).
+    `--manifest-key` makes the signed update manifest ([`MANIFEST.md`](../update/MANIFEST.md), section
+    10); `--critical` goes with class A and E.
 
     ```powershell
     py -3 -I tools\release\release.py prepare --src <chromium src> --out <out dir> --platform win `
         --variant win-x64-avx2 --previous <last build version> --buildinfo <out dir>\BUILDINFO.json `
         --dist <release folder> --repo . --since <last release tag> --chromium-old <old version> `
-        --minisign-key <key file>
+        --security security.json --highlights highlights.md --minisign-key <key file> `
+        --manifest-key <key file> --manifest-public-key <public key> --gh-repo KuchiSofts/thoron `
+        --previous-manifest <the last update.json> --critical
     ```
 
-14. Write the notes again with the security fixes in them. `prepare` writes `NOTES.md` without the
-    list, so this step is needed today (proposed: `prepare` takes `--security` and `--highlights`):
+    - Leave `--highlights` out when there is nothing to say by hand, and `--critical` out for class C
+      and D. A `security.json` that is not a list of fixes stops `prepare` before anything is packaged.
+    - `--previous-manifest` is the `update.json` of the newest release. The very first manifest is made
+      with `--first-manifest --min-updater-version <build version>` instead.
+    - Key files stay outside the repository, the build tree and the release folder; `prepare` refuses
+      one that is inside. Without `--manifest-key` it makes no manifest and says so, and step 14 then
+      refuses the release.
+    - Read `<release folder>\NOTES.md` before going on.
+
+14. Create the draft. It refuses a release without a signed `SHA256SUMS`, with a file that
+    `SHA256SUMS` does not list, or with an update manifest that is missing, unsigned, does not verify
+    with the public key, or names other files than the folder's.
 
     ```powershell
-    py -3 -I tools\release\changelog.py --version <version> --chromium-old <old version> `
-        --chromium-new <new version> --repo . --since <last release tag> --security security.json `
-        --highlights highlights.md --sha256sums <release folder>\SHA256SUMS --out <release folder>\NOTES.md
+    py -3 -I tools\release\release.py publish --dist <release folder> --version <Thoron version> `
+        --gh-repo KuchiSofts/thoron --manifest-public-key <public key>
     ```
 
-    `<version>` is what `prepare` printed: today the four-part build version, and Thoron's own
-    version once the release script names releases by it (ROADMAP **P2.24**).
-
-15. Create the draft. It refuses a release without a signed `SHA256SUMS`. From **P3.1** on, the signed
-    update manifest goes with it, with `critical` set for class A and E.
-
-    ```powershell
-    py -3 -I tools\release\release.py publish --dist <release folder> --version <version> --gh-repo KuchiSofts/thoron
-    ```
-16. **The owner reads the draft and publishes it.** Nothing else publishes a release.
-17. Afterwards: publish the wiki (`py -3 -I tools\docs\publish_wiki.py --repo KuchiSofts/thoron`),
+    `<Thoron version>` is the `0.MINOR.PATCH` of step 8, as `prepare` printed it: the draft's tag is
+    `v<Thoron version>`, the tag in the manifest's download addresses.
+15. **The owner reads the draft and publishes it.** Nothing else publishes a release.
+16. Afterwards: publish the wiki (`py -3 -I tools\docs\publish_wiki.py --repo KuchiSofts/thoron`),
     publish the advisory (class E and F), close the issue, and fill in a row of section 8.
 
 ## 4. Checks
@@ -200,6 +207,7 @@ Commands are run from the repository root in the build window of
 | Package contents | `tools/release/package_audit.py` (also run by `release.py prepare`) | The Thoron program is there; no Widevine, no Thorium-named file |
 | A real profile survives the update (ROADMAP **Q.7**) | `tools/qa/profile_rehearsal.py` on a copy of a real profile | The last line says the new build kept everything |
 | Signature | `release.py prepare --minisign-key`, then `minisign -Vm SHA256SUMS -P <public key>` | The signature verifies; `publish` refuses a release without one |
+| Update manifest | `release.py prepare --manifest-key`, then `tools/update/manifest.py verify update.json --public-key <public key>` | The signature holds; `publish` refuses a release whose manifest is missing, unsigned, does not verify or names other files |
 | A person publishes | The draft on GitHub | The owner has read the notes and the file list |
 
 A check that fails stops the release. A fix exploited in the wild does not change that: an update that
@@ -218,16 +226,18 @@ Each thing left out is named in the tracking issue and done within 14 days.
 
 ## 5. How the release notes name the fixes
 
-- **`security.json`** is the input of `tools/release/changelog.py`: a list of
+- **`security.json`** is given to `release.py prepare --security` (and read the same way by
+  `tools/release/changelog.py`): a list of
   `{"cve": "CVE-YYYY-NNNNN", "severity": "High", "title": "..."}`, one entry per fix, copied from the
-  Chrome Releases post. The severity is Chrome's own word: `Critical`, `High`, `Medium` or `Low`; the
-  tool refuses anything else and sorts by severity, then by CVE.
+  Chrome Releases post. The severity is Chrome's own word: `Critical`, `High`, `Medium` or `Low`. The
+  tool sorts by severity, then by CVE, and refuses a file that is not such a list: no fix at all, a
+  missing `cve`, `severity` or `title`, another severity, or a value of more than one line.
 - **The notes** then read "Chromium `<old>` to `<new>`", a link to Chrome Releases, and under
   "Security fixes" one line per fix: `CVE-YYYY-NNNNN (High): <title as in the post>`.
 - **"Exploited in the wild"** has no field in `security.json`. It is said in the first sentence of
-  the hand-written Highlights, with the CVE: "Security release. Chromium `<new>` fixes
-  CVE-YYYY-NNNNN, which is being exploited in the wild." Proposed: an optional `"exploited": true`
-  that the tool turns into a mark on the line.
+  `highlights.md`, the hand-written opening given to `prepare --highlights`, with the CVE: "Security
+  release. Chromium `<new>` fixes CVE-YYYY-NNNNN, which is being exploited in the wild." Proposed: an
+  optional `"exploited": true` that the tool turns into a mark on the line.
 - **`CHANGELOG.md`** gets one line under `### Security`: the Chromium version, the number of fixes
   and the CVE that made it urgent.
 - **Titles and numbers are never reworded**, and nothing in the notes explains how a bug is
@@ -263,9 +273,10 @@ and the cause becomes a roadmap task.
 [ ] smoke.py: SMOKE: PASSED
 [ ] profile_rehearsal.py on a copy of a real profile: everything kept
 [ ] bench.py (offline) compared with the last release
-[ ] release.py prepare: no problem; SHA256SUMS signed and the signature verified
-[ ] NOTES.md written again with --security and --highlights; in-the-wild fixes named first
-[ ] release.py publish: draft created
+[ ] release.py prepare with --security and --highlights: no problem; NOTES.md names the fixes, in-the-wild ones first
+[ ] SHA256SUMS signed and the signature verified
+[ ] update.json signed (critical for class A and E) and verified with manifest.py verify
+[ ] release.py publish --version <Thoron version>: draft created
 [ ] The owner has read and published the draft
 [ ] Wiki published; advisory published (class E, F); issue closed
 [ ] Deferred checks listed, with a date; section 8 filled in
@@ -290,7 +301,5 @@ the days.
 3. **Leaving a patch out of a class A release** when it cannot be refreshed in time (step 5).
 4. **A public notice when a target is missed** (section 6).
 5. **The watch:** by hand every day, or the scheduled check proposed in section 1.
-6. **The release script and security notes:** `release.py prepare` does not pass the security list to
-   the notes yet (step 14).
-7. **Where the signing key is while it signs** is question 2 of the
+6. **Where the signing key is while it signs** is question 2 of the
    [threat model](THREAT_MODEL.md#9-open-questions-for-the-owner).

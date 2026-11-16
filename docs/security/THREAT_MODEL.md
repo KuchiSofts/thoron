@@ -228,10 +228,12 @@ to the "Done when" of its stage in `ROADMAP.md`, or dropped with a reason, when 
    the second helps against theft. Proposed: both public keys are compiled in from the first release;
    the first signs releases, the second is kept in another place and only ever signs a replacement of
    the first. To settle in **P2.11** and **P4.7**.
-2. **Where signing happens.** `tools/release/release.py prepare --minisign-key` signs on the build
-   machine, so the key is on that machine while it signs. Either that is accepted (key on removable,
-   encrypted media, present only for the signing), or `SHA256SUMS` and the manifest are carried to a
-   machine that is never online, or a hardware token signs.
+2. **Where signing happens.** `tools/release/release.py prepare` signs on the build machine
+   (`--minisign-key`, `--manifest-key`, `--adblock-key`), so a key is on that machine while it signs.
+   The script reads a key only from the file it is given and refuses a key file inside the repository,
+   the build tree or the release folder. Either that is accepted (key on removable, encrypted media,
+   present only for the signing), or `SHA256SUMS` and the manifest are carried to a machine that is
+   never online, or a hardware token signs.
 3. **How long a manifest is valid** (`expires`), and who signs it again when no release is due. A short
    time narrows the freeze window (residual 3 of the updater) but needs the offline key more often.
 4. **Extensions in an import from another browser:** installed again from their store by ID

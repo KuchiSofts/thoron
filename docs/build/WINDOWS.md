@@ -197,6 +197,13 @@ Expected on M156: about 610 files (575 string and translation files, 24 icons, t
 `BRANDING` and the 12 build and installer files that name the program file). The COM interface IDs
 are still upstream's (ROADMAP **P2.19**), so install Thoron per user only.
 
+On a Chromium 158 tree that already carries the earlier identity, the step as of 2026-11-16 changes
+about 295 more files (ROADMAP **B.3**): 280 translation files, where the name is inflected or joined
+with a hyphen, 14 files a person reads the result of (installer dialog, flags, version, URLs and credits
+pages, the first start, the address bar) and the dark-mode mark of the settings pages. What still
+carries Thorium's name on purpose, and how to check a finished build for the rest, is in
+[`IDENTITY_LEFT.md`](IDENTITY_LEFT.md).
+
 ## 8. Build
 
 The release configuration is upstream's `other\AVX2\win_AVX2_args.gn` with Thoron's privacy

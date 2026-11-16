@@ -18,7 +18,9 @@ if "--no-sandbox" in args:
     sys.exit(3)
 rules = next(a for a in args if a.startswith("--host-resolver-rules="))
 port = int(re.search(r"127\.0\.0\.1:(\d+)", rules).group(1))
-page = urllib.request.urlopen(args[-1]).read().decode()
+# the test page's host name is mapped to the local server, as the host-resolver rules say
+page_url = re.sub(r"^http://[^/]+", f"http://127.0.0.1:{port}", args[-1])
+page = urllib.request.urlopen(page_url).read().decode()
 attempts = int(re.search(r"const ATTEMPTS = (\d+);", page).group(1))
 ext = next((Path(a.split("=", 1)[1]) for a in args if a.startswith("--load-extension=")), None)
 blocking = ext is not None and not (ext / "BROKEN").exists()

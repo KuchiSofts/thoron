@@ -6,8 +6,8 @@ Runs the browser twice, each time with a fresh throwaway profile and the sandbox
 the extension (control) and once with it (`--load-extension`). Both runs open a local test page,
 fully offline: Chrome's host-resolver rules send the real ad host to a local server and make every
 other host fail, and background networking and component updates are off. A request the extension
-blocks never reaches the server. The page also holds an `.ad_banner` element for the generic
-cosmetic filter in EasyList.
+blocks never reaches the server. The page also holds an `#ad_banner` element for the generic
+cosmetic filter `###ad_banner` in EasyList (it has no rule for the class `.ad_banner`).
 
 Verdict: works (network and cosmetic blocking), partial (one of them), fails (neither), or invalid
 when a run cannot be trusted: it failed, the page did not make and finish all its attempts or never
@@ -30,6 +30,9 @@ import urllib.parse
 from pathlib import Path
 
 AD_HOST = "pagead2.googlesyndication.com"   # EasyList: ||pagead2.googlesyndication.com^
+# The test page has a host name of its own: element hiding is not applied on a bare IP address (both
+# uBlock Origin and Thoron's built-in blocker leave 127.0.0.1 alone), so a page there could never show it.
+PAGE_HOST = "page.example.com"
 ATTEMPTS = 10
 INTERVAL_MS = 2000
 LATE_ATTEMPTS = 3                            # the last attempts must all be blocked (the blocker may still be starting before)
@@ -51,7 +54,7 @@ const r = {attempts: 0, loaded: 0, stand_ins: 0, errors: 0, frame: false, ad_ele
 let frame = null;
 function publish() {
   const doc = frame && frame.contentDocument;
-  const el = doc && doc.getElementById('thoron-ad');
+  const el = doc && doc.getElementById('ad_banner');
   if (el) {
     r.frame = true;
     r.ad_element_hidden = el.offsetHeight === 0 || frame.contentWindow.getComputedStyle(el).display === 'none';
@@ -87,7 +90,7 @@ publish();
 <img src="/hold?ms=%(hold)d" alt="">
 """
 FRAME = """<!doctype html>
-<meta charset="utf-8"><div class="ad_banner" id="thoron-ad" style="height:40px">ad</div>
+<meta charset="utf-8"><div class="ad_banner" id="ad_banner" style="height:40px">ad</div>
 """
 
 
@@ -160,23 +163,45 @@ class TestServer:
         self._httpd.server_close()
 
 
+def window_mode(headed: bool, visible: bool = False) -> list[str]:
+    """Headless; or a real window, off-screen so it does not disturb the person using the PC; or (visible) a
+    normal window on the screen, which is where an extension behaves as for a person."""
+    if visible:
+        return ["--window-position=40,40", "--window-size=1024,768"]
+    return ["--window-position=-32000,-32000", "--window-size=1024,768"] if headed else ["--headless=new"]
+
+
+def native_switch(native: bool) -> list[str]:
+    """Thoron's built-in blocker is on by default (P5.72): it is switched off unless it is what is tested, so
+    the control blocks nothing and a new profile gets the bundled uBlock Origin (preinstalled_extensions.cc
+    installs it only while the built-in blocker is off)."""
+    return ["--enable-features=ThoronNativeAdblock"] if native else ["--disable-features=ThoronNativeAdblock"]
+
+
 def browser_args(browser: Path, profile: Path, port: int, extension: Path | None, url: str,
-                 headed: bool = False, bundled: bool = False, native: bool = False) -> list[str]:
+                 headed: bool = False, bundled: bool = False, native: bool = False,
+                 visible: bool = False) -> list[str]:
     # --disable-default-apps: Thorium's default apps install uBlock Origin from the Web Store into
     # every new profile, which would put a blocker into the control run.
     # Fully offline: only the ad host (mapped to the local server) and 127.0.0.1 resolve.
     # headed: a real window, placed off-screen so it does not disturb the person using the PC
-    mode = ["--window-position=-32000,-32000", "--window-size=1024,768"] if headed else ["--headless=new"]
+    mode = window_mode(headed, visible)
     args = [str(browser), *mode, f"--user-data-dir={profile}", "--no-first-run",
             "--no-default-browser-check", *([] if bundled else ["--disable-default-apps"]),
             "--disable-background-networking",
             "--disable-component-update",
-            f"--host-resolver-rules=MAP {AD_HOST} 127.0.0.1:{port}, MAP * ~NOTFOUND, EXCLUDE 127.0.0.1"]
+            f"--host-resolver-rules=MAP {AD_HOST} 127.0.0.1:{port}, MAP {PAGE_HOST} 127.0.0.1:{port}, "
+            f"MAP * ~NOTFOUND, EXCLUDE 127.0.0.1"]
+    # the test page is plain HTTP on a host name, which Chromium would otherwise try over HTTPS first
+    disabled = ["HttpsUpgrades", "HttpsFirstBalancedModeAutoEnable"] + ([] if native else ["ThoronNativeAdblock"])
     if extension is not None:
-        args += [f"--load-extension={extension}", "--disable-features=DisableLoadExtensionCommandLineSwitch"]
+        args.append(f"--load-extension={extension}")
+        disabled.append("DisableLoadExtensionCommandLineSwitch")
     if native:
         args.append("--enable-features=ThoronNativeAdblock")   # Thoron's built-in engine, no extension
-    return args + ([url] if headed else ["--dump-dom", url])
+    if disabled:
+        args.append("--disable-features=" + ",".join(disabled))
+    return args + ([url] if headed or visible else ["--dump-dom", url])
 
 
 def parse_result(dom: str) -> dict | None:
@@ -214,7 +239,8 @@ def _run_headed(args: list[str], server, timeout_s: int) -> tuple[int | None, di
 
 
 def run_once(browser: Path, work_dir: Path, extension: Path | None, timeout_s: int = 120,
-             headed: bool = False, bundled: bool = False, native: bool = False) -> dict:
+             headed: bool = False, bundled: bool = False, native: bool = False, visible: bool = False) -> dict:
+    headed = headed or visible
     work_dir = Path(work_dir)
     work_dir.mkdir(parents=True, exist_ok=True)
     profile = Path(tempfile.mkdtemp(prefix="profile-", dir=work_dir))
@@ -225,9 +251,9 @@ def run_once(browser: Path, work_dir: Path, extension: Path | None, timeout_s: i
                 # as on a person's first start; the test is the next start of the same profile
                 # a normal first start (network on), so uBlock Origin fetches and builds its lists as it would
                 # for a person; only the measured start below is offline
-                mode = ["--window-position=-32000,-32000"] if headed else ["--headless=new"]
+                mode = window_mode(headed, visible)
                 warm = subprocess.Popen([str(browser), *mode, f"--user-data-dir={profile}", "--no-first-run",
-                                         "--no-default-browser-check", "about:blank"],
+                                         "--no-default-browser-check", *native_switch(False), "about:blank"],
                                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 time.sleep(WARMUP_S)
                 if sys.platform == "win32":
@@ -236,8 +262,8 @@ def run_once(browser: Path, work_dir: Path, extension: Path | None, timeout_s: i
                     warm.kill()
                 warm.wait(timeout=30)
                 time.sleep(3)
-            args = browser_args(browser, profile, server.port, extension, f"http://127.0.0.1:{server.port}/test.html",
-                                headed=headed, bundled=bundled, native=native)
+            args = browser_args(browser, profile, server.port, extension, f"http://{PAGE_HOST}/test.html",
+                                headed=headed, bundled=bundled, native=native, visible=visible)
             if headed:
                 code, page = _run_headed(args, server, timeout_s)
                 if code is None:
@@ -297,12 +323,12 @@ def verdict(control: dict, with_extension: dict) -> tuple[str, list[str]]:
 
 
 def run_both(browser: Path, extension: Path | None, work_dir: Path, timeout_s: int = 120, headed: bool = False,
-             bundled: bool = False, native: bool = False) -> dict:
+             bundled: bool = False, native: bool = False, visible: bool = False) -> dict:
     """bundled: the second run tests the browser's own built-in uBlock Origin (default apps on) instead of
     --load-extension, which newer Chromium ignores in a real window."""
-    control = run_once(browser, work_dir, None, timeout_s, headed)
+    control = run_once(browser, work_dir, None, timeout_s, headed, visible=visible)
     with_ext = run_once(browser, work_dir, None if (bundled or native) else extension, timeout_s, headed, bundled,
-                        native)
+                        native, visible)
     result, reasons = verdict(control, with_ext)
     return {"verdict": result, "reasons": reasons, "control": control, "with_extension": with_ext}
 
@@ -319,11 +345,13 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--timeout", type=int, default=120)
     parser.add_argument("--headed", action="store_true",
                         help="a real window (off-screen) instead of headless: needed for cosmetic filtering")
+    parser.add_argument("--visible", action="store_true",
+                        help="a normal window on the screen (for a minute or two), as a person sees it")
     a = parser.parse_args(argv)
     if sum(map(bool, (a.extension, a.bundled, a.native))) != 1:
         parser.error("give exactly one of --extension, --bundled and --native")
     report = run_both(a.browser, a.extension.resolve() if a.extension else None, a.work, a.timeout, a.headed,
-                      a.bundled, a.native)
+                      a.bundled, a.native, a.visible)
     print(json.dumps(report, indent=2))
     print(f"MV2 CHECK: {report['verdict'].upper()}")
     return 0 if report["verdict"] == "works" else 1

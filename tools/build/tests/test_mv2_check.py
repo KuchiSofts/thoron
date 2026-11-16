@@ -49,6 +49,26 @@ class ArgsAndParsingTests(unittest.TestCase):
         self.assertFalse(any(a.startswith("--load-extension") for a in
                              mc.browser_args(Path("b.exe"), Path("prof"), 1, None, "u")))
 
+    def test_the_page_has_a_host_name_and_the_built_in_blocker_is_off_unless_tested(self):
+        # element hiding is not applied on a bare IP address, so the page has a host name of its own
+        args = mc.browser_args(Path("b.exe"), Path("prof"), 4321, None, f"http://{mc.PAGE_HOST}/test.html")
+        rules = next(a for a in args if a.startswith("--host-resolver-rules="))
+        self.assertIn(f"MAP {mc.PAGE_HOST} 127.0.0.1:4321", rules)
+        disabled = next(a for a in args if a.startswith("--disable-features="))
+        self.assertIn("HttpsUpgrades", disabled)          # plain HTTP on a host name stays plain HTTP
+        self.assertIn("ThoronNativeAdblock", disabled)    # on by default: the control must block nothing
+        native = mc.browser_args(Path("b.exe"), Path("prof"), 4321, None, "u", native=True)
+        self.assertIn("--enable-features=ThoronNativeAdblock", native)
+        self.assertNotIn("ThoronNativeAdblock", next(a for a in native if a.startswith("--disable-features=")))
+
+    def test_a_visible_window_is_on_the_screen(self):
+        self.assertEqual(mc.window_mode(False, visible=True), ["--window-position=40,40", "--window-size=1024,768"])
+        self.assertIn("--window-position=-32000,-32000", mc.window_mode(True))
+        self.assertEqual(mc.window_mode(False), ["--headless=new"])
+        args = mc.browser_args(Path("b.exe"), Path("prof"), 1, None, "http://x/test.html", visible=True)
+        self.assertEqual(args[-1], "http://x/test.html")    # a real window loads the page; no --dump-dom
+        self.assertNotIn("--dump-dom", args)
+
     def test_headed_args_open_a_real_window_off_screen(self):
         args = mc.browser_args(Path("b.exe"), Path("prof"), 1, Path("ext"), "u", headed=True)
         self.assertNotIn("--headless=new", args)

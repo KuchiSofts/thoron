@@ -249,7 +249,10 @@ one only there when the release moves to a new key), and, when they name a newer
 package; GitHub answers those with a redirect to its file host (`objects.githubusercontent.com` or
 `release-assets.githubusercontent.com`). It looks 10 minutes after the start and then every 5 hours,
 only in the update mode `auto` (`thoron_update --mode`), and whenever the About page is opened. The
-switch `--disable-background-networking` stops the looks on its own; the About page still looks.
+switch `--disable-background-networking` stops the looks on its own; the About page still looks. On a
+metered connection the looks on their own fetch the three small files and download no package. A package
+download that breaks goes on with an HTTP `Range` request for the rest. The requests use the browser's
+network settings, so a proxy set in Windows is used as for any page.
 
 The requests are plain HTTPS GETs through the browser's own network context: no profile, no cookies or
 other credentials, not stored in the HTTP cache, no identifiers; a redirect away from HTTPS is refused.

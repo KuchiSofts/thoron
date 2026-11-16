@@ -2131,6 +2131,24 @@ index 90f8e1a51584d6030950ff5627242e3fd6659874..7998cc11454d8beea1cebe6cb25c0d36
    html_source->AddBoolean("showAiPageAiFeatureSection",
                            show_ai_features_section);
  
+diff --git a/chrome/browser/upgrade_detector/upgrade_detector_impl.cc b/chrome/browser/upgrade_detector/upgrade_detector_impl.cc
+index 2805ed52e2e0c8c4cf7772609e4b4df0fe2fed2c..8d7c351ea54a524159deb093deffaa61302b627a 100644
+--- a/chrome/browser/upgrade_detector/upgrade_detector_impl.cc
++++ b/chrome/browser/upgrade_detector/upgrade_detector_impl.cc
+@@ -433,6 +433,13 @@ void UpgradeDetectorImpl::Init() {
+   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+ 
+   UpgradeDetector::Init();
++#if !BUILDFLAG(ENABLE_UPDATE_NOTIFICATIONS)
++  // Thoron (P3.6): its own updater (chrome/browser/thoron_update) says in the
++  // build state when it installed a version, and the menu then offers the
++  // relaunch. Only that: the installed-version poller and the outdated-build
++  // check of Google's builds stay off.
++  g_browser_process->GetBuildState()->AddObserver(this);
++#endif
+ 
+   const base::CommandLine& cmd_line = *base::CommandLine::ForCurrentProcess();
+   // The different command line switches that affect testing can't be used
 diff --git a/chrome/common/chrome_features.cc b/chrome/common/chrome_features.cc
 index ef50d7b82094582b7670aa9a8ba35a4b12738b88..5018101bf2cbacfd16c0f1b206f7abc1642d1e5e 100644
 --- a/chrome/common/chrome_features.cc
@@ -2371,10 +2389,10 @@ index a8fb5de0b5a99198c901e81a2df54d7fcb9c7dd2..d134439f071fcda8430f589b0d23c950
  
 diff --git a/chrome/browser/thoron_update/BUILD.gn b/chrome/browser/thoron_update/BUILD.gn
 new file mode 100644
-index 0000000000000000000000000000000000000000..42848a8361f4249d1e59019e014a758cd4e0983d
+index 0000000000000000000000000000000000000000..d345a9b5a9e7492291134540f13777e9ca3e7830
 --- /dev/null
 +++ b/chrome/browser/thoron_update/BUILD.gn
-@@ -0,0 +1,51 @@
+@@ -0,0 +1,53 @@
 +# Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +# found in the LICENSE file.
 +
@@ -2421,17 +2439,19 @@ index 0000000000000000000000000000000000000000..42848a8361f4249d1e59019e014a758c
 +  deps = [
 +    "//base",
 +    "//chrome/browser:browser_process",
++    "//chrome/browser/upgrade_detector",
 +    "//content/public/browser",
++    "//net",
 +    "//services/network/public/cpp",
 +    "//url",
 +  ]
 +}
 diff --git a/chrome/browser/thoron_update/thoron_update_win.cc b/chrome/browser/thoron_update/thoron_update_win.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..2acfc2098da0333e3847f1cc5da7599e2a38cc03
+index 0000000000000000000000000000000000000000..d60572e4b95af103a3f0500b60ce8cbffaafc293
 --- /dev/null
 +++ b/chrome/browser/thoron_update/thoron_update_win.cc
-@@ -0,0 +1,180 @@
+@@ -0,0 +1,203 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -2454,9 +2474,12 @@ index 0000000000000000000000000000000000000000..2acfc2098da0333e3847f1cc5da7599e
 +#include "base/time/default_clock.h"
 +#include "base/time/time.h"
 +#include "base/version_info/version_info.h"
++#include "base/version.h"
 +#include "chrome/browser/browser_process.h"
++#include "chrome/browser/upgrade_detector/build_state.h"
 +#include "components/thoron_update/cli.h"
 +#include "content/public/browser/browser_thread.h"
++#include "net/base/network_change_notifier.h"
 +#include "services/network/public/cpp/shared_url_loader_factory.h"
 +
 +namespace thoron_update_win {
@@ -2494,10 +2517,23 @@ index 0000000000000000000000000000000000000000..2acfc2098da0333e3847f1cc5da7599e
 +  bool portable = false;
 +  const thoron_update::UpdateMode mode = thoron_update::ReadUpdateMode(ProgramFolder(&portable));
 +  if (mode == thoron_update::UpdateMode::kAuto) {
-+    Client()->Check(/*install=*/true, base::DoNothing());
++    Client()->Check(/*install=*/true, base::DoNothing(), /*asked=*/false);
 +  }
 +  base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
 +      FROM_HERE, base::BindOnce(&ScheduledLook), kBetweenLooks);
++}
++
++// The relaunch badge (P3.6): Chromium's build state learns of the installed
++// version, and its upgrade detector shows the menu's relaunch item; a critical
++// release asks sooner.
++void TellBuildState(const std::string& version, bool critical) {
++  const base::Version installed(version);
++  if (!installed.IsValid()) {
++    return;
++  }
++  g_browser_process->GetBuildState()->SetUpdate(
++      BuildState::UpdateType::kNormalUpdate, installed,
++      critical ? std::optional<base::Version>(installed) : std::nullopt);
 +}
 +
 +}  // namespace
@@ -2576,6 +2612,13 @@ index 0000000000000000000000000000000000000000..2acfc2098da0333e3847f1cc5da7599e
 +  }
 +  config.variant =
 +      thoron_update::ParseVariant(kVariant).value_or(thoron_update::Variant::kWinX64Sse4);
++  config.on_installed = base::BindRepeating(&TellBuildState);
++  // A metered connection (a phone's hotspot, a data plan): the looks on a
++  // schedule download nothing then (P4.3).
++  config.is_metered = base::BindRepeating([] {
++    return net::NetworkChangeNotifier::GetConnectionCost() ==
++           net::NetworkChangeNotifier::CONNECTION_COST_METERED;
++  });
 +  bool portable = false;
 +  const base::FilePath program = ProgramFolder(&portable);
 +  config.kind = portable ? thoron_update::Kind::kPortable : thoron_update::Kind::kInstalled;
@@ -12552,10 +12595,10 @@ index 0000000000000000000000000000000000000000..beb8343f22d0c2666b6fdae1536e9d29
 +]
 diff --git a/components/thoron_update/README.md b/components/thoron_update/README.md
 new file mode 100644
-index 0000000000000000000000000000000000000000..a359de2d0fcfe1eeed2cb03a3343eb1242efe310
+index 0000000000000000000000000000000000000000..b87968efd2f3654a8d9e1a62bdeb940ae7aa9c2a
 --- /dev/null
 +++ b/components/thoron_update/README.md
-@@ -0,0 +1,183 @@
+@@ -0,0 +1,188 @@
 +# thoron_update
 +
 +The core of Thoron's updater (ROADMAP P3.3): what a copy of Thoron makes of the two files a release
@@ -12626,7 +12669,12 @@ index 0000000000000000000000000000000000000000..a359de2d0fcfe1eeed2cb03a3343eb12
 +  `update.key` beside it (no cookies, no cache, https only, redirects included), decides with
 +  `CheckUpdateWithKeys`, keeps the highest accepted serial and the key statements that lead to a trusted
 +  key in `Local State`, downloads the delta first when it is smaller and then the full package, checks
-+  every download with `PlaceVerifiedFile` and hands the checked package to the caller's installer. Each
++  every download with `PlaceVerifiedFile` and hands the checked package to the caller's installer. A
++  download that breaks keeps what arrived (`<sha256>.part`, also across restarts) and goes on with an HTTP
++  range for the rest, up to 3 attempts; a server that sends it all again is fine, a range that starts
++  elsewhere is never appended, and a resumed file that does not verify is fetched once more whole (P4.3).
++  A look on a schedule downloads nothing on a metered connection; one the person asked for does. Once a
++  version is installed it tells the browser (`on_installed`), which shows the relaunch badge (P3.6). Each
 +  step is a state for the About page (`chrome/browser/ui/webui/help/version_updater_thoron_win.cc`; the
 +  copy's values are in `chrome/browser/thoron_update/`). Without a key it asks nothing. Its tests serve a
 +  release through Chromium's fake network (`update_client_test_data.h`, made by
@@ -22382,10 +22430,10 @@ index 0000000000000000000000000000000000000000..37445ffb780b10977cd785a2f5dd2390
 +}  // namespace thoron_update
 diff --git a/components/thoron_update/update_client.cc b/components/thoron_update/update_client.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..d15933f42b3c8465cca6f51e5ec88d887c24b6a9
+index 0000000000000000000000000000000000000000..100bc0435b166588efbf4aa33f101e2fd5eb27f3
 --- /dev/null
 +++ b/components/thoron_update/update_client.cc
-@@ -0,0 +1,524 @@
+@@ -0,0 +1,652 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -22395,6 +22443,8 @@ index 0000000000000000000000000000000000000000..d15933f42b3c8465cca6f51e5ec88d88
 +#include <utility>
 +
 +#include "base/base64.h"
++#include "base/files/file.h"
++#include "base/files/file_enumerator.h"
 +#include "base/files/file_util.h"
 +#include "base/functional/bind.h"
 +#include "base/strings/string_number_conversions.h"
@@ -22408,6 +22458,7 @@ index 0000000000000000000000000000000000000000..d15933f42b3c8465cca6f51e5ec88d88
 +#include "components/prefs/scoped_user_pref_update.h"
 +#include "net/base/load_flags.h"
 +#include "net/base/net_errors.h"
++#include "net/http/http_request_headers.h"
 +#include "net/http/http_response_headers.h"
 +#include "net/traffic_annotation/network_traffic_annotation.h"
 +#include "net/url_request/redirect_info.h"
@@ -22590,7 +22641,8 @@ index 0000000000000000000000000000000000000000..d15933f42b3c8465cca6f51e5ec88d88
 +  return page;
 +}
 +
-+void UpdateClient::Check(bool install, StatusCallback callback) {
++void UpdateClient::Check(bool install, StatusCallback callback, bool asked) {
++  asked_ = asked_ || asked;
 +  callbacks_.push_back(std::move(callback));
 +  // Without an installer (a portable copy, for now) a look only says what is there.
 +  install_wanted_ = install_wanted_ || (install && !config_.install.is_null());
@@ -22630,6 +22682,7 @@ index 0000000000000000000000000000000000000000..d15933f42b3c8465cca6f51e5ec88d88
 +void UpdateClient::Finish(Status status) {
 +  running_ = false;
 +  install_wanted_ = false;
++  asked_ = false;
 +  loader_.reset();
 +  Report(std::move(status));
 +  callbacks_.clear();
@@ -22766,8 +22819,13 @@ index 0000000000000000000000000000000000000000..d15933f42b3c8465cca6f51e5ec88d88
 +    Fail(state, std::string(OutcomeName(decision_->outcome)));
 +    return;
 +  }
-+  if (!install_wanted_) {
++  // On a metered connection only a look the person asked for downloads.
++  const bool wait_for_connection = !asked_ && config_.is_metered && config_.is_metered.Run();
++  if (!install_wanted_ || wait_for_connection) {
 +    Status available;
++    if (wait_for_connection) {
++      available.detail = "waits for a connection that is not metered";
++    }
 +    available.state = State::kAvailable;
 +    available.version = ToString(decision_->manifest->version);
 +    available.thoron_version = decision_->manifest->thoron_version;
@@ -22777,10 +22835,29 @@ index 0000000000000000000000000000000000000000..d15933f42b3c8465cca6f51e5ec88d88
 +  }
 +  plan_ = PlanDownloads(*decision_);
 +  next_step_ = 0;
++  std::vector<std::string> keep;
++  for (const DownloadStep& step : plan_) {
++    keep.push_back(step.file.sha256 + ".part");
++  }
 +  base::ThreadPool::PostTaskAndReplyWithResult(
 +      FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
-+      base::BindOnce([](const base::FilePath& dir) { return base::CreateDirectory(dir); },
-+                     config_.download_dir),
++      base::BindOnce(
++          [](const base::FilePath& dir, const std::vector<std::string>& keep) {
++            if (!base::CreateDirectory(dir)) {
++              return false;
++            }
++            // Parts of files this release does not name are of an older one.
++            base::FileEnumerator found(dir, /*recursive=*/false, base::FileEnumerator::FILES);
++            for (base::FilePath path = found.Next(); !path.empty(); path = found.Next()) {
++              const std::string name = path.BaseName().MaybeAsASCII();
++              const bool part = name.ends_with(".part") || name.ends_with(".part.more");
++              if (part && std::find(keep.begin(), keep.end(), name) == keep.end()) {
++                base::DeleteFile(path);
++              }
++            }
++            return true;
++          },
++          config_.download_dir, std::move(keep)),
 +      base::BindOnce(&UpdateClient::OnDownloadDirReady, weak_factory_.GetWeakPtr()));
 +}
 +
@@ -22792,6 +22869,12 @@ index 0000000000000000000000000000000000000000..d15933f42b3c8465cca6f51e5ec88d88
 +  DownloadNext();
 +}
 +
++base::FilePath UpdateClient::PartPath() const {
++  // Named by its SHA-256, so a part from an earlier run of the same file is
++  // taken up again, and never one of another file.
++  return config_.download_dir.AppendASCII(plan_[next_step_].file.sha256 + ".part");
++}
++
 +void UpdateClient::DownloadNext() {
 +  if (next_step_ >= plan_.size()) {
 +    Fail(State::kError, "no download of the release verified");
@@ -22799,18 +22882,53 @@ index 0000000000000000000000000000000000000000..d15933f42b3c8465cca6f51e5ec88d88
 +  }
 +  const DownloadStep& step = plan_[next_step_];
 +  step_size_ = step.file.size;
++  attempts_ = 0;
++  resumed_ = false;
++  fetched_whole_again_ = false;
 +  Status downloading;
 +  downloading.state = State::kDownloading;
 +  downloading.version = ToString(decision_->manifest->version);
 +  downloading.thoron_version = decision_->manifest->thoron_version;
 +  Report(downloading);
++  StartAttempt();
++}
 +
++void UpdateClient::StartAttempt() {
++  ++attempts_;
++  base::ThreadPool::PostTaskAndReplyWithResult(
++      FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
++      base::BindOnce(
++          [](const base::FilePath& part, int64_t most) -> int64_t {
++            const int64_t size = base::GetFileSize(part).value_or(0);
++            // A part as long as the file or longer is no part to go on from.
++            if (size >= most) {
++              base::DeleteFile(part);
++              return 0;
++            }
++            return size;
++          },
++          PartPath(), step_size_),
++      base::BindOnce(&UpdateClient::OnPartSize, weak_factory_.GetWeakPtr()));
++}
++
++void UpdateClient::OnPartSize(int64_t had) {
++  const DownloadStep& step = plan_[next_step_];
++  had_ = had;
++  if (had > 0) {
++    resumed_ = true;
++  }
 +  auto request = std::make_unique<network::ResourceRequest>();
 +  request->url = GURL(step.file.url);
 +  request->method = "GET";
 +  request->credentials_mode = network::mojom::CredentialsMode::kOmit;
 +  request->load_flags = net::LOAD_DISABLE_CACHE;
++  if (had > 0) {
++    // Only the rest (P4.3). A server that sends it all again is fine too.
++    request->headers.SetHeader("Range", "bytes=" + base::NumberToString(had) + "-");
++  }
 +  loader_ = network::SimpleURLLoader::Create(std::move(request), kTrafficAnnotation);
++  // What arrived before a break is kept, so the next attempt goes on from it.
++  loader_->SetAllowPartialResults(true);
 +  loader_->SetOnRedirectCallback(base::BindRepeating(
 +      [](base::WeakPtr<UpdateClient> self, const GURL&, const net::RedirectInfo& info,
 +         const network::mojom::URLResponseHead&, std::vector<std::string>*) {
@@ -22822,19 +22940,21 @@ index 0000000000000000000000000000000000000000..d15933f42b3c8465cca6f51e5ec88d88
 +      weak_factory_.GetWeakPtr()));
 +  loader_->SetOnDownloadProgressCallback(
 +      base::BindRepeating(&UpdateClient::OnProgress, weak_factory_.GetWeakPtr()));
-+  // One byte more than the manifest names is enough to tell a longer file.
++  // One byte more than the manifest names is enough to tell a longer file. The
++  // whole size, not the rest: a server may send it all again for a range, and
++  // a part that grows too long is told by the check (PlaceVerifiedFile).
 +  loader_->DownloadToFile(
 +      loader_factory_.get(),
-+      base::BindOnce(&UpdateClient::OnDownloaded, weak_factory_.GetWeakPtr()),
-+      config_.download_dir.AppendASCII(step.file.sha256 + ".part"), step.file.size + 1);
++      base::BindOnce(&UpdateClient::OnDownloaded, weak_factory_.GetWeakPtr(), had),
++      PartPath().AddExtensionASCII("more"), step.file.size + 1);
 +}
 +
 +void UpdateClient::OnProgress(uint64_t current) {
 +  if (step_size_ <= 0) {
 +    return;
 +  }
-+  const int progress = static_cast<int>(
-+      std::min<uint64_t>(100, current * 100 / static_cast<uint64_t>(step_size_)));
++  const int progress = static_cast<int>(std::min<uint64_t>(
++      100, (current + static_cast<uint64_t>(had_)) * 100 / static_cast<uint64_t>(step_size_)));
 +  if (progress != status_.progress) {
 +    Status downloading = status_;
 +    downloading.progress = progress;
@@ -22842,17 +22962,61 @@ index 0000000000000000000000000000000000000000..d15933f42b3c8465cca6f51e5ec88d88
 +  }
 +}
 +
-+void UpdateClient::OnDownloaded(base::FilePath path) {
-+  const int code = loader_ && loader_->ResponseInfo() && loader_->ResponseInfo()->headers
-+                       ? loader_->ResponseInfo()->headers->response_code()
-+                       : 0;
++void UpdateClient::OnDownloaded(int64_t had, base::FilePath path) {
++  const net::HttpResponseHeaders* headers =
++      loader_ && loader_->ResponseInfo() ? loader_->ResponseInfo()->headers.get() : nullptr;
++  const int code = headers ? headers->response_code() : 0;
++  // A range answer counts only when it starts where the part ends.
++  int64_t first = -1, last = -1, length = -1;
++  const bool range_fits = code == 206 && had > 0 &&
++                          headers->GetContentRangeFor206(&first, &last, &length) &&
++                          first == had && (length < 0 || length == step_size_);
 +  loader_.reset();
++  base::ThreadPool::PostTaskAndReplyWithResult(
++      FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
++      base::BindOnce(
++          [](const base::FilePath& part, const base::FilePath& more, int code, bool range_fits)
++              -> int64_t {
++            if (!more.empty() && base::PathExists(more)) {
++              if (range_fits) {
++                // The rest, after what was there, copied in blocks.
++                base::File from(more, base::File::FLAG_OPEN | base::File::FLAG_READ);
++                base::File to(part, base::File::FLAG_OPEN | base::File::FLAG_APPEND);
++                bool copied = from.IsValid() && to.IsValid();
++                std::vector<uint8_t> block(1 << 20);
++                while (copied) {
++                  const std::optional<size_t> read = from.ReadAtCurrentPos(block);
++                  if (!read || *read == 0) {
++                    copied = read.has_value();
++                    break;
++                  }
++                  copied = to.WriteAtCurrentPosAndCheck(base::span(block).first(*read));
++                }
++                to.Close();
++                from.Close();
++                if (!copied) {
++                  base::DeleteFile(part);
++                }
++              } else if (code == 200) {
++                // The whole file (again): it takes the part's place.
++                base::ReplaceFile(more, part, nullptr);
++              }
++              base::DeleteFile(more);
++            }
++            return base::GetFileSize(part).value_or(0);
++          },
++          PartPath(), path, code, range_fits),
++      base::BindOnce(&UpdateClient::OnTakenIn, weak_factory_.GetWeakPtr()));
++}
++
++void UpdateClient::OnTakenIn(int64_t size) {
 +  const DownloadStep& step = plan_[next_step_];
-+  if (path.empty() || code != 200) {
-+    if (!path.empty()) {
-+      base::ThreadPool::PostTask(FROM_HERE, {base::MayBlock()},
-+                                 base::GetDeleteFileCallback(path));
++  if (size < step_size_) {
++    if (attempts_ < kMostAttempts) {
++      StartAttempt();
++      return;
 +    }
++    // What arrived is kept: the next look goes on from it.
 +    ++next_step_;
 +    DownloadNext();
 +    return;
@@ -22861,11 +23025,19 @@ index 0000000000000000000000000000000000000000..d15933f42b3c8465cca6f51e5ec88d88
 +      config_.download_dir.AppendASCII(PackageName(step.file, step.delta));
 +  base::ThreadPool::PostTaskAndReplyWithResult(
 +      FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
-+      base::BindOnce(&PlaceVerifiedFile, path, step.file, destination),
++      base::BindOnce(&PlaceVerifiedFile, PartPath(), step.file, destination),
 +      base::BindOnce(&UpdateClient::OnPlaced, weak_factory_.GetWeakPtr(), destination));
 +}
 +
 +void UpdateClient::OnPlaced(base::FilePath placed, FileCheck check) {
++  if (check != FileCheck::kOk && resumed_ && !fetched_whole_again_) {
++    // A part from before that did not fit what came after: the file once more,
++    // from the start (PlaceVerifiedFile removed what did not verify).
++    fetched_whole_again_ = true;
++    resumed_ = false;
++    StartAttempt();
++    return;
++  }
 +  if (check != FileCheck::kOk) {
 +    // That download is gone; the next step (the full package) is tried.
 +    ++next_step_;
@@ -22906,16 +23078,20 @@ index 0000000000000000000000000000000000000000..d15933f42b3c8465cca6f51e5ec88d88
 +  ready.version = ToString(decision_->manifest->version);
 +  ready.thoron_version = decision_->manifest->thoron_version;
 +  ready.outcome = decision_->outcome;
-+  Finish(std::move(ready));
++  const bool critical = decision_->manifest->critical;
++  Finish(ready);
++  if (config_.on_installed) {
++    config_.on_installed.Run(ready.version, critical);
++  }
 +}
 +
 +}  // namespace thoron_update
 diff --git a/components/thoron_update/update_client.h b/components/thoron_update/update_client.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..fc4f2d30ca1a0faad042d0f1c7d2dd83124194ad
+index 0000000000000000000000000000000000000000..807aee51e1c890c5dd88f681c8d5bf12f04b4d3c
 --- /dev/null
 +++ b/components/thoron_update/update_client.h
-@@ -0,0 +1,211 @@
+@@ -0,0 +1,235 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -23034,6 +23210,13 @@ index 0000000000000000000000000000000000000000..fc4f2d30ca1a0faad042d0f1c7d2dd83
 +    // profile. Made when needed.
 +    base::FilePath download_dir;
 +    Installer install;
++    // Called once a version is installed and waits for a relaunch: its build
++    // version, and whether the release is a security release that should not
++    // wait (the manifest's `critical`). The browser shows the relaunch badge.
++    base::RepeatingCallback<void(const std::string& version, bool critical)> on_installed;
++    // Whether the connection is metered: a look the copy takes on its own then
++    // downloads nothing (P4.3); a look the person asked for still does.
++    base::RepeatingCallback<bool()> is_metered;
 +  };
 +
 +  UpdateClient(Config config,
@@ -23076,7 +23259,12 @@ index 0000000000000000000000000000000000000000..fc4f2d30ca1a0faad042d0f1c7d2dd83
 +  // gets every state from now on, the last being the answer. A look while one
 +  // runs joins it; `install` then also installs what it finds. After an
 +  // install, every look answers kReadyToRelaunch until the browser restarts.
-+  void Check(bool install, StatusCallback callback);
++  // `asked`: the person asked (the About page); false for the looks on a
++  // schedule, which download nothing on a metered connection.
++  void Check(bool install, StatusCallback callback, bool asked = true);
++
++  // How often one download is tried before the next step of the plan.
++  static constexpr int kMostAttempts = 3;
 +
 +  const Status& status() const { return status_; }
 +
@@ -23096,8 +23284,12 @@ index 0000000000000000000000000000000000000000..fc4f2d30ca1a0faad042d0f1c7d2dd83
 +  void Decide();
 +
 +  void DownloadNext();
++  void StartAttempt();
++  void OnPartSize(int64_t had);
 +  void OnDownloadDirReady(bool made);
-+  void OnDownloaded(base::FilePath path);
++  void OnDownloaded(int64_t had, base::FilePath path);
++  void OnTakenIn(int64_t size);
++  base::FilePath PartPath() const;
 +  void OnProgress(uint64_t current);
 +  void OnPlaced(base::FilePath placed, FileCheck check);
 +  void OnInstalled(bool installed);
@@ -23110,6 +23302,14 @@ index 0000000000000000000000000000000000000000..fc4f2d30ca1a0faad042d0f1c7d2dd83
 +  Status status_;
 +  bool running_ = false;
 +  bool install_wanted_ = false;
++  bool asked_ = false;
++  int attempts_ = 0;
++  // The part of the download that had arrived when this attempt began.
++  int64_t had_ = 0;
++  // The step was resumed from a part: if it does not verify, it is fetched once
++  // more from the start.
++  bool resumed_ = false;
++  bool fetched_whole_again_ = false;
 +  std::vector<StatusCallback> callbacks_;
 +
 +  std::unique_ptr<network::SimpleURLLoader> loader_;
@@ -23419,10 +23619,10 @@ index 0000000000000000000000000000000000000000..523d58db6e2a1b6f60e8f55bfb651424
 +#endif  // COMPONENTS_THORON_UPDATE_UPDATE_CLIENT_TEST_DATA_H_
 diff --git a/components/thoron_update/update_client_unittest.cc b/components/thoron_update/update_client_unittest.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..873b0a839ef201c9d4af0588c0e8a994fb1a0fb8
+index 0000000000000000000000000000000000000000..3c4e20e8e52d1b0265a3aefb64fe2619d455e7c1
 --- /dev/null
 +++ b/components/thoron_update/update_client_unittest.cc
-@@ -0,0 +1,378 @@
+@@ -0,0 +1,547 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -23441,12 +23641,15 @@ index 0000000000000000000000000000000000000000..873b0a839ef201c9d4af0588c0e8a994
 +#include "base/test/bind.h"
 +#include "base/test/simple_test_clock.h"
 +#include "base/test/task_environment.h"
++#include "base/strings/string_number_conversions.h"
 +#include "base/time/time.h"
++#include "crypto/hash.h"
 +#include "components/prefs/testing_pref_service.h"
 +#include "components/thoron_update/update_client_test_data.h"
 +#include "net/http/http_status_code.h"
 +#include "services/network/public/cpp/weak_wrapper_shared_url_loader_factory.h"
 +#include "services/network/test/test_url_loader_factory.h"
++#include "services/network/test/test_utils.h"
 +#include "testing/gtest/include/gtest/gtest.h"
 +
 +namespace thoron_update {
@@ -23594,6 +23797,166 @@ index 0000000000000000000000000000000000000000..873b0a839ef201c9d4af0588c0e8a994
 +  EXPECT_EQ(network_.total_requests(), requests);
 +}
 +
++TEST_F(ThoronUpdateClientTest, TheBrowserIsToldOnceAVersionIsInstalled) {
++  Publish();
++  std::vector<std::string> told;
++  config_.on_installed = base::BindLambdaForTesting([&](const std::string& version, bool critical) {
++    told.push_back(version + (critical ? " critical" : ""));
++  });
++  auto client = Client();
++  EXPECT_EQ(Look(*client, /*install=*/false).state, State::kAvailable);
++  EXPECT_TRUE(told.empty());
++  EXPECT_EQ(Look(*client, /*install=*/true).state, State::kReadyToRelaunch);
++  EXPECT_EQ(told, (std::vector<std::string>{data::kNewest}));
++  // a look after it tells nothing new
++  EXPECT_EQ(Look(*client, /*install=*/true).state, State::kReadyToRelaunch);
++  EXPECT_EQ(told.size(), 1u);
++}
++
++// --- P4.3: downloads that break are resumed ------------------------------------
++
++class ThoronUpdateClientResumeTest : public ThoronUpdateClientTest {
++ protected:
++  // Only the full installer is downloaded (an updater that is too old gets no
++  // delta), and every answer for it is made by `answer` from the Range asked.
++  void Serve(base::RepeatingCallback<void(const std::string& range)> answer) {
++    Publish();
++    config_.updater = *ParseBuildVersion("158.0.8127.2999");
++    network_.SetInterceptor(base::BindLambdaForTesting([this, answer](const network::ResourceRequest& r) {
++      if (r.url != GURL(data::kInstallerUrl)) {
++        return;
++      }
++      const std::string range = r.headers.GetHeader("Range").value_or("");
++      ranges_.push_back(range);
++      answer.Run(range);
++    }));
++  }
++
++  void Answer(int code, const std::string& body, const std::string& content_range = "") {
++    auto head = network::CreateURLResponseHead(static_cast<net::HttpStatusCode>(code));
++    if (!content_range.empty()) {
++      head->headers->AddHeader("Content-Range", content_range);
++    }
++    network_.AddResponse(GURL(data::kInstallerUrl), std::move(head), body,
++                         network::URLLoaderCompletionStatus(net::OK));
++  }
++
++  base::FilePath Part() {
++    return config_.download_dir.AppendASCII(
++        base::HexEncodeLower(crypto::hash::Sha256(Bytes(data::kInstaller))) + ".part");
++  }
++
++  std::vector<std::string> ranges_;
++};
++
++TEST_F(ThoronUpdateClientResumeTest, AShortDownloadGoesOnWithARangeForTheRest) {
++  const std::string whole = Bytes(data::kInstaller);
++  Serve(base::BindLambdaForTesting([&](const std::string& range) {
++    if (range.empty()) {
++      Answer(200, whole.substr(0, 1000));  // the connection ended early
++    } else {
++      Answer(206, whole.substr(1000), "bytes 1000-2047/2048");
++    }
++  }));
++  EXPECT_EQ(Look(*Client(), /*install=*/true).state, State::kReadyToRelaunch);
++  EXPECT_EQ(ranges_, (std::vector<std::string>{"", "bytes=1000-"}));
++  ASSERT_EQ(installed_.size(), 1u);
++  EXPECT_EQ(installed_[0], whole);
++  EXPECT_TRUE(DownloadFolderIsEmpty());
++}
++
++TEST_F(ThoronUpdateClientResumeTest, AServerThatSendsItAllAgainIsFineToo) {
++  const std::string whole = Bytes(data::kInstaller);
++  Serve(base::BindLambdaForTesting([&](const std::string& range) {
++    Answer(200, range.empty() ? whole.substr(0, 700) : whole);
++  }));
++  EXPECT_EQ(Look(*Client(), /*install=*/true).state, State::kReadyToRelaunch);
++  EXPECT_EQ(ranges_, (std::vector<std::string>{"", "bytes=700-"}));
++  ASSERT_EQ(installed_.size(), 1u);
++  EXPECT_EQ(installed_[0], whole);
++}
++
++TEST_F(ThoronUpdateClientResumeTest, APartAnEarlierRunLeftIsTakenUp) {
++  const std::string whole = Bytes(data::kInstaller);
++  ASSERT_TRUE(base::CreateDirectory(config_.download_dir));
++  ASSERT_TRUE(base::WriteFile(Part(), whole.substr(0, 1500)));
++  Serve(base::BindLambdaForTesting([&](const std::string& range) {
++    Answer(206, whole.substr(1500), "bytes 1500-2047/2048");
++  }));
++  EXPECT_EQ(Look(*Client(), /*install=*/true).state, State::kReadyToRelaunch);
++  EXPECT_EQ(ranges_, (std::vector<std::string>{"bytes=1500-"}));
++  ASSERT_EQ(installed_.size(), 1u);
++  EXPECT_EQ(installed_[0], whole);
++}
++
++TEST_F(ThoronUpdateClientResumeTest, APartThatDoesNotFitWhatFollowsIsFetchedWholeOnceMore) {
++  const std::string whole = Bytes(data::kInstaller);
++  ASSERT_TRUE(base::CreateDirectory(config_.download_dir));
++  ASSERT_TRUE(base::WriteFile(Part(), std::string(1500, 'x')));   // not the file's start
++  Serve(base::BindLambdaForTesting([&](const std::string& range) {
++    if (range.empty()) {
++      Answer(200, whole);
++    } else {
++      Answer(206, whole.substr(1500), "bytes 1500-2047/2048");
++    }
++  }));
++  EXPECT_EQ(Look(*Client(), /*install=*/true).state, State::kReadyToRelaunch);
++  EXPECT_EQ(ranges_, (std::vector<std::string>{"bytes=1500-", ""}));
++  ASSERT_EQ(installed_.size(), 1u);
++  EXPECT_EQ(installed_[0], whole);
++}
++
++TEST_F(ThoronUpdateClientResumeTest, ARangeThatStartsElsewhereIsNeverAppended) {
++  const std::string whole = Bytes(data::kInstaller);
++  Serve(base::BindLambdaForTesting([&](const std::string& range) {
++    if (range.empty()) {
++      Answer(200, whole.substr(0, 1000));
++    } else {
++      Answer(206, whole.substr(0, 1048), "bytes 0-1047/2048");   // not what was asked
++    }
++  }));
++  const UpdateClient::Status status = Look(*Client(), /*install=*/true);
++  EXPECT_EQ(status.state, State::kError);
++  EXPECT_EQ(ranges_.size(), static_cast<size_t>(UpdateClient::kMostAttempts));
++  EXPECT_TRUE(installed_.empty());
++  // what did arrive is kept for the next look, and nothing else
++  std::string part;
++  ASSERT_TRUE(base::ReadFileToString(Part(), &part));
++  EXPECT_EQ(part, whole.substr(0, 1000));
++  EXPECT_FALSE(base::PathExists(Part().AddExtensionASCII("more")));
++}
++
++TEST_F(ThoronUpdateClientResumeTest, APartOfAFileTheReleaseDoesNotNameIsRemoved) {
++  const std::string whole = Bytes(data::kInstaller);
++  ASSERT_TRUE(base::CreateDirectory(config_.download_dir));
++  const base::FilePath stale = config_.download_dir.AppendASCII(std::string(64, 'a') + ".part");
++  ASSERT_TRUE(base::WriteFile(stale, "of an older release"));
++  Serve(base::BindLambdaForTesting([&](const std::string& range) { Answer(200, whole); }));
++  EXPECT_EQ(Look(*Client(), /*install=*/true).state, State::kReadyToRelaunch);
++  EXPECT_FALSE(base::PathExists(stale));
++}
++
++TEST_F(ThoronUpdateClientTest, OnAMeteredConnectionOnlyALookThePersonAskedForDownloads) {
++  Publish();
++  config_.is_metered = base::BindRepeating([] { return true; });
++  auto client = Client();
++  base::RunLoop loop;
++  UpdateClient::Status last;
++  client->Check(/*install=*/true, base::BindLambdaForTesting([&](const UpdateClient::Status& status) {
++                  last = status;
++                  if (status.state != State::kChecking) {
++                    loop.Quit();
++                  }
++                }),
++                /*asked=*/false);
++  loop.Run();
++  EXPECT_EQ(last.state, State::kAvailable);
++  EXPECT_NE(last.detail.find("metered"), std::string::npos);
++  EXPECT_TRUE(installed_.empty());
++  EXPECT_EQ(Look(*client, /*install=*/true).state, State::kReadyToRelaunch);
++  EXPECT_EQ(installed_.size(), 1u);
++}
++
 +TEST_F(ThoronUpdateClientTest, ADeltaThatDoesNotVerifyEndsInTheFullPackage) {
 +  Publish();
 +  std::string wrong = Bytes(data::kDelta);
@@ -23622,7 +23985,13 @@ index 0000000000000000000000000000000000000000..873b0a839ef201c9d4af0588c0e8a994
 +  const UpdateClient::Status status = Look(*Client(), /*install=*/true);
 +  EXPECT_EQ(status.state, State::kError);
 +  EXPECT_TRUE(installed_.empty());
-+  EXPECT_TRUE(DownloadFolderIsEmpty());
++  // Nothing is left that could be taken for a package: the one that came too
++  // long is gone, and of the short one only its part, for the next look to go
++  // on from.
++  base::FileEnumerator left(config_.download_dir, false, base::FileEnumerator::FILES);
++  for (base::FilePath path = left.Next(); !path.empty(); path = left.Next()) {
++    EXPECT_EQ(path.Extension(), FILE_PATH_LITERAL(".part")) << path;
++  }
 +}
 +
 +TEST_F(ThoronUpdateClientTest, AForgedSignatureCannotBeVerifiedAndNothingIsDownloaded) {

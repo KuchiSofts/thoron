@@ -7,6 +7,7 @@ Explanations live in the design docs under `docs/design/`.
 ## [Unreleased]
 
 ### Added
+- **Updates:** a download that breaks goes on where it stopped, also after a restart; on a metered connection updates wait unless you ask for them; the menu offers the relaunch once an update is installed.
 - **Updates:** going back to the version before asks for confirmation first, and can put the profile back as it was before the update, checked file by file.
 - **Docs:** user guides in `docs/user/`: install, import, updates and rollback, portable passphrase; the wiki links them.
 - **Portable:** a portable copy can update itself from the release's package: the new version is unpacked beside the old one and the next start runs it, settings kept (from the browser once releases are signed).

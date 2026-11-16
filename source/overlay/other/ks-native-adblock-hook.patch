@@ -531,7 +531,7 @@ index ab3c100b747f5ec6244fa719272e29427f723280..0e3f94013c68b992b10e28345a196074
 +  </message>
  </grit-part>
 diff --git a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
-index 56ff6c6fb5866a3ba5a43918ae41bfbf8c1f4a6f..0c5397b35a3067bbafbd59999483494216edf4ee 100644
+index 56ff6c6fb5866a3ba5a43918ae41bfbf8c1f4a6f..4274d778b851986e4e180f89916d63c4368004e7 100644
 --- a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
 +++ b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
 @@ -113,6 +113,7 @@
@@ -542,7 +542,7 @@ index 56ff6c6fb5866a3ba5a43918ae41bfbf8c1f4a6f..0c5397b35a3067bbafbd599994834942
  #include "components/subresource_filter/core/browser/subresource_filter_features.h"
  #include "components/subscription_eligibility/subscription_eligibility_service.h"
  #include "components/supervised_user/core/common/features.h"
-@@ -4310,6 +4311,27 @@ void AddSiteSettingsStrings(content::WebUIDataSource* html_source,
+@@ -4310,6 +4311,33 @@ void AddSiteSettingsStrings(content::WebUIDataSource* html_source,
    // The exception placeholder should not be translated. See
    // crbug.com/40700443.
    html_source->AddString("addSiteExceptionPlaceholder", "[*.]example.com");
@@ -567,9 +567,93 @@ index 56ff6c6fb5866a3ba5a43918ae41bfbf8c1f4a6f..0c5397b35a3067bbafbd599994834942
 +    };
 +    html_source->AddLocalizedStrings(kThoronAdsStrings);
 +  }
++  // Thoron adblock (P5.30): its own page, chrome://adblock, from the side menu
++  // of Settings while it is on. Its name is not translated.
++  html_source->AddString("thoronAdblockTitle", "Thoron adblock");
++  html_source->AddBoolean(
++      "thoronAdblock",
++      base::FeatureList::IsEnabled(thoron_adblock::kThoronNativeAdblock));
  }
  
  void AddStorageAccessStrings(content::WebUIDataSource* html_source) {
+diff --git a/chrome/browser/resources/settings/settings_menu/settings_menu.html b/chrome/browser/resources/settings/settings_menu/settings_menu.html
+index c35c985ddf3447612e803fc595cdae2b514953a7..0ad9d7243f21a1ee3158c934a71fc39e36d720e4 100644
+--- a/chrome/browser/resources/settings/settings_menu/settings_menu.html
++++ b/chrome/browser/resources/settings/settings_menu/settings_menu.html
+@@ -1,5 +1,5 @@
+     <div role="navigation">
+-      <cr-menu-selector id="menu" selectable="a:not(#extensionsLink)"
++      <cr-menu-selector id="menu" selectable="a:not(#extensionsLink):not(#thoronAdblockLink)"
+           attr-for-selected="href" @iron-activate="${this.onIronActivate_}"
+           @click="${this.onLinkClick_}" selected-attribute="selected">
+         <a role="menuitem"
+@@ -121,6 +121,15 @@
+           <div class="cr-icon icon-external"></div>
+           <cr-ripple></cr-ripple>
+         </a>
++        <a role="menuitem" id="thoronAdblockLink" class="cr-nav-menu-item"
++            href="chrome://adblock" target="_blank"
++            ?hidden="${!this.showThoronAdblock_}"
++            title="$i18n{thoronAdblockTitle}">
++          <cr-icon icon="settings20:shield"></cr-icon>
++          <span class="menu-label">$i18n{thoronAdblockTitle}</span>
++          <div class="cr-icon icon-external"></div>
++          <cr-ripple></cr-ripple>
++        </a>
+         <a role="menuitem" id="about-menu" href="/help"
+             class="cr-nav-menu-item">
+           <cr-icon icon="cr:chrome-product"></cr-icon>
+diff --git a/chrome/browser/resources/settings/settings_menu/settings_menu.ts b/chrome/browser/resources/settings/settings_menu/settings_menu.ts
+index 931eefe24e39355e12ee80ce97d30d31918c630c..1d8469a55a072d8e476814bb65e1a8c34d832662 100644
+--- a/chrome/browser/resources/settings/settings_menu/settings_menu.ts
++++ b/chrome/browser/resources/settings/settings_menu/settings_menu.ts
+@@ -85,12 +85,18 @@ export class SettingsMenuElement extends SettingsMenuElementBase {
+       pageVisibility_: {type: Object},
+ 
+       showAiPage_: {type: Boolean},
++      // Thoron adblock (P5.30): its own page, while it is on
++      showThoronAdblock_: {type: Boolean},
+     };
+   }
+ 
+   accessor collapsed: boolean = false;
+   protected accessor pageVisibility_: PageVisibility|undefined = pageVisibility;
+   private accessor showAiPage_: boolean = loadTimeData.getBoolean('showAiPage');
++  // Thoron adblock (P5.30): "Thoron adblock" opens chrome://adblock
++  protected accessor showThoronAdblock_: boolean =
++      loadTimeData.valueExists('thoronAdblock') &&
++      loadTimeData.getBoolean('thoronAdblock');
+ 
+   private metricsBrowserProxy_: MetricsBrowserProxy =
+       MetricsBrowserProxyImpl.getInstance();
+@@ -133,7 +139,8 @@ export class SettingsMenuElement extends SettingsMenuElementBase {
+    * accessibility purposes, taps are handled separately.
+    */
+   protected onLinkClick_(event: Event) {
+-    if ((event.target as HTMLElement).matches('a:not(#extensionsLink)')) {
++    if ((event.target as HTMLElement)
++            .matches('a:not(#extensionsLink):not(#thoronAdblockLink)')) {
+       event.preventDefault();
+     }
+   }
+diff --git a/chrome/browser/resources/settings/settings_menu/settings_menu.css b/chrome/browser/resources/settings/settings_menu/settings_menu.css
+index 6e6a63e1ef51a27ce73e6f5abe9c5a450deae2bb..901fb528c8326533ab34931c9381d7bdd37edafc 100644
+--- a/chrome/browser/resources/settings/settings_menu/settings_menu.css
++++ b/chrome/browser/resources/settings/settings_menu/settings_menu.css
+@@ -70,6 +70,13 @@
+   width: var(--cr-icon-size);
+ }
+ 
++/* Thoron adblock (P5.30): as Extensions */
++#thoronAdblockLink > .cr-icon {
++  height: var(--cr-icon-size);
++  margin-inline-end: 14px;  /* 16px - 2px from margin for outline. */
++  width: var(--cr-icon-size);
++}
++
+ .menu-separator {
+   /* Per bettes@, this is different from the other separator lines. */
+   border-bottom: 1px solid rgba(0, 0, 0, 0.08);
 diff --git a/chrome/browser/ui/page_info/chrome_page_info_ui_delegate.cc b/chrome/browser/ui/page_info/chrome_page_info_ui_delegate.cc
 index 906206dad5253b96768c9e373798f8d0fba9ecf8..1181b57443b93c25d3a3604eb60b8f48c74165c6 100644
 --- a/chrome/browser/ui/page_info/chrome_page_info_ui_delegate.cc

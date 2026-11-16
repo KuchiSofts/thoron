@@ -2132,6 +2132,17 @@ response's body. Thoron is the browser, so it does it for every page:
   a name no list names, one of the site's own and an excepted host load, and the setting turns it off and on.
   The engine's part is unit-tested (`a_tracker_under_a_site_s_own_name_is_found_by_its_canonical_name`).
 
+### 12.67 Thoron adblock in the side menu of Settings (P5.30, 2026-11-16)
+
+- **Why:** the browser's own Settings should lead to the blocker's page, as they lead to the extensions.
+- **How:** an entry "Thoron adblock" with a shield, below "Extensions" in the side menu of `chrome://settings`,
+  opens `chrome://adblock` in a new tab (the same kind of link as "Extensions": not a page of Settings, so
+  the menu neither selects it nor stops its click). It is shown while the built-in blocker is on
+  (`thoronAdblock`, given by the strings of Settings); its name is a name and is not translated.
+- **Checked** by `tools/qa/adblock_settings_link_check.py`: the entry shown with its name and address, a click
+  of the mouse opens the page in a new tab, and with the blocker off the entry is hidden. The check found that
+  the menu stopped every click but the one on "Extensions"; Thoron's is let through as well.
+
 ## 13. Credits
 
 The procedural operators and the rest of the filter syntax are uBlock Origin's (with forms from Adblock

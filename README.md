@@ -78,7 +78,7 @@ changed in each version is in the [changelog](CHANGELOG.md), one line per change
 Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always current.
 
 <!-- roadmap:start -->
-**Overall:** `██████████░░░░░░░░░░` 103 of 206 tasks done (50%) · roadmap updated 2026-11-12
+**Overall:** `██████████░░░░░░░░░░` 104 of 206 tasks done (50%) · roadmap updated 2026-11-12
 
 | Area | Progress | Done | Status |
 |---|---|---|---|
@@ -88,7 +88,7 @@ Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always curre
 | [P2b - ARM64](ROADMAP.md#p2b---arm64) | `░░░░░░░░░░░░░░░░░░░░` | 0/5 | ⬜ Not started |
 | [P3 - Updater v1 + Import](ROADMAP.md#p3---updater-v1--import) | `░░░░░░░░░░░░░░░░░░░░` | 0/21 | ⬜ Not started |
 | [P4 - Updater v2](ROADMAP.md#p4---updater-v2) | `░░░░░░░░░░░░░░░░░░░░` | 0/11 | ⬜ Not started |
-| [P5 - Quality](ROADMAP.md#p5---quality) | `████████████████░░░░` | 62/77 | 🔄 In progress |
+| [P5 - Quality](ROADMAP.md#p5---quality) | `████████████████░░░░` | 63/77 | 🔄 In progress |
 | [Security (S)](ROADMAP.md#security-s) | `██████████░░░░░░░░░░` | 8/16 | 🔄 In progress |
 | [Quality & performance (Q)](ROADMAP.md#quality--performance-q) | `███░░░░░░░░░░░░░░░░░` | 1/7 | 🔄 In progress |
 | [Docs (D)](ROADMAP.md#docs-d) | `████████░░░░░░░░░░░░` | 4/10 | 🔄 In progress |
@@ -287,7 +287,7 @@ Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always curre
 - [x] **P5.75** Thoron's mail notifier, Gmail and Google Workspace: the unread mail of every Google account the profile is signed in to, from Gmail's own feed with the profile's sign-in (no password), parsed in a sandbox; an envelope with the count, a menu per account, notices of new mail
 - [x] **P5.76** Thoron M-Notifier: the name; next to the address bar or in it (or both), with a position, as Thoron adblock's shield; new mail counted since the person last opened the account's inbox (the counter resets there), spam never counted; X-notifier's settings (what the icon counts, how often, notices and their sound, where mail opens, the accounts watched)
 - [ ] **P5.77** Thoron M-Notifier for Outlook/Hotmail, Yahoo and Proton Mail, with the person's own sign-in where the service allows it
-- [ ] **P5.30** Native ad blocking, a page in Settings that a person can work with: one switch for the blocker; the filter lists with a checkbox each; add a list by its address and remove it again; "My filters", the person's own rules in the syntax of the lists; the sites where blocking is off
+- [x] **P5.30** Native ad blocking, a page in Settings that a person can work with: one switch for the blocker; the filter lists with a checkbox each; add a list by its address and remove it again; "My filters", the person's own rules in the syntax of the lists; the sites where blocking is off
 
 **Security (S)**
 

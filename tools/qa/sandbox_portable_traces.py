@@ -148,7 +148,7 @@ def traces(out: Path) -> dict[str, list[str]]:
     return {"registry": [c for c in registry if not WINDOWS_OWN.search(c)],
             "registry_windows_own": [c for c in registry if WINDOWS_OWN.search(c)],
             "tasks": task_changes(read("before-tasks.csv"), read("after-tasks.csv")),
-            "folders": [re.sub(r"(?i)^C:\\Users\\[^\\]+", "%USERPROFILE%", f)
+            "folders": [re.sub(r"(?i)^C:\\Users\\[^\\]+", "%USERPROFILE%", f)  # privacy-check: allow (it hides them)
                         for f in line_changes(read("before-folders.txt"), read("after-folders.txt"))]}
 
 

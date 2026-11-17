@@ -58,6 +58,8 @@ INVENTORY = patch_licenses.render_table([
     {"patch": "b.patch", "origin": "ungoogled-chromium, Bromite", "license": "BSD-3-Clause AND GPL-3.0",
      "evidence": "y"}])
 SOAK_REPORT = f"Soak: 8.00 h, 4168 rounds of 6 tabs\nBuild: {BUILD}\nSOAK: PASSED\n"
+SANDBOX_EVIDENCE = (f"Sandbox on (Chrome/{BUILD})\n  Windows reports:\n    renderer 1: Untrusted integrity\n\n"
+                    "SANDBOX CHECK: PASSED\n")
 LAST_RELEASE = "156.0.8078.28"
 UPDATE_REPORT = (f"Portable update check (tools/qa/portable_update_check.py)\nBuild: {BUILD}\nFrom: {LAST_RELEASE}\n"
                  f"Previous package: thoron-{LAST_RELEASE}-win-x64-avx2-portable.zip\nPORTABLE UPDATE CHECK: PASSED\n")
@@ -354,13 +356,16 @@ class ReleaseFixture(Fixture):
         bench_file.write_text(json.dumps(bench or BENCH), encoding="utf-8")
         soak_file = self.repo.parent / "soak.txt"
         soak_file.write_text(soak if soak is not None else SOAK_REPORT, encoding="utf-8")
+        sandbox_file = self.repo.parent / "sandbox.txt"
+        sandbox_file.write_text(kw.pop("sandbox", SANDBOX_EVIDENCE), encoding="utf-8")
         update_file = self.repo.parent / "update-check.txt"
         update_file.write_text((update if update is not None else UPDATE_REPORT).replace(
             f"From: {LAST_RELEASE}", f"From: {previous}"), encoding="utf-8")
         return self.main("prepare", "--src", self.src, "--out", self.out, "--platform", "win", "--variant", variant,
                          "--previous", previous, "--buildinfo", self.buildinfo, "--dist", dist or self.dist,
                          "--repo", self.repo, "--since", "v0.1.1", "--chromium-old", "156.0.8078.80",
-                         "--bench", bench_file, "--soak", soak_file, "--update-check", update_file, *more, **kw)
+                         "--bench", bench_file, "--soak", soak_file, "--update-check", update_file,
+                         "--sandbox-evidence", sandbox_file, *more, **kw)
 
     def with_manifest(self, *more) -> tuple:
         return ("--manifest-key", self.keys / "manifest.key", "--manifest-public-key", text(self.public),
@@ -1008,6 +1013,7 @@ class DryRunTests(ReleaseTestCase):
         code, out, err = self.f.prepare(*self.f.with_manifest("--previous-manifest", first / "update.json"),
                                         dist=second, previous=BUILD, clock=NOW + 3600,
                                         soak=SOAK_REPORT.replace(BUILD, NEXT_BUILD),
+                                        sandbox=SANDBOX_EVIDENCE.replace(BUILD, NEXT_BUILD),
                                         update=UPDATE_REPORT.replace(f"Build: {BUILD}", f"Build: {NEXT_BUILD}"))
         self.assertEqual(code, 0, out + err)
         data = mf.verify(*self.manifest(second), self.f.public, allowed_hosts=HOSTS)
@@ -1835,6 +1841,27 @@ class UpdateCheckGateTests(unittest.TestCase):
             report = Path(d) / "update-check.txt"
             report.write_text(UPDATE_REPORT.replace("PASSED", "FAILED"), encoding="utf-8")
             self.assertTrue(rel.update_check_problems(report, BUILD, LAST_RELEASE, first=False))
+
+
+class SandboxGateTests(unittest.TestCase):
+    """ROADMAP S.5: a release needs passing sandbox evidence of its own build."""
+
+    def problems(self, text):
+        with tempfile.TemporaryDirectory() as d:
+            evidence = Path(d) / "sandbox.txt"
+            evidence.write_text(text, encoding="utf-8")
+            return rel.sandbox_evidence_problems(evidence, BUILD)
+
+    def test_passing_evidence_of_this_build(self):
+        self.assertEqual(self.problems(SANDBOX_EVIDENCE), [])
+
+    def test_what_is_refused(self):
+        self.assertIn("no sandbox evidence", rel.sandbox_evidence_problems(None, BUILD)[0])
+        self.assertEqual(self.problems(SANDBOX_EVIDENCE.replace(BUILD, "158.0.8127.2000")),
+                         [f"the sandbox evidence is of build 158.0.8127.2000, not {BUILD}"])
+        self.assertEqual(self.problems(SANDBOX_EVIDENCE.replace("PASSED", "FAILED (2 problem(s))")),
+                         ["the sandbox check did not pass"])
+        self.assertEqual(len(self.problems("Started with --no-sandbox (Chrome/1.2.3.4)")), 2)
 
 
 class SoakGateTests(unittest.TestCase):

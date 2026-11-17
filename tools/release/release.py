@@ -736,6 +736,27 @@ def soak_problems(soak: Path | None, version: str) -> list[str]:
     return out
 
 
+def sandbox_evidence_problems(evidence: Path | None, version: str) -> list[str]:
+    """Why the release's sandbox evidence forbids it (ROADMAP S.5): there is none, it is of another build, or the
+    check did not pass (tools/qa/sandbox_check.py: what Windows says about each process, what chrome://sandbox
+    and chrome://gpu say, and the negative control with --no-sandbox). The evidence stays with the build's
+    records; it is not published (it holds the process numbers and how the browser was started there)."""
+    if evidence is None:
+        return ["no sandbox evidence of this build: run tools/qa/sandbox_check.py --evidence <file> on it and give "
+                "--sandbox-evidence"]
+    try:
+        text = evidence.read_text(encoding="utf-8")
+    except OSError as exc:
+        return [f"the sandbox evidence could not be read ({type(exc).__name__})"]
+    out = []
+    seen = re.match(r"Sandbox on \([^/()]*/(\d+(?:\.\d+){3})\)", text)
+    if not seen or seen.group(1) != version:
+        out.append(f"the sandbox evidence is of build {seen.group(1) if seen else 'unknown'}, not {version}")
+    if not re.search(r"^SANDBOX CHECK: PASSED$", text, re.M):
+        out.append("the sandbox check did not pass")
+    return out
+
+
 def update_check_problems(report: Path | None, version: str, previous: str, first: bool) -> list[str]:
     """Why it is not shown that the last release's own updater installs this build (THREAT_MODEL U14):
     tools/qa/portable_update_check.py --previous <the last release's portable package> --report, run on this
@@ -1366,6 +1387,8 @@ def _prepare(a) -> int:
     problems += [f"patch licences: {p}" for p in licence_record_problems(a.repo)]
     problems += [f"performance: {p}" for p in performance_problems(a.repo, a.bench, thoron)]
     problems += [f"memory: {p}" for p in soak_problems(a.soak, version)]
+    if a.platform == "win":            # the Linux half of S.5 comes with the Linux package
+        problems += [f"sandbox: {p}" for p in sandbox_evidence_problems(a.sandbox_evidence, version)]
     if chrome_bin is not None:
         first = ver.latest_thoron(tags) is None
         problems += [f"update: {p}" for p in update_check_problems(a.update_check, version, a.previous, first)]
@@ -1504,6 +1527,8 @@ def main(argv: list[str], run=None) -> int:
     a_.add_argument("--minisign-key", type=Path)
     a_.add_argument("--security", type=Path, help="security.json: the fixes the notes name")
     a_.add_argument("--highlights", type=Path, help="a hand-written opening of the notes")
+    a_.add_argument("--sandbox-evidence", type=Path, help="tools/qa/sandbox_check.py's evidence of this build "
+                    "(ROADMAP S.5); kept with the build's records, not published")
     a_.add_argument("--soak", type=Path, help=f"tools/qa/soak.py's report of an {SOAK_HOURS:g} h run of this "
                     "build (ROADMAP Q.4)")
     a_.add_argument("--update-check", type=Path, help="tools/qa/portable_update_check.py's --report: the last "

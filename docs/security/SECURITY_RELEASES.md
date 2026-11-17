@@ -188,6 +188,7 @@ Commands are run from the repository root in the build window of
         --variant win-x64-avx2 --previous <last build version> --buildinfo <out dir>\BUILDINFO.json `
         --dist <release folder> --repo . --since <last release tag> --chromium-old <old version> `
         --security security.json --highlights highlights.md --minisign-key <key file> `
+        --sandbox-evidence <sandbox_check.py's evidence file> `
         --manifest-key <key file> --manifest-public-key <public key> --gh-repo KuchiSofts/thoron `
         --previous-manifest <the last update.json> --critical
     ```
@@ -248,6 +249,7 @@ Commands are run from the repository root in the build window of
 | Anything taken from upstream is audited | `tools/audit/audit_diff.py --strict` | A person has reviewed every finding |
 | Release configuration | `tools/build/release_args.py check` (also run by `release.py prepare`) | No difference from Thoron's choices, no Google API keys in `args.gn` |
 | Version | `tools/release/version.py check` (also run by `release.py prepare`) | Higher than the last release |
+| Sandbox (ROADMAP S.5) | `tools/qa/sandbox_check.py --evidence <file>`, given to `release.py prepare --sandbox-evidence` | Every renderer, the GPU process and each utility process that declares a sandbox run sandboxed as Windows itself reports it, `chrome://sandbox` and `chrome://gpu` agree, and the control run with `--no-sandbox` is caught; the evidence is of this build. It stays with the build's records and is not published |
 | The product's name, no build for tests | `release.py prepare` | The English strings name Thoron and none of the About page's lines name Chromium; the browser does not trust the updater's test key |
 | Thoron version | `release.py prepare` (the next one: `tools/release/version.py next`) | The next version after the newest release tag; `0.1.1` when there is none |
 | Source and licences (ROADMAP **L.2**) | `release.py prepare` and `publish` | The build record names the source tag, its commit and the Chromium tag; the licence bundle holds the GPL text |

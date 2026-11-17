@@ -55,6 +55,8 @@ $exe = Join-Path $app 'thoron.exe'
 $data = Join-Path $env:LOCALAPPDATA 'Thoron\User Data'
 $marker = Join-Path $data 'Default\sandbox-marker.txt'
 function Save { $r | ConvertTo-Json -Depth 5 | Set-Content -Encoding utf8 (Join-Path $out 'results.json') }
+# the findings so far are saved before each step, so a run that hangs still says how far it got
+function Mark($step) { $r.reached = $step; Save }
 function Timed($file, $arguments, $seconds) {
   # a program that shows a dialog would wait for ever: it gets $seconds, then it is stopped
   $proc = Start-Process $file -ArgumentList $arguments -PassThru
@@ -119,14 +121,17 @@ function Close {
   return $byItself
 }
 try {
+  Mark 'install'
   $r.install_exit = Install 'install'
   $r.program = Test-Path $exe
   $r.version_folders = @(Versions)
   $e = Entry
   $r.entry = [bool]$e
   if ($e) { $r.entry_name = "$($e.DisplayName)"; $r.entry_version = "$($e.DisplayVersion)" }
+  Mark 'start'
   $r.started = Started
   $r.window = $r.started
+  Mark 'close'
   $r.closed_by_itself = Close
   $r.profile = Test-Path (Join-Path $data 'Local State')
   New-Item -ItemType Directory -Force (Join-Path $data 'Default') | Out-Null
@@ -134,16 +139,21 @@ try {
   if (Test-Path 'C:\ThoronTest\in\update') {
     # the newer build installed while the older one runs: Chromium leaves new_thoron.exe beside thoron.exe
     # and swaps them when the browser closes (or at its next start)
+    Mark 'update: start the older version'
     $r.update_started = Started
     $r.update_from = Loaded
+    Mark 'update: install the newer version'
     $r.update_exit = Install 'update'
     $r.update_status = InstallerStatus
     $r.update_new_exe_while_running = Test-Path (Join-Path $app 'new_thoron.exe')
     $r.update_folders_while_running = @(Versions)
+    Mark 'update: close the older version'
     $r.update_closed_by_itself = Close
     $r.update_new_exe_after_close = Test-Path (Join-Path $app 'new_thoron.exe')
+    Mark 'update: start again'
     $r.update_restarted = Started
     $r.update_to = Loaded
+    Mark 'update: close again'
     [void](Close)
     $r.update_new_exe_after = Test-Path (Join-Path $app 'new_thoron.exe')
     $r.update_folders_after = @(Versions)
@@ -152,6 +162,7 @@ try {
   }
   $setup = Get-ChildItem $app -Recurse -Filter 'setup.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
   $r.setup_found = [bool]$setup
+  Mark 'uninstall'
   if ($setup) {
     $r.uninstall_exit = Timed $setup.FullName (@('--uninstall', '--force-uninstall', '--verbose-logging') + $level) 300
   }
@@ -170,6 +181,7 @@ foreach ($dir in @($env:TEMP, (Join-Path $env:WINDIR 'Temp'), (Join-Path $env:LO
 }
 $r.temp_listing = @(Get-ChildItem $env:TEMP -ErrorAction SilentlyContinue | Select-Object -First 40 |
                     ForEach-Object { "$($_.Name) $($_.Length)" })
+$r.done = $true
 Save
 Stop-Computer -Force
 """
@@ -276,13 +288,22 @@ def run(installer: Path, work: Path, timeout: float, update: Path | None = None,
     subprocess.Popen([SANDBOX, str(config)])
     results = work / "out" / "results.json"
     end = time.monotonic() + timeout
-    while time.monotonic() < end and not results.is_file():
+    found = read_results(results)
+    while time.monotonic() < end and not found.get("done"):
         time.sleep(5)
-    time.sleep(3)
-    found = (json.loads(results.read_text(encoding="utf-8-sig")) if results.is_file()
-             else {"error": f"no results within {timeout:g} s"})
+        found = read_results(results)
+    if not found.get("done"):
+        found["error"] = f"no end within {timeout:g} s; it got as far as: {found.get('reached', 'nothing')}"
     close_sandbox()
     return found
+
+
+def read_results(path: Path) -> dict:
+    """The findings the script saved so far ({} before the first save or while it is being written)."""
+    try:
+        return json.loads(path.read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError):
+        return {}
 
 
 def close_sandbox(grace: float = 60) -> None:

@@ -95,6 +95,22 @@ class ProblemsTests(unittest.TestCase):
         self.assertTrue(found["start"] and found["uninstall"])
 
 
+class ResultsTests(unittest.TestCase):
+    def test_partial_and_half_written_results(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "results.json"
+            self.assertEqual(sb.read_results(path), {})
+            path.write_text('{"reached": "upd', encoding="utf-8")
+            self.assertEqual(sb.read_results(path), {})
+            path.write_bytes(b'\xef\xbb\xbf{"reached": "uninstall"}')
+            self.assertEqual(sb.read_results(path), {"reached": "uninstall"})
+
+    def test_the_script_saves_before_every_step_and_marks_its_end(self):
+        self.assertGreaterEqual(sb.RUN.count("Mark '"), 9)
+        self.assertIn("$r.done = $true", sb.RUN)
+
+
 class ConfigurationTests(unittest.TestCase):
     def test_the_sandbox_is_shut_off_from_the_network_and_the_installer_folder_is_read_only(self):
         root = ET.fromstring(sb.wsb(Path(r"C:\work & co")))

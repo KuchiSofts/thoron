@@ -286,6 +286,22 @@ def check_dashes(root: Path, files: list[Path]) -> list[str]:
     return problems
 
 
+# A control character in a text file is almost always damage: an edit that turned "\r" in a Windows path
+# into a carriage return ("tools\release" became "tools", CR, "elease"), or "\t", "\b", "\f" the same way.
+CONTROL_RE = re.compile(rb"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]|\r(?!\n)")
+
+
+def check_control_chars(root: Path, files: list[Path]) -> list[str]:
+    problems = []
+    for path in files:
+        data = path.read_bytes()
+        for match in CONTROL_RE.finditer(data):
+            number = data.count(b"\n", 0, match.start()) + 1
+            problems.append(f"{_rel(root, path)}:{number}: control character {match.group()!r} (a damaged "
+                            "backslash in a path?)")
+    return problems
+
+
 def _glob(root: Path, patterns) -> list[Path]:
     found = set()
     for pattern in patterns:
@@ -312,6 +328,7 @@ def main(argv: list[str]) -> int:
     if (root / WIKI_DIR).is_dir():
         problems += check_wiki(root)
     problems += check_dashes(root, _glob(root, OWNED_PRIVATE_GLOBS))
+    problems += check_control_chars(root, _glob(root, OWNED_PRIVATE_GLOBS))
     if (root / "ROADMAP.md").is_file():
         from tools.docs import roadmap_progress
         readme = (root / "README.md").read_text(encoding="utf-8")

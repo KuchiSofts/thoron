@@ -141,6 +141,18 @@ class CheckDocsTests(unittest.TestCase):
         good = self.write("docs/ok.md", "only - short - dashes\n")
         self.assertEqual(check_docs.check_dashes(self.root, [good]), [])
 
+    def test_a_backslash_turned_into_a_control_character_is_flagged(self):
+        doc = self.root / "docs" / "run.md"
+        doc.parent.mkdir(parents=True, exist_ok=True)
+        cr, tab = chr(13), chr(9)
+        doc.write_bytes(f"# Run{cr}\n{cr}\n`py tools{cr}elease{cr}elease.py`{cr}\nsee C:{chr(12)}older\n"
+                        f"a{tab}tab is fine\n".encode("utf-8"))
+        problems = check_docs.check_control_chars(self.root, [doc])
+        self.assertEqual([p.split(": control")[0] for p in problems], ["docs/run.md:3"] * 2 + ["docs/run.md:4"])
+        good = self.root / "docs" / "ok.md"
+        good.write_bytes(f"line{cr}\nother\nlast{tab}cell\n".encode("utf-8"))
+        self.assertEqual(check_docs.check_control_chars(self.root, [good]), [])
+
     def test_main_requires_readme_at_root(self):
         with contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(check_docs.main(["--root", str(self.root)]), 2)

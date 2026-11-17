@@ -76,8 +76,10 @@ def _closed_key(entry: dict) -> tuple:
 
 
 def reopened_normal(before: str, after: str) -> bool:
-    """A minimized window that opened as a normal one: Thoron's own restore does that (see the module notes)."""
-    return before == "minimized" and after == "normal"
+    """A minimized window that opened as a normal one: Thoron's own restore does that (see the module notes).
+    A minimized window that was the active one (Brave writes that) stays minimized; never shown, it has no
+    place in Thoron's own file yet, which reads as "default"."""
+    return before == "minimized" and after in ("normal", "default")
 
 
 def compare(source: dict, result: dict, page_title=lambda url: None, source_closed: dict | None = None,
@@ -195,12 +197,15 @@ def check_source(browser: Path, work: Path, source: Path) -> list[str]:
     root = Path(tempfile.mkdtemp(prefix="session-import-", dir=work))
     src_profile, user_data = root / "source" / "Default", root / "thoron"
     (src_profile / "Sessions").mkdir(parents=True)
+    # the copies are dated an hour back, as files of a browser closed a while ago (the import waits otherwise;
+    # a fresh checkout or copy dates them now)
+    an_hour_ago = time.time() - 3600
     for f in session_files[:1] + tabs_files[:1]:
         shutil.copy2(f, src_profile / "Sessions" / f.name)
+        os.utime(src_profile / "Sessions" / f.name, (an_hour_ago, an_hour_ago))
     if firefox:
         written = src_profile / "sessionstore.jsonlz4"
         written.write_bytes(firefox_data)
-        an_hour_ago = time.time() - 3600       # as a Firefox closed a while ago (the import waits otherwise)
         os.utime(written, (an_hour_ago, an_hour_ago))
     problems: list[str] = []
     # 1. a Thoron profile that has started once
@@ -272,8 +277,8 @@ def check_source(browser: Path, work: Path, source: Path) -> list[str]:
           f"{len((result_closed or {}).get('entries', []))} recently closed in Thoron's own session after the restore"
           f"; {done['unlinked_groups']} group(s) unlinked from the source's saved groups")
     if reopened:
-        print(f"      window(s) {reopened}: minimized in the source, opened as a normal window (Thoron's own "
-              f"restore does that; live states {live})")
+        print(f"      window(s) {reopened}: minimized in the source; opened as a normal window, or kept minimized "
+              f"when it was the active one (Thoron's own restore does both; live states {live})")
     if not problems:
         shutil.rmtree(root, ignore_errors=True)
     return problems

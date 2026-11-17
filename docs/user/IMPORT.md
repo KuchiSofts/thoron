@@ -95,7 +95,7 @@ same time can make sites sign one of them out, and both sync as the same device.
 
 This brings the open windows of another profile into a Thoron profile: the tab order, pinned tabs, tab
 groups with their names, colours and collapsed state, each tab's history, and the recently closed tabs.
-It was tested with Chrome 157, Thorium 156 and Thoron 158. Edge, Brave, Vivaldi and Opera are not checked
+It was tested with Chrome 157, Edge 157, Brave 1.97, Thorium 156 and Thoron 158. Vivaldi and Opera are not checked
 yet (ROADMAP P3.15). From Thorium you do not need it after section 2: the whole profile brings the tabs.
 
 1. Start Thoron once and close it again: the Thoron profile must have started before.

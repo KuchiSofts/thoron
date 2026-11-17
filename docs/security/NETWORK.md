@@ -35,7 +35,8 @@ measured again before the first release.
   - more than the first 15 minutes of a profile, and a profile's later starts;
   - what a person starts: translation, search suggestions while typing, sign-in and sync, a spell-check
     dictionary, protected video (Widevine);
-  - policies: setting one needs the machine's registry, which a test must not touch;
+  - policies on this PC: setting one needs the machine's registry, which a test must not touch here;
+    they were measured in Windows Sandbox instead (section 5.1);
   - Linux.
 - **One PC, one network.** No proxy was in use and no DNS-over-HTTPS server was contacted; names were
   resolved by the system.
@@ -191,6 +192,34 @@ Google contacts of ROADMAP S.15 are in NETWORK_REDUCTION.md.
 | `--allow-browser-signin=false`, or the preferences `signin.allowed` and `signin.allowed_on_next_startup` set to false | Nothing: `accounts.google.com` is asked all the same |
 | A profile that starts with an unrelated preference | Nothing: writing a preference file before the first start does not change what is contacted |
 | Everything at once: the switches of NETWORK_REDUCTION.md, both Thoron features off, `--disable-component-update`, and the preferences `extensions.block_external_extensions` true and `safebrowsing.enabled` false | No outside host in the log in 330 s; only `wpad` was looked up. Every contact of this page has a known cause and a known stop |
+
+### 5.1 Policies, measured in Windows Sandbox
+
+`tools/qa/sandbox_policy_netlog.py` installs the build in Windows Sandbox (a clean Windows, gone when it
+closes, here with its network on) and runs it twice for 240 s, each time on a new profile, headless with
+`about:blank`: once without policies, once with five set in `HKLM\SOFTWARE\Policies\Chromium`, the key a
+Thoron build reads (Chromium's, which Thorium and Chromium read as well). Measured 2026-11-17 on the build
+158.0.8127.6500:
+
+| Host | Without the policies | With them |
+|---|---|---|
+| `malware-filter.gitlab.io` | 2 | 2 |
+| `safebrowsing.googleapis.com` | 1 | 0 |
+| `ublockorigin.github.io` | 7 | 7 |
+| `update.googleapis.com` | 13 | 3 |
+
+- `SafeBrowsingProtectionLevel` = 0: no Safe Browsing request.
+- `ComponentUpdatesEnabled` = 0: 3 update checks in the first 70 s instead of 13. Chromium keeps the
+  components that matter for security up to date with the policy off; which three the log does not say
+  (the request bodies are not in it).
+- `AIModeSettings` = 1 and `BrowserNetworkTimeQueriesEnabled` = 0: their hosts (`www.google.com`,
+  `clients2.google.com`) were not asked in either run, so there was nothing to switch off.
+- `BlockExternalExtensions` = 1: a clean Windows has no extensions other programs registered, so there was
+  nothing to block.
+- Thoron adblock's list updates (`ublockorigin.github.io`, `malware-filter.gitlab.io`, section 7) are the same
+  in both runs: no Chromium policy covers them; its own switch is in section 5.
+- The component updater's downloads (`edgedl.me.gvt1.com`) did not show in either run: in a plain start
+  Windows' background transfer service makes them, which the browser's log does not see (section 1).
 
 ## 6. Compared with Thoron 156
 

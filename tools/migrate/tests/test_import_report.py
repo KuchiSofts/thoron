@@ -135,6 +135,31 @@ class ReportTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertFalse((self.dest.parent / ip.REPORT_NAME).exists())
 
+    def test_data_chrome_locks_to_itself_is_named_not_counted_as_brought_over(self):
+        # threat model I6: an app-bound key in Local State; Thoron never tries to get around it
+        (self.source / "Local State").write_text(json.dumps(
+            {"os_crypt": {"encrypted_key": "made-up", "app_bound_encrypted_key": "made-up too"}}), encoding="utf-8")
+        code, printed = self.run_cli()
+        self.assertEqual(code, 0, printed)
+        report = json.loads((self.dest.parent / ip.REPORT_NAME).read_text(encoding="utf-8"))
+        self.assertEqual(report["not_brought_over"], [ip.LOCKED_NOTE])
+        self.assertEqual(report["profiles"]["Default"]["locked"], ["saved passwords", "cookies"])
+        self.assertIn("saved passwords: copied, but locked", printed)
+        self.assertIn("app-bound", printed)
+
+    def test_a_thorium_profile_has_nothing_locked(self):
+        (self.source / "Local State").write_text(json.dumps({"os_crypt": {"encrypted_key": "made-up"}}),
+                                                 encoding="utf-8")
+        code, printed = self.run_cli()
+        self.assertEqual(code, 0, printed)
+        report = json.loads((self.dest.parent / ip.REPORT_NAME).read_text(encoding="utf-8"))
+        self.assertEqual(report["not_brought_over"], [])
+        self.assertNotIn("locked", report["profiles"]["Default"])
+        self.assertIn("not brought over: nothing", printed)
+        for broken in ("not json", "[]", '{"os_crypt": "x"}'):
+            (self.source / "Local State").write_text(broken, encoding="utf-8")
+            self.assertFalse(ip.locked_to_its_browser(self.source))
+
     def test_the_report_s_temporary_copies_are_deleted_on_success_and_on_failure(self):
         # threat model I8: the copies of the databases the report reads hold secrets; they are made inside the
         # destination, never in the system's temporary folder, and none may stay behind

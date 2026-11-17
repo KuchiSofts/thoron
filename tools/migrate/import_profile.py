@@ -97,6 +97,31 @@ def recently_written(files: list[Path], now: float | None = None) -> str | None:
     return None
 
 
+# THREAT_MODEL I6: Chrome locks its saved passwords and cookies to itself (app-bound encryption, a key in
+# `Local State` that only Chrome's own service can unlock). Their copies are of no use to Thoron, which never
+# tries to get around that; the report says so instead of counting them as brought over. Thorium and Thoron
+# keep their key with Windows' DPAPI only, which the copy can use.
+LOCKED = ("saved passwords", "cookies")
+LOCKED_NOTE = ("saved passwords and cookies: the browser they come from locks them to itself (Chrome's app-bound "
+               "encryption), so Thoron cannot read the copies. Bring the passwords over with Chrome's own export "
+               "(docs/user/IMPORT.md, section 4) and sign in to your sites again")
+MOST_LOCAL_STATE_BYTES = 16 * 1024 * 1024
+
+
+def locked_to_its_browser(user_data: Path) -> bool:
+    """Whether the browser of `user_data` locks its passwords and cookies to itself (`os_crypt` in its `Local
+    State` names an app-bound key). A file that cannot be read says no."""
+    path = user_data / "Local State"
+    try:
+        if path.stat().st_size > MOST_LOCAL_STATE_BYTES:
+            return False
+        state = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, RecursionError):
+        return False
+    crypt = state.get("os_crypt") if isinstance(state, dict) else None
+    return isinstance(crypt, dict) and bool(crypt.get("app_bound_encrypted_key"))
+
+
 def _is_fresh(dest: Path) -> bool:
     """No profile yet: absent, or only what an installer creates (an empty Crashpad folder)."""
     if not dest.exists():
@@ -153,7 +178,9 @@ def import_profile(source: Path, dest: Path) -> dict:
     if changed:
         raise VerificationFailed(f"{len(changed)} file(s) of the source changed during the import (for example "
                                  f"{changed[:3]}); something else wrote to it")
-    return {"files": len(files), "bytes": total, "verified": True, "source_unchanged": True}
+    locked = locked_to_its_browser(source)
+    return {"files": len(files), "bytes": total, "verified": True, "source_unchanged": True, "locked": locked,
+            "not_brought_over": [LOCKED_NOTE] if locked else []}
 
 
 # --- the report (ROADMAP P3.18) ---------------------------------------------------------------------------
@@ -285,6 +312,8 @@ def import_report(dest: Path, copied: dict) -> dict:
     profiles = {}
     for folder in sorted(p for p in dest.iterdir() if p.is_dir() and (p / "Preferences").is_file()):
         profiles[folder.name] = profile_report(folder)
+        if copied.get("locked"):
+            profiles[folder.name]["locked"] = [what for what in LOCKED if profiles[folder.name]["counts"].get(what)]
     return {
         "format": "thoron-import-report", "version": 1,
         "files": copied["files"], "bytes": copied["bytes"], "verified": copied["verified"],
@@ -303,6 +332,8 @@ def report_text(report: dict) -> str:
         lines.append(f"  {name}: {counts}")
         lines += [f"    not counted: {why}" for why in found["not_counted"]]
         lines += [f"    database: {d}" for d in found.get("databases", []) if d != "all ok"]
+        lines += [f"    {what}: copied, but locked to the browser they come from (see below)"
+                  for what in found.get("locked", [])]
     for item in report["not_brought_over"]:
         lines.append(f"  not brought over: {item}")
     if not report["not_brought_over"]:

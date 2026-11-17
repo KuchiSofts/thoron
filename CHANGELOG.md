@@ -313,6 +313,7 @@ Explanations live in the design docs under `docs/design/`.
 
 ### Security
 
+- **Import:** passwords and cookies that Chrome locks to itself are named in the import report as not brought over, never counted as imported.
 - **Import:** a profile closed only a moment ago is not imported yet, Chrome's password file is refused outside your own folders, and the import report's copies of the databases stay inside the new profile.
 - **Updates:** a package or delta with a file name that climbs out of its folder is refused instead of being unpacked under a made-safe name.
 - **Updates:** an update request no longer names the browser's version (its own User-Agent), and a checked package is held so that nothing can change it before it is installed.

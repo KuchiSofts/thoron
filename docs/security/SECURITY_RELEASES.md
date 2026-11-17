@@ -7,7 +7,7 @@ follow it from the first notice to the draft release. The targets are those of t
 - **7 days** from a Chrome release that fixes a bug exploited in the wild to the Thoron release;
 - **14 days** from a new Chrome major version.
 
-Status: written 2026-11-16. No drill has been run yet (section 8). There is no public release yet, so
+Status: written 2026-11-16; first drill 2026-11-17 (section 8). There is no public release yet, so
 the release step still lacks its keys (ROADMAP **P2.11**); the steps that depend on them say so. What a
 fix must not break is in the [threat model](THREAT_MODEL.md).
 
@@ -336,7 +336,33 @@ the days.
 
 | Date | Drill or real | Chromium from, to | Class | Day the draft was ready | Day published | What slowed it |
 |---|---|---|---|---|---|---|
-| - | - | - | - | - | - | No drill run yet |
+| 2026-11-17 | Drill | 158.0.8127.30 to 158.0.8127.65 | A (taken as A for the clock; the early-stable post named no fixes) | Not made: it needs the release keys (P2.11) and the licence of one patch (L.1), both the owner's; every step before it was done on day 0 | Never (a drill) | Refreshing the patch series (two patches no longer applied, Git for Windows' line ends, a newer `gnrt`) and the build itself (4 h 17 min in a new checkout) |
+
+### The drill of 2026-11-17
+
+Chromium 158.0.8127.65 was taken as a Chrome update that had just appeared (day 0), with Thoron on
+158.0.8127.30. What each step took, from the start of day 0:
+
+| Step | Took | What happened |
+|---|---|---|
+| Patch series refreshed, applied, source exported (steps 5 to 7) | 49 min | 151 patches, `0 rejects` after two were refreshed: the HEVC patch had picked up links to nested repositories, and Chromium had changed `rpm/build.py` under the Linux packaging patch. Thoron's own patches were made again from the new tree. `source/` exported and verified |
+| Release build, AVX2 (step 9) | 4 h 17 min | A clean build in a new checkout, beside other work on the PC |
+| Checks (section 4) | about 1 h | The updater's 113 unit tests passed; the smoke test passed (JavaScript, WebGL, H.264, HEVC, AV1, JPEG XL, the sandbox on); the profile rehearsal on a copy of a real profile kept everything; in a clean Windows (`tools/qa/sandbox_install_check.py`) the build installed, started and uninstalled, and installed over a running 158.0.8127.3010 (status 30, the restart ran 158.0.8127.6500, the profile kept) |
+| `release.py prepare` (step 10) | minutes | Refused, for three reasons the drill expected: one patch without a licence (L.1), no 8-hour soak report of this build, and no benchmark of it (15 minutes; not run, because a timing run beside the 48-hour soak of the previous build would be wrong) |
+
+What the drill showed:
+
+- The work before the draft fits in one day. The 7-day target is held by the owner's keys and by the
+  soak: the draft can follow the 8-hour soak, on day 1.
+- Line ends and nested repositories are now handled by the tools and described in step 7.
+- Chrome's early-stable post names no fixes (step 1).
+- `prepare` asks for the soak before the draft, where section 4.2 lets a class A release go first
+  (open item 7).
+- An install for every user of the PC (`--system-level`), updated while it ran, did not finish in the
+  clean Windows: the installer of the newer version never returned. Being looked into; installs for one
+  user, the default, are not affected.
+
+S.9 stays open until a drill makes the draft.
 
 ## 9. Open items for the owner
 

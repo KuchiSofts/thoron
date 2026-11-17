@@ -13,7 +13,8 @@ script inside it:
     update     (with --update) starts Thoron again and, while it runs, installs the newer build over it
                (Chromium's in-use update, status 30): new_thoron.exe waits beside thoron.exe; after the window
                is closed and Thoron started again it runs from the newer version folder, new_thoron.exe is
-               gone and the profile is kept
+               gone and the profile is kept. For every user of the PC the installer ends the running browser
+               and updates in place instead (status 2; Thorium's installer patch)
     uninstall  runs Thoron's own uninstaller (`--uninstall --force-uninstall`, no question asked): the program
                and its entry are gone, and the profile, with a file put into it, is kept, as it is by default
 
@@ -42,6 +43,7 @@ SANDBOX = r"C:\Windows\System32\WindowsSandbox.exe"
 INSTALL_OK = {0}
 UNINSTALL_SUCCESSFUL = 19
 IN_USE_UPDATED = 30
+NEW_VERSION_UPDATED = 2
 RUN = r"""$ErrorActionPreference = 'Continue'
 $r = [ordered]@{}
 $out = 'C:\ThoronTest\out'
@@ -56,11 +58,33 @@ $data = Join-Path $env:LOCALAPPDATA 'Thoron\User Data'
 $marker = Join-Path $data 'Default\sandbox-marker.txt'
 function Save { $r | ConvertTo-Json -Depth 5 | Set-Content -Encoding utf8 (Join-Path $out 'results.json') }
 # the findings so far are saved before each step, so a run that hangs still says how far it got
-function Mark($step) { $r.reached = $step; Save }
+function Mark($step) { $r.reached = $step; Save; Trace "step: $step" }
+function Trace($text) {
+  # what the script does, line by line with the time, so a step that hangs shows where
+  Add-Content -Encoding utf8 -Path (Join-Path $out 'trace.txt') -Value "$(Get-Date -Format HH:mm:ss) $text"
+}
+function Busy {
+  # the installer's and the browser's processes that are running, with their command lines
+  @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -match 'setup|installer|thoron' } |
+    ForEach-Object { "$($_.ProcessId) $($_.Name) $($_.CommandLine)" }) -join ' | '
+}
 function Timed($file, $arguments, $seconds) {
   # a program that shows a dialog would wait for ever: it gets $seconds, then it is stopped
+  Trace "run $file $($arguments -join ' ')"
   $proc = Start-Process $file -ArgumentList $arguments -PassThru
-  if (-not $proc.WaitForExit($seconds * 1000)) { Stop-Process -Id $proc.Id -Force; return 'timeout' }
+  $until = (Get-Date).AddSeconds($seconds)
+  $next = (Get-Date).AddSeconds(30)
+  while (-not $proc.HasExited -and (Get-Date) -lt $until) {
+    Start-Sleep -Seconds 2
+    if ((Get-Date) -ge $next) { Trace "still running: $(Busy)"; $next = (Get-Date).AddSeconds(30) }
+  }
+  if (-not $proc.HasExited) {
+    Trace "stopped after $seconds s: $(Busy)"
+    Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+    return 'timeout'
+  }
+  Trace "ended with $($proc.ExitCode)"
   return $proc.ExitCode
 }
 function Install($folder) {
@@ -69,6 +93,7 @@ function Install($folder) {
   # waits for its Install and OK buttons
   $shared = Get-ChildItem (Join-Path 'C:\ThoronTest\in' $folder) -Filter '*.exe' | Select-Object -First 1
   $copy = Join-Path $env:TEMP ($folder + '-' + $shared.Name)
+  Trace "copy $($shared.Name) to the Sandbox's disk"
   Copy-Item $shared.FullName $copy
   return Timed $copy (@('--silent', '--do-not-launch-chrome', '--verbose-logging') + $level) 300
 }
@@ -82,12 +107,22 @@ function Entry {
 }
 function InstallerStatus {
   # the status the installer kept for its last run, wherever the build's registry key is
-  foreach ($root in @("$($uninstallKey)\Software\Thoron", "$($uninstallKey)\Software\WOW6432Node\Thoron")) {
-    foreach ($key in @(Get-Item $root -ErrorAction SilentlyContinue) + @(Get-ChildItem $root -Recurse -ErrorAction SilentlyContinue)) {
-      $value = $key.GetValue('InstallerError', $null)
-      if ($null -ne $value) { return [int]$value }
+  # read with reg.exe and a time limit: PowerShell's own registry reader hung on HKLM\Software\Thoron
+  # after an update of an install for every user
+  $hive = if ($system) { 'HKLM' } else { 'HKCU' }
+  foreach ($view in @('/reg:64', '/reg:32')) {
+    $file = Join-Path $env:TEMP "status$($view -replace '\W', '').txt"
+    Trace "status: reg query $hive\Software\Thoron $view"
+    $q = Start-Process reg.exe -ArgumentList @('query', "$hive\Software\Thoron", '/s', '/v', 'InstallerError', $view) `
+           -RedirectStandardOutput $file -NoNewWindow -PassThru
+    if (-not $q.WaitForExit(30000)) { Stop-Process -Id $q.Id -Force -ErrorAction SilentlyContinue; Trace "status: reg.exe hung"; continue }
+    $line = Get-Content $file -ErrorAction SilentlyContinue | Where-Object { $_ -match 'InstallerError' } | Select-Object -First 1
+    if ($line -and ($line -match 'InstallerError\s+REG_DWORD\s+0x([0-9a-fA-F]+)')) {
+      Trace "status: $($line.Trim())"
+      return [Convert]::ToInt32($Matches[1], 16)
     }
   }
+  Trace "status: none kept"
   return $null
 }
 function Versions {
@@ -142,10 +177,16 @@ try {
     Mark 'update: start the older version'
     $r.update_started = Started
     $r.update_from = Loaded
+    $r.update_browser_before = @(Get-Process thoron -ErrorAction SilentlyContinue).Count
+    Trace "before the update: $(Busy)"
     Mark 'update: install the newer version'
     $r.update_exit = Install 'update'
+    $r.update_browser_after = @(Get-Process thoron -ErrorAction SilentlyContinue).Count
+    Trace "after the update: $(Busy)"
     $r.update_status = InstallerStatus
+    Trace "look for new_thoron.exe"
     $r.update_new_exe_while_running = Test-Path (Join-Path $app 'new_thoron.exe')
+    Trace "list the version folders"
     $r.update_folders_while_running = @(Versions)
     Mark 'update: close the older version'
     $r.update_closed_by_itself = Close
@@ -175,7 +216,8 @@ try {
   $r.error = "$_"
 }
 # the installer's logs, wherever it wrote them, and what the temporary folder holds, for a failure
-foreach ($dir in @($env:TEMP, (Join-Path $env:WINDIR 'Temp'), (Join-Path $env:LOCALAPPDATA 'Thoron'))) {
+foreach ($dir in @($env:TEMP, (Join-Path $env:WINDIR 'Temp'), (Join-Path $env:WINDIR 'SystemTemp'),
+                   (Join-Path $env:LOCALAPPDATA 'Thoron'), (Join-Path $env:ProgramFiles 'Thoron'))) {
   Get-ChildItem $dir -Recurse -Filter '*.log' -ErrorAction SilentlyContinue | Select-Object -First 20 |
     ForEach-Object { Copy-Item $_.FullName (Join-Path $out ("log-" + $_.Name)) -ErrorAction SilentlyContinue }
 }
@@ -246,16 +288,32 @@ def _version(folder: str) -> tuple[int, ...]:
 
 
 def update_problems(r: dict) -> list[str]:
-    """The newer build installed over the running older one: Chromium's in-use update (ROADMAP P3.6)."""
+    """The newer build installed over the running older one (ROADMAP P3.6).
+
+    For one user, Chromium's in-use update: the running browser is left alone, new_thoron.exe waits beside
+    thoron.exe (status 30) and is swapped in when the browser closes. For every user of the PC
+    (--system-level), Thorium's installer patch (other/mini_installer.patch) ends the running browser and
+    updates in place (status 2): such an install has no Google Update to finish the swap later. Either way
+    Thoron must start again on the newer version with the profile kept."""
+    system = bool(r.get("system_level"))
     found = []
     if not r.get("update_started") or not r.get("update_from"):
         found.append("the older version did not start before the update")
     if r.get("update_exit") not in INSTALL_OK:
         found.append(f"the update ended with {r.get('update_exit')}")
-    if r.get("update_status") is not None and r.get("update_status") != IN_USE_UPDATED:
-        found.append(f"the installer kept status {r.get('update_status')}, not {IN_USE_UPDATED} (updated while in use)")
-    if not r.get("update_new_exe_while_running"):
-        found.append("no new_thoron.exe while the older version ran")
+    status = NEW_VERSION_UPDATED if system else IN_USE_UPDATED
+    if r.get("update_status") is not None and r.get("update_status") != status:
+        found.append(f"the installer kept status {r.get('update_status')}, not {status}")
+    if system:
+        if r.get("update_browser_before") and r.get("update_browser_after"):
+            found.append("the update of an install for every user left the older browser running")
+        if r.get("update_new_exe_while_running"):
+            found.append("new_thoron.exe after the update of an install for every user")
+    else:
+        if r.get("update_browser_before") and r.get("update_browser_after") == 0:
+            found.append("the update ended the running browser instead of leaving it to be swapped on its next start")
+        if not r.get("update_new_exe_while_running"):
+            found.append("no new_thoron.exe while the older version ran")
     newest = max(_folders(r.get("update_folders_while_running")), key=_version, default="")
     if not newest or _version(newest) <= _version(r.get("update_from") or ""):
         found.append(f"the update brought no newer version folder: {r.get('update_folders_while_running')}")

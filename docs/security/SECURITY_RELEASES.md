@@ -358,9 +358,10 @@ What the drill showed:
 - Chrome's early-stable post names no fixes (step 1).
 - `prepare` asks for the soak before the draft, where section 4.2 lets a class A release go first
   (open item 7).
-- An install for every user of the PC (`--system-level`), updated while it ran, did not finish in the
-  clean Windows: the installer of the newer version never returned. Being looked into; installs for one
-  user, the default, are not affected.
+- An install for every user of the PC (`--system-level`), updated while it ran, seemed to hang in the
+  clean Windows. The hang was the check's own registry read; the update itself took 16 s and works as
+  Thorium's installer patch intends: it ends the running Thoron and updates in place
+  ([INSTALLER.md](../release/INSTALLER.md), section 1).
 
 S.9 stays open until a drill makes the draft.
 

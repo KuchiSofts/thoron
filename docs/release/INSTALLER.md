@@ -18,6 +18,12 @@ package has its own page, [PORTABLE.md](PORTABLE.md).
   with Thoron's own version.
 - Uninstalling removes the program and its entry and **keeps the profile** (`User Data`) unless the person
   ticks the box that deletes it (`--delete-profile`).
+- Installed over a running Thoron, it does one of two things. For one user (the default) it leaves Thoron
+  running: the new program waits as `new_thoron.exe` beside `thoron.exe` and replaces it when Thoron is
+  closed or next started (Chromium's in-use update). For every user of the PC it **ends the running Thoron
+  at once** and updates in place. Thorium's installer patch does this because such an install has no
+  Google Update to finish the swap later; Thoron then starts on the new version with the profile kept, but
+  it is closed without the usual shutdown.
 
 ## 2. The check: `tools/qa/sandbox_install_check.py`
 
@@ -60,17 +66,29 @@ On 2026-11-17, with the Windows x64 AVX2 build 158.0.8127.3010 (the installer is
 The same build installed for every user of the PC (`--system-level`: the program in Program Files, the
 entry in the PC's list of programs) passed the same three steps; the profile stays each user's own.
 
+The update from 158.0.8127.3010 to 158.0.8127.6500 (the drill build of the
+[security runbook](../security/SECURITY_RELEASES.md#8-drills-and-real-runs)) while 3010 ran:
+
+| Install | What happened | Result |
+|---|---|---|
+| For one user | exit 0, status 30 (updated while in use); `new_thoron.exe` waited while 3010 ran; on close it was swapped in; the next start ran 6500; the 3010 folder was removed; the profile kept | pass |
+| For every user | exit 0, status 2; the installer ended the running 3010 (six processes before, none after) and updated in place; the next start ran 6500; the profile kept | pass, as designed (section 1) |
+
 Found on the way:
 
 - The installer run straight from the read-only shared folder stopped with code 109 (section 1). The check
   copies it to the Sandbox's disk first.
 - Chromium writes the entry of a system-wide install in the 32-bit view of the registry
   (`HKLM\SOFTWARE\WOW6432Node\...\Uninstall`); the check looks in both views.
+- Setup exits with 0 for every successful install, an update while Thoron runs included
+  (`InstallUtil::GetInstallReturnCode`); the status itself (30 for an in-use update) is kept in the
+  registry as `InstallerError`, where the check reads it.
+- After the update of an install for every user, PowerShell's own registry reader hung on
+  `HKLM\Software\Thoron` inside the Sandbox; the check reads the registry with `reg.exe` and a time
+  limit instead, and saves its findings before each step so a hang says where it is.
 
 ## 4. Open
 
-- An update over an older installed version while it runs (`--update`): written, waiting for a second build
-  to install over the first.
-- A system-wide copy updated while it runs: Chromium hands the swap of `new_thoron.exe` to Google Update,
-  which Thoron does not have, so the swap may never happen. To be checked with `--update --system-level`.
+- For every user of the PC, an update ends a running Thoron without its normal shutdown. Asking it to close
+  first (and waiting a little) would let it save its session the usual way. Not done yet; ROADMAP P3.6.
 - The message for code 109 could say what to do (run it from Downloads). It is Chromium's message.

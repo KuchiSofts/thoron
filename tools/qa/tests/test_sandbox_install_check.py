@@ -66,6 +66,7 @@ class ProblemsTests(unittest.TestCase):
     def test_what_an_in_use_update_can_get_wrong(self):
         cases = [
             ({"update_from": ""}, "did not start before the update"),
+            ({"update_browser_before": 6, "update_browser_after": 0}, "ended the running browser"),
             ({"update_exit": 7}, "the update ended with 7"),
             ({"update_exit": "timeout"}, "the update ended with timeout"),
             ({"update_status": 2}, "kept status 2, not 30"),
@@ -83,6 +84,17 @@ class ProblemsTests(unittest.TestCase):
             with self.subTest(change=change):
                 found = sb.update_problems({**UPDATED, **change})
                 self.assertTrue(any(words in f for f in found), found)
+
+    def test_an_update_for_every_user_ends_the_browser_and_updates_in_place(self):
+        system = {**UPDATED, "system_level": True, "update_status": 2, "update_new_exe_while_running": False,
+                  "update_browser_before": 6, "update_browser_after": 0}
+        self.assertEqual(sb.update_problems(system), [])
+        found = sb.update_problems({**system, "update_browser_after": 6, "update_status": 30,
+                                    "update_new_exe_while_running": True})
+        self.assertEqual(len(found), 3, found)
+        self.assertTrue(any("left the older browser running" in f for f in found))
+        self.assertTrue(any("kept status 30, not 2" in f for f in found))
+        self.assertTrue(any("new_thoron.exe after the update of an install for every user" in f for f in found))
 
     def test_the_newest_folder_is_found_by_number_not_by_text(self):
         self.assertEqual(sb.update_problems({**UPDATED, "update_from": "158.0.8127.999",

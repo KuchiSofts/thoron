@@ -279,7 +279,9 @@ refused), no cookies, the system's proxy. Without a key in the build (every buil
 fetches verifies, so it installs nothing.
 
 The requests are plain HTTPS GETs through the browser's own network context: no profile, no cookies or
-other credentials, not stored in the HTTP cache, no identifiers; a redirect away from HTTPS is refused.
+other credentials, no referrer, not stored in the HTTP cache, no identifiers, and the User-Agent
+`Thoron-Update` instead of the browser's, so not even the version goes along; a redirect away from HTTPS
+is refused.
 A manifest is read only after its signature holds (`docs/update/MANIFEST.md`), a package is used only
 when its length and SHA-256 are the signed manifest's, and what the updater keeps (the highest serial
 it accepted, the key statements it trusts) is in the browser's `Local State`, outside every profile.

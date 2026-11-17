@@ -308,6 +308,7 @@ Explanations live in the design docs under `docs/design/`.
 - **Repository:** the unused copy of the upstream Thorium M138 tree and the Sponsor button are gone; credits stay.
 
 ### Security
+- **Updates:** an update request no longer names the browser's version (its own User-Agent), and a checked package is held so that nothing can change it before it is installed.
 
 - **Security:** the flag "Allow Third-Party Extension Downloads" starts with a warning.
 - **Ad blocking:** a phishing list (Phishing URL Blocklist) is among Thoron adblock's default lists, so pages that steal passwords are stopped in every build.

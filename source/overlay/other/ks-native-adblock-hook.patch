@@ -20796,10 +20796,10 @@ index 0000000000000000000000000000000000000000..750d4e09f63d37834aa6e3af9c6067cb
 +}  // namespace thoron_update
 diff --git a/components/thoron_update/package.cc b/components/thoron_update/package.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..7e5538ed2ee7bb1f0cee82d26a090309eaa12bea
+index 0000000000000000000000000000000000000000..df6f1302c9cf9d867862432b1fb07996b6cc6400
 --- /dev/null
 +++ b/components/thoron_update/package.cc
-@@ -0,0 +1,203 @@
+@@ -0,0 +1,239 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -20858,17 +20858,21 @@ index 0000000000000000000000000000000000000000..7e5538ed2ee7bb1f0cee82d26a090309
 +  return "unknown";
 +}
 +
-+FileCheck CheckFile(const base::FilePath& path, const PackageFile& expected) {
-+  if (expected.size < 1 || expected.size > kMostBytes ||
-+      !IsLowerHex64(expected.sha256)) {
-+    return FileCheck::kBadExpectation;
-+  }
-+  // Read only, and nobody may write to it while it is read.
-+  base::File file(path, base::File::FLAG_OPEN | base::File::FLAG_READ |
-+                            base::File::FLAG_WIN_EXCLUSIVE_WRITE);
-+  if (!file.IsValid()) {
-+    return FileCheck::kMissing;
-+  }
++namespace {
++
++bool GoodExpectation(const PackageFile& expected) {
++  return expected.size >= 1 && expected.size <= kMostBytes &&
++         IsLowerHex64(expected.sha256);
++}
++
++// Read only, and nobody may write to it while it is open; without
++// FLAG_WIN_SHARE_DELETE nobody can rename or remove it either (Windows).
++base::File OpenHeld(const base::FilePath& path) {
++  return base::File(path, base::File::FLAG_OPEN | base::File::FLAG_READ |
++                              base::File::FLAG_WIN_EXCLUSIVE_WRITE);
++}
++
++FileCheck CheckOpenFile(base::File& file, const PackageFile& expected) {
 +  const int64_t length = file.GetLength();
 +  if (length < 0) {
 +    return FileCheck::kUnreadable;
@@ -20897,6 +20901,38 @@ index 0000000000000000000000000000000000000000..7e5538ed2ee7bb1f0cee82d26a090309
 +  hasher.Finish(digest);
 +  return base::HexEncodeLower(digest) == expected.sha256 ? FileCheck::kOk
 +                                                         : FileCheck::kCorrupted;
++}
++
++}  // namespace
++
++FileCheck CheckFile(const base::FilePath& path, const PackageFile& expected) {
++  if (!GoodExpectation(expected)) {
++    return FileCheck::kBadExpectation;
++  }
++  base::File file = OpenHeld(path);
++  if (!file.IsValid()) {
++    return FileCheck::kMissing;
++  }
++  return CheckOpenFile(file, expected);
++}
++
++base::File HoldVerifiedFile(const base::FilePath& path,
++                            const PackageFile& expected,
++                            FileCheck* check) {
++  if (!GoodExpectation(expected)) {
++    *check = FileCheck::kBadExpectation;
++    return base::File();
++  }
++  base::File file = OpenHeld(path);
++  if (!file.IsValid()) {
++    *check = FileCheck::kMissing;
++    return base::File();
++  }
++  *check = CheckOpenFile(file, expected);
++  if (*check != FileCheck::kOk) {
++    return base::File();
++  }
++  return file;
 +}
 +
 +FileCheck PlaceVerifiedFile(const base::FilePath& downloaded,
@@ -21005,10 +21041,10 @@ index 0000000000000000000000000000000000000000..7e5538ed2ee7bb1f0cee82d26a090309
 +}  // namespace thoron_update
 diff --git a/components/thoron_update/package.h b/components/thoron_update/package.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..d1104afaf96188d05524d87c09b6c8d625e6c1d5
+index 0000000000000000000000000000000000000000..0b4d41d5b367f2ae3cd8bd5767b64a7f98e07fb9
 --- /dev/null
 +++ b/components/thoron_update/package.h
-@@ -0,0 +1,127 @@
+@@ -0,0 +1,137 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -21021,6 +21057,7 @@ index 0000000000000000000000000000000000000000..d1104afaf96188d05524d87c09b6c8d6
 +#include <string_view>
 +#include <vector>
 +
++#include "base/files/file.h"
 +#include "base/functional/function_ref.h"
 +#include "components/thoron_update/manifest.h"
 +
@@ -21061,6 +21098,15 @@ index 0000000000000000000000000000000000000000..d1104afaf96188d05524d87c09b6c8d6
 +// at first, so a truncated download is told without reading it; then it is read
 +// once, with others kept from writing to it meanwhile.
 +FileCheck CheckFile(const base::FilePath& path, const PackageFile& expected);
++
++// The file at `path`, checked against `expected` once more and handed back
++// open: on Windows nobody can write to it, rename it or remove it while the
++// handle is held, so what is installed is what was checked (THREAT_MODEL U8).
++// Others may still read it, as an installer does. An invalid file, with the
++// reason in `check`, when it does not check out.
++base::File HoldVerifiedFile(const base::FilePath& path,
++                            const PackageFile& expected,
++                            FileCheck* check);
 +
 +// Puts the file `downloaded` at `destination` only when it is the one
 +// `expected` names, and checks it there once more. A file that does not verify
@@ -21138,10 +21184,10 @@ index 0000000000000000000000000000000000000000..d1104afaf96188d05524d87c09b6c8d6
 +#endif  // COMPONENTS_THORON_UPDATE_PACKAGE_H_
 diff --git a/components/thoron_update/package_unittest.cc b/components/thoron_update/package_unittest.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..55fa69087629432220f8190288ee407a60d3400c
+index 0000000000000000000000000000000000000000..c4629989480b89435554817f8a2ef56e09acc896
 --- /dev/null
 +++ b/components/thoron_update/package_unittest.cc
-@@ -0,0 +1,290 @@
+@@ -0,0 +1,330 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -21150,11 +21196,13 @@ index 0000000000000000000000000000000000000000..55fa69087629432220f8190288ee407a
 +#include <string>
 +#include <vector>
 +
++#include "base/files/file.h"
 +#include "base/files/file_path.h"
 +#include "base/files/file_util.h"
 +#include "base/files/scoped_temp_dir.h"
 +#include "base/strings/string_number_conversions.h"
 +#include "base/strings/string_util.h"
++#include "build/build_config.h"
 +#include "crypto/hash.h"
 +#include "testing/gtest/include/gtest/gtest.h"
 +
@@ -21233,6 +21281,44 @@ index 0000000000000000000000000000000000000000..55fa69087629432220f8190288ee407a
 +  EXPECT_EQ(PlaceVerifiedFile(path, bad, dir_.GetPath().AppendASCII("dest")),
 +            FileCheck::kBadExpectation);
 +  EXPECT_TRUE(base::PathExists(path));
++}
++
++TEST_F(ThoronUpdatePackageTest, AHeldFileCannotBeChangedRenamedOrRemovedUntilLetGo) {
++  const base::FilePath path = Write("package.exe", package_);
++  FileCheck check = FileCheck::kMissing;
++  base::File held = HoldVerifiedFile(path, FileOf(package_), &check);
++  ASSERT_TRUE(held.IsValid());
++  EXPECT_EQ(check, FileCheck::kOk);
++#if BUILDFLAG(IS_WIN)
++  EXPECT_FALSE(base::File(path, base::File::FLAG_OPEN | base::File::FLAG_WRITE).IsValid());
++  const base::FilePath other = Write("other.exe", "another program");
++  EXPECT_FALSE(base::ReplaceFile(other, path, nullptr));
++  EXPECT_FALSE(base::Move(path, dir_.GetPath().AppendASCII("moved.exe")));
++  EXPECT_FALSE(base::DeleteFile(path));
++#endif
++  // An installer may still read it.
++  EXPECT_TRUE(base::File(path, base::File::FLAG_OPEN | base::File::FLAG_READ).IsValid());
++  EXPECT_EQ(Read(path), package_);
++  held.Close();
++  EXPECT_TRUE(base::DeleteFile(path));
++}
++
++TEST_F(ThoronUpdatePackageTest, OnlyAFileThatStillChecksOutIsHeld) {
++  FileCheck check = FileCheck::kOk;
++  const base::FilePath changed = Write("changed.exe", package_ + "x");
++  EXPECT_FALSE(HoldVerifiedFile(changed, FileOf(package_), &check).IsValid());
++  EXPECT_EQ(check, FileCheck::kTooLong);
++  std::string swapped = package_;
++  swapped[swapped.size() / 2] ^= 0x20;
++  const base::FilePath other = Write("swapped.exe", swapped);
++  EXPECT_FALSE(HoldVerifiedFile(other, FileOf(package_), &check).IsValid());
++  EXPECT_EQ(check, FileCheck::kCorrupted);
++  EXPECT_FALSE(HoldVerifiedFile(dir_.GetPath().AppendASCII("none"), FileOf(package_), &check).IsValid());
++  EXPECT_EQ(check, FileCheck::kMissing);
++  PackageFile bad = FileOf(package_);
++  bad.size = 0;
++  EXPECT_FALSE(HoldVerifiedFile(changed, bad, &check).IsValid());
++  EXPECT_EQ(check, FileCheck::kBadExpectation);
 +}
 +
 +TEST_F(ThoronUpdatePackageTest, AVerifiedFileIsPlaced) {
@@ -23739,10 +23825,10 @@ index 0000000000000000000000000000000000000000..37445ffb780b10977cd785a2f5dd2390
 +}  // namespace thoron_update
 diff --git a/components/thoron_update/update_client.cc b/components/thoron_update/update_client.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..100bc0435b166588efbf4aa33f101e2fd5eb27f3
+index 0000000000000000000000000000000000000000..79ae1cc6c74d5590d3408e2afc83ca26c644c0e7
 --- /dev/null
 +++ b/components/thoron_update/update_client.cc
-@@ -0,0 +1,652 @@
+@@ -0,0 +1,672 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -23771,6 +23857,7 @@ index 0000000000000000000000000000000000000000..100bc0435b166588efbf4aa33f101e2f
 +#include "net/http/http_response_headers.h"
 +#include "net/traffic_annotation/network_traffic_annotation.h"
 +#include "net/url_request/redirect_info.h"
++#include "net/url_request/referrer_policy.h"
 +#include "services/network/public/cpp/resource_request.h"
 +#include "services/network/public/cpp/shared_url_loader_factory.h"
 +#include "services/network/public/cpp/simple_url_loader.h"
@@ -24011,14 +24098,28 @@ index 0000000000000000000000000000000000000000..100bc0435b166588efbf4aa33f101e2f
 +  Finish(std::move(failed));
 +}
 +
-+void UpdateClient::Fetch(const GURL& url,
-+                         size_t most_bytes,
-+                         base::OnceCallback<void(std::optional<std::string>)> done) {
++namespace {
++
++// Every request of the updater (THREAT_MODEL U12): no cookie, no cache, no
++// referrer, and a User-Agent that does not name the browser's version.
++std::unique_ptr<network::ResourceRequest> UpdateRequest(const GURL& url) {
 +  auto request = std::make_unique<network::ResourceRequest>();
 +  request->url = url;
 +  request->method = "GET";
 +  request->credentials_mode = network::mojom::CredentialsMode::kOmit;
 +  request->load_flags = net::LOAD_DISABLE_CACHE;
++  request->referrer_policy = net::ReferrerPolicy::NO_REFERRER;
++  request->headers.SetHeader(net::HttpRequestHeaders::kUserAgent,
++                             UpdateClient::kUserAgent);
++  return request;
++}
++
++}  // namespace
++
++void UpdateClient::Fetch(const GURL& url,
++                         size_t most_bytes,
++                         base::OnceCallback<void(std::optional<std::string>)> done) {
++  std::unique_ptr<network::ResourceRequest> request = UpdateRequest(url);
 +  loader_ = network::SimpleURLLoader::Create(std::move(request), kTrafficAnnotation);
 +  loader_->SetOnRedirectCallback(base::BindRepeating(
 +      [](base::WeakPtr<UpdateClient> self, const GURL&, const net::RedirectInfo& info,
@@ -24226,11 +24327,7 @@ index 0000000000000000000000000000000000000000..100bc0435b166588efbf4aa33f101e2f
 +  if (had > 0) {
 +    resumed_ = true;
 +  }
-+  auto request = std::make_unique<network::ResourceRequest>();
-+  request->url = GURL(step.file.url);
-+  request->method = "GET";
-+  request->credentials_mode = network::mojom::CredentialsMode::kOmit;
-+  request->load_flags = net::LOAD_DISABLE_CACHE;
++  std::unique_ptr<network::ResourceRequest> request = UpdateRequest(GURL(step.file.url));
 +  if (had > 0) {
 +    // Only the rest (P4.3). A server that sends it all again is fine too.
 +    request->headers.SetHeader("Range", "bytes=" + base::NumberToString(had) + "-");
@@ -24361,12 +24458,21 @@ index 0000000000000000000000000000000000000000..100bc0435b166588efbf4aa33f101e2f
 +  base::ThreadPool::PostTaskAndReplyWithResult(
 +      FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
 +      base::BindOnce(
-+          [](Installer install, base::FilePath package, bool delta, std::string version) {
-+            const bool installed = install && install.Run(package, delta, version);
++          [](Installer install, base::FilePath package, PackageFile expected, bool delta,
++             std::string version) {
++            bool installed = false;
++            {
++              // Checked once more and held open until the installer is done:
++              // nothing can change, rename or remove it in between (U8).
++              FileCheck check;
++              const base::File held = HoldVerifiedFile(package, expected, &check);
++              installed = held.IsValid() && install && install.Run(package, delta, version);
++            }
 +            base::DeleteFile(package);
 +            return installed;
 +          },
-+          config_.install, placed, delta, ToString(decision_->manifest->version)),
++          config_.install, placed, plan_[next_step_].file, delta,
++          ToString(decision_->manifest->version)),
 +      base::BindOnce(&UpdateClient::OnInstalled, weak_factory_.GetWeakPtr()));
 +}
 +
@@ -24397,10 +24503,10 @@ index 0000000000000000000000000000000000000000..100bc0435b166588efbf4aa33f101e2f
 +}  // namespace thoron_update
 diff --git a/components/thoron_update/update_client.h b/components/thoron_update/update_client.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..807aee51e1c890c5dd88f681c8d5bf12f04b4d3c
+index 0000000000000000000000000000000000000000..bec03c2af8d335a4a7ba01943823038a1902a86d
 --- /dev/null
 +++ b/components/thoron_update/update_client.h
-@@ -0,0 +1,235 @@
+@@ -0,0 +1,239 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -24541,6 +24647,10 @@ index 0000000000000000000000000000000000000000..807aee51e1c890c5dd88f681c8d5bf12
 +  // The files beside the manifest.
 +  static GURL SignatureUrl(const GURL& manifest);
 +  static GURL KeyStatementsUrl(const GURL& manifest);
++
++  // The User-Agent of every request the updater makes: it does not name the
++  // browser's version (THREAT_MODEL U12).
++  static constexpr char kUserAgent[] = "Thoron-Update";
 +
 +  // What a decision means for the page, before anything is downloaded.
 +  static State StateFor(const Decision& decision);
@@ -24928,19 +25038,22 @@ index 0000000000000000000000000000000000000000..523d58db6e2a1b6f60e8f55bfb651424
 +#endif  // COMPONENTS_THORON_UPDATE_UPDATE_CLIENT_TEST_DATA_H_
 diff --git a/components/thoron_update/update_client_unittest.cc b/components/thoron_update/update_client_unittest.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..3c4e20e8e52d1b0265a3aefb64fe2619d455e7c1
+index 0000000000000000000000000000000000000000..359916a019f36f2c89c132769b12893370e42045
 --- /dev/null
 +++ b/components/thoron_update/update_client_unittest.cc
-@@ -0,0 +1,547 @@
+@@ -0,0 +1,597 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
 +#include "components/thoron_update/update_client.h"
 +
++#include <algorithm>
++#include <optional>
 +#include <string>
 +#include <vector>
 +
 +#include "base/base64.h"
++#include "base/files/file.h"
 +#include "base/files/file_enumerator.h"
 +#include "base/files/file_util.h"
 +#include "base/files/scoped_temp_dir.h"
@@ -24952,10 +25065,15 @@ index 0000000000000000000000000000000000000000..3c4e20e8e52d1b0265a3aefb64fe2619
 +#include "base/test/task_environment.h"
 +#include "base/strings/string_number_conversions.h"
 +#include "base/time/time.h"
++#include "build/build_config.h"
 +#include "crypto/hash.h"
 +#include "components/prefs/testing_pref_service.h"
 +#include "components/thoron_update/update_client_test_data.h"
++#include "net/base/load_flags.h"
++#include "net/http/http_request_headers.h"
 +#include "net/http/http_status_code.h"
++#include "net/url_request/referrer_policy.h"
++#include "services/network/public/cpp/resource_request.h"
 +#include "services/network/public/cpp/weak_wrapper_shared_url_loader_factory.h"
 +#include "services/network/test/test_url_loader_factory.h"
 +#include "services/network/test/test_utils.h"
@@ -25010,8 +25128,11 @@ index 0000000000000000000000000000000000000000..3c4e20e8e52d1b0265a3aefb64fe2619
 +    EXPECT_EQ(version, data::kNewest);
 +    std::string read;
 +    base::ReadFileToString(package, &read);
++    // Nothing else may write to the package while it is installed (U8).
++    const bool writable = base::File(package, base::File::FLAG_OPEN | base::File::FLAG_WRITE).IsValid();
 +    base::AutoLock hold(lock_);
 +    installed_.push_back(read);
++    writable_.push_back(writable);
 +    deltas_.push_back(delta);
 +    return install_works_ && !(fail_delta_ && delta);
 +  }
@@ -25056,6 +25177,7 @@ index 0000000000000000000000000000000000000000..3c4e20e8e52d1b0265a3aefb64fe2619
 +  base::Lock lock_;
 +  std::vector<std::string> installed_;
 +  std::vector<bool> deltas_;
++  std::vector<bool> writable_;
 +  bool install_works_ = true;
 +  bool fail_delta_ = false;
 +};
@@ -25098,6 +25220,9 @@ index 0000000000000000000000000000000000000000..3c4e20e8e52d1b0265a3aefb64fe2619
 +  ASSERT_EQ(installed_.size(), 1u);
 +  EXPECT_EQ(installed_[0], Bytes(data::kDelta));
 +  EXPECT_TRUE(deltas_[0]);
++#if BUILDFLAG(IS_WIN)
++  EXPECT_FALSE(writable_[0]);
++#endif
 +  // Nothing is left in the download folder, neither the package nor a part.
 +  EXPECT_TRUE(DownloadFolderIsEmpty());
 +  // Until the restart, a look says the same and fetches nothing.
@@ -25300,6 +25425,41 @@ index 0000000000000000000000000000000000000000..3c4e20e8e52d1b0265a3aefb64fe2619
 +  base::FileEnumerator left(config_.download_dir, false, base::FileEnumerator::FILES);
 +  for (base::FilePath path = left.Next(); !path.empty(); path = left.Next()) {
 +    EXPECT_EQ(path.Extension(), FILE_PATH_LITERAL(".part")) << path;
++  }
++}
++
++TEST_F(ThoronUpdateClientTest, AFarLongerDownloadIsCutOffAtTheSignedSize) {
++  Publish();
++  const std::string delta = Bytes(data::kDelta), full = Bytes(data::kInstaller);
++  network_.AddResponse(data::kDeltaUrl, delta + std::string(4 << 20, 'x'));
++  network_.AddResponse(data::kInstallerUrl, full + std::string(4 << 20, 'x'));
++  EXPECT_EQ(Look(*Client(), /*install=*/true).state, State::kError);
++  EXPECT_TRUE(installed_.empty());
++  // No more than one byte past the signed size was ever written (U2).
++  const int64_t most = static_cast<int64_t>(std::max(delta.size(), full.size())) + 1;
++  base::FileEnumerator left(config_.download_dir, false, base::FileEnumerator::FILES);
++  for (base::FilePath path = left.Next(); !path.empty(); path = left.Next()) {
++    EXPECT_LE(left.GetInfo().GetSize(), most) << path;
++  }
++}
++
++TEST_F(ThoronUpdateClientTest, NoRequestCarriesACookieAReferrerOrTheVersion) {
++  Publish();
++  std::vector<network::ResourceRequest> seen;
++  network_.SetInterceptor(
++      base::BindLambdaForTesting([&](const network::ResourceRequest& r) { seen.push_back(r); }));
++  EXPECT_EQ(Look(*Client(), /*install=*/true).state, State::kReadyToRelaunch);
++  // The manifest, its signature, the key statements and the package.
++  ASSERT_GE(seen.size(), 4u);
++  for (const network::ResourceRequest& r : seen) {
++    EXPECT_EQ(r.credentials_mode, network::mojom::CredentialsMode::kOmit) << r.url;
++    EXPECT_TRUE(r.load_flags & net::LOAD_DISABLE_CACHE) << r.url;
++    EXPECT_FALSE(r.headers.HasHeader(net::HttpRequestHeaders::kCookie)) << r.url;
++    EXPECT_TRUE(r.referrer.is_empty()) << r.url;
++    EXPECT_EQ(r.referrer_policy, net::ReferrerPolicy::NO_REFERRER) << r.url;
++    EXPECT_EQ(r.headers.GetHeader(net::HttpRequestHeaders::kUserAgent),
++              std::optional<std::string>(UpdateClient::kUserAgent))
++        << r.url;
 +  }
 +}
 +

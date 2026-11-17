@@ -338,7 +338,7 @@ class ReleaseFixture(Fixture):
         return code, out.getvalue(), err.getvalue()
 
     def prepare(self, *more, dist: Path | None = None, previous: str = "156.0.8078.28", bench: dict | None = None,
-                soak: str | None = None, update: str | None = None, **kw):
+                soak: str | None = None, update: str | None = None, variant: str = VARIANT, **kw):
         bench_file = self.repo.parent / "bench.json"
         bench_file.write_text(json.dumps(bench or BENCH), encoding="utf-8")
         soak_file = self.repo.parent / "soak.txt"
@@ -346,7 +346,7 @@ class ReleaseFixture(Fixture):
         update_file = self.repo.parent / "update-check.txt"
         update_file.write_text((update if update is not None else UPDATE_REPORT).replace(
             f"From: {LAST_RELEASE}", f"From: {previous}"), encoding="utf-8")
-        return self.main("prepare", "--src", self.src, "--out", self.out, "--platform", "win", "--variant", VARIANT,
+        return self.main("prepare", "--src", self.src, "--out", self.out, "--platform", "win", "--variant", variant,
                          "--previous", previous, "--buildinfo", self.buildinfo, "--dist", dist or self.dist,
                          "--repo", self.repo, "--since", "v0.1.1", "--chromium-old", "156.0.8078.80",
                          "--bench", bench_file, "--soak", soak_file, "--update-check", update_file, *more, **kw)
@@ -625,6 +625,77 @@ class ManifestPartsTests(ReleaseTestCase):
                 self.assertRaises(mf.SignatureError):                    # what was written does not read back
             rel.write_manifest(dist, self.f.plan(), BUILD, VARIANT, self.f.private, self.f.public, NOW)
         self.assertEqual(self.names(), [f"BUILDINFO-{BUILD}-{VARIANT}.json", "SHA256SUMS", INSTALLER])
+
+
+class CombineTests(ReleaseTestCase):
+    """ROADMAP P2.12: several variants in one release, from the single-variant folders prepare made."""
+
+    def two(self) -> tuple[Path, Path]:
+        avx2 = self.f.dist
+        code, out, err = self.f.prepare(*self.f.with_manifest())
+        self.assertEqual(code, 0, out + err)
+        self.f.minisign_stand_in(avx2)
+        sse4 = avx2.with_name("dist-sse4")
+        self.f.record(variant="win-x64-sse4")
+        code, out, err = self.f.prepare(*self.f.with_manifest(), dist=sse4, variant="win-x64-sse4")
+        self.assertEqual(code, 0, out + err)
+        self.f.minisign_stand_in(sse4)
+        return avx2, sse4
+
+    def combine(self, *sources: Path, dist: Path | None = None):
+        dist = dist or self.f.dist.with_name("dist-all")
+        args = ["combine", *[a for s in sources for a in ("--from", s)], "--dist", dist, "--repo", self.f.repo,
+                "--manifest-key", self.f.keys / "manifest.key", "--manifest-public-key", text(self.f.public)]
+        return (*self.f.main(*args), dist)
+
+    def test_one_release_with_every_variant(self):
+        avx2, sse4 = self.two()
+        code, out, err, dist = self.combine(avx2, sse4)
+        self.assertEqual(code, 0, out + err)
+        self.assertIn("variants win-x64-avx2, win-x64-sse4", out)
+        names = self.names(dist)
+        for variant in ("win-x64-avx2", "win-x64-sse4"):
+            self.assertIn(f"thoron-{BUILD}-{variant}-installer.exe", names)
+            self.assertIn(f"BUILDINFO-{BUILD}-{variant}.json", names)
+        data = mf.verify(*self.manifest(dist), self.f.public, allowed_hosts=HOSTS)
+        self.assertEqual(sorted(data["packages"]), ["win-x64-avx2", "win-x64-sse4"])
+        first = mf.verify(*self.manifest(avx2), self.f.public, allowed_hosts=HOSTS)
+        self.assertEqual({k: v for k, v in data.items() if k != "packages"},
+                         {k: v for k, v in first.items() if k != "packages"})
+        self.assertEqual(rel.checksum_problems(dist), [])
+        notes = (dist / "NOTES.md").read_text(encoding="utf-8")
+        self.assertIn(f"thoron-{BUILD}-win-x64-sse4-installer.exe", notes)
+        self.assertIn(f"thoron-{BUILD}-win-x64-avx2-installer.exe", notes)
+        self.assertEqual(notes.count("## Downloads"), 1)
+        self.f.minisign_stand_in(dist)
+        self.assertEqual(rel.publish_problems(dist, THORON, GH_REPO, self.f.public, NOW), [])
+
+    def test_what_is_refused(self):
+        avx2, sse4 = self.two()
+        code, out, err, dist = self.combine(avx2)
+        self.assertEqual(code, 1)
+        self.assertIn("two release folders or more", err)
+        code, out, err, dist = self.combine(avx2, avx2)
+        self.assertIn("same variant", err)
+        (sse4 / "NOTES.md").write_text("other notes", encoding="utf-8")
+        code, out, err, dist = self.combine(avx2, sse4)
+        self.assertIn("the notes differ", err)
+        self.assertFalse(dist.exists())
+        installer = next(sse4.glob("*-installer.exe"))
+        installer.write_bytes(installer.read_bytes() + b"x")
+        code, out, err, dist = self.combine(avx2, sse4)
+        self.assertIn("does not have the SHA-256 that SHA256SUMS lists", err)
+        self.assertEqual(code, 1)
+
+    def test_a_key_inside_a_source_folder_is_refused_unread(self):
+        avx2, sse4 = self.two()
+        key = avx2 / "manifest.key"
+        key.write_text("never read", encoding="ascii")
+        args = ["combine", "--from", avx2, "--from", sse4, "--dist", self.f.dist.with_name("dist-all"),
+                "--repo", self.f.repo, "--manifest-key", key, "--manifest-public-key", text(self.f.public)]
+        code, out, err = self.f.main(*args)
+        self.assertEqual(code, 2)
+        self.assertIn("the key file is inside", err)
 
 
 class DryRunTests(ReleaseTestCase):

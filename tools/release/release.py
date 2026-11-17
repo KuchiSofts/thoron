@@ -700,6 +700,156 @@ def sign(dist: Path, key: Path, run=subprocess.run) -> Path:
     return sig
 
 
+# --- several variants in one release (ROADMAP P2.12) -------------------------------------------------------
+
+_BUILDINFO_NAME = re.compile(r"^BUILDINFO-(?P<version>[0-9.]+)-(?P<variant>[a-z0-9-]+)\.json$")
+# made again for the release as a whole; everything else is taken over as it is
+REMADE = ("SHA256SUMS", "SHA256SUMS.minisig", "NOTES.md", mf.MANIFEST_NAME, mf.SIGNATURE_NAME)
+
+
+def _variant_of(folder: Path) -> tuple[str, str] | None:
+    found = [m for m in (_BUILDINFO_NAME.match(p.name) for p in folder.glob("BUILDINFO-*.json")) if m]
+    return (found[0]["version"], found[0]["variant"]) if len(found) == 1 else None
+
+
+def _without_downloads(notes: str) -> str:
+    """The notes without their "Downloads" section, which lists a folder's own files."""
+    return re.sub(r"(?ms)^## Downloads\n.*?(?=^## |\Z)", "", notes)
+
+
+def _downloads(sums: str) -> str:
+    lines = [l.split(None, 1) for l in sums.splitlines() if l.strip()]
+    return "\n".join(["## Downloads", "", "| File | SHA-256 |", "|---|---|"]
+                     + [f"| `{n.strip().lstrip('*')}` | `{h}` |" for h, n in lines]
+                     + ["", "Check the files against `SHA256SUMS` and its signature, as described in the README"
+                            " (Verifying downloads).", "", ""])
+
+
+def combine_problems(sources: list[Path], public_key: bytes, now: int) -> list[str]:
+    """Why these single-variant release folders do not make one release: each must be whole (its files
+    as its SHA256SUMS lists them, its manifest signed by the release key), all of one build from one
+    commit, each of another variant, with the same notes apart from their file lists, the same manifest
+    apart from its packages, and the files they share (the licence bundle, ThoronSetup.exe) the same."""
+    out: list[str] = []
+    if len(sources) < 2:
+        return ["combine takes two release folders or more (--from, once for each)"]
+    seen: dict[str, Path] = {}
+    variants, versions, commits, notes, manifests = [], set(), set(), set(), []
+    for folder in sources:
+        name = folder.name
+        if not folder.is_dir():
+            out.append(f"{name}: not a folder")
+            continue
+        found = _variant_of(folder)
+        if found is None:
+            out.append(f"{name}: not a release folder of one variant (one BUILDINFO-<version>-<variant>.json)")
+            continue
+        version, variant = found
+        versions.add(version)
+        variants.append(variant)
+        out += [f"{name}: {p}" for p in checksum_problems(folder)] if (folder / "SHA256SUMS").is_file() else \
+            [f"{name}: no SHA256SUMS"]
+        try:
+            commits.add(release_commit(folder))
+        except (ReleaseError, OSError, ValueError) as exc:
+            out.append(f"{name}: {exc}")
+        if (folder / "NOTES.md").is_file():
+            notes.add(_without_downloads((folder / "NOTES.md").read_text(encoding="utf-8")))
+        else:
+            out.append(f"{name}: no NOTES.md")
+        manifest, signature = folder / mf.MANIFEST_NAME, folder / mf.SIGNATURE_NAME
+        try:
+            data = mf.verify(_read_at_most(manifest, mf.MAX_MANIFEST_BYTES + 1),
+                             _read_at_most(signature, mf.SIGNATURE_BYTES + 1), public_key,
+                             allowed_hosts=MANIFEST_HOSTS)
+            manifests.append(data)
+        except (OSError, mf.SignatureError, mf.ManifestError) as exc:
+            out.append(f"{name}: its update manifest does not verify with the public key ({type(exc).__name__})")
+        for path in sorted(folder.iterdir()):
+            if path.name in REMADE or not path.is_file():
+                continue
+            if path.name in seen and _sha256(path) != _sha256(seen[path.name]):
+                out.append(f"{path.name} differs between {seen[path.name].parent.name} and {name}")
+            seen.setdefault(path.name, path)
+    if len(versions) > 1:
+        out.append(f"the folders are of different builds: {', '.join(sorted(versions))}")
+    if len(set(variants)) != len(variants):
+        out.append("two folders are of the same variant")
+    if len(commits) > 1:
+        out.append("the folders were built from different commits")
+    if len(notes) > 1:
+        out.append("the notes differ beyond their lists of files")
+    if manifests:
+        rest = {json.dumps({k: v for k, v in m.items() if k != "packages"}, sort_keys=True) for m in manifests}
+        if len(rest) > 1:
+            out.append("the update manifests differ beyond their packages (channel, version, dates or serial)")
+        stale = mf.freshness(manifests[0], channel=manifests[0]["channel"], last_serial=0, now=now)
+        if stale:
+            out.append(f"update manifest: {stale[1]}")
+    return out
+
+
+def combine(sources: list[Path], dist: Path, private_key: bytes, public_key: bytes, now: int) -> list[Path]:
+    """One release folder from several single-variant ones (combine_problems first): their files, one
+    SHA256SUMS of all of them, the notes with all of them, and one update manifest that names every
+    variant, signed, with everything else as each manifest had it. The SHA256SUMS signature (minisign) is
+    made by the caller."""
+    if dist.exists() and any(dist.iterdir()):
+        raise ReleaseError(f"{dist} is not empty; a release folder is never overwritten")
+    dist.mkdir(parents=True, exist_ok=True)
+    try:
+        packages: dict = {}
+        data = None
+        for folder in sources:
+            for path in sorted(folder.iterdir()):
+                if path.is_file() and path.name not in REMADE and not (dist / path.name).exists():
+                    shutil.copy2(path, dist / path.name)
+            data = mf.verify((folder / mf.MANIFEST_NAME).read_bytes(), (folder / mf.SIGNATURE_NAME).read_bytes(),
+                             public_key, allowed_hosts=MANIFEST_HOSTS)
+            packages.update(data["packages"])
+        listed = sorted(p for p in dist.iterdir() if p.is_file() and p.name not in UNLISTED)
+        sums = "".join(f"{_sha256(p)}  {p.name}\n" for p in listed)
+        (dist / "SHA256SUMS").write_text(sums, encoding="utf-8", newline="\n")
+        notes = _without_downloads((sources[0] / "NOTES.md").read_text(encoding="utf-8"))
+        marker = "## Source and licences"
+        notes = (notes.replace(marker, _downloads(sums) + marker, 1) if marker in notes
+                 else notes.rstrip("\n") + "\n\n" + _downloads(sums))
+        (dist / "NOTES.md").write_text(notes, encoding="utf-8", newline="\n")
+        whole = dict(data, packages=packages)
+        raw = mf.serialize(whole, allowed_hosts=MANIFEST_HOSTS)
+        signature = mf.sign(raw, private_key, public_key, allowed_hosts=MANIFEST_HOSTS, now=now)
+        _write_new(dist / mf.MANIFEST_NAME, raw)
+        _write_new(dist / mf.SIGNATURE_NAME, signature)
+        mf.verify((dist / mf.MANIFEST_NAME).read_bytes(), (dist / mf.SIGNATURE_NAME).read_bytes(), public_key,
+                  allowed_hosts=MANIFEST_HOSTS)
+    except BaseException:
+        shutil.rmtree(dist, ignore_errors=True)
+        raise
+    return sorted(dist.iterdir())
+
+
+def _combine(a) -> int:
+    keep_out_of = (a.repo, a.dist, *a.sources)
+    private_key = read_signing_key(a.manifest_key, "--manifest-key", keep_out_of)
+    public_key = public_key_from(a.manifest_public_key, "--manifest-public-key")
+    now = int(time.time())
+    problems = combine_problems(a.sources, public_key, now)
+    if problems:
+        for prob in problems:
+            print(f"release: {prob}", file=sys.stderr)
+        print(f"release: {len(problems)} problem(s); nothing was combined")
+        return 1
+    files = combine(a.sources, a.dist, private_key, public_key, now)
+    if a.minisign_key:
+        files.append(sign(a.dist, a.minisign_key))
+    else:
+        print("release: SHA256SUMS is not signed (no --minisign-key); publish will refuse it")
+    variants = sorted(_variant_of(s)[1] for s in a.sources)
+    print(f"release: {len(files)} file(s) in {a.dist}, variants {', '.join(variants)}; the update manifest names "
+          "them all")
+    return 0
+
+
 # --- the notes -------------------------------------------------------------------------------------------
 
 def read_highlights(path: Path) -> str:
@@ -1204,6 +1354,14 @@ def main(argv: list[str], run=None) -> int:
     a_.add_argument("--adblock-public-key", help="the public key copies of Thoron hold for them, in base64")
     a_.add_argument("--adblock-serial", help="YYYYMMDDNN, higher than the copy in use")
     a_.add_argument("--adblock-resources", type=Path, help=f"default: {ADBLOCK_RESOURCES} in the out dir")
+    c_ = sub.add_parser("combine", help="one release from several single-variant release folders of one build")
+    c_.add_argument("--from", dest="sources", type=Path, action="append", required=True,
+                    help="a release folder that prepare made, once for each variant")
+    c_.add_argument("--dist", type=Path, required=True)
+    c_.add_argument("--repo", type=Path, default=Path("."))
+    c_.add_argument("--manifest-key", type=Path, required=True)
+    c_.add_argument("--manifest-public-key", required=True)
+    c_.add_argument("--minisign-key", type=Path)
     b_ = sub.add_parser("publish")
     b_.add_argument("--dist", type=Path, required=True)
     b_.add_argument("--version", required=True)
@@ -1212,6 +1370,8 @@ def main(argv: list[str], run=None) -> int:
                     help="the public key copies of Thoron hold, base64 of 32 bytes")
     a = p.parse_args(argv)
     try:
+        if a.cmd == "combine":
+            return _combine(a)
         return _publish(a, run) if a.cmd == "publish" else _prepare(a)
     except (ReleaseError, ver.VersionError, changelog.NotesError, mf.ManifestError, mf.SignatureError, OSError,
             ValueError, subprocess.CalledProcessError) as exc:

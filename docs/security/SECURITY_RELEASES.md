@@ -176,6 +176,14 @@ Commands are run from the repository root in the build window of
         --previous-manifest <the last update.json> --critical
     ```
 
+    - **Several variants** (AVX2 and SSE4, later ARM64): `prepare` each into a folder of its own, from
+      the same commit and with the same options, then make the release from them:
+      `py -3 -I toolseleaseelease.py combine --from <avx2 folder> --from <sse4 folder> --dist <release folder>
+      --manifest-key <key file> --manifest-public-key <public key> --minisign-key <key file>`. It refuses
+      folders of different builds or commits, of the same variant, with notes or manifests that differ
+      beyond their files, or with a file that is not what their `SHA256SUMS` lists; it makes one
+      `SHA256SUMS`, one set of notes listing every file, and one update manifest naming every variant,
+      signed, and `publish` then takes that folder.
     - Leave `--highlights` out when there is nothing to say by hand, and `--critical` out for class C
       and D. A `security.json` that is not a list of fixes stops `prepare` before anything is packaged.
     - `--previous-manifest` is the `update.json` of the newest release. The very first manifest is made

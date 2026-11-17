@@ -17,9 +17,12 @@ script inside it:
     uninstall  runs Thoron's own uninstaller (`--uninstall --force-uninstall`, no question asked): the program
                and its entry are gone, and the profile, with a file put into it, is kept, as it is by default
 
-then shuts the Sandbox down. Windows Sandbox must be on (Windows 11 Pro; it opens a window for a few minutes).
+With --system-level every step is the one for all users of the PC: the installer and uninstaller get
+`--system-level`, the program goes to Program Files and its entry to the PC's list; the profile stays the
+user's own. Then the script shuts the Sandbox down. Windows Sandbox must be on (Windows 11 Pro; it opens a
+window for a few minutes).
     py -3 -I tools/qa/sandbox_install_check.py --installer <out>\\thoron_AVX2_mini_installer.exe --work <scratch>
-        [--update <newer build>\\thoron_AVX2_mini_installer.exe] [--timeout 900]
+        [--update <newer build>\\thoron_AVX2_mini_installer.exe] [--system-level] [--timeout 900]
 """
 import argparse
 import json
@@ -40,7 +43,12 @@ IN_USE_UPDATED = 30
 RUN = r"""$ErrorActionPreference = 'Continue'
 $r = [ordered]@{}
 $out = 'C:\ThoronTest\out'
-$app = Join-Path $env:LOCALAPPDATA 'Thoron\Application'
+# for every user of the PC (needs an administrator; the Sandbox's own account is one) or for this user
+$system = Test-Path 'C:\ThoronTest\in\system-level'
+$level = @(); if ($system) { $level = @('--system-level') }
+$r.system_level = $system
+$app = if ($system) { Join-Path $env:ProgramFiles 'Thoron\Application' } else { Join-Path $env:LOCALAPPDATA 'Thoron\Application' }
+$uninstallKey = if ($system) { 'HKLM:' } else { 'HKCU:' }
 $exe = Join-Path $app 'thoron.exe'
 $data = Join-Path $env:LOCALAPPDATA 'Thoron\User Data'
 $marker = Join-Path $data 'Default\sandbox-marker.txt'
@@ -58,10 +66,13 @@ function Install($folder) {
   $shared = Get-ChildItem (Join-Path 'C:\ThoronTest\in' $folder) -Filter '*.exe' | Select-Object -First 1
   $copy = Join-Path $env:TEMP ($folder + '-' + $shared.Name)
   Copy-Item $shared.FullName $copy
-  return Timed $copy @('--silent', '--do-not-launch-chrome', '--verbose-logging') 300
+  return Timed $copy (@('--silent', '--do-not-launch-chrome', '--verbose-logging') + $level) 300
 }
 function Entry {
-  Get-ChildItem 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall' -ErrorAction SilentlyContinue |
+  # Chromium writes a system install's entry in the 32-bit view of the registry (WOW6432Node)
+  @("$($uninstallKey)\Software\Microsoft\Windows\CurrentVersion\Uninstall",
+    "$($uninstallKey)\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall") |
+    ForEach-Object { Get-ChildItem $_ -ErrorAction SilentlyContinue } |
     ForEach-Object { Get-ItemProperty $_.PsPath } | Where-Object { $_.DisplayName -like '*Thoron*' } |
     Select-Object -First 1
 }
@@ -129,7 +140,7 @@ try {
   $setup = Get-ChildItem $app -Recurse -Filter 'setup.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
   $r.setup_found = [bool]$setup
   if ($setup) {
-    $r.uninstall_exit = Timed $setup.FullName @('--uninstall', '--force-uninstall', '--verbose-logging') 300
+    $r.uninstall_exit = Timed $setup.FullName (@('--uninstall', '--force-uninstall', '--verbose-logging') + $level) 300
   }
   Start-Sleep -Seconds 5
   $r.program_after = Test-Path $exe
@@ -234,7 +245,7 @@ def update_problems(r: dict) -> list[str]:
     return found
 
 
-def run(installer: Path, work: Path, timeout: float, update: Path | None = None) -> dict:
+def run(installer: Path, work: Path, timeout: float, update: Path | None = None, system_level: bool = False) -> dict:
     if work.exists():
         shutil.rmtree(work)
     (work / "out").mkdir(parents=True)
@@ -242,6 +253,8 @@ def run(installer: Path, work: Path, timeout: float, update: Path | None = None)
         if file:
             (work / "in" / folder).mkdir(parents=True)
             shutil.copy2(file, work / "in" / folder / file.name)
+    if system_level:
+        (work / "in" / "system-level").write_text("", encoding="utf-8")
     (work / "in" / "run.ps1").write_text(RUN, encoding="utf-8-sig", newline="\r\n")
     config = work / "thoron-test.wsb"
     config.write_text(wsb(work), encoding="utf-8")
@@ -279,12 +292,15 @@ def main(argv: list[str]) -> int:
     p.add_argument("--installer", type=Path, required=True)
     p.add_argument("--work", type=Path, required=True, help="a scratch folder; shared with the Sandbox")
     p.add_argument("--update", type=Path, help="a newer build's installer, installed while the first one runs")
+    p.add_argument("--system-level", action="store_true",
+                   help="install for every user of the PC (Program Files), not for the user who runs it")
     p.add_argument("--timeout", type=float, default=900)
     a = p.parse_args(argv)
     if not Path(SANDBOX).is_file():
         print("SANDBOX INSTALL CHECK: FAILED (Windows Sandbox is not on)")
         return 1
-    found = run(a.installer.resolve(), a.work.resolve(), a.timeout, a.update.resolve() if a.update else None)
+    found = run(a.installer.resolve(), a.work.resolve(), a.timeout, a.update.resolve() if a.update else None,
+                a.system_level)
     print(json.dumps(found, indent=1))
     by_step = problems(found)
     for step, found_problems in by_step.items():

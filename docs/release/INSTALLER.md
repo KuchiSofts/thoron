@@ -36,7 +36,13 @@ Then the Sandbox shuts itself down; the check closes it if it is still there a m
 
 ```
 py -3 -I tools/qa/sandbox_install_check.py --installer <out>\thoron_AVX2_mini_installer.exe --work <scratch folder>
+    [--update <newer build>\thoron_AVX2_mini_installer.exe] [--system-level]
 ```
+
+`--update` adds a step before the uninstall: Thoron is started again, and while it runs the newer build is
+installed over it (Chromium's in-use update, exit 30, `new_thoron.exe` left beside `thoron.exe`); after the
+window is closed and Thoron started again, it must run from the newer version folder, with
+`new_thoron.exe` gone and the profile kept. `--system-level` runs every step for all users of the PC.
 
 Windows Sandbox must be turned on (Windows 11 Pro or Enterprise, "Windows Sandbox" in Windows features). It
 opens a window for a few minutes; nothing in it needs a click.
@@ -51,13 +57,20 @@ On 2026-11-17, with the Windows x64 AVX2 build 158.0.8127.3010 (the installer is
 | start | window shown; closed by itself after the window was closed; `Local State` made |
 | uninstall | exit 19; program and entry gone; `User Data` and the file put into it kept |
 
-Found on the way: the installer run straight from the read-only shared folder stopped with code 109 (section
-1). The check copies it to the Sandbox's disk first.
+The same build installed for every user of the PC (`--system-level`: the program in Program Files, the
+entry in the PC's list of programs) passed the same three steps; the profile stays each user's own.
+
+Found on the way:
+
+- The installer run straight from the read-only shared folder stopped with code 109 (section 1). The check
+  copies it to the Sandbox's disk first.
+- Chromium writes the entry of a system-wide install in the 32-bit view of the registry
+  (`HKLM\SOFTWARE\WOW6432Node\...\Uninstall`); the check looks in both views.
 
 ## 4. Open
 
-- A system-wide install (`--system-level`, for every user of the PC, needs administrator rights) is not
-  checked yet.
-- An update over an older installed version is checked by `tools/qa/portable_update_check.py` for the
-  portable package only; the installer's own over-install is not checked yet.
+- An update over an older installed version while it runs (`--update`): written, waiting for a second build
+  to install over the first.
+- A system-wide copy updated while it runs: Chromium hands the swap of `new_thoron.exe` to Google Update,
+  which Thoron does not have, so the swap may never happen. To be checked with `--update --system-level`.
 - The message for code 109 could say what to do (run it from Downloads). It is Chromium's message.

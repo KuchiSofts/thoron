@@ -110,6 +110,13 @@ class ConfigurationTests(unittest.TestCase):
         self.assertNotIn("--delete-profile", sb.RUN)
         self.assertTrue(sb.RUN.rstrip().endswith("Stop-Computer -Force"))
 
+    def test_a_system_level_run_installs_and_uninstalls_for_every_user(self):
+        self.assertIn("$level = @('--system-level')", sb.RUN)
+        self.assertIn("+ $level) 300", sb.RUN.split("function Install")[1].split("function Entry")[0])
+        self.assertIn("'--force-uninstall', '--verbose-logging') + $level", sb.RUN)
+        self.assertIn("Join-Path $env:ProgramFiles 'Thoron\\Application'", sb.RUN)
+        self.assertIn("$uninstallKey = if ($system) { 'HKLM:' } else { 'HKCU:' }", sb.RUN)
+
 
 if __name__ == "__main__":
     unittest.main()

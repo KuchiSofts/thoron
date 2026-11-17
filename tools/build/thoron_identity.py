@@ -129,14 +129,16 @@ def rename_product(text: str, translated: bool = False) -> tuple[str, int]:
 
 CHROMIUM_STRINGS_PATH = "chrome/app/chromium_strings.grd"
 CREDIT_LINE = "The Chromium Authors, Alex313031 and KuchiSofts"
+# The credit as it may stand before this step: upstream's "The Thorium Authors", Chromium's own "The Chromium
+# Authors" (on 158.0.8127.65 no upstream patch sets Thorium's first), or the credit line itself, also with
+# "Thorium" for "Chromium" (upstream's string step renames the product in it when it runs after this one).
+_CREDIT_BEFORE = r"The (?:Thorium|Thoron|Chromium) Authors(?:, Alex313031 and KuchiSofts)?"
 _ABOUT_EDITS = [
-    # Chromium's own value too: on 158.0.8127.65 no upstream patch sets "The Thorium Authors" first
     ("About company name",
-     r'(<message name="IDS_ABOUT_VERSION_COMPANY_NAME"[^>]*>\s*)(?:The (?:Thorium|Thoron|Chromium) Authors|'
-     + re.escape(CREDIT_LINE) + r')(\s*</message>)'),
+     r'(<message name="IDS_ABOUT_VERSION_COMPANY_NAME"[^>]*>\s*)' + _CREDIT_BEFORE + r'(\s*</message>)'),
     ("About copyright",
      r'(<message name="IDS_ABOUT_VERSION_COPYRIGHT"[^>]*>\s*Copyright <ph name="YEAR">[^<]*<ex>[^<]*</ex></ph> )'
-     r'(?:The (?:Thorium|Thoron|Chromium) Authors|' + re.escape(CREDIT_LINE) + r')(\. All rights reserved\.)'),
+     + _CREDIT_BEFORE + r'(\. All rights reserved\.)'),
 ]
 
 
@@ -150,6 +152,19 @@ def edit_chromium_strings(text: str) -> str:
     if missing:
         raise IdentityError(f"{CHROMIUM_STRINGS_PATH}: anchors not found exactly once: {', '.join(missing)}")
     return text
+
+
+def product_name_problems(text: str) -> list[str]:
+    """A tree where upstream's string step (setup.py's GRD/XTB rebase) has not run still names the product
+    Chromium in most of its strings, and this step, which renames Thorium, would leave the browser calling
+    itself Chromium (it happened once, in the drill of 2026-11-17)."""
+    lines = [line for line in text.splitlines() if CREDIT_MARK not in line]    # credits name Chromium on purpose
+    chromium = sum(len(re.findall(r"\bChromium\b", line)) for line in lines)
+    ours = sum(len(re.findall(r"\bTho(?:ron|rium)\b", line)) for line in lines)
+    if chromium > ours and chromium >= 20:                                     # a real string file, not a sample
+        return [f"{CHROMIUM_STRINGS_PATH}: the product is named Chromium {chromium} times and Thorium or Thoron "
+                f"{ours} times: upstream's string step (setup.py's GRD/XTB rebase) has not run on this tree"]
+    return []
 
 
 def compute_remap(messages, id_fn) -> dict[str, str]:
@@ -693,6 +708,9 @@ def apply(src: Path, repo: Path, string_files: list[str] | None = None, dry_run:
             planned[path] = new.encode("utf-8")
             replacements += n
             string_changes += 1
+    grd = src / CHROMIUM_STRINGS_PATH
+    if grd.is_file():
+        problems += product_name_problems(planned.get(grd, grd.read_bytes()).decode("utf-8"))
     remapped = 0
     if translations:
         changed_xtb = {(src / r).resolve() for r in files if r.endswith(".xtb")}

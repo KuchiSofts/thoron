@@ -291,6 +291,7 @@ Explanations live in the design docs under `docs/design/`.
 - **Repository:** every push runs the tests and linters and verifies the browser source against upstream.
 
 ### Fixed
+- **Name:** the build on Chromium 158.0.8127.65 called itself Chromium in most menus and pages, including "Chromium is up to date" on the About page; it is named Thoron again, and a release is refused when its strings do not name Thoron.
 
 - **Tools:** the release script finds 7-Zip in the Chromium tree by itself and names a program it cannot find.
 - **Import:** a damaged or crafted bookmarks file or browser list from another browser no longer stops the import report or the search for browsers; it is counted as unreadable.

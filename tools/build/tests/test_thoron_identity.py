@@ -426,6 +426,24 @@ class CreditsTests(unittest.TestCase):
         self.assertNotIn("Thoron Authors", out)
         self.assertEqual(ti.edit_chromium_strings(out), out)
 
+    def test_the_credit_line_renamed_by_upstream_s_string_step_is_taken_back(self):
+        # upstream's string step, run after this one, renames "Chromium" in the credit line to "Thorium"
+        renamed = self.ABOUT.replace("The Thorium Authors", "The Thorium Authors, Alex313031 and KuchiSofts")
+        out = ti.edit_chromium_strings(renamed)
+        self.assertEqual(out.count("The Chromium Authors, Alex313031 and KuchiSofts"), 2)
+        self.assertNotIn("Thorium Authors", out)
+        chromium = self.ABOUT.replace("The Thorium Authors", "The Chromium Authors")
+        self.assertEqual(ti.edit_chromium_strings(chromium), out)
+
+    def test_a_tree_without_upstream_s_string_step_is_refused(self):
+        self.assertEqual(ti.product_name_problems("About Thorium. Thorium is up to date. Chromium project\n" * 30), [])
+        found = ti.product_name_problems("About Chromium. Chromium is up to date. Thorium flags\n" * 30)
+        self.assertEqual(len(found), 1)
+        self.assertIn("has not run on this tree", found[0])
+        credits = "The Chromium Authors, Alex313031 and KuchiSofts: Chromium, Chromium\n" * 30
+        self.assertEqual(ti.product_name_problems(credits + "About Thoron\n"), [])     # credits do not count
+        self.assertEqual(ti.product_name_problems("About Chromium\n" * 5), [])         # too few to judge
+
     def test_about_page_anchor_missing_raises(self):
         with self.assertRaises(ti.IdentityError):
             ti.edit_chromium_strings('<message name="OTHER">x</message>')

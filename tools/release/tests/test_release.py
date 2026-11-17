@@ -29,6 +29,8 @@ from tools.update import manifest as mf
 
 UPSTREAM_ARGS = 'target_os = "win"\nbundle_widevine_cdm = true\nenable_rlz = true\n'
 GOOD_LIST = ["Chrome-bin/thoron.exe", "Chrome-bin/158.0.8127.3000/chrome.dll"]
+# A stand-in for a build's English strings: the lines that show the product is named Thoron
+BRANDED_PAK = b"\0".join(rel.BRANDED_STRINGS)
 
 BUILD, THORON, VARIANT = "158.0.8127.3000", "0.1.2", "win-x64-avx2"
 NEXT_BUILD, NEXT_THORON = "158.0.8127.4500", "0.1.3"
@@ -298,10 +300,16 @@ class ReleaseFixture(Fixture):
         info.update(changes)
         self.buildinfo.write_text(json.dumps(info), encoding="utf-8")
 
-    def browser(self, files: dict):
-        """The build's browser folder, which becomes the portable package."""
+    def browser(self, files: dict, strings: bytes | None = None):
+        """The build's browser folder, which becomes the portable package. Each version folder gets English
+        strings that name Thoron, as a real build's (`strings` gives other ones)."""
         folder = self.out / rel.CHROME_BIN
         shutil.rmtree(folder, ignore_errors=True)
+        files = dict(files)
+        for name in list(files):
+            if name.endswith("/chrome.dll"):
+                files.setdefault(name[:-len("chrome.dll")] + "Locales/en-US.pak",
+                                 strings if strings is not None else BRANDED_PAK)
         for name, data in files.items():
             (folder / name).parent.mkdir(parents=True, exist_ok=True)
             (folder / name).write_bytes(data)
@@ -1269,6 +1277,7 @@ class PortableStepTests(GateTestCase):
         self.assertFalse([p for p in self.f.dist.iterdir() if p.is_dir()])
         with zipfile.ZipFile(self.f.dist / PORTABLE) as package:
             self.assertEqual(package.namelist(), [
+                f"ThoronPortable/Application/{BUILD}/{BUILD}/Locales/en-US.pak",
                 f"ThoronPortable/Application/{BUILD}/{BUILD}/chrome.dll",
                 f"ThoronPortable/Application/{BUILD}/thoron.exe",
                 f"ThoronPortable/Application/{BUILD}/thoron_update.exe", "ThoronPortable/Application/current", "ThoronPortable/README.txt", "ThoronPortable/Thoron.exe",
@@ -1327,6 +1336,17 @@ class PortableStepTests(GateTestCase):
         self.f.record(variant="win-x64-sse4")
         self.refused("portable package: the build record says the build is for win-x64-sse4, and the release is "
                      "for win-x64-avx2: the package would tell its launcher the wrong processors")
+
+    def test_a_browser_that_is_not_named_thoron_is_refused(self):
+        self.f.browser({"thoron.exe": b"program", f"{BUILD}/chrome.dll": b"dll"},
+                       strings=b"About Chromium\0Chromium is up to date\0Updating Chromium")
+        self.refused("browser: en-US.pak holds 'Chromium is up to date': the product is still named Chromium")
+        self.f.browser({"thoron.exe": b"program", f"{BUILD}/chrome.dll": b"dll"}, strings=b"About Thoron")
+        self.refused("browser: en-US.pak lacks 'Thoron is up to date': the product is not named Thoron")
+
+    def test_a_browser_built_for_tests_is_refused(self):
+        self.f.browser({"thoron.exe": b"program", f"{BUILD}/chrome.dll": b"dll " + rel.TEST_UPDATE_KEY})
+        self.refused("browser: chrome.dll trusts the updater's test key: it is a build for tests")
 
     def test_a_browser_folder_that_already_holds_an_updater_is_refused(self):
         self.f.browser({"thoron.exe": b"program", f"{BUILD}/chrome.dll": b"dll", "thoron_update.exe": b"x"})

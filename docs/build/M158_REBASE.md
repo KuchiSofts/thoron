@@ -82,6 +82,11 @@ Chromium's 158 branch had moved from .30 to .65. Following `docs/security/SECURI
     licence file is not there yet: `rust_crates.py` goes on with Thoron's crate patches and vendors again.
   - The identity step expected the About page's credit to start as "The Thorium Authors"; on .65 it is
     Chromium's own "The Chromium Authors", which it now takes as well.
+  - Upstream's `setup.py` had stopped at the patches that needed a refresh, so its string step (product
+    name and Thorium's translations) and the processor-profile copy never ran: the first .65 build called
+    itself Chromium. Both were run afterwards from `setup.py` itself (4,374 translations merged in 486
+    files), then the identity step again, and the browser built again. The identity step now refuses a
+    tree where the string step has not run, and accepts the credit line that step renames.
 - **Result:** all 151 patches apply to .65, the patch headers pass, `source/` names Chromium
   158.0.8127.65 and verifies, the release configuration is the same as for .30. Build version
   158.0.8127.6500, Thoron 0.1.1.

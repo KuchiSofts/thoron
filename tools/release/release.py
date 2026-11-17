@@ -415,6 +415,42 @@ def portable_problems(chrome_bin: Path, version: str, variant: str, launcher: Pa
     return out + found
 
 
+# The English strings of a Thoron build name Thoron where Chromium names itself (upstream's string step and
+# Thoron's identity step have run; the drill of 2026-11-17 built a browser without the first, which called
+# itself Chromium), and none of the About page's lines name Chromium.
+BRANDED_STRINGS = (b"About Thoron", b"Thoron is up to date", b"Relaunch Thoron to finish updating")
+UNBRANDED_STRINGS = (b"About Chromium", b"Chromium is up to date", b"Updating Chromium")
+# The public half of the published test key of the updater (make_test_vectors.py): only builds for tests trust it.
+TEST_UPDATE_KEY = b"9i/S9Os0cVBrrPIeJJEiTNqJucILUa97MBNquyuERHM="
+
+
+def browser_problems(chrome_bin: Path, version: str) -> list[str]:
+    """Why the build's browser may not ship: its English strings do not name Thoron, or it trusts the
+    updater's test key (a browser built for tests)."""
+    folder = chrome_bin / version
+    pak = folder / "Locales" / "en-US.pak"
+    if not pak.is_file():
+        pak = folder / "locales" / "en-US.pak"
+    out = []
+    try:
+        strings = pak.read_bytes()
+    except OSError:
+        out.append(f"{version}/Locales/en-US.pak cannot be read, so its product name cannot be checked")
+    else:
+        out += [f"en-US.pak lacks {s.decode()!r}: the product is not named Thoron (run upstream's string step "
+                "and tools/build/thoron_identity.py)" for s in BRANDED_STRINGS if s not in strings]
+        out += [f"en-US.pak holds {s.decode()!r}: the product is still named Chromium" for s in UNBRANDED_STRINGS
+                if s in strings]
+    for name in ("chrome.dll", "thoron.exe"):
+        path = folder / name if name == "chrome.dll" else chrome_bin / name
+        try:
+            if TEST_UPDATE_KEY in path.read_bytes():
+                out.append(f"{name} trusts the updater's test key: it is a build for tests")
+        except OSError:
+            out.append(f"{name} cannot be read")
+    return out
+
+
 MOST_DELTAS = 3       # ROADMAP P4.1: from each of the previous 3 releases
 SETUP = "ThoronSetup.exe"  # ROADMAP P3.19: the one installer for good, the same name in every release
 # What only the build of ThoronSetup for tests holds: its switches and the published test key.
@@ -1196,6 +1232,7 @@ def _prepare(a) -> int:
     if chrome_bin is not None:
         problems += [f"portable package: {p}"
                      for p in portable_problems(chrome_bin, version, a.variant, launcher, updater, info.get("variant"))]
+        problems += [f"browser: {p}" for p in browser_problems(chrome_bin, version)]
     problems += [f"credits: {p}" for p in credits_problems(a.repo, upstream_contributors(a.contributors))]
     problems += [f"patch licences: {p}" for p in licence_record_problems(a.repo)]
     problems += [f"performance: {p}" for p in performance_problems(a.repo, a.bench, thoron)]

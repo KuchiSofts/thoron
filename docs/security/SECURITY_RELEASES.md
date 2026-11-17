@@ -119,7 +119,13 @@ Commands are run from the repository root in the build window of
    the main checkout **and** the nested repositories the series patches (`third_party/ffmpeg`, `v8`,
    `third_party/search_engines_data/resources`, `third_party/zstd/src`); a reset of `src` alone leaves
    their half-applied state behind. When Thoron's own patches no longer fit (`ks-native-adblock-*`),
-   apply them once with less context (`-C2`), then make them again from the new tree:
+   apply them once with less context (`-C2`), then make them again from the new tree. Upstream's `setup.py`
+   stops at the first patch that does not apply, before its last two steps: upstream's string step (the
+   product's name and Thorium's translations in the string files) and the copies of the processor
+   profile. After patches fixed by hand, run them from `setup.py` itself
+   (`setup.apply_grd_rebase(<tree>, <src>)` and `setup.execute_profile_plan(setup.profile_copy_plan("avx2",
+   <tree>, <src>))`), then Thoron's identity step (`tools/build/thoron_identity.py`), which refuses a tree
+   where upstream's string step has not run. To make the patches:
    `THORON_SRC=<new chromium src> py -3 -I <build root>\logs\make_ks_adblock_hook.py --write`.
 8. Set the versions. A new Chromium starts at rebuild 0; a Thoron-only fix on the same Chromium is the
    next rebuild. Thoron's own version is the next one after the newest release tag; `next` prints it
@@ -242,6 +248,7 @@ Commands are run from the repository root in the build window of
 | Anything taken from upstream is audited | `tools/audit/audit_diff.py --strict` | A person has reviewed every finding |
 | Release configuration | `tools/build/release_args.py check` (also run by `release.py prepare`) | No difference from Thoron's choices, no Google API keys in `args.gn` |
 | Version | `tools/release/version.py check` (also run by `release.py prepare`) | Higher than the last release |
+| The product's name, no build for tests | `release.py prepare` | The English strings name Thoron and none of the About page's lines name Chromium; the browser does not trust the updater's test key |
 | Thoron version | `release.py prepare` (the next one: `tools/release/version.py next`) | The next version after the newest release tag; `0.1.1` when there is none |
 | Source and licences (ROADMAP **L.2**) | `release.py prepare` and `publish` | The build record names the source tag, its commit and the Chromium tag; the licence bundle holds the GPL text |
 | Credits (ROADMAP **L.3**) | `release.py prepare` | The contributor list in `CREDITS.md` is the one made now; every origin and licence of the patch inventory is in `CREDITS.md` and `NOTICE` |
@@ -358,6 +365,13 @@ What the drill showed:
 - Chrome's early-stable post names no fixes (step 1).
 - `prepare` asks for the soak before the draft, where section 4.2 lets a class A release go first
   (open item 7).
+- **The drill's build called itself Chromium** in most of its menus and pages. `setup.py` had stopped at the
+  two patches fixed by hand, so its string step never ran, and Thoron's identity step, which renames
+  Thorium, found almost nothing to rename. None of the checks of that day looked at the product's name;
+  the About page's update states, checked the same evening (ROADMAP P3.9), showed "Chromium is up to
+  date". Fixed the same day: the two steps run on the tree, the identity step run again, the browser
+  built again (13 minutes); the identity step now refuses such a tree, and `release.py prepare` refuses a
+  browser whose English strings do not name Thoron, or that trusts the updater's test key.
 - An install for every user of the PC (`--system-level`), updated while it ran, seemed to hang in the
   clean Windows. The hang was the check's own registry read; the update itself took 16 s and works as
   Thorium's installer patch intends: it ends the running Thoron and updates in place

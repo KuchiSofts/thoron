@@ -47,6 +47,7 @@ from pathlib import Path
 
 if __package__ in (None, ""):  # running as a script under `py -3 -I`: make `tools` importable
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from tools.migrate import import_profile as _profile_import  # noqa: E402
 from tools.migrate.import_profile import ImportRefused, VerificationFailed  # noqa: E402
 
 
@@ -927,6 +928,10 @@ def import_sessions(source: Path, dest: Path, set_aside: bool = False) -> dict:
     tabs_path, closed, more = newest(source, "Tabs")
     notes += more
     wanted = [(p, prefix) for p, prefix in ((session_path, "Session"), (tabs_path, "Tabs")) if p is not None]
+    fresh = _profile_import.recently_written([p for p, _ in wanted])
+    if fresh:
+        raise ImportRefused(f"the source's session was written a moment ago ({fresh}), so its browser may still be "
+                            "closing; wait half a minute and import again")
     before = {p.name: _sha256(p) for p, _ in wanted}
     # what is written (prepare_copy): the source's bytes without what Thoron would stop at and without the links
     # to the source's saved groups; it must read as the source does, with nothing left that a reader skips

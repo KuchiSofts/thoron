@@ -13,6 +13,13 @@ CSV = ("name,url,username,password,note\r\n"
        "mail.example,https://mail.example/,me@example.org,another-secret,\r\n")
 
 
+def setUpModule():
+    # every file of these tests is in the system's temporary folder: here it stands for the person's own folders
+    patcher = mock.patch.object(cp, "own_folders", lambda: Path(tempfile.gettempdir()))
+    patcher.start()
+    unittest.addModuleCleanup(patcher.stop)
+
+
 class FileTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -44,6 +51,16 @@ class FileTests(unittest.TestCase):
                 cp.check_file(path)
             self.assertIn("cloud", str(caught.exception))
         self.assertIsNone(cp.synced_folder(self.root / "Downloads" / "x.csv"))
+
+    def test_a_file_outside_the_person_s_own_folders_is_refused(self):
+        path = self.write("Public/Chrome Passwords.csv")
+        with mock.patch.object(cp, "own_folders", lambda: self.root / "Users" / "someone"):
+            with self.assertRaises(cp.PasswordFileError) as caught:
+                cp.check_file(path)
+            self.assertIn("own folders", str(caught.exception))
+            inside = self.write("Users/someone/Downloads/Chrome Passwords.csv")
+            self.assertEqual(cp.check_file(inside), 2)
+        self.assertTrue(path.is_file())                    # a refused file is left as it is
 
     def test_the_file_is_overwritten_before_it_is_deleted(self):
         path = self.write("Downloads/Chrome Passwords.csv")

@@ -47,6 +47,17 @@ def synced_folder(path: Path) -> str | None:
     return None
 
 
+def own_folders() -> Path:
+    """The person's own folders: the profile folder on Windows (C:\\Users\\<name>), the home folder on Linux.
+    Other accounts of the PC cannot read what is inside them; a second drive's root or the Public folder they
+    often can."""
+    return Path.home()
+
+
+def outside_own_folders(path: Path) -> bool:
+    return own_folders().resolve() not in path.resolve().parents
+
+
 def check_file(path: Path) -> int:
     """How many entries Chrome's CSV at `path` holds. PasswordFileError when it is not one, or is somewhere it
     should not be. Only the first line and the number of lines are read."""
@@ -56,6 +67,9 @@ def check_file(path: Path) -> int:
     if where:
         raise PasswordFileError(f"the file is in {where}, a folder a cloud service copies: move it to a folder "
                                 "of this PC that is not synced (such as Downloads) first, and delete it there")
+    if outside_own_folders(path):
+        raise PasswordFileError("the file is not in your own folders, so other accounts of this PC may be able to "
+                                "read it: move it to your Downloads folder first, and delete it there")
     with path.open("r", encoding="utf-8-sig", newline="") as f:
         header = f.readline().strip().lower()
         entries = sum(1 for line in f if line.strip())

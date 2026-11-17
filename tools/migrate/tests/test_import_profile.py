@@ -2,15 +2,22 @@
 import contextlib
 import io
 import shutil
+import os
 import tempfile
+import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from tools.migrate import import_profile as ip
 
 
 class ImportTests(unittest.TestCase):
     def setUp(self):
+        # the files are written just before each import here; the wait for a closing browser has its own tests
+        quiet = mock.patch.object(ip, "QUIET_SECONDS", 0)
+        quiet.start()
+        self.addCleanup(quiet.stop)
         self.tmp = Path(tempfile.mkdtemp(prefix="thoron-test-"))
         self.src = self.tmp / "Thorium" / "User Data"
         (self.src / "Default" / "Sessions").mkdir(parents=True)
@@ -124,6 +131,44 @@ class ImportTests(unittest.TestCase):
         self.assertIn("verified", out.getvalue())
         with contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(ip.main(["--from", str(self.src), "--to", str(self.dst)]), 1)   # now refused
+
+
+
+class JustWrittenTests(unittest.TestCase):
+    """THREAT_MODEL I2: a source written a moment ago may belong to a browser that is still closing."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="thoron-test-"))
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.src = self.tmp / "Thorium" / "User Data"
+        (self.src / "Default").mkdir(parents=True)
+        (self.src / "Local State").write_text("{}", encoding="utf-8")
+        (self.src / "Default" / "Preferences").write_text("{}", encoding="utf-8")
+        self.dst = self.tmp / "Thoron" / "User Data"
+
+    def age(self, seconds: float) -> None:
+        when = time.time() - seconds
+        for path in self.src.rglob("*"):
+            if path.is_file():
+                os.utime(path, (when, when))
+
+    def test_a_source_written_a_moment_ago_is_refused_and_nothing_is_written(self):
+        with self.assertRaisesRegex(ip.ImportRefused, "a moment ago"):
+            ip.import_profile(self.src, self.dst)
+        self.assertFalse(self.dst.exists())
+
+    def test_a_quiet_source_is_imported(self):
+        self.age(60)
+        self.assertTrue(ip.import_profile(self.src, self.dst)["verified"])
+
+    def test_a_date_far_in_the_future_is_a_wrong_clock_not_a_write(self):
+        self.age(60)
+        far = time.time() + 3600
+        os.utime(self.src / "Local State", (far, far))
+        self.assertIsNone(ip.recently_written(sorted(f for f in self.src.rglob("*") if f.is_file())))
+        near = time.time() + 2                     # within the slack: as good as now
+        os.utime(self.src / "Local State", (near, near))
+        self.assertEqual(ip.recently_written(sorted(f for f in self.src.rglob("*") if f.is_file())), "Local State")
 
 
 if __name__ == "__main__":

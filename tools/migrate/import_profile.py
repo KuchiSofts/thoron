@@ -18,6 +18,7 @@ profiles and files only: never a password, a user name, an address, a cookie or 
     py -3 -I tools/migrate/import_profile.py --from "%LOCALAPPDATA%\\Thorium\\User Data" --to "%LOCALAPPDATA%\\Thoron\\User Data"
 """
 import argparse
+import contextlib
 import hashlib
 import json
 import os
@@ -25,6 +26,7 @@ import shutil
 import sqlite3
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 
@@ -75,6 +77,26 @@ def _list(root: Path) -> tuple[list[Path], list[Path]]:
     return [p for p, d in entries if not d], [p for p, d in entries if d]
 
 
+# THREAT_MODEL I2, as tools/qa/profile_rehearsal.py does: a profile written less than this ago may belong to a
+# browser that is still closing, and a drive's clock may run a little ahead of this one.
+QUIET_SECONDS = 15
+CLOCK_SLACK = 5
+
+
+def recently_written(files: list[Path], now: float | None = None) -> str | None:
+    """The name of one of `files` written less than QUIET_SECONDS ago, or None. A date a little ahead of this
+    clock counts as now; one further ahead is a wrong clock, not a write, and is passed over."""
+    now = time.time() if now is None else now
+    for path in files:
+        try:
+            written = path.stat().st_mtime
+        except OSError:
+            continue                    # the copy says which file cannot be read
+        if written <= now + CLOCK_SLACK and now - min(written, now) < QUIET_SECONDS:
+            return path.name
+    return None
+
+
 def _is_fresh(dest: Path) -> bool:
     """No profile yet: absent, or only what an installer creates (an empty Crashpad folder)."""
     if not dest.exists():
@@ -95,6 +117,10 @@ def import_profile(source: Path, dest: Path) -> dict:
     if not _is_fresh(dest):
         raise ImportRefused(f"{dest} already holds a profile; nothing was changed")
     files, dirs = _list(source)
+    fresh = recently_written(files)
+    if fresh:
+        raise ImportRefused(f"the source was written a moment ago ({fresh}), so its browser may still be closing; "
+                            "wait half a minute and import again")
     # the source as it was: it must be the same after the import (ROADMAP P3.14)
     before = {p.relative_to(source).as_posix(): _sha256(p) for p in files}
     total = 0
@@ -138,12 +164,30 @@ COUNTED = (("history entries", "History", "urls"), ("saved passwords", "Login Da
            ("cookies", "Network/Cookies", "cookies"), ("autofill entries", "Web Data", "autofill"))
 
 
-def _count_rows(database: Path, table: str) -> int | None:
+# THREAT_MODEL I8: the copies the report reads hold what the databases hold (passwords, cookies), so they are
+# made inside the destination it reports on, never in the system's temporary folder, and go when it is done.
+SCRATCH_NAME = ".thoron-report-scratch"
+
+
+@contextlib.contextmanager
+def _scratch(near: Path):
+    """A folder for the report's copies beside the profile `near` is in; what a run that was stopped left there
+    goes first, and the folder goes when the report is done, also when it fails."""
+    folder = near / SCRATCH_NAME
+    shutil.rmtree(folder, ignore_errors=True)
+    folder.mkdir()
+    try:
+        yield folder
+    finally:
+        shutil.rmtree(folder, ignore_errors=True)
+
+
+def _count_rows(database: Path, table: str, scratch: Path) -> int | None:
     """How many rows `table` of the SQLite database at `database` holds; None when it cannot be read. A copy of
     the copy is opened, read only, so neither the profile nor its journal is touched."""
     if not database.is_file():
         return None
-    with tempfile.TemporaryDirectory() as tmp:
+    with tempfile.TemporaryDirectory(dir=scratch) as tmp:
         copy = Path(tmp) / "db"
         shutil.copy2(database, copy)
         try:
@@ -160,9 +204,9 @@ DATABASES = ("History", "Login Data", "Login Data For Account", "Web Data", "Net
              "Shortcuts", "Top Sites")
 
 
-def _database_check(database: Path) -> str:
+def _database_check(database: Path, scratch: Path) -> str:
     """SQLite's own check of a copy of the database at `database`: "ok", or what is wrong (never its content)."""
-    with tempfile.TemporaryDirectory() as tmp:
+    with tempfile.TemporaryDirectory(dir=scratch) as tmp:
         copy = Path(tmp) / "db"
         shutil.copy2(database, copy)
         journal = Path(str(database) + "-journal")
@@ -215,19 +259,24 @@ def _count_extensions(profile: Path) -> int | None:
 
 def profile_report(profile: Path) -> dict:
     """Counts for one copied profile, and what could not be counted."""
+    with _scratch(profile.parent) as scratch:
+        return _profile_report(profile, scratch)
+
+
+def _profile_report(profile: Path, scratch: Path) -> dict:
     counts, not_counted = {}, []
     bookmarks = _count_bookmarks(profile / "Bookmarks")
     if bookmarks is None and (profile / "Bookmarks").exists():
         not_counted.append("bookmarks: the file could not be read")
     counts["bookmarks"] = bookmarks or 0
     for what, name, table in COUNTED:
-        found = _count_rows(profile / name, table)
+        found = _count_rows(profile / name, table, scratch)
         if found is None and (profile / name).exists():
             not_counted.append(f"{what}: the database could not be read")
         counts[what] = found or 0
     counts["extensions"] = _count_extensions(profile) or 0
     damaged = [f"{name}: {found}" for name in DATABASES
-               if (profile / name).is_file() and (found := _database_check(profile / name)) != "ok"]
+               if (profile / name).is_file() and (found := _database_check(profile / name, scratch)) != "ok"]
     return {"counts": counts, "not_counted": not_counted, "databases": damaged or ["all ok"]}
 
 

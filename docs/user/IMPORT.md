@@ -31,7 +31,8 @@ Opera and Firefox (section 6).
 3. Open the unpacked folder (the one that holds `tools` and `README.md`) in File Explorer, right-click an
    empty place in it and choose **Open in Terminal**. Type every command below there.
 4. Close the browser you import from and Thoron, **completely**. The tools refuse while either one runs,
-   and they never close a browser for you.
+   and they never close a browser for you. They also wait until the browser you closed has finished
+   writing its profile: within the first half minute after closing it they ask you to try again.
 
 To see which browsers and profiles the tools find:
 
@@ -147,7 +148,9 @@ file holds every password in plain text while it exists.
    ```
 
 2. Chrome opens its password settings. Choose **Export passwords** and save the file in your **Downloads**
-   folder, never in a folder that OneDrive, Google Drive, Dropbox, iCloud or Box copies.
+   folder, never in a folder that OneDrive, Google Drive, Dropbox, iCloud or Box copies, and never
+   outside your own folders (a second drive or the Public folder), where other accounts of the PC may read
+   it: the tool refuses such a file.
 3. Drag the saved file into the terminal window (or type its path) and press Enter. Pressing Enter on an
    empty line stops, and nothing is imported.
 4. The tool checks the file: Chrome's columns, at least one password, and not in a synced folder. It says

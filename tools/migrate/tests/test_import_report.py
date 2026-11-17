@@ -49,6 +49,9 @@ def make_profile(folder: Path) -> None:
 
 class ReportTests(unittest.TestCase):
     def setUp(self):
+        quiet = mock.patch.object(ip, "QUIET_SECONDS", 0)   # written just before; I2 has its own tests
+        quiet.start()
+        self.addCleanup(quiet.stop)
         self.tmp = tempfile.TemporaryDirectory()
         root = Path(self.tmp.name)
         self.source, self.dest = root / "Thorium" / "User Data", root / "Thoron" / "User Data"
@@ -133,18 +136,41 @@ class ReportTests(unittest.TestCase):
         self.assertFalse((self.dest.parent / ip.REPORT_NAME).exists())
 
     def test_the_report_s_temporary_copies_are_deleted_on_success_and_on_failure(self):
-        # threat model I8: the copies of the databases the report reads hold secrets; none may stay behind
+        # threat model I8: the copies of the databases the report reads hold secrets; they are made inside the
+        # destination, never in the system's temporary folder, and none may stay behind
         temp = Path(self.tmp.name) / "temp"
         temp.mkdir()
-        with mock.patch.object(tempfile, "tempdir", str(temp)):
+        scratch = self.dest / ip.SCRATCH_NAME
+        made_in = []
+        real = tempfile.TemporaryDirectory
+
+        def watched(*args, **kwargs):
+            made_in.append(Path(kwargs.get("dir") or tempfile.gettempdir()))
+            return real(*args, **kwargs)
+
+        with mock.patch.object(tempfile, "tempdir", str(temp)), \
+                mock.patch.object(ip.tempfile, "TemporaryDirectory", side_effect=watched):
             code, printed = self.run_cli()
             self.assertEqual(code, 0, printed)
+            self.assertTrue(made_in)
+            self.assertTrue(all(folder == scratch for folder in made_in), made_in)
             self.assertEqual(list(temp.iterdir()), [])
+            self.assertFalse(scratch.exists())
             # a failure while a copy is there: it goes all the same
             with mock.patch.object(ip.sqlite3, "connect", side_effect=RuntimeError("stopped")):
                 with self.assertRaises(RuntimeError):
                     ip.profile_report(self.dest / "Default")
             self.assertEqual(list(temp.iterdir()), [])
+            self.assertFalse(scratch.exists())
+
+    def test_what_a_stopped_report_left_goes_before_the_next_one(self):
+        code, printed = self.run_cli()
+        self.assertEqual(code, 0, printed)
+        left = self.dest / ip.SCRATCH_NAME / "tmp-left" / "db"
+        left.parent.mkdir(parents=True)
+        left.write_bytes(b"a copy a stopped run left")
+        ip.profile_report(self.dest / "Default")
+        self.assertFalse((self.dest / ip.SCRATCH_NAME).exists())
 
 
 def nested_bookmarks(levels: int) -> str:

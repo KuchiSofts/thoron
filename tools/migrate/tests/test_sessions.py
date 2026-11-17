@@ -17,6 +17,7 @@ from pathlib import Path
 from unittest import mock
 
 from tools.migrate import fuzz_sessions as fuzz
+from tools.migrate import import_profile as ip
 from tools.migrate import sessions as s
 
 GOLDEN = Path(__file__).resolve().parent / "data" / "sessions"
@@ -382,6 +383,9 @@ class ProfileTests(unittest.TestCase):
 
 class ImportTests(unittest.TestCase):
     def setUp(self):
+        quiet = mock.patch.object(ip, "QUIET_SECONDS", 0)   # written just before; see the test below
+        quiet.start()
+        self.addCleanup(quiet.stop)
         self.tmp = Path(tempfile.mkdtemp(prefix="thoron-tabs-import-"))
         self.src = self.tmp / "Chrome" / "User Data" / "Default"
         (self.src / "Sessions").mkdir(parents=True)
@@ -460,6 +464,16 @@ class ImportTests(unittest.TestCase):
         self.assertEqual(done["left_out"], 1)
         self.assertNotIn(restored_too_early, copy)
         self.assertEqual(s.essence(s.read_closed(copy)), s.essence(reading))
+
+    def test_a_session_written_a_moment_ago_is_refused(self):
+        # THREAT_MODEL I2: the source's browser may still be closing (the golden files keep their old dates)
+        for f in (self.src / "Sessions").iterdir():
+            os.utime(f, None)
+        before = self.snapshot(self.tmp)
+        with mock.patch.object(ip, "QUIET_SECONDS", 15):
+            with self.assertRaisesRegex(s.ImportRefused, "a moment ago"):
+                s.import_sessions(self.src, self.dst)
+        self.assertEqual(self.snapshot(self.tmp), before)
 
     def test_refusals_change_nothing(self):
         (self.src.parent / "lockfile").write_bytes(b"")

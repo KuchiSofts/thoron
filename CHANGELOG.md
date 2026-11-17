@@ -286,6 +286,7 @@ Explanations live in the design docs under `docs/design/`.
 
 ### Fixed
 
+- **Tools:** the release script finds 7-Zip in the Chromium tree by itself and names a program it cannot find.
 - **Import:** a damaged or crafted bookmarks file or browser list from another browser no longer stops the import report or the search for browsers; it is counted as unreadable.
 - **Tools:** the release script finds the installer under the name the build gives it; it looked for a name the 158 build no longer writes.
 - **Tools:** the Widevine check plays a protected test stream again; the public demo page it used had changed.

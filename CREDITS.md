@@ -38,9 +38,9 @@ This list is generated from GitHub by `tools/credits/contributors.py`. Bots are 
 anonymous contributors are credited by name only.
 
 <!-- contributors:start -->
-- [@Alex313031](https://github.com/Alex313031) (4905 commits)
-- [@gz83](https://github.com/gz83) (18 commits)
-- [@hocheung-chromium](https://github.com/hocheung-chromium) (18 commits)
+- [@Alex313031](https://github.com/Alex313031) (4913 commits)
+- [@hocheung-chromium](https://github.com/hocheung-chromium) (340 commits)
+- [@gz83](https://github.com/gz83) (20 commits)
 - [@midzer](https://github.com/midzer) (5 commits)
 - [@RoyalOughtness](https://github.com/RoyalOughtness) (2 commits)
 - [@szepeviktor](https://github.com/szepeviktor) (2 commits)

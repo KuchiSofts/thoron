@@ -1612,6 +1612,18 @@ class SetupReleaseTests(unittest.TestCase):
             self.assertIn("is not a Windows program", rel.setup_problems(shipped)[0])
 
 
+class SevenZipTests(unittest.TestCase):
+    def test_the_one_in_the_chromium_tree_unless_one_is_given(self):
+        with tempfile.TemporaryDirectory() as d:
+            src = Path(d)
+            self.assertEqual(rel.sevenzip_for(None, src), "7z")
+            tool = src / "third_party/lzma_sdk/bin/win64/7za.exe"
+            tool.parent.mkdir(parents=True)
+            tool.write_bytes(b"MZ")
+            self.assertEqual(rel.sevenzip_for(None, src), str(tool))
+            self.assertEqual(rel.sevenzip_for("C:/tools/7z.exe", src), "C:/tools/7z.exe")
+
+
 class UpdateCheckGateTests(unittest.TestCase):
     """THREAT_MODEL U14: a release after the first needs the last release's own updater to have installed it."""
 

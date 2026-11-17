@@ -220,6 +220,16 @@ def keep_symbols(out: Path, dist: Path, version: str, variant: str, chrome_bin: 
     return target
 
 
+def sevenzip_for(given: str | None, src: Path) -> str:
+    """The 7-Zip program to list an archive with: the one given, else the one Chromium keeps in its tree."""
+    if given:
+        return given
+    for relative in ("third_party/lzma_sdk/bin/win64/7za.exe", "third_party/lzma_sdk/bin/host_platform/7za"):
+        if (src / relative).is_file():
+            return str(src / relative)
+    return "7z"
+
+
 def installer_name(version: str, variant: str) -> str:
     return f"thoron-{version}-{variant}-installer.exe"
 
@@ -1015,7 +1025,7 @@ def _prepare(a) -> int:
                                      read_signing_key(a.adblock_key, "--adblock-key", keep_out_of),
                                      public_key_from(a.adblock_public_key, "--adblock-public-key"))
     version, problems = preflight(a.src, a.out, a.platform, a.previous,
-                                  lambda archive: package_audit.list_archive(archive, a.sevenzip))
+                                  lambda archive: package_audit.list_archive(archive, sevenzip_for(a.sevenzip, a.src)))
     thoron = read_thoron_version(a.src)
     chromium_new = ver.split(version)[0] if read_version(a.src)[1] else None
     chrome_bin = (a.chrome_bin or a.out / CHROME_BIN) if a.platform == "win" else None
@@ -1145,7 +1155,8 @@ def main(argv: list[str], run=None) -> int:
         a_.add_argument(name, type=Path, required=True)
     for name in ("--platform", "--variant", "--previous", "--since", "--chromium-old"):
         a_.add_argument(name, required=True)
-    a_.add_argument("--sevenzip", default="7z")
+    a_.add_argument("--sevenzip", help="7-Zip, to list the installer's contents; default: the one in the Chromium "
+                    "tree (third_party/lzma_sdk), else 7z on the PATH")
     a_.add_argument("--chrome-bin", type=Path, help=f"the build's browser folder, which becomes the portable "
                     f"package; default: {CHROME_BIN} in the out dir")
     a_.add_argument("--launcher", type=Path, help=f"the portable package's launcher; default: "
@@ -1194,7 +1205,8 @@ def main(argv: list[str], run=None) -> int:
         return _publish(a, run) if a.cmd == "publish" else _prepare(a)
     except (ReleaseError, ver.VersionError, changelog.NotesError, mf.ManifestError, mf.SignatureError, OSError,
             ValueError, subprocess.CalledProcessError) as exc:
-        print(f"release: {exc}", file=sys.stderr)
+        missing = f" ({exc.filename})" if isinstance(exc, FileNotFoundError) and exc.filename else ""
+        print(f"release: {exc}{missing}", file=sys.stderr)
         return 2
     except ImportError as exc:
         if not (exc.name or "").startswith("cryptography"):

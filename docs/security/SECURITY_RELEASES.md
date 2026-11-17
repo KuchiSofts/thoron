@@ -69,7 +69,10 @@ Commands are run from the repository root in the build window of
 **Start**
 
 1. Note day 0, the new Chromium version and the list of fixes. Write `security.json` and, when a fix
-   is exploited in the wild, `highlights.md` (section 5).
+   is exploited in the wild, `highlights.md` (section 5). Chrome lists the CVEs in the post of a full
+   stable release; a beta or early-stable post lists none. An update taken before the full stable post
+   (as the drill of 2026-11-17 did) goes without `security.json`, and the notes say that Chrome names
+   the fixes when the version reaches stable.
 2. Open the tracking issue. Check the machine:
    `py -3 -I tools\build\pipeline.py preflight --root <build root> --need-gb 250`.
 
@@ -110,7 +113,14 @@ Commands are run from the repository root in the build window of
    py -3 -I tools\build\rust_crates.py --src <chromium src>
    ```
 
-   `apply` must end with `0 rejects`.
+   `apply` must end with `0 rejects`. It applies with Git's `core.autocrlf` off whatever the PC says
+   (Git for Windows turns it on, and then `git apply` writes CRLF ends and can damage a binary file a
+   patch adds). Anything applied by hand gets `git -c core.autocrlf=false apply`. To start over, reset
+   the main checkout **and** the nested repositories the series patches (`third_party/ffmpeg`, `v8`,
+   `third_party/search_engines_data/resources`, `third_party/zstd/src`); a reset of `src` alone leaves
+   their half-applied state behind. When Thoron's own patches no longer fit (`ks-native-adblock-*`),
+   apply them once with less context (`-C2`), then make them again from the new tree:
+   `THORON_SRC=<new chromium src> py -3 -I <build root>\logs\make_ks_adblock_hook.py --write`.
 8. Set the versions. A new Chromium starts at rebuild 0; a Thoron-only fix on the same Chromium is the
    next rebuild. Thoron's own version is the next one after the newest release tag; `next` prints it
    (fetch the tags first):
@@ -339,3 +349,7 @@ the days.
 5. **The watch:** by hand every day, or the scheduled check proposed in section 1.
 6. **Where the signing key is while it signs** is question 2 of the
    [threat model](THREAT_MODEL.md#9-open-questions-for-the-owner).
+7. **The soak test of a class A release.** Section 4.2 lets it follow the release, but
+   `release.py prepare` refuses a release without an 8-hour soak report of the same build (found by
+   the drill of 2026-11-17). Either the runbook asks for the soak before every release, or `prepare`
+   learns to accept a class A release (`--critical`) with the soak named as owed within 14 days.

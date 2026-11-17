@@ -19,6 +19,10 @@ class ScoreTests(unittest.TestCase):
         for suite in ob.SUITES.values():
             self.assertTrue(suite["url"].startswith("https://browserbench.org/"))
 
+    def test_a_covered_window_is_not_slowed_down(self):
+        self.assertIn("--disable-backgrounding-occluded-windows", ob.KEEP_RENDERING)
+        self.assertIn("--disable-renderer-backgrounding", ob.KEEP_RENDERING)
+
     def test_summary(self):
         s = ob.summarise([10.0, 11.0, 12.0])
         self.assertEqual((s["median"], s["runs"]), (11.0, 3))

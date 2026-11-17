@@ -32,6 +32,11 @@ from tools.qa import bench  # noqa: E402
 from tools.qa.adblock_site_switch_check import _close_browser, _devtools_port  # noqa: E402
 from tools.qa.cdp import WebSocket  # noqa: E402
 
+# A window that another window covers, or that is not in front, is slowed down by Chromium (fewer frames,
+# slower timers): the suites, which count frames, would then measure the desktop. These keep every run the same.
+KEEP_RENDERING = ("--disable-backgrounding-occluded-windows", "--disable-renderer-backgrounding",
+                  "--disable-background-timer-throttling", "--disable-features=CalculateNativeWinOcclusion")
+
 SUITES = {
     "speedometer3": {
         "url": "https://browserbench.org/Speedometer3.0/?startAutomatically=true",
@@ -72,13 +77,14 @@ def _page(port: int) -> WebSocket:
     return WebSocket(next(t for t in listing if t.get("type") == "page")["webSocketDebuggerUrl"])
 
 
-def run_suite(browser: Path, name: str, work: Path) -> float:
+def run_suite(browser: Path, name: str, work: Path, extra: tuple[str, ...] = ()) -> float:
     suite = SUITES[name]
     profile = Path(tempfile.mkdtemp(prefix=f"{name}-", dir=work))
     proc = subprocess.Popen(
         [str(browser), f"--user-data-dir={profile}", "--no-first-run", "--no-default-browser-check",
          "--disable-background-networking", "--disable-component-update", "--disable-extensions",
-         "--window-position=40,40", "--window-size=1280,900", "--remote-debugging-port=0", suite["url"]],
+         *KEEP_RENDERING, *extra, "--window-position=40,40", "--window-size=1280,900", "--remote-debugging-port=0",
+         suite["url"]],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     port = None
     try:
@@ -127,6 +133,8 @@ def main(argv: list[str]) -> int:
     p.add_argument("--runs", type=int, default=3)
     p.add_argument("--suite", action="append", choices=sorted(SUITES), help="default: all three")
     p.add_argument("--json", type=Path)
+    p.add_argument("--switch", action="append", default=[], metavar="SWITCH",
+                   help="one more browser switch, written --switch=--name=value; may be repeated")
     a = p.parse_args(argv)
     a.work.mkdir(parents=True, exist_ok=True)
     out = {"browser": a.label}
@@ -134,7 +142,7 @@ def main(argv: list[str]) -> int:
         values = []
         for n in range(a.runs):
             try:
-                values.append(run_suite(a.browser, name, a.work))
+                values.append(run_suite(a.browser, name, a.work, tuple(a.switch)))
                 print(f"{name} run {n + 1}: {values[-1]:g}", flush=True)
             except RuntimeError as exc:
                 print(f"{name} run {n + 1}: {exc}", file=sys.stderr, flush=True)

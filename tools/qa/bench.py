@@ -25,6 +25,9 @@ import threading
 import time
 from pathlib import Path
 
+if __package__ in (None, ""):  # running as a script under `py -3 -I`: make `tools` importable
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
 REPEATABLE_PCT = 3.0
 PAGE = ("<!doctype html><html><head><meta charset='utf-8'><title>bench</title></head><body>"
         "<h1>Thoron bench</h1><p>" + "Lorem ipsum dolor sit amet. " * 200 + "</p>"

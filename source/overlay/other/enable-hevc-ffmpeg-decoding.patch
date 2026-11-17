@@ -118,31 +118,3 @@ index 3e351538d12f075224fa840d24a75ca99f117faf..d1feb70cab3625d759bdb8720296c589
  }
  
  FFmpegVideoDecoder::FFmpegVideoDecoder(std::unique_ptr<MediaLog> media_log)
-diff --git a/third_party/ffmpeg b/third_party/ffmpeg
-index 42a2a7a2b2ceb0b1554af1e99a8cdaae189404bb..66d7841c24e9c9a473b8e85d98765bc739217c14 160000
---- a/third_party/ffmpeg
-+++ b/third_party/ffmpeg
-@@ -1 +1 @@
--Subproject commit 42a2a7a2b2ceb0b1554af1e99a8cdaae189404bb
-+Subproject commit 66d7841c24e9c9a473b8e85d98765bc739217c14
-diff --git a/third_party/search_engines_data/resources b/third_party/search_engines_data/resources
-index 5dc9f1afd38a8ac2b26b1972eb4fc1bbd5754e8c..4f6d630780a0bbb15a7e2f154502c73bdc317b5c 160000
---- a/third_party/search_engines_data/resources
-+++ b/third_party/search_engines_data/resources
-@@ -1 +1 @@
--Subproject commit 5dc9f1afd38a8ac2b26b1972eb4fc1bbd5754e8c
-+Subproject commit 4f6d630780a0bbb15a7e2f154502c73bdc317b5c
-diff --git a/third_party/zstd/src b/third_party/zstd/src
-index 10da6ba6de05e29169261fa4b68eb99239f770dd..4a78c8aa5d0104180ca9120e22abee29b614930b 160000
---- a/third_party/zstd/src
-+++ b/third_party/zstd/src
-@@ -1 +1 @@
--Subproject commit 10da6ba6de05e29169261fa4b68eb99239f770dd
-+Subproject commit 4a78c8aa5d0104180ca9120e22abee29b614930b
-diff --git a/v8 b/v8
-index 9b541eb94d20adaeba3724188b53943860de3ea3..4191b8e0a3f7301f684d3d8873e37ef443052abe 160000
---- a/v8
-+++ b/v8
-@@ -1 +1 @@
--Subproject commit 9b541eb94d20adaeba3724188b53943860de3ea3
-+Subproject commit 4191b8e0a3f7301f684d3d8873e37ef443052abe

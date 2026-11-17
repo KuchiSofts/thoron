@@ -130,11 +130,13 @@ def rename_product(text: str, translated: bool = False) -> tuple[str, int]:
 CHROMIUM_STRINGS_PATH = "chrome/app/chromium_strings.grd"
 CREDIT_LINE = "The Chromium Authors, Alex313031 and KuchiSofts"
 _ABOUT_EDITS = [
+    # Chromium's own value too: on 158.0.8127.65 no upstream patch sets "The Thorium Authors" first
     ("About company name",
-     r'(<message name="IDS_ABOUT_VERSION_COMPANY_NAME"[^>]*>\s*)(?:The (?:Thorium|Thoron) Authors|' + re.escape(CREDIT_LINE) + r')(\s*</message>)'),
+     r'(<message name="IDS_ABOUT_VERSION_COMPANY_NAME"[^>]*>\s*)(?:The (?:Thorium|Thoron|Chromium) Authors|'
+     + re.escape(CREDIT_LINE) + r')(\s*</message>)'),
     ("About copyright",
      r'(<message name="IDS_ABOUT_VERSION_COPYRIGHT"[^>]*>\s*Copyright <ph name="YEAR">[^<]*<ex>[^<]*</ex></ph> )'
-     r'(?:The (?:Thorium|Thoron) Authors|' + re.escape(CREDIT_LINE) + r')(\. All rights reserved\.)'),
+     r'(?:The (?:Thorium|Thoron|Chromium) Authors|' + re.escape(CREDIT_LINE) + r')(\. All rights reserved\.)'),
 ]
 
 

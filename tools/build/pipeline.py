@@ -90,13 +90,26 @@ def find_rejects(src: Path) -> list[str]:
     return sorted(found)
 
 
+def git_lf_env(base: dict | None = None) -> dict:
+    """The environment for the git commands that apply the series: `core.autocrlf` off whatever the PC's git
+    says, so a patched file keeps the LF ends of Chromium's own files. With Git for Windows' default (true),
+    `git apply` writes every file it changes with CRLF ends, and a binary file it adds can be damaged (found by
+    the security-release drill of 2026-11-17)."""
+    env = dict(os.environ if base is None else base)
+    count = int(env.get("GIT_CONFIG_COUNT", "0") or 0)
+    env[f"GIT_CONFIG_KEY_{count}"] = "core.autocrlf"
+    env[f"GIT_CONFIG_VALUE_{count}"] = "false"
+    env["GIT_CONFIG_COUNT"] = str(count + 1)
+    return env
+
+
 def apply_upstream(thorium_tree: Path, src: Path, profile: str, log: Path | None = None) -> None:
     """Run upstream setup.py; raise on a non-zero exit or any rejected hunk. `log` keeps the full output."""
     tree = Path(thorium_tree)
     cmd = [sys.executable, "-I", str(tree / "setup.py"), "--chromium-src", str(src), "--thorium-root", str(tree),
            f"--{profile}"]
     proc = subprocess.run(cmd, cwd=tree, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-                          encoding="utf-8", errors="replace")
+                          encoding="utf-8", errors="replace", env=git_lf_env())
     output = proc.stdout or ""
     if log is not None:
         log = Path(log)

@@ -59,7 +59,7 @@ index 24f8cbe6bd907ca32b08e8e904d0cfc21ea61b96..2c2ab86589ca28288eaad3b896f1d60a
      "//components/tracing:tracing_config",
      "//components/tracing:tracing_metrics",
 diff --git a/chrome/browser/about_flags.cc b/chrome/browser/about_flags.cc
-index cf314780497655d91f67ab18ba0eb2d6f487284e..ebc90f918f6b5135756a8210ade0d19a1a4f7d74 100644
+index 48e35268a2cb60856edeab3c6c2021e4d4247ea9..f6ccbf2d86c5f1661b57178c684cec29b091a611 100644
 --- a/chrome/browser/about_flags.cc
 +++ b/chrome/browser/about_flags.cc
 @@ -195,6 +195,8 @@
@@ -71,7 +71,7 @@ index cf314780497655d91f67ab18ba0eb2d6f487284e..ebc90f918f6b5135756a8210ade0d19a
  #include "components/themes/cross_device/features.h"
  #include "components/thin_webview/features.h"
  #include "components/touch_to_search/core/browser/contextual_search_field_trial.h"
-@@ -5400,6 +5402,24 @@ const FeatureEntry kFeatureEntries[] = {
+@@ -5405,6 +5407,24 @@ const FeatureEntry kFeatureEntries[] = {
  #include "build/chromeos_buildflags.h"
  #include "chrome/browser/unexpire_flags_gen.inc"
  #include "chrome/browser/thorium_flag_entries.h"
@@ -532,7 +532,7 @@ index ab3c100b747f5ec6244fa719272e29427f723280..0e3f94013c68b992b10e28345a196074
 +  </message>
  </grit-part>
 diff --git a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
-index 56ff6c6fb5866a3ba5a43918ae41bfbf8c1f4a6f..4274d778b851986e4e180f89916d63c4368004e7 100644
+index a14e54eed88c57f7f0b4ebd6a6f4c352e94b7edd..dba79e15f60c31713758841d5b646ae5f5ce72c0 100644
 --- a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
 +++ b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
 @@ -113,6 +113,7 @@
@@ -543,7 +543,7 @@ index 56ff6c6fb5866a3ba5a43918ae41bfbf8c1f4a6f..4274d778b851986e4e180f89916d63c4
  #include "components/subresource_filter/core/browser/subresource_filter_features.h"
  #include "components/subscription_eligibility/subscription_eligibility_service.h"
  #include "components/supervised_user/core/common/features.h"
-@@ -4310,6 +4311,33 @@ void AddSiteSettingsStrings(content::WebUIDataSource* html_source,
+@@ -4314,6 +4315,33 @@ void AddSiteSettingsStrings(content::WebUIDataSource* html_source,
    // The exception placeholder should not be translated. See
    // crbug.com/40700443.
    html_source->AddString("addSiteExceptionPlaceholder", "[*.]example.com");
@@ -578,7 +578,7 @@ index 56ff6c6fb5866a3ba5a43918ae41bfbf8c1f4a6f..4274d778b851986e4e180f89916d63c4
  
  void AddStorageAccessStrings(content::WebUIDataSource* html_source) {
 diff --git a/components/strings/components_strings_es.xtb b/components/strings/components_strings_es.xtb
-index 1ffe9c9bc2cfa60b3c3737ba62392487a1dd5794..ddc18bd49d5a6862c766531f465b9965f7718b70 100644
+index 4f61d050142dda9f442808b15ca8db92519ea057..45cb7910de3444879a7a7796cb619bd145125263 100644
 --- a/components/strings/components_strings_es.xtb
 +++ b/components/strings/components_strings_es.xtb
 @@ -1,6 +1,24 @@
@@ -605,9 +605,9 @@ index 1ffe9c9bc2cfa60b3c3737ba62392487a1dd5794..ddc18bd49d5a6862c766531f465b9965
 +<translation id="4839345821657082511">Permitir siempre anuncios y rastreadores en este sitio</translation>
  <translation id="1008557486741366299">Ahora no</translation>
  <translation id="100957008357583611">¿Usar tu ubicación?</translation>
- <translation id="1010200102790553230">Cargar la página más tarde</translation>
+ <translation id="1010148478459329879">Puede que tu cuenta de Google incluya otros tipos de historial de navegación en <ph name="BEGIN_LINK_GMA" />myactivity.google.com<ph name="END_LINK_GMA" />, como tu <ph name="BEGIN_LINK_GAA" />historial de Gemini<ph name="END_LINK_GAA" /></translation>
 diff --git a/components/strings/components_strings_fr.xtb b/components/strings/components_strings_fr.xtb
-index 90168a03f4b1df0bf1fa071ce695d6f5348eb499..89d558ef017790ee6527c3d3c0056f30325de7a5 100644
+index ec8661ff4a77db30fe3fd19969df113e778f0f87..0eac1c0fad210a3526e58852e626c44ff11c56cb 100644
 --- a/components/strings/components_strings_fr.xtb
 +++ b/components/strings/components_strings_fr.xtb
 @@ -1,6 +1,24 @@
@@ -634,9 +634,9 @@ index 90168a03f4b1df0bf1fa071ce695d6f5348eb499..89d558ef017790ee6527c3d3c0056f30
 +<translation id="4839345821657082511">Toujours autoriser les annonces et les traqueurs sur ce site</translation>
  <translation id="1008557486741366299">Pas maintenant</translation>
  <translation id="100957008357583611">Utiliser votre position ?</translation>
- <translation id="1010200102790553230">Charger la page plus tard</translation>
+ <translation id="1010148478459329879">Votre compte Google peut inclure d'autres types d'historiques de navigation sur <ph name="BEGIN_LINK_GMA" />myactivity.google.com<ph name="END_LINK_GMA" />, comme votre <ph name="BEGIN_LINK_GAA" />Historique Gemini<ph name="END_LINK_GAA" /></translation>
 diff --git a/components/strings/components_strings_de.xtb b/components/strings/components_strings_de.xtb
-index db63660cd124d5ddced9c210273670b30df5c7cb..79718c14dc43c898ef0aa47f1516be996346e16f 100644
+index 56e6637631705e23e2a07a648fa7ff74582fbff1..580caeda43f63133f57a8f3551c45b77d32c2bd3 100644
 --- a/components/strings/components_strings_de.xtb
 +++ b/components/strings/components_strings_de.xtb
 @@ -1,6 +1,24 @@
@@ -663,9 +663,9 @@ index db63660cd124d5ddced9c210273670b30df5c7cb..79718c14dc43c898ef0aa47f1516be99
 +<translation id="4839345821657082511">Werbung und Tracker auf dieser Website immer erlauben</translation>
  <translation id="1008557486741366299">Jetzt nicht</translation>
  <translation id="100957008357583611">Standort verwenden?</translation>
- <translation id="1010200102790553230">Seite später laden</translation>
+ <translation id="1010148478459329879">Unter <ph name="BEGIN_LINK_GMA" />myactivity.google.com<ph name="END_LINK_GMA" /> sind möglicherweise weitere Arten von Browserverlaufsdaten für dein Google-Konto gespeichert, z. B. dein <ph name="BEGIN_LINK_GAA" />Gemini-Verlauf<ph name="END_LINK_GAA" /></translation>
 diff --git a/components/strings/components_strings_pt-BR.xtb b/components/strings/components_strings_pt-BR.xtb
-index 170456af3582531aaf6a535b0d41ae55383af05c..b80fcd0c8d1a816d7f0a1e2146e21fc6b3cb9f40 100644
+index d7fdf18b451e8bf6b0db51c95ed9e805f4ac6038..5c661888d0caae1972ffe601d193f8599fb69aec 100644
 --- a/components/strings/components_strings_pt-BR.xtb
 +++ b/components/strings/components_strings_pt-BR.xtb
 @@ -1,6 +1,24 @@
@@ -692,9 +692,9 @@ index 170456af3582531aaf6a535b0d41ae55383af05c..b80fcd0c8d1a816d7f0a1e2146e21fc6
 +<translation id="4839345821657082511">Sempre permitir anúncios e rastreadores neste site</translation>
  <translation id="1008557486741366299">Não agora</translation>
  <translation id="100957008357583611">Usar sua localização?</translation>
- <translation id="1010200102790553230">Carregar página mais tarde</translation>
+ <translation id="1010148478459329879">Sua Conta do Google pode armazenar outras formas de histórico de navegação em <ph name="BEGIN_LINK_GMA" />myactivity.google.com<ph name="END_LINK_GMA" />, como seu <ph name="BEGIN_LINK_GAA" />Histórico do Gemini<ph name="END_LINK_GAA" /></translation>
 diff --git a/components/strings/components_strings_pt-PT.xtb b/components/strings/components_strings_pt-PT.xtb
-index 973a259548dc7d679d0438751dcab53811cb3cfb..39327ea070f667c1098a8e0b7a8e240045cd71ec 100644
+index 846ff7d1760affa1c8d6283b71b2bfee6eccf168..388fc58b9a162eafcd9f7d9c9d5b74945736b568 100644
 --- a/components/strings/components_strings_pt-PT.xtb
 +++ b/components/strings/components_strings_pt-PT.xtb
 @@ -1,6 +1,24 @@
@@ -721,9 +721,9 @@ index 973a259548dc7d679d0438751dcab53811cb3cfb..39327ea070f667c1098a8e0b7a8e2400
 +<translation id="4839345821657082511">Permitir sempre anúncios e rastreadores neste site</translation>
  <translation id="1008557486741366299">Agora não</translation>
  <translation id="100957008357583611">Quer utilizar a sua localização?</translation>
- <translation id="1010200102790553230">Carregar a página mais tarde</translation>
+ <translation id="1010148478459329879">A sua Conta Google pode ter outras formas do histórico de navegação em <ph name="BEGIN_LINK_GMA" />myactivity.google.com<ph name="END_LINK_GMA" />, como o seu <ph name="BEGIN_LINK_GAA" />Histórico do Gemini<ph name="END_LINK_GAA" /></translation>
 diff --git a/components/strings/components_strings_ru.xtb b/components/strings/components_strings_ru.xtb
-index 91b93f99e097f7e739759abf4887cc70880adc27..65584126fb1b9075883b1b51dc04c6eb1395f056 100644
+index 5fc70f6835e306d0f95b7703d4d72cde26aaea51..4d7fc9b6e5f1184ad694f699c91d4b6a1a265ec9 100644
 --- a/components/strings/components_strings_ru.xtb
 +++ b/components/strings/components_strings_ru.xtb
 @@ -1,6 +1,24 @@
@@ -750,7 +750,7 @@ index 91b93f99e097f7e739759abf4887cc70880adc27..65584126fb1b9075883b1b51dc04c6eb
 +<translation id="4839345821657082511">Всегда разрешать рекламу и трекеры на этом сайте</translation>
  <translation id="1008557486741366299">Не сейчас</translation>
  <translation id="100957008357583611">Использовать данные о местоположении?</translation>
- <translation id="1010200102790553230">Загрузить страницу позже</translation>
+ <translation id="1010148478459329879">В вашем аккаунте Google также могут храниться другие данные истории браузера, например <ph name="BEGIN_LINK_GAA" />история Gemini<ph name="END_LINK_GAA" />. Вы найдете их на странице <ph name="BEGIN_LINK_GMA" />myactivity.google.com<ph name="END_LINK_GMA" />.</translation>
 diff --git a/chrome/browser/resources/settings/settings_menu/settings_menu.html b/chrome/browser/resources/settings/settings_menu/settings_menu.html
 index c35c985ddf3447612e803fc595cdae2b514953a7..0ad9d7243f21a1ee3158c934a71fc39e36d720e4 100644
 --- a/chrome/browser/resources/settings/settings_menu/settings_menu.html
@@ -1329,7 +1329,7 @@ index fe5a6b11df6f45e6f3044cdce3da805c1412c1ac..661cb793341e740e7c089de1ba00db7b
        "//mojo/public/cpp/bindings",
        "//pdf:features",
 diff --git a/chrome/browser/renderer_context_menu/render_view_context_menu.cc b/chrome/browser/renderer_context_menu/render_view_context_menu.cc
-index b26070424f8c8954d3d0ca18305bcdec7b541265..783da6933bd3942a066a7025161375fcd5d4e6a0 100644
+index 9e77b77b2ca2f3a3d5461ce10fde1cea3cad0d05..f10ed32fb2c92960e9444dcc013788a13dfd048d 100644
 --- a/chrome/browser/renderer_context_menu/render_view_context_menu.cc
 +++ b/chrome/browser/renderer_context_menu/render_view_context_menu.cc
 @@ -226,6 +226,11 @@
@@ -1379,7 +1379,7 @@ index b26070424f8c8954d3d0ca18305bcdec7b541265..783da6933bd3942a066a7025161375fc
    // LINT.ThenChange(//tools/metrics/histograms/metadata/ui/enums.xml:RenderViewContextMenuItem)
  
    // LINT.IfChange(ContextMenuOptionDesktop)
-@@ -1936,6 +1947,38 @@ void RenderViewContextMenu::AppendDeveloperItems() {
+@@ -1925,6 +1936,38 @@ void RenderViewContextMenu::AppendDeveloperItems() {
      }
    }
  
@@ -1418,7 +1418,7 @@ index b26070424f8c8954d3d0ca18305bcdec7b541265..783da6933bd3942a066a7025161375fc
    menu_model_.AddItemWithStringId(IDC_CONTENT_CONTEXT_INSPECTELEMENT,
                                    IDS_CONTENT_CONTEXT_INSPECTELEMENT);
  }
-@@ -3612,6 +3655,14 @@ bool RenderViewContextMenu::IsCommandIdEnabled(int id) const {
+@@ -3605,6 +3648,14 @@ bool RenderViewContextMenu::IsCommandIdEnabled(int id) const {
      case IDC_CONTENT_CONTEXT_RESTART_PACKAGED_APP:
        return IsDevCommandEnabled(id);
  
@@ -1433,7 +1433,7 @@ index b26070424f8c8954d3d0ca18305bcdec7b541265..783da6933bd3942a066a7025161375fc
      case IDC_CONTENT_CONTEXT_TRANSLATE:
        return navigation_allowed && IsTranslateEnabled();
  
-@@ -4322,6 +4373,38 @@ void RenderViewContextMenu::ExecuteCommand(int id, int event_flags) {
+@@ -4315,6 +4366,38 @@ void RenderViewContextMenu::ExecuteCommand(int id, int event_flags) {
        ExecInspectElement();
        break;
  
@@ -2002,10 +2002,10 @@ index ca023f969a563fe21113a7b7722c0fba43cc0f06..ec72e5b045277c3eb21ee4c2db4e1c48
    launch_options.grant_foreground_privilege = true;
    launch_options.force_breakaway_from_job_ = force_breakaway_from_job;
 diff --git a/chrome/browser/navigation_predictor/search_engine_preconnector.cc b/chrome/browser/navigation_predictor/search_engine_preconnector.cc
-index 0b665fddd4da7e9b28b5a4ce98a1d01cc5631952..74a1e2ce9bb08b7095914876f045fb2d6fa5211a 100644
+index c3ba6fd84aae6cb8e9f44927c870d5da710cfe49..e6a356a2f89e666da660dc2a7e3a4e556103f87f 100644
 --- a/chrome/browser/navigation_predictor/search_engine_preconnector.cc
 +++ b/chrome/browser/navigation_predictor/search_engine_preconnector.cc
-@@ -144,7 +144,9 @@ namespace features {
+@@ -147,7 +147,9 @@ namespace features {
  // Feature to control preconnect to search.
  
  BASE_FEATURE(kPreconnectFromKeyedService, base::FEATURE_ENABLED_BY_DEFAULT);

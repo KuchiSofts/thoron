@@ -12,7 +12,8 @@ GOOD = {"install_exit": 0, "program": True, "version_folders": ["158.0.8127.6500
         "uninstall_exit": 19, "program_after": False, "entry_after": False, "profile_after": True,
         "local_state_after": True}
 OLD, NEW = "158.0.8127.3010", "158.0.8127.6500"
-UPDATED = {"update_started": True, "update_from": OLD, "update_exit": 30, "update_new_exe_while_running": True,
+UPDATED = {"update_started": True, "update_from": OLD, "update_exit": 0, "update_status": 30,
+           "update_new_exe_while_running": True,
            "update_folders_while_running": [OLD, NEW], "update_closed_by_itself": True,
            "update_new_exe_after_close": False, "update_restarted": True, "update_to": NEW,
            "update_new_exe_after": False, "update_folders_after": [NEW], "update_marker_kept": True,
@@ -26,6 +27,7 @@ class ProblemsTests(unittest.TestCase):
     def test_each_failure_lands_in_its_step(self):
         cases = [
             ({"install_exit": 7}, "install", "ended with 7"),
+            ({"install_exit": 4}, "install", "ended with 4"),            # a newer version is there already
             ({"install_exit": "timeout"}, "install", "ended with timeout"),
             ({"program": False}, "install", "no thoron.exe"),
             ({"version_folders": ["1.0.0.0", "2.0.0.0"]}, "install", "version folders"),
@@ -59,11 +61,14 @@ class ProblemsTests(unittest.TestCase):
 
     def test_an_in_use_update_that_worked(self):
         self.assertEqual(sb.update_problems(UPDATED), [])
+        self.assertEqual(sb.update_problems({**UPDATED, "update_status": None}), [])   # no status kept
 
     def test_what_an_in_use_update_can_get_wrong(self):
         cases = [
             ({"update_from": ""}, "did not start before the update"),
-            ({"update_exit": 2}, "ended with 2, not 30"),
+            ({"update_exit": 7}, "the update ended with 7"),
+            ({"update_exit": "timeout"}, "the update ended with timeout"),
+            ({"update_status": 2}, "kept status 2, not 30"),
             ({"update_new_exe_while_running": False}, "no new_thoron.exe"),
             ({"update_folders_while_running": [OLD]}, "no newer version folder"),
             ({"update_folders_while_running": [OLD, "158.0.8127.1000"]}, "no newer version folder"),

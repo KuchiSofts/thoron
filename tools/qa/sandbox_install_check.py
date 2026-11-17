@@ -11,7 +11,7 @@ script inside it:
     start      starts Thoron once with its window and closes the window as a person would: Thoron ends by
                itself within 30 s and has made its profile (`User Data`)
     update     (with --update) starts Thoron again and, while it runs, installs the newer build over it
-               (Chromium's in-use update, exit 30): new_thoron.exe waits beside thoron.exe; after the window
+               (Chromium's in-use update, status 30): new_thoron.exe waits beside thoron.exe; after the window
                is closed and Thoron started again it runs from the newer version folder, new_thoron.exe is
                gone and the profile is kept
     uninstall  runs Thoron's own uninstaller (`--uninstall --force-uninstall`, no question asked): the program
@@ -36,8 +36,10 @@ from xml.sax.saxutils import escape
 
 INSIDE = r"C:\ThoronTest"
 SANDBOX = r"C:\Windows\System32\WindowsSandbox.exe"
-# The installer's success codes (chrome/installer/util/util_constants.h): first install, re-install, ...
-INSTALL_OK = {0, 1, 2, 3, 4, 30}
+# Setup turns every successful install (first, repair, update, in-use update) into exit 0
+# (InstallUtil::GetInstallReturnCode) and keeps the status itself in the registry as InstallerError
+# (chrome/installer/util/util_constants.h); the uninstaller ends with the status.
+INSTALL_OK = {0}
 UNINSTALL_SUCCESSFUL = 19
 IN_USE_UPDATED = 30
 RUN = r"""$ErrorActionPreference = 'Continue'
@@ -75,6 +77,16 @@ function Entry {
     ForEach-Object { Get-ChildItem $_ -ErrorAction SilentlyContinue } |
     ForEach-Object { Get-ItemProperty $_.PsPath } | Where-Object { $_.DisplayName -like '*Thoron*' } |
     Select-Object -First 1
+}
+function InstallerStatus {
+  # the status the installer kept for its last run, wherever the build's registry key is
+  foreach ($root in @("$($uninstallKey)\Software\Thoron", "$($uninstallKey)\Software\WOW6432Node\Thoron")) {
+    foreach ($key in @(Get-Item $root -ErrorAction SilentlyContinue) + @(Get-ChildItem $root -Recurse -ErrorAction SilentlyContinue)) {
+      $value = $key.GetValue('InstallerError', $null)
+      if ($null -ne $value) { return [int]$value }
+    }
+  }
+  return $null
 }
 function Versions {
   @(Get-ChildItem $app -Directory -ErrorAction SilentlyContinue |
@@ -125,6 +137,7 @@ try {
     $r.update_started = Started
     $r.update_from = Loaded
     $r.update_exit = Install 'update'
+    $r.update_status = InstallerStatus
     $r.update_new_exe_while_running = Test-Path (Join-Path $app 'new_thoron.exe')
     $r.update_folders_while_running = @(Versions)
     $r.update_closed_by_itself = Close
@@ -225,8 +238,10 @@ def update_problems(r: dict) -> list[str]:
     found = []
     if not r.get("update_started") or not r.get("update_from"):
         found.append("the older version did not start before the update")
-    if r.get("update_exit") != IN_USE_UPDATED:
-        found.append(f"the update ended with {r.get('update_exit')}, not {IN_USE_UPDATED} (updated while in use)")
+    if r.get("update_exit") not in INSTALL_OK:
+        found.append(f"the update ended with {r.get('update_exit')}")
+    if r.get("update_status") is not None and r.get("update_status") != IN_USE_UPDATED:
+        found.append(f"the installer kept status {r.get('update_status')}, not {IN_USE_UPDATED} (updated while in use)")
     if not r.get("update_new_exe_while_running"):
         found.append("no new_thoron.exe while the older version ran")
     newest = max(_folders(r.get("update_folders_while_running")), key=_version, default="")

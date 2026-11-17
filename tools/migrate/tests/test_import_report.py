@@ -7,6 +7,7 @@ import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from tools.migrate import import_profile as ip
 
@@ -130,6 +131,68 @@ class ReportTests(unittest.TestCase):
         code, printed = self.run_cli()
         self.assertEqual(code, 1)
         self.assertFalse((self.dest.parent / ip.REPORT_NAME).exists())
+
+    def test_the_report_s_temporary_copies_are_deleted_on_success_and_on_failure(self):
+        # threat model I8: the copies of the databases the report reads hold secrets; none may stay behind
+        temp = Path(self.tmp.name) / "temp"
+        temp.mkdir()
+        with mock.patch.object(tempfile, "tempdir", str(temp)):
+            code, printed = self.run_cli()
+            self.assertEqual(code, 0, printed)
+            self.assertEqual(list(temp.iterdir()), [])
+            # a failure while a copy is there: it goes all the same
+            with mock.patch.object(ip.sqlite3, "connect", side_effect=RuntimeError("stopped")):
+                with self.assertRaises(RuntimeError):
+                    ip.profile_report(self.dest / "Default")
+            self.assertEqual(list(temp.iterdir()), [])
+
+
+def nested_bookmarks(levels: int) -> str:
+    """A Bookmarks file with one bookmark at the bottom of `levels` folders, each inside the one before."""
+    return ('{"roots": {"bookmark_bar": ' + '{"type": "folder", "children": [' * levels + '{"type": "url"}'
+            + "]}" * levels + "}}")
+
+
+class CraftedBookmarksTests(unittest.TestCase):
+    """The Bookmarks file comes from another browser's profile (threat model I3, F1): whatever it holds, the report
+    gives a count or says it could not be read, and never fails."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.profile = Path(self.tmp.name) / "Default"
+        make_profile(self.profile)
+        self.path = self.profile / "Bookmarks"
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def count(self, content: str | bytes) -> int | None:
+        if isinstance(content, bytes):
+            self.path.write_bytes(content)
+        else:
+            self.path.write_text(content, encoding="utf-8")
+        return ip._count_bookmarks(self.path)
+
+    def test_a_file_that_is_not_what_a_browser_writes_is_not_counted(self):
+        for content in ("[" * 200_000, nested_bookmarks(5_000), '{"roots": [1, 2]}', "[1]", '"text"', "",
+                        b"\xff\xfe not text"):
+            with self.subTest(content=content[:40]):
+                self.assertIsNone(self.count(content))
+                report = ip.profile_report(self.profile)
+                self.assertEqual(report["not_counted"], ["bookmarks: the file could not be read"])
+                self.assertEqual(report["counts"]["bookmarks"], 0)
+                self.assertEqual(report["counts"]["saved passwords"], 1)      # the rest is counted as before
+
+    def test_odd_shapes_and_deep_trees_are_counted_without_an_error(self):
+        self.assertEqual(self.count('{"roots": {"a": {"children": 5}, "b": {"children": {"x": 1}}, "c": 7}}'), 0)
+        self.assertEqual(self.count('{"roots": null}'), 0)
+        # deeper than a recursive walk could go, and still within what the JSON reader takes
+        self.assertEqual(self.count(nested_bookmarks(600)), 1)
+
+    def test_a_file_larger_than_a_bookmarks_file_can_be_is_not_read(self):
+        with mock.patch.object(ip, "MOST_BOOKMARKS_BYTES", 10):
+            self.assertIsNone(self.count(nested_bookmarks(1)))
+        self.assertEqual(self.count(nested_bookmarks(1)), 1)
 
 
 if __name__ == "__main__":

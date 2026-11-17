@@ -40,9 +40,13 @@ def profiles_of(user_data: Path, single: bool) -> list[dict]:
         if state_file.stat().st_size > MOST_LOCAL_STATE_BYTES:
             return []
         state = json.loads(state_file.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+    except (OSError, ValueError, RecursionError):
         return []
-    cache = ((state.get("profile") or {}).get("info_cache") or {}) if isinstance(state, dict) else {}
+    # another browser's file: any part of it may have another shape than the browser writes
+    profile = state.get("profile") if isinstance(state, dict) else None
+    cache = (profile.get("info_cache") if isinstance(profile, dict) else None) or {}
+    if not isinstance(cache, dict):
+        return []
     out = []
     for folder, info in sorted(cache.items()):
         if not isinstance(info, dict) or "/" in folder or "\\" in folder or folder in (".", ".."):

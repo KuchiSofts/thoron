@@ -12,6 +12,14 @@ with the stage of the [roadmap](../../ROADMAP.md) that brings it (an ID such as 
 | [Updates and rollback](UPDATES.md) | How Thoron looks for updates, what the About page says, the update modes, updating and rolling back a portable copy |
 | [Portable passphrase](PORTABLE_PASSPHRASE.md) | The passphrase protection of a portable copy, which is not built yet, and what to do until then |
 
+## How the guides are tested
+
+The Windows steps of [Install](INSTALL.md) (the installer, the portable package, removing both) and the
+update mode of [Updates](UPDATES.md) are followed on a clean Windows for each build, clicks included:
+`tools/qa/sandbox_guides_check.py` runs them in Windows Sandbox and checks that each step shows what the
+guide says. What it cannot follow yet: downloading from GitHub and the minisign check (there is no release
+and no published key yet), and the warning "Windows protected your PC" for a downloaded file.
+
 ## How to read the guides
 
 - Commands are typed in Windows PowerShell (Windows Terminal opens it).

@@ -209,11 +209,13 @@ About the registry:
   copy of 158.0.8127.6500 made `HKCU\Software\Thoron` with six values (`usagestats` 0, as usage
   statistics are off, `UsageStatsInSample`, `FirstNotDefault`, and `metricsid` with its two dates, the
   identifier empty), the keys `BLBeacon`, `PreferenceMACs\Default` (26 checksums and one for
-  `extensions.settings`), `StabilityMetrics` and `ThirdParty`, and one more key: an empty
-  `HKCU\Software\Google\Chrome\Extensions`. Chromium watches that key for extensions that other
-  programs register for Chrome (`docs/security/NETWORK.md`, `clients2.google.com`), and watching it makes
-  it. No scheduled task, and no file or folder in those three places. Windows' own records of a program
-  that ran (Explorer, the shell) are left aside.
+  `extensions.settings`), `StabilityMetrics` and `ThirdParty`. No scheduled task, and no file or folder
+  in those three places. Windows' own records of a program that ran (Explorer, the shell) are left aside.
+  The first run also found an empty `HKCU\Software\Google\Chrome\Extensions`: Chromium watches that key
+  for extensions that other programs register for Chrome, and its watch made the key when it was not
+  there. Since 2026-11-18 Thoron watches the key only when it is there
+  (`chrome/browser/extensions/external_registry_loader_win.cc`); measured again the same way, the copy
+  made no such key. An extension a program registers in a key made later is seen at Thoron's next start.
 - A portable copy and an installed Thoron on one PC write the same values (both profiles are called
   `Default`). It is a trace, and it is shared. Whether the two can disturb each other was not looked into.
 

@@ -7,6 +7,7 @@ Explanations live in the design docs under `docs/design/`.
 ## [Unreleased]
 
 ### Added
+- **Guides:** the Windows steps of the install and update guides (the installer with its two questions, the portable package, removing both) are followed on a clean Windows for every build, clicks included, and every step does what the guide says.
 - **Updates:** a Thoron installed for one user also looks for a newer release once a day, even while it is closed, through a task in Task Scheduler that runs with your own rights. It follows your update setting, keeps your build, downloads nothing on a metered connection, and stays off if you switch it off. Uninstalling Thoron removes it.
 - **Releases:** every program and library of a release is checked for the processor it is built for and for the libraries it loads, so a package never carries a file that would not start on a clean Windows.
 - **Updates:** an installed Thoron downloads only what changed in a release: from 158.0.8127.3010 to .6500 that was 31 MB instead of the 143 MB installer. A Thoron installed for every user of the PC is not updated by the browser, which never asks for administrator rights; the About page says that a newer release is out.
@@ -324,6 +325,7 @@ Explanations live in the design docs under `docs/design/`.
 
 ### Security
 
+- **Portable:** a portable copy no longer creates an empty `HKCU\Software\Google\Chrome\Extensions` key on the PC. Thoron still reads extensions that other programs register there when the key exists, and sees a key made later at its next start.
 - **Chromium:** updated to 158.0.8127.65 (from 158.0.8127.30), with the fixes Chrome's 158 branch has received since; Chrome names them when 158 reaches its full stable release.
 - **Import:** passwords and cookies that Chrome locks to itself are named in the import report as not brought over, never counted as imported.
 - **Import:** a profile closed only a moment ago is not imported yet, Chrome's password file is refused outside your own folders, and the import report's copies of the databases stay inside the new profile.

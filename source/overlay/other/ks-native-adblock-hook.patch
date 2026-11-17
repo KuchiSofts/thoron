@@ -619,6 +619,35 @@ index 5f9479bc4a852e38be23ccf129196a48a8b72286..53e0c4c044cf40db5529b1fbbdb858d9
      "//third_party/icu:icudata",
    ]
  
+diff --git a/chrome/browser/extensions/external_registry_loader_win.cc b/chrome/browser/extensions/external_registry_loader_win.cc
+index 7ea42cc7c8da0a3a91c0ed93e8e5c6189812a16d..3feae7d09c9db177fc82007604ab7b63204e13b2 100644
+--- a/chrome/browser/extensions/external_registry_loader_win.cc
++++ b/chrome/browser/extensions/external_registry_loader_win.cc
+@@ -224,8 +224,11 @@ void ExternalRegistryLoader::CompleteLoadAndStartWatchingRegistry(
+     return;
+ 
+   LONG result = ERROR_SUCCESS;
+-  if ((result = hklm_key_.Create(HKEY_LOCAL_MACHINE, kRegistryExtensions,
+-                                 KEY_NOTIFY | KEY_WOW64_32KEY)) ==
++  // Thoron (ROADMAP P3.10): the keys are watched when they are there and never
++  // made, so a portable copy leaves no empty key on a PC. Extensions a program
++  // registers in a key made later are seen at the next start.
++  if ((result = hklm_key_.Open(HKEY_LOCAL_MACHINE, kRegistryExtensions,
++                               KEY_NOTIFY | KEY_WOW64_32KEY)) ==
+       ERROR_SUCCESS) {
+     base::win::RegKey::ChangeCallback callback =
+         base::BindOnce(&ExternalRegistryLoader::OnRegistryKeyChanged,
+@@ -236,8 +239,8 @@ void ExternalRegistryLoader::CompleteLoadAndStartWatchingRegistry(
+     PLOG(WARNING) << "Error observing HKLM";
+   }
+ 
+-  if ((result = hkcu_key_.Create(HKEY_CURRENT_USER, kRegistryExtensions,
+-                                 KEY_NOTIFY)) == ERROR_SUCCESS) {
++  if ((result = hkcu_key_.Open(HKEY_CURRENT_USER, kRegistryExtensions,
++                               KEY_NOTIFY)) == ERROR_SUCCESS) {
+     base::win::RegKey::ChangeCallback callback =
+         base::BindOnce(&ExternalRegistryLoader::OnRegistryKeyChanged,
+                        base::Unretained(this), base::Unretained(&hkcu_key_));
 diff --git a/components/page_info/BUILD.gn b/components/page_info/BUILD.gn
 index a248f84b52164a4731b74bec11f31c2abdcf700d..94dff65fd333283f0d4e88e6c1d071944fadc080 100644
 --- a/components/page_info/BUILD.gn
@@ -12979,13 +13008,14 @@ index 0000000000000000000000000000000000000000..3e4c28764458836945e8dccad2197a69
 +#endif  // COMPONENTS_THORON_MAIL_MAIL_SERVICE_H_
 diff --git a/components/thoron_update/BUILD.gn b/components/thoron_update/BUILD.gn
 new file mode 100644
-index 0000000000000000000000000000000000000000..7e0d539db074776f19969e80c0abc7eeb462f23d
+index 0000000000000000000000000000000000000000..53564a8a038b525d6b3b9cf7311261d015c673fe
 --- /dev/null
 +++ b/components/thoron_update/BUILD.gn
-@@ -0,0 +1,131 @@
+@@ -0,0 +1,156 @@
 +# Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +# found in the LICENSE file.
 +
++import("//testing/libfuzzer/fuzzer_test.gni")
 +import("//testing/test.gni")
 +
 +# Thoron's updater, the part that needs no network and no file (ROADMAP P3.3):
@@ -13079,6 +13109,30 @@ index 0000000000000000000000000000000000000000..7e0d539db074776f19969e80c0abc7ee
 +
 +# The tests alone, without the rest of components_unittests:
 +#   thoron_update_unittests
++# Coverage-guided fuzzing (ROADMAP S.2, U9) of what a copy reads from the
++# network or a downloaded package: the signed manifest past its signature, and
++# a delta's file list. Built only with a fuzzing engine (use_libfuzzer).
++fuzzer_test("thoron_update_manifest_fuzzer") {
++  sources = [ "manifest_fuzzer.cc" ]
++  deps = [
++    ":thoron_update",
++    "//base",
++    "//crypto",
++    "//third_party/boringssl",
++    "//url",
++  ]
++  dict = "manifest_fuzzer.dict"
++}
++
++fuzzer_test("thoron_update_delta_list_fuzzer") {
++  sources = [ "delta_list_fuzzer.cc" ]
++  deps = [
++    ":thoron_update",
++    "//base",
++  ]
++  dict = "manifest_fuzzer.dict"
++}
++
 +test("thoron_update_unittests") {
 +  deps = [
 +    ":unit_tests",
@@ -14349,12 +14403,54 @@ index 0000000000000000000000000000000000000000..f21ca483286d302bd276d12ce6060fd0
 +
 +}  // namespace
 +}  // namespace thoron_update
+diff --git a/components/thoron_update/delta_list_fuzzer.cc b/components/thoron_update/delta_list_fuzzer.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..bed3c9004fb5db00bbbcbfc0f0a26fc4f4bf8a4a
+--- /dev/null
++++ b/components/thoron_update/delta_list_fuzzer.cc
+@@ -0,0 +1,36 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++// Coverage-guided fuzzing of a delta's file list, delta.json (ROADMAP S.2,
++// U9), read as the updater reads it before it makes any file: the input is the
++// list. A list that is taken names at least one file and at most as many as a
++// package may hold, and none of its paths leaves the version's folder.
++
++#include <stddef.h>
++#include <stdint.h>
++
++#include <string_view>
++
++#include "base/check.h"
++#include "base/check_op.h"
++#include "base/files/file_path.h"
++#include "components/thoron_update/delta_package.h"
++#include "components/thoron_update/portable_package.h"
++
++extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
++  static const thoron_update::BuildVersion from =
++      *thoron_update::ParseBuildVersion("158.0.8127.3010");
++  static const thoron_update::BuildVersion to =
++      *thoron_update::ParseBuildVersion("158.0.8127.6500");
++  static const base::FilePath folder(FILE_PATH_LITERAL("C:\\fuzz\\158.0.8127.6500"));
++  size_t count = 0;
++  const thoron_update::DeltaResult result = thoron_update::CheckDeltaList(
++      std::string_view(reinterpret_cast<const char*>(data), size), from, to, folder, &count);
++  if (result == thoron_update::DeltaResult::kDone) {
++    CHECK_GE(count, 1u);
++    CHECK_LE(count, static_cast<size_t>(thoron_update::kMostUnpackedFiles));
++  } else {
++    CHECK_EQ(count, 0u);
++  }
++  return 0;
++}
 diff --git a/components/thoron_update/delta_package.cc b/components/thoron_update/delta_package.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..ddeeff3ebeb79dcb794bcf2ac9dddae6e1bd65b5
+index 0000000000000000000000000000000000000000..1b487dca9744d7727840af87b15c1aa3c9d5f46b
 --- /dev/null
 +++ b/components/thoron_update/delta_package.cc
-@@ -0,0 +1,327 @@
+@@ -0,0 +1,348 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -14494,6 +14590,27 @@ index 0000000000000000000000000000000000000000..ddeeff3ebeb79dcb794bcf2ac9dddae6
 +}
 +
 +}  // namespace
++
++DeltaResult CheckDeltaList(std::string_view text,
++                           const BuildVersion& from,
++                           const BuildVersion& to,
++                           const base::FilePath& folder,
++                           size_t* count) {
++  *count = 0;
++  DeltaResult why = DeltaResult::kNotADelta;
++  const std::optional<std::vector<Entry>> read = ReadList(std::string(text), from, to, &why);
++  if (!read) {
++    return why;
++  }
++  for (const Entry& entry : *read) {
++    if (!Inside(folder, entry.path) ||
++        (!entry.from_path.empty() && !Inside(folder, entry.from_path))) {
++      return DeltaResult::kNotADelta;
++    }
++  }
++  *count = read->size();
++  return DeltaResult::kDone;
++}
 +
 +std::string_view DeltaResultName(DeltaResult result) {
 +  switch (result) {
@@ -14684,10 +14801,10 @@ index 0000000000000000000000000000000000000000..ddeeff3ebeb79dcb794bcf2ac9dddae6
 +}  // namespace thoron_update
 diff --git a/components/thoron_update/delta_package.h b/components/thoron_update/delta_package.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..f10ff5c9aae8709808932b7a4ba53a5b5eaceef9
+index 0000000000000000000000000000000000000000..83a0d37d3733e821196bd3fab66f5fac98ec41b9
 --- /dev/null
 +++ b/components/thoron_update/delta_package.h
-@@ -0,0 +1,77 @@
+@@ -0,0 +1,87 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -14733,6 +14850,16 @@ index 0000000000000000000000000000000000000000..f10ff5c9aae8709808932b7a4ba53a5b
 +
 +std::string_view DeltaResultName(DeltaResult result);
 +
++// The delta's file list (delta.json) on its own, read as ApplyDelta() reads
++// it: kDone when `text` is a list from `from` to `to` whose every path, and
++// every path it makes a file from, stays inside `folder`; `count` is then the
++// number of files it names, else 0. For the fuzzer (delta_list_fuzzer.cc).
++DeltaResult CheckDeltaList(std::string_view text,
++                           const BuildVersion& from,
++                           const BuildVersion& to,
++                           const base::FilePath& folder,
++                           size_t* count);
++
 +// Makes the folder of `to` in `staged`, which must not exist, from
 +// `old_folder`, the folder of `from`, with the delta, and lists its files in
 +// `files`. Every older file is checked against the SHA-256 the delta names
@@ -14767,10 +14894,10 @@ index 0000000000000000000000000000000000000000..f10ff5c9aae8709808932b7a4ba53a5b
 +#endif  // COMPONENTS_THORON_UPDATE_DELTA_PACKAGE_H_
 diff --git a/components/thoron_update/delta_package_unittest.cc b/components/thoron_update/delta_package_unittest.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..1f1f897614d303b384177cdfe4aa431815713ba8
+index 0000000000000000000000000000000000000000..60cdecd77468fee4fc7b78c9773be8a4a312ceab
 --- /dev/null
 +++ b/components/thoron_update/delta_package_unittest.cc
-@@ -0,0 +1,324 @@
+@@ -0,0 +1,358 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -15085,6 +15212,40 @@ index 0000000000000000000000000000000000000000..1f1f897614d303b384177cdfe4aa4318
 +  EXPECT_LT(done, 100);
 +}
 +
++// The entry point of the fuzzer (delta_list_fuzzer.cc) takes and refuses lists
++// as ApplyDelta() does.
++TEST_F(ThoronUpdateDeltaTest, TheListOnItsOwnIsReadAsTheDeltaReadsIt) {
++  const BuildVersion from = *ParseBuildVersion(kOld);
++  const BuildVersion to = *ParseBuildVersion(kNew);
++  const base::FilePath folder = dir_.GetPath().AppendASCII(kNew);
++  const std::string sha(64, 'a');
++  const std::string good = std::string(R"({"format": 1, "from": ")") + kOld + R"(", "to": ")" + kNew +
++                           R"(", "files": [{"path": "a/b.dll", "size": 3, "sha256": ")" + sha +
++                           R"(", "how": "same", "from_path": "a/b.dll", "from_sha256": ")" + sha +
++                           R"("}, {"path": "c.exe", "size": 1, "sha256": ")" + sha +
++                           R"(", "how": "whole"}]})";
++  size_t count = 9;
++  EXPECT_EQ(CheckDeltaList(good, from, to, folder, &count), DeltaResult::kDone);
++  EXPECT_EQ(count, 2u);
++
++  auto with = [&](const std::string& find, const std::string& put) {
++    std::string text = good;
++    text.replace(text.find(find), find.size(), put);
++    return text;
++  };
++  EXPECT_EQ(CheckDeltaList(with(R"("path": "c.exe")", R"("path": "../c.exe")"), from, to, folder,
++                           &count),
++            DeltaResult::kNotADelta);
++  EXPECT_EQ(count, 0u);
++  EXPECT_EQ(CheckDeltaList(with(R"("from_path": "a/b.dll")", R"("from_path": "C:/b.dll")"), from, to,
++                           folder, &count),
++            DeltaResult::kNotADelta);
++  EXPECT_EQ(CheckDeltaList(good, to, to, folder, &count), DeltaResult::kWrongVersion);
++  EXPECT_EQ(CheckDeltaList("not json", from, to, folder, &count), DeltaResult::kNotADelta);
++  EXPECT_EQ(CheckDeltaList(with(R"("how": "whole")", R"("how": "copy")"), from, to, folder, &count),
++            DeltaResult::kNotADelta);
++}
++
 +TEST_F(ThoronUpdateDeltaTest, NotADeltaAtAll) {
 +  ASSERT_TRUE(base::WriteFile(dir_.GetPath().AppendASCII("x.delta"), "not a zip"));
 +  std::vector<VersionFile> files;
@@ -15207,10 +15368,10 @@ index 0000000000000000000000000000000000000000..8667f8436917d6b3795d0abc91e9f3b3
 +}  // namespace thoron_update
 diff --git a/components/thoron_update/launcher/BUILD.gn b/components/thoron_update/launcher/BUILD.gn
 new file mode 100644
-index 0000000000000000000000000000000000000000..724b048dee3a1ce75f35a0f7dcbe4600a2575d90
+index 0000000000000000000000000000000000000000..3fffaffeb1eaab12dc19948108a23131366fa787
 --- /dev/null
 +++ b/components/thoron_update/launcher/BUILD.gn
-@@ -0,0 +1,32 @@
+@@ -0,0 +1,34 @@
 +# Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +# found in the LICENSE file.
 +
@@ -15231,17 +15392,19 @@ index 0000000000000000000000000000000000000000..724b048dee3a1ce75f35a0f7dcbe4600
 +    "//build/config/win:console",
 +  ]
 +  configs += [ "//build/config/win:windowed" ]
-+  if (!is_asan && !use_clang_profiling) {
-+    no_default_deps = true
-+  }
 +  libs = [
 +    "kernel32.lib",
 +    "user32.lib",
 +  ]
-+  assert_no_deps = [
-+    "//base",
-+    "//buildtools/third_party/libc++",
-+  ]
++  assert_no_deps = [ "//base" ]
++  if (!is_asan && !use_clang_profiling) {
++    no_default_deps = true
++
++    # A sanitizer or profiling build brings the C++ library in with its
++    # default dependencies (the fuzzers of ../BUILD.gn); every other build
++    # links none.
++    assert_no_deps += [ "//buildtools/third_party/libc++" ]
++  }
 +}
 diff --git a/components/thoron_update/launcher/thoron_launcher_win.cc b/components/thoron_update/launcher/thoron_launcher_win.cc
 new file mode 100644
@@ -17478,6 +17641,184 @@ index 0000000000000000000000000000000000000000..f91fec4604f3f7f2463bb0233ec9a9f1
 +}  // namespace thoron_update
 +
 +#endif  // COMPONENTS_THORON_UPDATE_MANIFEST_H_
+diff --git a/components/thoron_update/manifest_fuzzer.cc b/components/thoron_update/manifest_fuzzer.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..b0a53319c186fb7b866987fc93a335649a262594
+--- /dev/null
++++ b/components/thoron_update/manifest_fuzzer.cc
+@@ -0,0 +1,111 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++// Coverage-guided fuzzing of the manifest reader (ROADMAP S.2, U9). A copy
++// reads a manifest only after its signature holds, so random bytes would never
++// get past the signature: each input is signed here with the published test
++// key (make_test_vectors.py), and the whole check runs as a copy runs it. The
++// first byte of the input picks the copy (its kind, build, channel and
++// versions); the rest is the manifest.
++//
++// Every input ends in a decision, and a decision to update keeps the promises
++// of manifest.h: the package is newer than the copy, and its URL, size and
++// SHA-256 have the documented form, on an allowed host.
++
++#include <stddef.h>
++#include <stdint.h>
++
++#include <array>
++#include <string>
++#include <string_view>
++
++#include "base/check.h"
++#include "base/check_op.h"
++#include "components/thoron_update/manifest.h"
++#include "crypto/hash.h"
++#include "third_party/boringssl/src/include/openssl/curve25519.h"
++#include "url/gurl.h"
++
++namespace {
++
++using thoron_update::BuildVersion;
++using thoron_update::Decision;
++using thoron_update::Kind;
++using thoron_update::Outcome;
++using thoron_update::PackageFile;
++using thoron_update::Variant;
++
++constexpr std::string_view kTestKeyPhrase =
++    "thoron-update test vectors: a key for tests only, never a release key";
++constexpr std::string_view kSignaturePrefix = "thoron-update-manifest-v1\n";
++constexpr int64_t kNow = 1795000000;  // 2026-11-18
++
++struct TestKey {
++  TestKey() {
++    const auto seed = crypto::hash::Sha256(kTestKeyPhrase);
++    ED25519_keypair_from_seed(public_key.data(), private_key, seed.data());
++  }
++  std::array<uint8_t, 32> public_key;
++  uint8_t private_key[64];
++};
++
++void CheckPackage(const PackageFile& file) {
++  CHECK_LE(file.url.size(), 1024u);
++  const GURL url(file.url);
++  CHECK(url.is_valid());
++  CHECK(url.SchemeIs("https"));
++  CHECK_EQ(url.host(), "github.com");
++  CHECK_GE(file.size, 1);
++  CHECK_LE(file.size, 2147483647);
++  CHECK_EQ(file.sha256.size(), 64u);
++  for (char c : file.sha256) {
++    CHECK((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'));
++  }
++}
++
++}  // namespace
++
++extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
++  static const TestKey key;
++  if (size < 1) {
++    return 0;
++  }
++  const uint8_t pick = data[0];
++  const std::string_view manifest(reinterpret_cast<const char*>(data + 1), size - 1);
++
++  // Signed as the release tool signs: the prefix, then the bytes exactly.
++  std::string message(kSignaturePrefix);
++  message.append(manifest);
++  uint8_t signature[64];
++  CHECK(ED25519_sign(signature, reinterpret_cast<const uint8_t*>(message.data()), message.size(),
++                     key.private_key));
++
++  static constexpr Variant kVariants[] = {Variant::kWinX64Avx2, Variant::kWinX64Sse4,
++                                          Variant::kWinArm64Armv8, Variant::kLinuxX64Avx2};
++  thoron_update::CopyInfo copy;
++  copy.public_key = key.public_key;
++  copy.allowed_hosts = {"github.com"};
++  copy.channel = (pick & 1) ? "stable" : "beta";
++  copy.kind = (pick & 2) ? Kind::kPortable : Kind::kInstalled;
++  copy.variant = kVariants[(pick >> 2) & 3];
++  copy.installed = (pick & 16) ? BuildVersion() : *thoron_update::ParseBuildVersion("158.0.8127.3010");
++  copy.updater = *thoron_update::ParseBuildVersion((pick & 32) ? "158.0.8127.3010" : "158.0.8127.6500");
++  copy.last_serial = (pick & 64) ? 5 : 0;
++
++  const Decision decision = thoron_update::CheckUpdate(
++      manifest, std::string_view(reinterpret_cast<const char*>(signature), sizeof(signature)), copy,
++      kNow);
++  if (decision.outcome == Outcome::kUpdate) {
++    CHECK(decision.manifest);
++    CHECK(decision.full);
++    CHECK(decision.manifest->version > copy.installed);
++    CheckPackage(*decision.full);
++    if (decision.delta) {
++      CheckPackage(*decision.delta);
++    }
++  }
++  if (decision.remember_serial) {
++    CHECK_GE(*decision.remember_serial, copy.last_serial);
++  }
++  return 0;
++}
+diff --git a/components/thoron_update/manifest_fuzzer.dict b/components/thoron_update/manifest_fuzzer.dict
+new file mode 100644
+index 0000000000000000000000000000000000000000..8b9cf5967beb3c062a805a2abeea9375efa2cb5a
+--- /dev/null
++++ b/components/thoron_update/manifest_fuzzer.dict
+@@ -0,0 +1,55 @@
++# Words of Thoron's update manifest and delta list (components/thoron_update/manifest_fuzzer.cc).
++kw1="\"channel\""
++kw2="\"chromium_version\""
++kw3="\"critical\""
++kw4="\"expires\""
++kw5="\"min_updater_version\""
++kw6="\"packages\""
++kw7="\"published\""
++kw8="\"schema\""
++kw9="\"serial\""
++kw10="\"thoron_version\""
++kw11="\"version\""
++kw12="\"sha256\""
++kw13="\"size\""
++kw14="\"url\""
++kw15="\"installed\""
++kw16="\"portable\""
++kw17="\"full\""
++kw18="\"delta\""
++kw19="\"deltas\""
++kw20="\"stable\""
++kw21="\"beta\""
++kw22="\"format\""
++kw23="\"from\""
++kw24="\"to\""
++kw25="\"files\""
++kw26="\"path\""
++kw27="\"how\""
++kw28="\"same\""
++kw29="\"patch\""
++kw30="\"whole\""
++kw31="\"from_path\""
++kw32="\"from_sha256\""
++kw33="\"win-x64-avx2\""
++kw34="\"win-x64-sse4\""
++kw35="\"win-x64-avx512\""
++kw36="\"win-arm64-armv8\""
++kw37="\"linux-x64-avx2\""
++kw38="\"linux-x64-sse4\""
++kw39="\"linux-x64-avx512\""
++kw40="\"linux-arm64-armv8\""
++kw41="https://github.com/KuchiSofts/thoron/releases/download/v0.1.2/"
++kw42="158.0.8127.6500"
++kw43="158.0.8127.3010"
++kw44="0.1.2"
++kw45="true"
++kw46="false"
++kw47="null"
++kw48="1795000000"
++kw49="0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
++kw50="../"
++kw51="C:\\"
++kw52="\\u0000"
++kw53="1e309"
++kw54="-0"
 diff --git a/components/thoron_update/manifest_test_vectors.h b/components/thoron_update/manifest_test_vectors.h
 new file mode 100644
 index 0000000000000000000000000000000000000000..088e36d9b9750bb6967fcc441469aeb800ce60ad

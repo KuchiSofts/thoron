@@ -377,7 +377,7 @@ available for Windows and Ubuntu.
 ```powershell
 # Windows (PowerShell)
 minisign -Vm SHA256SUMS -P <thoron-public-key>            # 1. the checksum list is genuine
-Get-FileHash .\Thoron_AVX2_installer.exe -Algorithm SHA256  # 2. compare with its line in SHA256SUMS
+Get-FileHash .\thoron-<version>-win-x64-avx2-installer.exe -Algorithm SHA256  # 2. its line in SHA256SUMS
 ```
 
 ```shell

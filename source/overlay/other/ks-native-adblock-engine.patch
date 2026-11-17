@@ -19350,10 +19350,10 @@ index 0000000000000000000000000000000000000000..8ca3ab6f12cffec05fc98fb17aa21f44
 +#endif  // COMPONENTS_THORON_ADBLOCK_RENDERER_DOCUMENT_AGENT_H_
 diff --git a/components/thoron_adblock/settings_page.html b/components/thoron_adblock/settings_page.html
 new file mode 100644
-index 0000000000000000000000000000000000000000..15908f4d5dd6ac761966c367fedf08e5504fdba4
+index 0000000000000000000000000000000000000000..4360dcf4c2ff5e85b1161f197cb8fe710e71ae15
 --- /dev/null
 +++ b/components/thoron_adblock/settings_page.html
-@@ -0,0 +1,901 @@
+@@ -0,0 +1,904 @@
 +<!doctype html>
 +<!-- Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +     found in the LICENSE file.
@@ -20213,8 +20213,11 @@ index 0000000000000000000000000000000000000000..15908f4d5dd6ac761966c367fedf08e5
 +        <div class="row">
 +          <button id="backup" class="main" type="button">Back up to file</button>
 +          <button id="restore" type="button">Restore from file</button>
-+          <input id="restore-file" type="file" accept=".json,application/json" hidden>
++          <input id="restore-file" type="file" accept=".json,.txt,application/json,text/plain" hidden>
 +        </div>
++        <p class="note">Restore from file takes uBlock Origin's own backup too (its Settings, "Back up to file"):
++          your own filters, its lists, trusted sites, rules and the settings you changed come over. uBlock Origin
++          itself is not changed.</p>
 +      </section>
 +      <section id="cloud-card" class="card">
 +        <h2>Cloud storage</h2>
@@ -20257,10 +20260,10 @@ index 0000000000000000000000000000000000000000..15908f4d5dd6ac761966c367fedf08e5
 +</html>
 diff --git a/components/thoron_adblock/settings_page.js b/components/thoron_adblock/settings_page.js
 new file mode 100644
-index 0000000000000000000000000000000000000000..e8a8e5acca69eef311e3897aac22cfa64da047d2
+index 0000000000000000000000000000000000000000..0e7fcc89a76e0c7e70d90c21fc23695784cbd228
 --- /dev/null
 +++ b/components/thoron_adblock/settings_page.js
-@@ -0,0 +1,2335 @@
+@@ -0,0 +1,2457 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -21847,7 +21850,7 @@ index 0000000000000000000000000000000000000000..e8a8e5acca69eef311e3897aac22cfa6
 +// The checked parts of a backup; anything else is left out. Throws for a file that is not one.
 +function readBackup(data) {
 +  if (!data || data.format !== BACKUP_FORMAT || data.version !== 1) {
-+    throw new Error('This file is not a backup of Thoron adblock.');
++    throw new Error('This file is not a backup of Thoron adblock or of uBlock Origin.');
 +  }
 +  const strings = (list) => (Array.isArray(list) ? list.filter((x) => typeof x === 'string') : []);
 +  const switches = {};
@@ -21875,6 +21878,116 @@ index 0000000000000000000000000000000000000000..e8a8e5acca69eef311e3897aac22cfa6
 +  };
 +}
 +
++// --- uBlock Origin's own backup (its "Back up to file", ROADMAP P5.1) ---
++// The lists uBlock Origin has under the same names here, built in.
++const UBO_BUILT_IN = ['easylist', 'easyprivacy', 'ublock-filters', 'ublock-privacy', 'ublock-badware',
++                      'ublock-quick-fixes', 'ublock-unbreak', 'urlhaus-1'];
++// Thoron's own built-in lists, which uBlock Origin has not: a backup of it leaves them as they are.
++const THORON_ONLY = new Set(['phishing-1']);
++// uBlock Origin's names of its optional lists, and the title each has in the catalog here.
++const UBO_OPTIONAL = {
++  'ublock-experimental': 'uBlock filters - Experimental',
++  'ublock-annoyances': 'uBlock filters - Annoyances',
++  'ublock-cookies-easylist': 'uBlock filters - Cookie Notices',
++  'ublock-cookies-adguard': 'uBlock filters - Cookie Notices',
++  'adguard-generic': 'AdGuard - Ads',
++  'adguard-mobile': 'AdGuard - Mobile Ads',
++  'adguard-spyware-url': 'AdGuard/uBO - URL Tracking Protection',
++  'block-lan': 'Block Outsider Intrusion into LAN',
++  'adguard-cookies': 'AdGuard - Cookie Notices',
++  'adguard-mobile-app-banners': 'AdGuard - Mobile App Banners',
++  'adguard-other-annoyances': 'AdGuard - Other Annoyances',
++  'adguard-popup-overlays': 'AdGuard - Popup Overlays',
++  'adguard-social': 'AdGuard - Social Widgets',
++  'adguard-widgets': 'AdGuard - Widgets',
++  'easylist-chat': 'EasyList - Chat Widgets',
++  'fanboy-cookiemonster': 'EasyList - Cookie Notices',
++  'easylist-newsletters': 'EasyList - Newsletter Notices',
++  'easylist-notifications': 'EasyList - Notifications',
++  'easylist-annoyances': 'EasyList - Other Annoyances',
++  'fanboy-social': 'EasyList - Social Widgets',
++  'fanboy-thirdparty_social': 'Fanboy - Anti-Facebook',
++  'dpollock-0': "Dan Pollock's hosts file",
++};
++// uBlock Origin's settings (in its backup only those changed from its defaults) and their names here.
++const UBO_SETTINGS = {
++  showIconBadge: 'badge', contextMenuEnabled: 'context-menu', colorBlindFriendly: 'colorblind',
++  prefetchingDisabled: 'prefetch', hyperlinkAuditingDisabled: 'hyperlink-auditing',
++  webrtcIPAddressHidden: 'webrtc', cnameUncloakEnabled: 'cname-uncloak', noCosmeticFiltering: 'default-cosmetic',
++  noLargeMedia: 'default-media', largeMediaSize: 'media-kb', noRemoteFonts: 'default-fonts',
++  noScripting: 'javascript', ignoreGenericCosmeticFilters: 'ignore-generic', advancedUserEnabled: 'advanced',
++  autoUpdate: 'auto-update', uiTheme: 'theme', tooltipsDisabled: 'no-tooltips',
++};
++
++// Whether `data` is uBlock Origin's backup: its own fields, and none of a backup made here.
++function isUblockBackup(data) {
++  return !!data && typeof data === 'object' && data.format === undefined && typeof data.timeStamp === 'number' &&
++         (typeof data.userFilters === 'string' || Array.isArray(data.selectedFilterLists));
++}
++
++// uBlock Origin's backup as readBackup gives a backup made here, with what this page has no place for in
++// `leftOut`. Lists Thoron has that uBlock Origin has not stay as they are (`keep`); the switch lines are
++// used after the rest (`switchText`), as when they are pasted into My rules.
++function fromUblockBackup(data) {
++  const strings = (list) => (Array.isArray(list) ? list.filter((x) => typeof x === 'string') : []);
++  const leftOut = [];
++  const selected = new Set(strings(data.selectedFilterLists));
++  const added = [];
++  for (const id of selected) {
++    if (id === 'user-filters' || UBO_BUILT_IN.includes(id)) {
++      continue;
++    }
++    if (id.startsWith('https://')) {
++      added.push(id);
++      continue;
++    }
++    const entry = UBO_OPTIONAL[id] && CATALOG.find((e) => e.title === UBO_OPTIONAL[id]);
++    if (entry) {
++      if (!added.includes(entry.url)) {
++        added.push(entry.url);
++      }
++    } else {
++      leftOut.push(`the list ${id} (add it from the list of lists, if it is there)`);
++    }
++  }
++  const settings = {};
++  const own = data.userSettings && typeof data.userSettings === 'object' ? data.userSettings : {};
++  for (const [name, value] of Object.entries(own)) {
++    const here = UBO_SETTINGS[name];
++    if (here && typeof value === typeof SETTING_DEFAULTS[here] &&
++        (typeof value !== 'number' || (Number.isInteger(value) && value >= 1 && value <= 1048576)) &&
++        (here !== 'theme' || ['auto', 'light', 'dark'].includes(value))) {
++      settings[here] = value;
++    }
++  }
++  if (own.uiAccentCustom === true && typeof own.uiAccentCustom0 === 'string' &&
++      /^#[0-9a-f]{6}$/i.test(own.uiAccentCustom0)) {
++    settings.accent = own.uiAccentCustom0.toLowerCase();
++  }
++  // trusted sites: an array in today's uBlock Origin, a text of lines in older ones; its own entries for
++  // browser pages ("chrome-extension-scheme" and the like) have no meaning here
++  const trusted = Array.isArray(data.whitelist) ? strings(data.whitelist) :
++      String(data.whitelist || data.netWhitelist || '').split('\n');
++  const allowed = trusted.map((s) => s.trim()).filter((s) => s && !s.startsWith('#') && !/-scheme$/.test(s));
++  const rules = [data.dynamicFilteringString, data.urlFilteringString]
++      .filter((t) => typeof t === 'string' && t.trim()).join('\n');
++  if (data.hiddenSettings && typeof data.hiddenSettings === 'object' && Object.keys(data.hiddenSettings).length) {
++    leftOut.push(`${Object.keys(data.hiddenSettings).length} advanced setting(s) of uBlock Origin`);
++  }
++  return {
++    disabled: new Set(UBO_BUILT_IN.filter((id) => !selected.has(id))),
++    keep: THORON_ONLY,
++    added,
++    myFilters: typeof data.userFilters === 'string' ? data.userFilters : '',
++    myRules: rules,
++    allowed,
++    switches: {},
++    switchText: typeof data.hostnameSwitchesString === 'string' ? data.hostnameSwitchesString : '',
++    settings,
++    leftOut,
++  };
++}
++
 +// Makes everything as `wanted` has it, one change at a time; the problems, if any.
 +async function apply(wanted) {
 +  const problems = [];
@@ -21889,6 +22002,9 @@ index 0000000000000000000000000000000000000000..e8a8e5acca69eef311e3897aac22cfa6
 +  }
 +  const state = await sendWithPromise('getState');
 +  for (const list of state.lists) {
++    if (list.builtin && wanted.keep && wanted.keep.has(list.id)) {
++      continue;
++    }
 +    if (list.builtin && list.enabled === wanted.disabled.has(list.id)) {
 +      await step('setListEnabled', list.id, !wanted.disabled.has(list.id));
 +    } else if (!list.builtin && !wanted.added.includes(list.url)) {
@@ -21968,18 +22084,27 @@ index 0000000000000000000000000000000000000000..e8a8e5acca69eef311e3897aac22cfa6
 +    return;
 +  }
 +  let wanted;
++  let ublock = false;
 +  try {
 +    if (file.size > 4 * 1024 * 1024) {
 +      throw new Error('This file is too large to be a backup.');
 +    }
-+    wanted = readBackup(JSON.parse(await file.text()));
++    const data = JSON.parse(await file.text());
++    ublock = isUblockBackup(data);
++    wanted = ublock ? fromUblockBackup(data) : readBackup(data);
 +  } catch (error) {
-+    say(error instanceof SyntaxError ? 'This file is not a backup of Thoron adblock.' : error.message,
-+        true);
++    say(error instanceof SyntaxError ? 'This file is not a backup of Thoron adblock or of uBlock Origin.' :
++        error.message, true);
 +    return;
 +  }
 +  say('Restoring...');
-+  await finish(await apply(wanted), 'The backup was restored.');
++  const problems = await apply(wanted);
++  if (wanted.switchText) {
++    problems.push(...(await applySwitchLines(switchLines(wanted.switchText).lines)).problems);
++  }
++  const leftOut = wanted.leftOut && wanted.leftOut.length ? ` Not brought over: ${wanted.leftOut.join('; ')}.` : '';
++  await finish(problems, ublock ? `The backup of uBlock Origin was brought over.${leftOut}` :
++                                  'The backup was restored.');
 +});
 +
 +// uBlock Origin's cloud storage: the same backup, kept with the browser's own sync.

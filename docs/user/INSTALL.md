@@ -105,11 +105,20 @@ On a USB drive:
 1. Download the installer for your processor from the
    [releases page](https://github.com/KuchiSofts/thoron/releases).
 2. Check the download ([Verifying downloads](../../README.md#verifying-downloads)).
-3. Run it. Windows may warn about an unknown publisher, as in section 2, step 5.
-4. It installs Thoron for your Windows account only, into `%LOCALAPPDATA%\Thoron`: the program in
+3. Run it from a folder your account can write to, such as Downloads (it unpacks its files beside itself;
+   from a read-only folder it stops and shows the code 109). Windows may warn about an unknown publisher, as in
+   section 2, step 5.
+4. It asks whether to install Thoron: choose **Install**. When it is done it says so: choose **OK**.
+5. It installs Thoron for your Windows account only, into `%LOCALAPPDATA%\Thoron`: the program in
    `Application`, your profile in `User Data`. It needs no administrator rights.
-5. Thoron is then in Windows' list of installed apps with its version. The program is
+6. Thoron is then in Windows' list of installed apps with its version. The program is
    `%LOCALAPPDATA%\Thoron\Application\thoron.exe`.
+
+**For every user of the PC.** Someone with administrator rights can run the installer with
+`--system-level`: Thoron then goes into `C:\Program Files\Thoron`, and each user still has a profile of
+their own. Such a copy does not update itself, because the browser never asks for administrator rights: the
+About page says when a newer release is out, and someone with administrator rights installs it the same
+way. Installing it while Thoron runs closes Thoron after asking it to save its tabs.
 
 Thoron installs next to Thorium and leaves it as it was: it has its own folder, program file, registry
 key and file associations, and either one can be removed without affecting the other. To bring your
@@ -125,7 +134,6 @@ Thorium profile over, see [Import](IMPORT.md).
 | Updates by itself ([Updates](UPDATES.md)) | P3.20 |
 | Signed checksums of a release | P2.11 |
 | Signed programs, so Windows does not warn | S.8 |
-| Install, run and uninstall checked on a clean PC, with `User Data` kept | P2.8 |
 
 ## 4. Remove Thoron
 
@@ -146,5 +154,6 @@ The registry values named in section 2 stay behind.
 4. Leave the box that also deletes your browsing data unticked: then your profile stays in
    `%LOCALAPPDATA%\Thoron\User Data`. Tick it only if you want your profile gone.
 
-Keeping the profile by default is Thoron's rule; checking it on a clean PC is part of ROADMAP P2.8, which
-is why step 2 is there. Removing Thoron does not touch Thorium.
+Keeping the profile by default is Thoron's rule, and it is checked on a clean Windows for every build
+(install, first start, update and uninstall: [the installer page](../release/INSTALLER.md)). Step 2 is a
+precaution all the same. Removing Thoron does not touch Thorium.

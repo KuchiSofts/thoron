@@ -32,6 +32,13 @@ class StepTests(unittest.TestCase):
         self.assertIn(wc.WIDEVINE_ID, wc.ASK)
         self.assertIn(wc.WIDEVINE_ID, wc.VERSION)
 
+    def test_the_player_is_pinned_and_checked(self):
+        self.assertRegex(wc.PLAYER_JS, r"^https://cdnjs\.cloudflare\.com/.+/\d+\.\d+\.\d+/")
+        self.assertIn(f'integrity="{wc.PLAYER_SRI}"', wc.PLAYER_PAGE)
+        self.assertTrue(wc.PLAYER_SRI.startswith("sha384-"))
+        self.assertIn(wc.LICENCE, wc.PLAYER_PAGE)
+        self.assertIn(wc.STREAM, wc.PLAYER_PAGE)
+
 
 if __name__ == "__main__":
     unittest.main()

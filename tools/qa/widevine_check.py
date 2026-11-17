@@ -6,15 +6,15 @@ checks: run it on purpose.
 Thoron does not ship Google's Widevine module (it may not be redistributed; `tools/release/package_audit.py`
 checks the package). The browser downloads it from Google's component updater when it is needed, as Chromium
 does. This check uses a throwaway profile and asks for it the way chrome://components does. It contacts
-Google's update server and, for the last step, a public demo of the Shaka Player project with a Widevine test
-stream. Steps:
+Google's update server and, for the last step, the Shaka Player project's Widevine test stream and test licence
+server, played by a local page with the Shaka Player library (pinned, checked by its hash). Steps:
 
     absent    on a fresh profile the browser has no Widevine module (version 0.0.0.0)
     fetched   asked for, the component updater downloads and installs it
     keys      a page gets Widevine through Encrypted Media Extensions: key system access, media keys, and
               a licence request from the module for a test key id (after a restart of the browser if the
               running one cannot load the new module)
-    plays     the demo's Widevine test stream plays (its time moves on)
+    plays     the Widevine test stream plays (its time moves on)
 
     py -3 -I tools/qa/widevine_check.py --browser <out>\\thoron.exe --work <scratch dir> [--no-playback]
 Exit status 0 only when every step passes.
@@ -40,8 +40,32 @@ COMPONENTS_URL = "chrome://components/"
 # the component updater's id of the Widevine module
 WIDEVINE_ID = "oimompecagnajdejgnnjijobebaeigek"
 FETCH_S = 240
-DEMO = ("https://shaka-player-demo.appspot.com/demo/#audiolang=en;textlang=en;"
-        "asset=https://storage.googleapis.com/shaka-demo-assets/angel-one-widevine/dash.mpd;play")
+# The last step plays the Shaka Player project's Widevine test stream on a local page, with its public test
+# licence server (the project's demo page no longer passes a licence server for a stream given by address).
+# The player comes from cdnjs, pinned to one version and checked against its SHA-384.
+PLAYER_JS = "https://cdnjs.cloudflare.com/ajax/libs/shaka-player/4.11.0/shaka-player.compiled.js"
+PLAYER_SRI = "sha384-XNcTTgbNeIx0wra+jzL4dD/FGK837OUayKB78VdFn9O+dFXDUdGLjcCQWpYahICo"
+STREAM = "https://storage.googleapis.com/shaka-demo-assets/angel-one-widevine/dash.mpd"
+LICENCE = "https://cwip-shaka-proxy.appspot.com/no_auth"
+PLAYER_PAGE = f"""<!doctype html><meta charset="utf-8"><title>widevine playback</title>
+<video id="v" muted autoplay width="640"></video>
+<script src="{PLAYER_JS}" integrity="{PLAYER_SRI}" crossorigin="anonymous"></script>
+<script>
+window.playError = '';
+(async () => {{
+  try {{
+    shaka.polyfill.installAll();
+    const player = new shaka.Player();
+    await player.attach(document.getElementById('v'));
+    player.addEventListener('error', (e) => {{ window.playError = 'shaka ' + e.detail.code; }});
+    player.configure({{drm: {{servers: {{'com.widevine.alpha': '{LICENCE}'}}}}}});
+    await player.load('{STREAM}');
+    await document.getElementById('v').play();
+  }} catch (e) {{
+    window.playError = String(e && e.code ? 'shaka ' + e.code : e);
+  }}
+}})();
+</script>"""
 VERSION = ("import('chrome://resources/js/cr.js').then((cr) => cr.sendWithPromise('requestComponentsData'))"
            ".then((d) => JSON.stringify((d.components || []).filter((c) => c.id === '%s')"
            ".map((c) => ({version: c.version, status: c.status}))[0] || null))" % WIDEVINE_ID)
@@ -73,8 +97,8 @@ KEYS = """(async () => {
   }
 })()"""
 PLAYING = """(() => { const v = document.querySelector('video');
-  return JSON.stringify(v ? {time: v.currentTime, error: v.error ? v.error.message : '', ready: v.readyState}
-                          : null); })()"""
+  return JSON.stringify(v ? {time: v.currentTime, error: v.error ? v.error.message : (window.playError || ''),
+                             ready: v.readyState} : null); })()"""
 
 
 def absent_problems(found: dict | None) -> list[str]:
@@ -102,7 +126,7 @@ def keys_problems(found: dict) -> list[str]:
 def plays_problems(samples: list[dict | None]) -> list[str]:
     times = [s["time"] for s in samples if s]
     if not times:
-        return ["plays: the demo page shows no video"]
+        return ["plays: the page shows no video"]
     errors = [s["error"] for s in samples if s and s.get("error")]
     if errors:
         return [f"plays: the video failed: {errors[-1]}"]
@@ -120,7 +144,8 @@ class Local:
                 pass
 
             def do_GET(self):
-                body = b"<!doctype html><title>widevine check</title><p>page"
+                body = (PLAYER_PAGE.encode("utf-8") if self.path == "/play"
+                        else b"<!doctype html><title>widevine check</title><p>page")
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
                 self.send_header("Content-Length", str(len(body)))
@@ -140,9 +165,11 @@ class Local:
         self._httpd.server_close()
 
 
-def _launch(browser: Path, profile: Path) -> subprocess.Popen:
-    # no --disable-component-update and no --disable-background-networking: the module comes that way
-    args = [str(browser), "--headless=new", f"--user-data-dir={profile}", "--no-first-run",
+def _launch(browser: Path, profile: Path, visible: bool = False) -> subprocess.Popen:
+    # no --disable-component-update and no --disable-background-networking: the module comes that way;
+    # a protected stream may need a real window
+    window = ["--window-position=40,40"] if visible else ["--headless=new"]
+    args = [str(browser), *window, f"--user-data-dir={profile}", "--no-first-run",
             "--no-default-browser-check", "--disable-default-apps", "--mute-audio",
             "--autoplay-policy=no-user-gesture-required", "--window-size=1280,800",
             "--remote-debugging-address=127.0.0.1", "--remote-debugging-port=0", "about:blank"]
@@ -163,7 +190,7 @@ def _keys(port: int, local_port: int) -> dict:
         page.close()
 
 
-def run(browser: Path, work: Path, playback: bool) -> list[str]:
+def run(browser: Path, work: Path, playback: bool, visible: bool = False) -> list[str]:
     profile = Path(tempfile.mkdtemp(prefix="widevine-", dir=work))
     problems: list[str] = []
 
@@ -172,7 +199,7 @@ def run(browser: Path, work: Path, playback: bool) -> list[str]:
         problems.extend(found)
 
     with Local() as local:
-        proc = _launch(browser, profile)
+        proc = _launch(browser, profile, visible)
         port = None
         try:
             port = _devtools_port(profile)
@@ -202,7 +229,7 @@ def run(browser: Path, work: Path, playback: bool) -> list[str]:
                 _close_browser(port, proc)
                 port = None
                 (profile / "DevToolsActivePort").unlink(missing_ok=True)
-                proc = _launch(browser, profile)
+                proc = _launch(browser, profile, visible)
                 port = _devtools_port(profile)
                 time.sleep(3)
                 keys = _keys(port, local.port)
@@ -210,7 +237,7 @@ def run(browser: Path, work: Path, playback: bool) -> list[str]:
             report("keys", keys_problems(keys), f"{keys}{' (after a restart)' if restarted else ''}")
 
             if playback:
-                demo = WebSocket(_open(port, DEMO)["webSocketDebuggerUrl"])
+                demo = WebSocket(_open(port, f"http://127.0.0.1:{local.port}/play")["webSocketDebuggerUrl"])
                 samples = []
                 for _ in range(15):
                     time.sleep(3)
@@ -237,10 +264,11 @@ def main(argv: list[str]) -> int:
     p.add_argument("--browser", required=True, type=Path)
     p.add_argument("--work", required=True, type=Path, help="scratch folder for the throwaway profile")
     p.add_argument("--no-playback", action="store_true", help="leave out the demo stream (the last step)")
+    p.add_argument("--visible", action="store_true", help="a real window on the screen, not a headless browser")
     a = p.parse_args(argv)
     sys.stdout.reconfigure(errors="backslashreplace")
     a.work.mkdir(parents=True, exist_ok=True)
-    problems = run(a.browser.resolve(), a.work, not a.no_playback)
+    problems = run(a.browser.resolve(), a.work, not a.no_playback, a.visible)
     for problem in problems:
         print(problem)
     print("WIDEVINE CHECK: PASSED" if not problems else f"WIDEVINE CHECK: FAILED ({len(problems)} problem(s))")

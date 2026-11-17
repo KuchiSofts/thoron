@@ -281,6 +281,7 @@ Explanations live in the design docs under `docs/design/`.
 
 ### Fixed
 
+- **Tools:** the Widevine check plays a protected test stream again; the public demo page it used had changed.
 - **Tools:** the benchmark tool starts again as a script; a test now starts every tool that way.
 - **Ad blocking:** a list line that only names a host, or a hosts file's line, stops that host, as in uBlock Origin; lists written that way stopped no page.
 - **Tools:** the profile rehearsal also sees a profile written a moment ago when the drive's clock runs ahead.

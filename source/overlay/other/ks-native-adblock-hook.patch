@@ -14135,18 +14135,22 @@ index 0000000000000000000000000000000000000000..8b78e2339b0bb46b5eab6dd418201163
 +#endif  // COMPONENTS_THORON_UPDATE_DELTA_PACKAGE_H_
 diff --git a/components/thoron_update/delta_package_unittest.cc b/components/thoron_update/delta_package_unittest.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..12d3a36ee07ab2cc6726031ce32ce3a39cbdb960
+index 0000000000000000000000000000000000000000..4a59e71e2a602e0efccdf2465649ab06325b2a8c
 --- /dev/null
 +++ b/components/thoron_update/delta_package_unittest.cc
-@@ -0,0 +1,206 @@
+@@ -0,0 +1,277 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
 +#include "components/thoron_update/delta_package.h"
 +
++#include <algorithm>
++#include <random>
++#include <set>
 +#include <string>
 +#include <vector>
 +
++#include "base/files/file_enumerator.h"
 +#include "base/files/file_path.h"
 +#include "base/files/file_util.h"
 +#include "base/files/scoped_temp_dir.h"
@@ -14333,6 +14337,73 @@ index 0000000000000000000000000000000000000000..12d3a36ee07ab2cc6726031ce32ce3a3
 +    EXPECT_FALSE(base::PathExists(dir_.GetPath().AppendASCII("outside.txt")));
 +    EXPECT_FALSE(base::PathExists(dir_.GetPath().AppendASCII("Application").AppendASCII("outside.txt")));
 +  }
++}
++
++TEST_F(ThoronUpdateDeltaTest, ADamagedFileListNeverCrashesOrWritesOutsideTheFolder) {
++  // THREAT_MODEL U9: a fixed mutation run over delta.json (not a coverage-guided fuzzer, which needs a
++  // libFuzzer build): flipped bytes, cut and doubled pieces, inserted characters, a cut end. Each damaged
++  // delta ends in a result; one refused leaves no staging folder, and nothing outside it is ever touched.
++  std::vector<TestZipEntry> good = ReadTestZip(Delta());
++  auto list = std::find_if(good.begin(), good.end(), [](const TestZipEntry& e) { return e.name == "delta.json"; });
++  ASSERT_NE(list, good.end());
++  const std::string json = list->content;
++  const base::FilePath zip = dir_.GetPath().AppendASCII("damaged.delta");
++  auto files_outside = [&] {
++    std::set<std::string> out;
++    base::FileEnumerator all(dir_.GetPath(), true, base::FileEnumerator::FILES);
++    for (base::FilePath path = all.Next(); !path.empty(); path = all.Next()) {
++      if (path != zip && !Staged().IsParent(path)) {
++        out.insert(path.AsUTF8Unsafe());
++      }
++    }
++    return out;
++  };
++  const std::set<std::string> before = files_outside();
++  std::mt19937 random(20261117);
++  const char kInserts[] = "{}[]\",:./\\0-9eE\x01 nullfalsetrue\xff";
++  int done = 0;
++  for (int round = 0; round < 1000; ++round) {
++    std::string damaged = json;
++    const int changes = 1 + static_cast<int>(random() % 4);
++    for (int c = 0; c < changes && !damaged.empty(); ++c) {
++      const size_t at = random() % damaged.size();
++      switch (random() % 5) {
++        case 0:
++          damaged[at] = static_cast<char>(damaged[at] ^ (1 << (random() % 8)));
++          break;
++        case 1:
++          damaged.erase(at, 1 + random() % 16);
++          break;
++        case 2:
++          damaged.insert(at, damaged.substr(at, 1 + random() % 24));
++          break;
++        case 3:
++          damaged.insert(at, 1, kInserts[random() % (sizeof(kInserts) - 1)]);
++          break;
++        default:
++          damaged.resize(at);
++          break;
++      }
++    }
++    std::vector<TestZipEntry> entries = good;
++    for (TestZipEntry& e : entries) {
++      if (e.name == "delta.json") {
++        e.content = damaged;
++      }
++    }
++    ASSERT_TRUE(WriteTestZip(zip, entries));
++    std::vector<VersionFile> files;
++    const DeltaResult result = Apply(zip, &files);
++    if (result == DeltaResult::kDone) {
++      ++done;                                // a change JSON does not mind, such as a space
++      ASSERT_TRUE(base::DeletePathRecursively(Staged()));
++    } else {
++      EXPECT_FALSE(base::PathExists(Staged())) << "round " << round;
++    }
++    ASSERT_EQ(files_outside(), before) << "round " << round;
++  }
++  // nearly every damaged list is refused
++  EXPECT_LT(done, 100);
 +}
 +
 +TEST_F(ThoronUpdateDeltaTest, NotADeltaAtAll) {

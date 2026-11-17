@@ -163,6 +163,53 @@ class AssembleTests(unittest.TestCase):
         self.assertIn(f"{digest}  thoron-158.0.8127.3000-win-x64-avx2-installer.exe", sums)
         self.assertEqual(len(sums), 2)        # every file except SHA256SUMS itself
 
+    def test_the_installer_is_found_by_the_name_the_build_gives_it(self):
+        (self.f.out / "mini_installer.exe").unlink()
+        (self.f.out / "thoron_AVX2_mini_installer.exe").write_bytes(b"avx2 installer")
+        (self.f.out / "thoron_AVX2_mini_installer.exe.pdb").write_bytes(b"not an installer")
+        (self.f.out / "ThoronSetup.exe").write_bytes(b"not the installer either")
+        self.assertEqual(rel.built_installer(self.f.out, "win").name, "thoron_AVX2_mini_installer.exe")
+        rel.assemble(self.f.out, self.f.dist, "158.0.8127.3000", "win-x64-avx2", self.f.buildinfo)
+        self.assertEqual((self.f.dist / "thoron-158.0.8127.3000-win-x64-avx2-installer.exe").read_bytes(),
+                         b"avx2 installer")
+
+    def test_no_installer_or_two_installers_are_refused_before_anything_is_written(self):
+        (self.f.out / "thoron_ARM64_installer.exe").write_bytes(b"left by another configuration")
+        with self.assertRaisesRegex(rel.ReleaseError, "more than one installer"):
+            rel.assemble(self.f.out, self.f.dist, "158.0.8127.3000", "win-x64-avx2", self.f.buildinfo)
+        self.assertFalse(self.f.dist.exists())
+        for name in ("mini_installer.exe", "thoron_ARM64_installer.exe"):
+            (self.f.out / name).unlink()
+        with self.assertRaisesRegex(rel.ReleaseError, "no installer"):
+            rel.built_installer(self.f.out, "win")
+        self.assertIsNone(rel.built_installer(self.f.out, "linux"))
+
+    def test_symbols_are_kept_beside_the_release_folder_never_in_it(self):
+        chrome_bin = self.f.out / "Chrome-bin"
+        (chrome_bin / "158.0.8127.3000").mkdir(parents=True)
+        (chrome_bin / "thoron.exe").write_bytes(b"exe")
+        (chrome_bin / "158.0.8127.3000/chrome.dll").write_bytes(b"dll")
+        for name in ("chrome.dll.pdb", "thoron.exe.pdb", "mini_installer.exe.pdb", "unit_tests.exe.pdb"):
+            (self.f.out / name).write_bytes(name.encode())
+        rel.assemble(self.f.out, self.f.dist, "158.0.8127.3000", "win-x64-avx2", self.f.buildinfo)
+        kept = rel.keep_symbols(self.f.out, self.f.dist, "158.0.8127.3000", "win-x64-avx2", chrome_bin,
+                                ["mini_installer.exe", "ThoronSetup.exe"])
+        self.assertEqual(kept, self.f.dist.parent / "dist-symbols" / "win-x64-avx2")
+        self.assertEqual(sorted(p.name for p in kept.iterdir()),
+                         ["BUILDINFO-158.0.8127.3000-win-x64-avx2.json", "SHA256SUMS", "chrome.dll.pdb",
+                          "mini_installer.exe.pdb", "thoron.exe.pdb"])   # a test program's symbols are not kept
+        self.assertFalse([p for p in self.f.dist.iterdir() if p.suffix == ".pdb" or p.is_dir()])
+        self.assertEqual(rel.checksum_problems(self.f.dist), [])
+        self.assertEqual(len((kept / "SHA256SUMS").read_text(encoding="utf-8").splitlines()), 4)
+        with self.assertRaisesRegex(rel.ReleaseError, "never overwritten"):
+            rel.keep_symbols(self.f.out, self.f.dist, "158.0.8127.3000", "win-x64-avx2", chrome_bin, [])
+
+    def test_no_symbols_kept_when_the_build_wrote_none(self):
+        rel.assemble(self.f.out, self.f.dist, "158.0.8127.3000", "win-x64-avx2", self.f.buildinfo)
+        self.assertIsNone(rel.keep_symbols(self.f.out, self.f.dist, "158.0.8127.3000", "win-x64-avx2", None,
+                                           ["mini_installer.exe"]))
+        self.assertFalse((self.f.dist.parent / "dist-symbols").exists())
+
     def test_refuses_to_overwrite_an_existing_release_folder(self):
         rel.assemble(self.f.out, self.f.dist, "158.0.8127.3000", "win-x64-avx2", self.f.buildinfo)
         with self.assertRaises(rel.ReleaseError):

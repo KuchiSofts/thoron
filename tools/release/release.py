@@ -93,7 +93,11 @@ from tools.release import adblock_resources, changelog, delta, package_audit, po
 from tools.update import manifest as mf  # noqa: E402
 
 _VARIANT = re.compile(r"^(win|linux)-(x64|arm64)-[a-z0-9]+$")
-INSTALLERS = {"win": "mini_installer.exe"}
+# The installer the build writes (chrome/installer/mini_installer/BUILD.gn): `thoron_mini_installer.exe`, or
+# with the variant's label in the name (`thoron_AVX2_mini_installer.exe`, `thoron_ARM64_installer.exe`);
+# `mini_installer.exe` is what a build without Thoron's names writes.
+INSTALLERS = {"win": ("thoron_*installer.exe", "mini_installer.exe")}
+SYMBOLS_SUFFIX = "-symbols"
 _GH_REPO = re.compile(r"^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$")
 _SUM_LINE = re.compile(r"^([0-9a-f]{64})  ([A-Za-z0-9._+~-]+)$")
 _COMMIT = re.compile(r"^[0-9a-f]{40}$")
@@ -163,6 +167,57 @@ def _sha256(path: Path) -> str:
         for block in iter(lambda: f.read(1 << 20), b""):
             h.update(block)
     return h.hexdigest()
+
+
+def built_installer(out: Path, platform: str) -> Path | None:
+    """The installer the build wrote into `out`, or None for a platform that has none. A folder with no
+    installer, or with several (a stale one from another configuration), is an error: never a guess."""
+    patterns = INSTALLERS.get(platform)
+    if not patterns:
+        return None
+    found = sorted({p for pattern in patterns for p in out.glob(pattern) if p.is_file()})
+    if not found:
+        raise ReleaseError(f"{out} holds no installer ({' or '.join(patterns)}); build mini_installer first")
+    if len(found) > 1:
+        raise ReleaseError(f"{out} holds more than one installer ({', '.join(p.name for p in found)}); "
+                           "remove the ones another configuration left")
+    return found[0]
+
+
+def symbols_folder(dist: Path) -> Path:
+    """Where prepare keeps a release's symbols: beside the release folder, never in it, because every file
+    of the release folder is uploaded (docs/qa/CRASH_TRIAGE.md, sections 7 and 8)."""
+    return dist.with_name(dist.name + SYMBOLS_SUFFIX)
+
+
+def keep_symbols(out: Path, dist: Path, version: str, variant: str, chrome_bin: Path | None,
+                 programs: list[str]) -> Path | None:
+    """Copies the symbols (`<program>.pdb`) the build wrote for every program the release ships into
+    symbols_folder(dist)/<variant>/, with the release's build record and a SHA256SUMS of them, so that a crash
+    in this release can be read by function names later. Returns that folder, or None when the build wrote no
+    symbols for them. A crash read without them is named after the nearest of the few functions a program
+    exports, which says nothing (upstream #1230)."""
+    names = {name.lower() for name in programs}
+    if chrome_bin is not None:
+        names |= {p.name.lower() for p in chrome_bin.rglob("*") if p.suffix.lower() in (".exe", ".dll")}
+    found = sorted(p for p in out.glob("*.pdb") if p.is_file() and p.name[:-4].lower() in names)
+    if not found:
+        return None
+    target = symbols_folder(dist) / variant
+    if target.exists() and any(target.iterdir()):
+        raise ReleaseError(f"{target} is not empty; kept symbols are never overwritten")
+    target.mkdir(parents=True, exist_ok=True)
+    kept = []
+    for path in found:
+        shutil.copy2(path, target / path.name)
+        kept.append(target / path.name)
+    info = dist / f"BUILDINFO-{version}-{variant}.json"
+    if info.is_file():
+        shutil.copy2(info, target / info.name)
+        kept.append(target / info.name)
+    (target / "SHA256SUMS").write_text("".join(f"{_sha256(p)}  {p.name}\n" for p in sorted(kept)),
+                                       encoding="utf-8", newline="\n")
+    return target
 
 
 def installer_name(version: str, variant: str) -> str:
@@ -558,13 +613,13 @@ def assemble(out: Path, dist: Path, version: str, variant: str, buildinfo: Path,
         raise ReleaseError(f"variant must look like win-x64-avx2, got {variant!r}")
     if dist.exists() and any(dist.iterdir()):
         raise ReleaseError(f"{dist} is not empty; a release folder is never overwritten")
-    dist.mkdir(parents=True, exist_ok=True)
     platform = variant.split("-")[0]
+    installer = built_installer(out, platform)
+    dist.mkdir(parents=True, exist_ok=True)
     files = []
-    installer = INSTALLERS.get(platform)
     if installer:
         target = dist / installer_name(version, variant)
-        shutil.copy2(out / installer, target)
+        shutil.copy2(installer, target)
         files.append(target)
     if chrome_bin is not None and platform == "win":
         files.append(add_portable(chrome_bin, dist, version, variant, launcher or out / portable.BUILT_LAUNCHER,
@@ -982,6 +1037,15 @@ def _prepare(a) -> int:
         delta_reports: list = []
         files = assemble(a.out, a.dist, version, a.variant, a.buildinfo, chrome_bin, licences, launcher, updater,
                          a.delta_from, a.zucchini, delta_reports)
+        installer = built_installer(a.out, a.platform)
+        kept = keep_symbols(a.out, a.dist, version, a.variant, chrome_bin,
+                            [p.name for p in (installer, launcher, updater) if p is not None] + [SETUP])
+        if kept:
+            print(f"release: the symbols of this build are kept in {kept}; they are not uploaded "
+                  "(docs/qa/CRASH_TRIAGE.md, section 8)")
+        else:
+            print("release: the build wrote no symbols (.pdb) for its programs; a crash in this release can "
+                  "only be read by offsets")
         source = {"tag": info["source_tag"], "commit": info["thoron_commit"], "chromium_tag": info["chromium_tag"],
                   "licences": licence_bundle_name(version)}
         notes = changelog.render(version, a.chromium_old, chromium_new, a.repo, a.since,

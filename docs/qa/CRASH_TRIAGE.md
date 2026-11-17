@@ -51,9 +51,14 @@ cdb -z <dump>.dmp -y "<symbols folder>" -c ".ecxr; kn 40; lmv m chrome; q"
 
 - `.ecxr` moves to the moment of the crash, `kn 40` prints 40 frames of the stack, `lmv m chrome`
   prints the version of `chrome.dll`. `!analyze -v` adds the debugger's own summary.
-- Without Thoron's symbols a frame reads as a module and an offset (`chrome+0x...`). That already
-  shows whose code crashed, and a maintainer with the symbols of that exact build can name the
-  function from it.
+- Without Thoron's symbols the debugger names a frame after the nearest function the module
+  exports, and `chrome.dll` exports only five (`ChromeMain`, `GetHandleVerifier`, `IsSandboxedProcess`,
+  `CrashForExceptionInNonABICompliantCodeRange`, `sqlite3_dbdata_init`), each followed by 6 to 75 MB of
+  other code. So `chrome!sqlite3_dbdata_init+0x1516c6f` is not SQLite: it is some function 22 MB after
+  it. A name with an offset of more than a few KB means nothing; read it as `chrome+0x...`, which a
+  maintainer with the symbols of that exact build can turn into the function. Upstream's #1230 is such
+  a case: its "crash in `sqlite3_dbdata_init`" is a stop (`0x80000003`, how a failed `CHECK` ends) at
+  an unknown place, since upstream keeps no symbols (`docs/qa/2026-11-17-issue-1230.md`).
 - Frames in Windows' own modules get names from Microsoft's public symbol server when
   `srv*<cache folder>*https://msdl.microsoft.com/download/symbols` is added to the symbol path. That
   sends Microsoft the names and build numbers of the Windows modules in the dump, not the dump. Leave
@@ -170,10 +175,15 @@ is stripped. Symbols from another build of the same source fit only if that buil
 which the design calls a stretch goal (design 6.1). So they are kept when the release is built, or
 they do not exist.
 
-Whether a release build writes symbols at all depends on `symbol_level` in the release configuration,
-which comes from upstream's args file. This repository does not record it yet:
-`gn args <out dir> --list=symbol_level` answers it, and the answer belongs in `RELEASE_ARGS.md`.
-Without symbols, triage has the module and offset of each frame, and reproduction.
+The release configuration has `symbol_level = 0` (from upstream's args file, recorded in
+`docs/build/RELEASE_ARGS.md`). On Windows the build still writes a `.pdb` for every program, with the
+names of the functions but no source lines: enough to read a stack by function, which is what triage
+needs first. `tools/release/release.py prepare` keeps the `.pdb` files of every program the release
+ships, with the release's build record and a `SHA256SUMS`, in `<release folder>-symbols/<variant>/`
+beside the release folder, never in it (every file of the release folder is uploaded); about 680 MB
+for the Windows x64 build. `symbol_level = 1` would add source lines, at the price of a longer link
+that needs more memory; it can follow when a crash needs it. Without the kept symbols, triage has the
+module and offset of each frame, and reproduction.
 
 ## 8. Decision: publishing symbols
 
@@ -181,8 +191,9 @@ Without symbols, triage has the module and offset of each frame, and reproductio
 
 Recommendation:
 
-1. Every release build writes symbols that are enough for a stack trace: function names and line
-   numbers (`symbol_level = 1`). They stay out of the installer and the portable package.
+1. Every release build writes symbols that are enough for a stack trace: function names, which the
+   Windows build writes at `symbol_level = 0` already (section 7); line numbers (`symbol_level = 1`)
+   when a crash needs them. They stay out of the installer and the portable package.
 2. The symbols of every published release are kept next to its `BUILDINFO`, for as long as that
    release can still be in use.
 3. They are published as one more file of the release per variant, listed in the signed `SHA256SUMS`.

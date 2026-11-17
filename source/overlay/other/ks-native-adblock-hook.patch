@@ -373,6 +373,71 @@ index 477dddb87ace2a0b48a108489ce6db7744e8457a..301e2b39dfad2510a012a72ab601caba
  content_resources.pak: %(VersionDir)s\
  content_shell.pak: %(VersionDir)s\
  d3dcompiler_47.dll: %(VersionDir)s\
+diff --git a/chrome/installer/setup/install_worker.cc b/chrome/installer/setup/install_worker.cc
+index 63754184d8fa2ef4d79262f8b929c5e2224f1ab0..ac8ee053d23878341532c404d245322476b1e9b3 100644
+--- a/chrome/installer/setup/install_worker.cc
++++ b/chrome/installer/setup/install_worker.cc
+@@ -302,9 +302,60 @@ class InstalledBrowserProcessFilter : public base::ProcessFilter {
+   const base::FilePath executable_path_;
+ };
+ 
++// Thoron (ROADMAP P3.6): before the browser of this installation is ended, its
++// windows are told that the session ends (WM_ENDSESSION), as Windows tells
++// them when the person signs out. The browser then saves the tabs of every
++// window and its data, and exits by itself (chrome::SessionEnding). Whatever
++// still runs a few seconds later is ended as before. Only windows in this
++// session can be told; a browser elsewhere is simply ended.
++void AskInstalledBrowserToEndSession(const base::FilePath& target_path) {
++  InstalledBrowserProcessFilter filter(target_path);
++  struct Windows {
++    std::vector<DWORD> pids;
++    std::vector<HWND> found;
++  } windows;
++  base::NamedProcessIterator processes(installer::kChromeExe, &filter);
++  while (const base::ProcessEntry* entry = processes.NextProcessEntry()) {
++    windows.pids.push_back(entry->pid());
++  }
++  if (windows.pids.empty()) {
++    return;
++  }
++  ::EnumWindows(
++      [](HWND hwnd, LPARAM param) -> BOOL {
++        auto* windows = reinterpret_cast<Windows*>(param);
++        DWORD pid = 0;
++        ::GetWindowThreadProcessId(hwnd, &pid);
++        wchar_t window_class[64] = {};
++        for (DWORD browser_pid : windows->pids) {
++          if (browser_pid == pid &&
++              ::GetClassNameW(hwnd, window_class, std::size(window_class)) &&
++              std::wstring_view(window_class).starts_with(L"Chrome_WidgetWin_")) {
++            windows->found.push_back(hwnd);
++            break;
++          }
++        }
++        return TRUE;
++      },
++      reinterpret_cast<LPARAM>(&windows));
++  VLOG(1) << "Asking " << windows.found.size() << " window(s) of "
++          << windows.pids.size() << " browser process(es) to end the session";
++  for (HWND hwnd : windows.found) {
++    DWORD_PTR ignored = 0;
++    ::SendMessageTimeoutW(hwnd, WM_ENDSESSION, TRUE, ENDSESSION_CLOSEAPP,
++                          SMTO_ABORTIFHUNG | SMTO_NORMAL, 5000, &ignored);
++  }
++  if (!windows.found.empty() &&
++      base::WaitForProcessesToExit(installer::kChromeExe, base::Seconds(15),
++                                   &filter)) {
++    VLOG(1) << "The browser ended its session and exited";
++  }
++}
++
+ // Same-version installation replaces the version directory in place, so no
+ // process may retain loaded files from that directory.
+ void CloseInstalledBrowser(const base::FilePath& target_path) {
++  AskInstalledBrowserToEndSession(target_path);
+   InstalledBrowserProcessFilter filter(target_path);
+   base::CleanupProcesses(installer::kChromeExe, base::TimeDelta(),
+                          /*exit_code=*/0, &filter);
 diff --git a/components/page_info/BUILD.gn b/components/page_info/BUILD.gn
 index a248f84b52164a4731b74bec11f31c2abdcf700d..94dff65fd333283f0d4e88e6c1d071944fadc080 100644
 --- a/components/page_info/BUILD.gn

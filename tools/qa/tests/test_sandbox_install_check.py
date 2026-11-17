@@ -89,6 +89,10 @@ class ProblemsTests(unittest.TestCase):
         system = {**UPDATED, "system_level": True, "update_status": 2, "update_new_exe_while_running": False,
                   "update_browser_before": 6, "update_browser_after": 0}
         self.assertEqual(sb.update_problems(system), [])
+        self.assertEqual(sb.update_problems({**system, "update_exit_type": "SessionEnded"}), [])
+        killed = sb.update_problems({**system, "update_exit_type": "Crashed"})
+        self.assertEqual(len(killed), 1, killed)
+        self.assertIn("without saving its session first (exit type Crashed", killed[0])
         found = sb.update_problems({**system, "update_browser_after": 6, "update_status": 30,
                                     "update_new_exe_while_running": True})
         self.assertEqual(len(found), 3, found)

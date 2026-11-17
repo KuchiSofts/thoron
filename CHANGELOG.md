@@ -252,6 +252,7 @@ Explanations live in the design docs under `docs/design/`.
 - **Docs:** the project wiki is written in `docs/wiki/` and published by `publish_wiki.py`.
 
 ### Changed
+- **Updates:** updating a Thoron installed for every user of the PC while it runs no longer just ends it: Thoron is first asked to save the tabs of every window and its data and to close, as when you sign out of Windows.
 
 - **QA tools:** `bench.py` measures one warm-up run first and drops it.
 - **Brand:** translations name Thoron in every form of the name, not only the bare word.

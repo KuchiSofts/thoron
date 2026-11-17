@@ -183,6 +183,13 @@ try {
     $r.update_exit = Install 'update'
     $r.update_browser_after = @(Get-Process thoron -ErrorAction SilentlyContinue).Count
     Trace "after the update: $(Busy)"
+    # how the browser last ended, as it wrote it: "SessionEnded" when it saved its session and exited,
+    # "Crashed" while it runs or when it was ended from outside
+    try {
+      $prefs = Get-Content (Join-Path $data 'Default\Preferences') -Raw -ErrorAction Stop | ConvertFrom-Json
+      $r.update_exit_type = "$($prefs.profile.exit_type)"
+    } catch { $r.update_exit_type = $null }
+    Trace "exit type after the update: $($r.update_exit_type)"
     $r.update_status = InstallerStatus
     Trace "look for new_thoron.exe"
     $r.update_new_exe_while_running = Test-Path (Join-Path $app 'new_thoron.exe')
@@ -307,6 +314,9 @@ def update_problems(r: dict) -> list[str]:
     if system:
         if r.get("update_browser_before") and r.get("update_browser_after"):
             found.append("the update of an install for every user left the older browser running")
+        elif "update_exit_type" in r and r.get("update_exit_type") != "SessionEnded":
+            found.append(f"the browser was ended without saving its session first (exit type "
+                         f"{r.get('update_exit_type') or 'unknown'}, not SessionEnded)")
         if r.get("update_new_exe_while_running"):
             found.append("new_thoron.exe after the update of an install for every user")
     else:

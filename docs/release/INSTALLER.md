@@ -20,10 +20,11 @@ package has its own page, [PORTABLE.md](PORTABLE.md).
   ticks the box that deletes it (`--delete-profile`).
 - Installed over a running Thoron, it does one of two things. For one user (the default) it leaves Thoron
   running: the new program waits as `new_thoron.exe` beside `thoron.exe` and replaces it when Thoron is
-  closed or next started (Chromium's in-use update). For every user of the PC it **ends the running Thoron
-  at once** and updates in place. Thorium's installer patch does this because such an install has no
-  Google Update to finish the swap later; Thoron then starts on the new version with the profile kept, but
-  it is closed without the usual shutdown.
+  closed or next started (Chromium's in-use update). For every user of the PC it closes the running Thoron
+  and updates in place: such an install has no Google Update to finish the swap later (Thorium's installer
+  patch). Thoron first asks the running browser to end its session, the way Windows asks it when the
+  person signs out, so it saves the tabs of every window and its data and exits by itself; only what still
+  runs 15 seconds later is ended. Thoron then starts on the new version with its tabs and profile.
 
 ## 2. The check: `tools/qa/sandbox_install_check.py`
 
@@ -72,7 +73,7 @@ The update from 158.0.8127.3010 to 158.0.8127.6500 (the drill build of the
 | Install | What happened | Result |
 |---|---|---|
 | For one user | exit 0, status 30 (updated while in use); `new_thoron.exe` waited while 3010 ran; on close it was swapped in; the next start ran 6500; the 3010 folder was removed; the profile kept | pass |
-| For every user | exit 0, status 2; the installer ended the running 3010 (six processes before, none after) and updated in place; the next start ran 6500; the profile kept | pass, as designed (section 1) |
+| For every user | exit 0, status 2; the installer closed the running 3010 and updated in place; the next start ran 6500; the profile kept. With Thorium's installer alone the browser was ended from outside (it recorded its exit as "Crashed"); with Thoron's change it was asked to end its session first (3 windows of 9 processes; it saved and exited within a tenth of a second, recording "SessionEnded") | pass |
 
 Found on the way:
 
@@ -89,6 +90,4 @@ Found on the way:
 
 ## 4. Open
 
-- For every user of the PC, an update ends a running Thoron without its normal shutdown. Asking it to close
-  first (and waiting a little) would let it save its session the usual way. Not done yet; ROADMAP P3.6.
 - The message for code 109 could say what to do (run it from Downloads). It is Chromium's message.

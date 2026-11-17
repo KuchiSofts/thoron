@@ -72,6 +72,7 @@ import argparse
 import base64
 import hashlib
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -90,7 +91,8 @@ from tools.docs import check_docs  # noqa: E402
 from tools.legal import patch_licenses  # noqa: E402
 from tools.legal import unlicensed_patches  # noqa: E402
 from tools.qa import perf_gate  # noqa: E402
-from tools.release import adblock_resources, changelog, delta, package_audit, portable, version as ver  # noqa: E402
+from tools.release import adblock_resources, changelog, delta, package_audit, pe_check, portable  # noqa: E402
+from tools.release import version as ver  # noqa: E402
 from tools.update import manifest as mf  # noqa: E402
 
 _VARIANT = re.compile(r"^(win|linux)-(x64|arm64)-[a-z0-9]+$")
@@ -450,6 +452,30 @@ def browser_problems(chrome_bin: Path, version: str) -> list[str]:
         except OSError:
             out.append(f"{name} cannot be read")
     return out
+
+
+def programs_problems(chrome_bin: Path, variant: str, extras: list[Path]) -> list[str]:
+    """ROADMAP P2b.1: every program and library of the browser folder, and the launcher and updater the portable
+    package adds, are built for the variant's processor and load nothing a clean Windows lacks
+    (tools/release/pe_check.py)."""
+    system32 = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32"
+    try:
+        found, _ = pe_check.check_folder(chrome_bin, variant, pe_check.system_names(system32))
+        want = pe_check.machine_of(variant)
+    except pe_check.PeError as exc:
+        return [str(exc)]
+    for path in extras:
+        if path is None or not path.is_file():
+            continue
+        try:
+            machine = pe_check.file_machine(path.read_bytes())
+        except (pe_check.PeError, ValueError) as exc:
+            found.append(f"{path.name}: not a PE file this check can read ({exc})")
+            continue
+        if machine != want:
+            found.append(f"{path.name}: built for {pe_check.MACHINES.get(machine, hex(machine))}, not "
+                         f"{pe_check.MACHINES[want]}")
+    return found
 
 
 MOST_DELTAS = 3       # ROADMAP P4.1: from each of the previous 3 releases
@@ -1335,6 +1361,7 @@ def _prepare(a) -> int:
         problems += [f"portable package: {p}"
                      for p in portable_problems(chrome_bin, version, a.variant, launcher, updater, info.get("variant"))]
         problems += [f"browser: {p}" for p in browser_problems(chrome_bin, version)]
+        problems += [f"programs: {p}" for p in programs_problems(chrome_bin, a.variant, [launcher, updater])]
     problems += [f"credits: {p}" for p in credits_problems(a.repo, upstream_contributors(a.contributors))]
     problems += [f"patch licences: {p}" for p in licence_record_problems(a.repo)]
     problems += [f"performance: {p}" for p in performance_problems(a.repo, a.bench, thoron)]

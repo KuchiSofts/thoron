@@ -23,6 +23,7 @@ from tools.release import adblock_resources as ar
 from tools.release import changelog
 from tools.release import package_audit
 from tools.release import release as rel
+from tools.release.tests.test_pe_check import make_pe
 from tools.release import version as ver
 from tools.release.tests.test_portable import program
 from tools.update import manifest as mf
@@ -311,6 +312,8 @@ class ReleaseFixture(Fixture):
                 files.setdefault(name[:-len("chrome.dll")] + "Locales/en-US.pak",
                                  strings if strings is not None else BRANDED_PAK)
         for name, data in files.items():
+            if name.lower().endswith((".exe", ".dll")) and not data.startswith(b"MZ"):
+                data = make_pe(0x8664) + data          # a program for x64 that loads nothing (P2b.1's check)
             (folder / name).parent.mkdir(parents=True, exist_ok=True)
             (folder / name).write_bytes(data)
 
@@ -1282,7 +1285,7 @@ class PortableStepTests(GateTestCase):
                 f"ThoronPortable/Application/{BUILD}/thoron.exe",
                 f"ThoronPortable/Application/{BUILD}/thoron_update.exe", "ThoronPortable/Application/current", "ThoronPortable/README.txt", "ThoronPortable/Thoron.exe",
                 "ThoronPortable/variant"])
-            self.assertEqual(package.read(f"ThoronPortable/Application/{BUILD}/thoron.exe"), b"program")
+            self.assertTrue(package.read(f"ThoronPortable/Application/{BUILD}/thoron.exe").endswith(b"program"))
             self.assertEqual(package.read("ThoronPortable/Thoron.exe"),
                              (self.f.out / "thoron_launcher.exe").read_bytes())
             self.assertEqual(package.read(f"ThoronPortable/Application/{BUILD}/thoron_update.exe"),
@@ -1343,6 +1346,10 @@ class PortableStepTests(GateTestCase):
         self.refused("browser: en-US.pak holds 'Chromium is up to date': the product is still named Chromium")
         self.f.browser({"thoron.exe": b"program", f"{BUILD}/chrome.dll": b"dll"}, strings=b"About Thoron")
         self.refused("browser: en-US.pak lacks 'Thoron is up to date': the product is not named Thoron")
+
+    def test_a_program_for_another_processor_is_refused(self):
+        self.f.browser({"thoron.exe": make_pe(0xAA64), f"{BUILD}/chrome.dll": b"dll"})
+        self.refused("programs: thoron.exe: built for arm64, not x64")
 
     def test_a_browser_built_for_tests_is_refused(self):
         self.f.browser({"thoron.exe": b"program", f"{BUILD}/chrome.dll": b"dll " + rel.TEST_UPDATE_KEY})

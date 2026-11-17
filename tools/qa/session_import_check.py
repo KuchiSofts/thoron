@@ -2,11 +2,13 @@
 # Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be found in the LICENSE file.
 """Imported tabs and tab groups come back in Thoron as they were (ROADMAP P3.15). Windows only.
 
-For each source (a folder of golden session files, `tools/migrate/tests/data/sessions/<browser>`), the check:
+For each source (a folder of golden session files, `tools/migrate/tests/data/sessions/<browser>`; for Firefox,
+its `sessionstore.jsonlz4`, ROADMAP P4.8), the check:
 1. makes a Thoron profile: Thoron starts once on a throwaway profile (its window off the screen, offline:
    host-resolver rules, only 127.0.0.1 answers) and is closed the normal way;
 2. imports the source's session into it with `tools/migrate/sessions.py import` (a verified copy; Thoron's own
-   first session is set aside) and asks for it to be restored once on the next start, the way an update does;
+   first session is set aside), or for Firefox `tools/migrate/firefox_sessions.py import` (a session file of
+   Thoron's own, made from Firefox's), and asks for it to be restored once on the next start, as an update does;
 3. starts Thoron on it with no address on the command line, so only the imported windows open (where they were
    saved: off the screen), serves their pages again from 127.0.0.1 on the source's port, waits, and closes Thoron
    the normal way so it writes its own session;
@@ -16,6 +18,10 @@ For each source (a folder of golden session files, `tools/migrate/tests/data/ses
    titles: a title the source saved must stay; an empty one, a page whose state the source browser had not synced
    yet, may become that page's own title once Thoron loads it). The recently closed list must still hold the
    source's entries, after the windows that closing Thoron adds. The source files must be unchanged.
+
+Firefox's file puts its windows on the screen (the first one maximized); the check imports a copy with them
+moved off the screen and not maximized, so no window shows, and compares with that copy's reading. Firefox's
+recently closed tabs are not imported, so they are not compared.
 
 One difference is Thoron's own and is allowed: a window the source had minimized opens as a normal window,
 because Chromium on Windows reopens a minimized window that way when it restores its own session too (Thoron
@@ -28,6 +34,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import os
 import shutil
 import sys
 import tempfile
@@ -37,6 +44,7 @@ from pathlib import Path
 
 if __package__ in (None, ""):  # running as a script under `py -3 -I`: make `tools` importable
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from tools.migrate import firefox_sessions  # noqa: E402
 from tools.migrate import sessions  # noqa: E402
 from tools.qa import session_golden as golden  # noqa: E402
 
@@ -158,13 +166,27 @@ def live_show_states(source: dict, states: dict[str, str]) -> list[str | None]:
     return out
 
 
+def offscreen_firefox(data: bytes) -> bytes:
+    """A Firefox session file with its windows moved off the screen and none maximized (so none shows)."""
+    import json
+    state = json.loads(firefox_sessions.decode_mozlz4(data))
+    for w in state["windows"]:
+        w.update(screenX=golden.BOUNDS[0], screenY=golden.BOUNDS[1], width=golden.BOUNDS[2], height=golden.BOUNDS[3])
+        if w.get("sizemode") in ("maximized", "fullscreen"):
+            w["sizemode"] = "normal"
+    return firefox_sessions.encode_mozlz4(json.dumps(state, ensure_ascii=False).encode("utf-8"))
+
+
 def check_source(browser: Path, work: Path, source: Path) -> list[str]:
     """Import one golden source into a fresh Thoron profile, restore it, and compare; the problems found."""
-    session_files = sessions.session_files(source, "Session")
-    if not session_files:
+    firefox = (source / "sessionstore.jsonlz4").is_file()
+    session_files = [] if firefox else sessions.session_files(source, "Session")
+    if not firefox and not session_files:
         return [f"{source} holds no Session_ file"]
-    source_session = sessions.read_session(sessions.read_bytes(session_files[0]))
-    tabs_files = sessions.session_files(source, "Tabs")
+    firefox_data = offscreen_firefox(sessions.read_bytes(source / "sessionstore.jsonlz4")) if firefox else b""
+    source_session = (firefox_sessions.read_firefox_session(firefox_data) if firefox
+                      else sessions.read_session(sessions.read_bytes(session_files[0])))
+    tabs_files = [] if firefox else sessions.session_files(source, "Tabs")
     source_closed = sessions.read_closed(sessions.read_bytes(tabs_files[0])) if tabs_files else None
     port = port_of(source_session)
     if port is None:
@@ -175,6 +197,11 @@ def check_source(browser: Path, work: Path, source: Path) -> list[str]:
     (src_profile / "Sessions").mkdir(parents=True)
     for f in session_files[:1] + tabs_files[:1]:
         shutil.copy2(f, src_profile / "Sessions" / f.name)
+    if firefox:
+        written = src_profile / "sessionstore.jsonlz4"
+        written.write_bytes(firefox_data)
+        an_hour_ago = time.time() - 3600       # as a Firefox closed a while ago (the import waits otherwise)
+        os.utime(written, (an_hour_ago, an_hour_ago))
     problems: list[str] = []
     # 1. a Thoron profile that has started once
     proc = golden.launch(golden.browser_args(browser, user_data, None, ["about:blank"]))
@@ -191,7 +218,11 @@ def check_source(browser: Path, work: Path, source: Path) -> list[str]:
         return problems
     # 2. the import, as a person would run it
     try:
-        done = sessions.import_sessions(src_profile, user_data / "Default", set_aside=True)
+        if firefox:
+            done = firefox_sessions.import_session(src_profile, user_data / "Default", set_aside=True)
+            done.update(files=[done["written"]], unlinked_groups=0)
+        else:
+            done = sessions.import_sessions(src_profile, user_data / "Default", set_aside=True)
         sessions.restore_on_next_start(user_data)
     except (sessions.ImportRefused, sessions.VerificationFailed) as e:
         return [f"the import was refused: {e}"]

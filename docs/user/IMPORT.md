@@ -12,6 +12,8 @@ were, so that browser keeps working and stays your backup.
 |---|---|---|
 | Thorium, same Windows account | Everything: bookmarks, history, saved passwords, cookies (you stay signed in), extensions, settings, open tabs and tab groups | [2](#2-thorium-the-whole-profile) |
 | Chrome, Thorium, Thoron | Open windows, tabs and tab groups (names, colours, collapsed or not), pinned tabs, each tab's back and forward history | [3](#3-open-tabs-and-tab-groups) |
+| Firefox | The same: open windows, tabs and tab groups, pinned tabs, each tab's history | [3](#from-firefox) |
+| Firefox | Bookmarks, history and saved passwords, with Chromium's own importer in Thoron's Settings | [3](#from-firefox) |
 | Chrome | Saved passwords, through Chrome's own export | [4](#4-chromes-saved-passwords) |
 | uBlock Origin, from its backup file | Your own filters, lists, trusted sites, rules, switches and the settings you changed, into Thoron adblock | [5](#5-ublock-origins-settings-into-thoron-adblock) |
 
@@ -20,8 +22,8 @@ were, so that browser keeps working and stays your backup.
 the tricks that do are what password-stealing programs use. Passwords come over through Chrome's own
 export (section 4). For cookies there is no such way, so sign in to your sites again in Thoron.
 
-Not yet: bookmarks, history, extensions and settings from Chrome, and imports from Edge, Brave, Vivaldi,
-Opera and Firefox (section 6).
+Not yet: bookmarks, history, extensions and settings from Chrome, and imports from Edge, Brave, Vivaldi
+and Opera (section 6).
 
 ## 1. Before you start
 
@@ -132,6 +134,45 @@ on purpose:
 
 A minimized window opens as a normal one, as Thoron does with its own session.
 
+### From Firefox
+
+Firefox keeps its open tabs in `sessionstore.jsonlz4` in its profile folder (a packed file of its own),
+not in the files Chromium browsers use. `firefox_sessions.py` reads it and writes the same windows into
+Thoron as a session file of Thoron's own, then reads that file back to check it holds the same windows,
+tabs, pages and groups. It was tested with a session Firefox 160 wrote.
+
+1. Start Thoron once and close it again.
+2. Close Firefox completely. Firefox writes `sessionstore.jsonlz4` when it quits; while it runs the tool
+   refuses.
+3. Find your Firefox profile folder: in Firefox, `about:profiles` names it ("Root Directory"), usually
+   `%APPDATA%\Mozilla\Firefox\Profiles\<letters>.default-release`.
+4. See what would come over (this only reads):
+
+   ```powershell
+   py -3 -I tools\migrate\firefox_sessions.py read --file "<Firefox profile folder>\sessionstore.jsonlz4"
+   ```
+
+5. Import, then start Thoron:
+
+   ```powershell
+   py -3 -I tools\migrate\firefox_sessions.py import --from "<Firefox profile folder>" --to "$env:LOCALAPPDATA\Thoron\User Data\Default" --set-aside --restore-on-next-start
+   ```
+
+`--set-aside` and `--restore-on-next-start` work as above. What differs from Firefox, on purpose:
+
+- Only web pages come over (addresses that start with `http`, `https`, `ftp` or `file`). Firefox's own
+  pages (`about:` pages, extension pages) mean nothing in Thoron; a tab that had only such pages is left
+  out. The tool counts what it left out (`dropped`).
+- At most 50 pages of each tab's history come over, around the page it was on, as Chromium keeps them.
+- Pinned tabs come first in their window and are in no group, as Thoron needs them. Firefox's colour
+  "gray" is Thoron's "grey".
+- Firefox's recently closed tabs and windows do not come over.
+
+Bookmarks, history and saved passwords come with Chromium's own importer, which Thoron keeps: in Thoron,
+open `chrome://settings/importData`, choose Mozilla Firefox and what to bring, and close Firefox first. It
+reads the passwords with Firefox's own security library, so a Firefox primary password is asked for if
+you set one. Thoron's tests do not cover that importer yet: it reads only your own Firefox profile.
+
 ## 4. Chrome's saved passwords
 
 **Do not import passwords into a portable copy yet** ([why](PORTABLE_PASSPHRASE.md)). Use an installed
@@ -199,6 +240,5 @@ lists, own filters, trusted sites and switches with the file's. Thoron's own phi
 | The whole import from Chrome, Edge, Brave, Vivaldi and Opera: bookmarks, history, settings, extensions, autofill, and passwords and cookies where the browser allows it | P3.14 |
 | Tabs from Edge, Brave, Vivaldi and Opera, checked | P3.15 |
 | The offer to import at the first start | P3.21 |
-| Firefox: bookmarks, history, passwords, tabs and groups | P4.8 |
 | Taking over an upstream Thorium portable folder | P4.10 |
 | Linux: passwords imported from Thorium readable | P3.16 |

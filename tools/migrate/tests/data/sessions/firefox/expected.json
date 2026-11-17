@@ -1,0 +1,211 @@
+{
+ "format": "thoron-session-reading",
+ "source": "firefox",
+ "windows": [
+  {
+   "id": 6,
+   "type": "normal",
+   "show_state": "maximized",
+   "bounds": [
+    4,
+    4,
+    1229,
+    691
+   ],
+   "selected_tab": 4,
+   "user_title": "",
+   "app_name": "",
+   "tabs": [
+    {
+     "id": 1,
+     "pinned": true,
+     "group": null,
+     "current": 1,
+     "navigations": [
+      {
+       "index": 0,
+       "url": "http://127.0.0.1:53229/p/pinned-1",
+       "title": "Thoron session test pinned-1"
+      },
+      {
+       "index": 1,
+       "url": "http://127.0.0.1:53229/p/pinned-2",
+       "title": "Thoron session test pinned-2"
+      }
+     ]
+    },
+    {
+     "id": 2,
+     "pinned": false,
+     "group": "a78a4211e1a7f607feb6f847ebe437e2",
+     "current": 1,
+     "navigations": [
+      {
+       "index": 0,
+       "url": "http://127.0.0.1:53229/p/work-a1",
+       "title": "Thoron session test work-a1"
+      },
+      {
+       "index": 1,
+       "url": "http://127.0.0.1:53229/p/work-a2",
+       "title": "Thoron session test work-a2"
+      },
+      {
+       "index": 2,
+       "url": "http://127.0.0.1:53229/p/work-a3",
+       "title": "Thoron session test work-a3"
+      }
+     ]
+    },
+    {
+     "id": 3,
+     "pinned": false,
+     "group": "a78a4211e1a7f607feb6f847ebe437e2",
+     "current": 0,
+     "navigations": [
+      {
+       "index": 0,
+       "url": "http://127.0.0.1:53229/p/work-b1",
+       "title": "Thoron session test work-b1"
+      }
+     ]
+    },
+    {
+     "id": 4,
+     "pinned": false,
+     "group": "f05d464d7d59a156e70ab02b51492e96",
+     "current": 1,
+     "navigations": [
+      {
+       "index": 0,
+       "url": "http://127.0.0.1:53229/p/later-c1",
+       "title": "Thoron session test later-c1"
+      },
+      {
+       "index": 1,
+       "url": "http://127.0.0.1:53229/p/later-c2",
+       "title": "Thoron session test later-c2"
+      }
+     ]
+    },
+    {
+     "id": 5,
+     "pinned": false,
+     "group": null,
+     "current": 2,
+     "navigations": [
+      {
+       "index": 0,
+       "url": "http://127.0.0.1:53229/p/plain-d1",
+       "title": "Thoron session test plain-d1"
+      },
+      {
+       "index": 1,
+       "url": "http://127.0.0.1:53229/p/plain-d2",
+       "title": "Thoron session test plain-d2"
+      },
+      {
+       "index": 2,
+       "url": "http://127.0.0.1:53229/p/plain-d3",
+       "title": "Thoron session test plain-d3"
+      }
+     ]
+    }
+   ],
+   "groups": [
+    {
+     "id": "a78a4211e1a7f607feb6f847ebe437e2",
+     "title": "Work",
+     "color": "blue",
+     "collapsed": false
+    },
+    {
+     "id": "f05d464d7d59a156e70ab02b51492e96",
+     "title": "Later",
+     "color": "red",
+     "collapsed": true
+    }
+   ]
+  },
+  {
+   "id": 9,
+   "type": "normal",
+   "show_state": "minimized",
+   "bounds": [
+    4,
+    4,
+    1229,
+    691
+   ],
+   "selected_tab": 1,
+   "user_title": "",
+   "app_name": "",
+   "tabs": [
+    {
+     "id": 7,
+     "pinned": false,
+     "group": "d001aae86bf79b00887efd08b601b2f4",
+     "current": 0,
+     "navigations": [
+      {
+       "index": 0,
+       "url": "http://127.0.0.1:53229/p/notes-e1",
+       "title": "Thoron session test notes-e1"
+      }
+     ]
+    },
+    {
+     "id": 8,
+     "pinned": false,
+     "group": null,
+     "current": 1,
+     "navigations": [
+      {
+       "index": 0,
+       "url": "http://127.0.0.1:53229/p/other-f1",
+       "title": "Thoron session test other-f1"
+      },
+      {
+       "index": 1,
+       "url": "http://127.0.0.1:53229/p/other-f2",
+       "title": "Thoron session test other-f2"
+      }
+     ]
+    }
+   ],
+   "groups": [
+    {
+     "id": "d001aae86bf79b00887efd08b601b2f4",
+     "title": "Notes éü",
+     "color": "green",
+     "collapsed": false
+    }
+   ]
+  }
+ ],
+ "active_window": 0,
+ "closed_tabs": [
+  {
+   "pinned": false,
+   "current": 1,
+   "navigations": [
+    {
+     "index": 0,
+     "url": "http://127.0.0.1:53229/p/closed-x1",
+     "title": "Thoron session test closed-x1"
+    },
+    {
+     "index": 1,
+     "url": "http://127.0.0.1:53229/p/closed-x2",
+     "title": "Thoron session test closed-x2"
+    }
+   ]
+  }
+ ],
+ "dropped": {
+  "windows": 0,
+  "tabs": 0,
+  "navigations": 0,
+  "malformed": 0
+ }
+}

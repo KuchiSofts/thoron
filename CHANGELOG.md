@@ -7,6 +7,8 @@ Explanations live in the design docs under `docs/design/`.
 ## [Unreleased]
 
 ### Added
+- **Quality:** Speedometer 3, JetStream 2.1 and MotionMark measured against Thorium 156 and Chrome 157; an AVX-512 build is not measurably faster than the AVX2 one, so none ships for now.
+- **Quality:** a check that a site does not crash its page; Discord's pages load without a crash on both builds (a crash was reported upstream).
 - **Quality:** every release must pass an 8-hour memory test first; the first run of 158 used 2 MB per hour more at most, under what can be measured.
 - **Install:** Thoron's elevation and tracing services have their own COM interface IDs, so a system-wide Thoron and Thorium never share a registration.
 - **Install:** `ThoronSetup.exe`, one small installer for every release: it downloads the newest signed Thoron for your processor, checks it and installs it.
@@ -279,6 +281,7 @@ Explanations live in the design docs under `docs/design/`.
 
 ### Fixed
 
+- **Tools:** the benchmark tool starts again as a script; a test now starts every tool that way.
 - **Ad blocking:** a list line that only names a host, or a hosts file's line, stops that host, as in uBlock Origin; lists written that way stopped no page.
 - **Tools:** the profile rehearsal also sees a profile written a moment ago when the drive's clock runs ahead.
 - **Ad blocking:** ads in frames are blocked; a frame's own document was loaded without being checked.

@@ -78,7 +78,7 @@ changed in each version is in the [changelog](CHANGELOG.md), one line per change
 Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always current.
 
 <!-- roadmap:start -->
-**Overall:** `██████████████░░░░░░` 142 of 209 tasks done (68%) · roadmap updated 2026-11-12
+**Overall:** `██████████████░░░░░░` 143 of 209 tasks done (68%) · roadmap updated 2026-11-12
 
 | Area | Progress | Done | Status |
 |---|---|---|---|
@@ -88,7 +88,7 @@ Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always curre
 | [P2b - ARM64](ROADMAP.md#p2b---arm64) | `░░░░░░░░░░░░░░░░░░░░` | 0/5 | 🔄 In progress |
 | [P3 - Updater v1 + Import](ROADMAP.md#p3---updater-v1--import) | `█████████░░░░░░░░░░░` | 9/21 | 🔄 In progress |
 | [P4 - Updater v2](ROADMAP.md#p4---updater-v2) | `█████████░░░░░░░░░░░` | 5/11 | 🔄 In progress |
-| [P5 - Quality](ROADMAP.md#p5---quality) | `█████████████████░░░` | 69/80 | 🔄 In progress |
+| [P5 - Quality](ROADMAP.md#p5---quality) | `██████████████████░░` | 70/80 | 🔄 In progress |
 | [Security (S)](ROADMAP.md#security-s) | `██████████████░░░░░░` | 11/16 | 🔄 In progress |
 | [Quality & performance (Q)](ROADMAP.md#quality--performance-q) | `███████████░░░░░░░░░` | 4/7 | 🔄 In progress |
 | [Docs (D)](ROADMAP.md#docs-d) | `████████████░░░░░░░░` | 6/10 | 🔄 In progress |
@@ -216,7 +216,7 @@ Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always curre
 - [ ] **P5.3** Investigate the M156 Windows CPU spike and "Unknown Hard Error" (#1313) on Thoron builds
 - [ ] **P5.4** Intermittent breakpoint crash in `sqlite3_dbdata_init` (#1230)
 - [ ] **P5.5** Suspended-tab crash on the AVX-512 build (#1278)
-- [ ] **P5.6** `STATUS_ACCESS_VIOLATION` on Discord (#1288)
+- [x] **P5.6** `STATUS_ACCESS_VIOLATION` on Discord (#1288)
 - [ ] **P5.7** HEVC/AV1 playback regression (#1271) and NVIDIA frame drops (#1285)
 - [ ] **P5.8** Passwords not saved (#137, #684, #1199)
 - [x] **P5.9** Random logouts and lost sessions (#1005, #458)

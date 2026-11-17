@@ -7,6 +7,7 @@ Explanations live in the design docs under `docs/design/`.
 ## [Unreleased]
 
 ### Added
+- **Quality:** Thoron's installer is checked on a clean Windows in Windows Sandbox: install, first start, uninstall, with the profile kept. Run from a read-only folder, the installer stops with code 109; run it from Downloads.
 - **Releases:** one release can carry several builds of a version (AVX2 and SSE4), with one update manifest that names them all.
 - **Releases:** a banner at the top of every release's notes, and a picture for links to the repository.
 - **Quality:** a video check for H.264, HEVC, AV1 and VP9 up to 4K60 on each graphics adapter; on NVIDIA graphics Thoron decodes all of them in hardware and drops about as few frames as Chrome.

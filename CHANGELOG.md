@@ -310,6 +310,7 @@ Explanations live in the design docs under `docs/design/`.
 
 ### Security
 
+- **Updates:** a package or delta with a file name that climbs out of its folder is refused instead of being unpacked under a made-safe name.
 - **Updates:** an update request no longer names the browser's version (its own User-Agent), and a checked package is held so that nothing can change it before it is installed.
 - **Security:** the flag "Allow Third-Party Extension Downloads" starts with a warning.
 - **Ad blocking:** a phishing list (Phishing URL Blocklist) is among Thoron adblock's default lists, so pages that steal passwords are stopped in every build.

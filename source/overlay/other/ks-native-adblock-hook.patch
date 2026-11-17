@@ -12471,10 +12471,10 @@ index 0000000000000000000000000000000000000000..3e4c28764458836945e8dccad2197a69
 +#endif  // COMPONENTS_THORON_MAIL_MAIL_SERVICE_H_
 diff --git a/components/thoron_update/BUILD.gn b/components/thoron_update/BUILD.gn
 new file mode 100644
-index 0000000000000000000000000000000000000000..f50352badfbdb9641b3097366d8a27ed133f5812
+index 0000000000000000000000000000000000000000..7e0d539db074776f19969e80c0abc7eeb462f23d
 --- /dev/null
 +++ b/components/thoron_update/BUILD.gn
-@@ -0,0 +1,129 @@
+@@ -0,0 +1,131 @@
 +# Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +# found in the LICENSE file.
 +
@@ -12546,6 +12546,8 @@ index 0000000000000000000000000000000000000000..f50352badfbdb9641b3097366d8a27ed
 +    "setup_plan_unittest.cc",
 +    "snapshot_unittest.cc",
 +    "swap_unittest.cc",
++    "test_zip.cc",
++    "test_zip.h",
 +    "update_client_test_data.h",
 +    "update_client_unittest.cc",
 +  ]
@@ -13767,10 +13769,10 @@ index 0000000000000000000000000000000000000000..f21ca483286d302bd276d12ce6060fd0
 +}  // namespace thoron_update
 diff --git a/components/thoron_update/delta_package.cc b/components/thoron_update/delta_package.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..ba7b95d9e604495422f9b7618d46e96f80b18146
+index 0000000000000000000000000000000000000000..74880dc65bf55aff1a47db776d7f5843557f47d3
 --- /dev/null
 +++ b/components/thoron_update/delta_package.cc
-@@ -0,0 +1,294 @@
+@@ -0,0 +1,295 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -13998,7 +14000,8 @@ index 0000000000000000000000000000000000000000..ba7b95d9e604495422f9b7618d46e96f
 +    return Abandon(staged, DeltaResult::kNotADelta);
 +  }
 +  while (const zip::ZipReader::Entry* zipped = reader.Next()) {
-+    if (zipped->is_unsafe || zipped->is_encrypted || zipped->is_symbolic_link) {
++    if (zipped->is_unsafe || zipped->is_encrypted || zipped->is_symbolic_link ||
++        ZipPathWasMadeSafe(zipped->path)) {
 +      return Abandon(staged, DeltaResult::kNotADelta);
 +    }
 +    const auto it = stored.find(zipped->path.AsUTF8Unsafe());
@@ -14132,10 +14135,10 @@ index 0000000000000000000000000000000000000000..8b78e2339b0bb46b5eab6dd418201163
 +#endif  // COMPONENTS_THORON_UPDATE_DELTA_PACKAGE_H_
 diff --git a/components/thoron_update/delta_package_unittest.cc b/components/thoron_update/delta_package_unittest.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..ff5118a51b97fe3df2ad320d300bfe21fceb08dd
+index 0000000000000000000000000000000000000000..12d3a36ee07ab2cc6726031ce32ce3a39cbdb960
 --- /dev/null
 +++ b/components/thoron_update/delta_package_unittest.cc
-@@ -0,0 +1,183 @@
+@@ -0,0 +1,206 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -14154,6 +14157,7 @@ index 0000000000000000000000000000000000000000..ff5118a51b97fe3df2ad320d300bfe21
 +#include "components/zucchini/patch_writer.h"
 +#include "components/zucchini/zucchini.h"
 +#include "crypto/hash.h"
++#include "components/thoron_update/test_zip.h"
 +#include "testing/gtest/include/gtest/gtest.h"
 +#include "third_party/zlib/google/zip.h"
 +
@@ -14306,6 +14310,28 @@ index 0000000000000000000000000000000000000000..ff5118a51b97fe3df2ad320d300bfe21
 +                    &files),
 +              DeltaResult::kNotADelta);
 +    EXPECT_FALSE(base::PathExists(Staged()));
++  }
++}
++
++TEST_F(ThoronUpdateDeltaTest, AnEntryThatClimbsOutOfTheFolderIsRefused) {
++  const std::vector<TestZipEntry> good = ReadTestZip(Delta());
++  ASSERT_FALSE(good.empty());
++  std::vector<VersionFile> files;
++  // The test zips are written by WriteTestZip; one it writes is a good delta.
++  const base::FilePath rewritten = dir_.GetPath().AppendASCII("rewritten.delta");
++  ASSERT_TRUE(WriteTestZip(rewritten, good));
++  ASSERT_EQ(Apply(rewritten, &files), DeltaResult::kDone);
++  ASSERT_TRUE(base::DeletePathRecursively(Staged()));
++  for (const char* bad : {"../outside.txt", "a/../../outside.txt", "./delta.json"}) {
++    SCOPED_TRACE(bad);
++    std::vector<TestZipEntry> crafted = good;
++    crafted.insert(crafted.begin(), {bad, "not from the delta"});
++    const base::FilePath zip = dir_.GetPath().AppendASCII("crafted.delta");
++    ASSERT_TRUE(WriteTestZip(zip, crafted));
++    EXPECT_EQ(Apply(zip, &files), DeltaResult::kNotADelta);
++    EXPECT_FALSE(base::PathExists(Staged()));
++    EXPECT_FALSE(base::PathExists(dir_.GetPath().AppendASCII("outside.txt")));
++    EXPECT_FALSE(base::PathExists(dir_.GetPath().AppendASCII("Application").AppendASCII("outside.txt")));
 +  }
 +}
 +
@@ -21520,10 +21546,10 @@ index 0000000000000000000000000000000000000000..c4629989480b89435554817f8a2ef56e
 +}  // namespace thoron_update
 diff --git a/components/thoron_update/portable_package.cc b/components/thoron_update/portable_package.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..d6752665f8724132fbb76d1f38ba6940bd524089
+index 0000000000000000000000000000000000000000..7165a357730c3db9d5cc1e3c1c1bc68346070596
 --- /dev/null
 +++ b/components/thoron_update/portable_package.cc
-@@ -0,0 +1,208 @@
+@@ -0,0 +1,224 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -21578,6 +21604,20 @@ index 0000000000000000000000000000000000000000..d6752665f8724132fbb76d1f38ba6940
 +  return out;
 +}
 +
++}  // namespace
++
++bool ZipPathWasMadeSafe(const base::FilePath& path) {
++  const std::vector<std::string> parts = Parts(path);
++  for (size_t i = 0; i < parts.size(); ++i) {
++    if (parts[i] == "UP" || parts[i] == "DOT" || (i == 0 && parts[i] == "ROOT")) {
++      return true;
++    }
++  }
++  return false;
++}
++
++namespace {
++
 +UnpackResult Abandon(const base::FilePath& staged, UnpackResult result) {
 +  base::DeletePathRecursively(staged);
 +  return result;
@@ -21622,7 +21662,8 @@ index 0000000000000000000000000000000000000000..d6752665f8724132fbb76d1f38ba6940
 +  int64_t written = 0;
 +  bool any_other_folder = false;
 +  while (const zip::ZipReader::Entry* entry = reader.Next()) {
-+    if (entry->is_unsafe || entry->is_encrypted || entry->is_symbolic_link) {
++    if (entry->is_unsafe || entry->is_encrypted || entry->is_symbolic_link ||
++        ZipPathWasMadeSafe(entry->path)) {
 +      return Abandon(staged, UnpackResult::kUnsafeEntry);
 +    }
 +    const std::vector<std::string> parts = Parts(entry->path);
@@ -21701,7 +21742,8 @@ index 0000000000000000000000000000000000000000..d6752665f8724132fbb76d1f38ba6940
 +  while (const zip::ZipReader::Entry* entry = reader.Next()) {
 +    const std::vector<std::string> parts = Parts(entry->path);
 +    if (entry->is_directory || entry->is_unsafe || entry->is_encrypted ||
-+        entry->is_symbolic_link || parts.size() != 2 || parts[0] != kPortableFolder ||
++        entry->is_symbolic_link || ZipPathWasMadeSafe(entry->path) || parts.size() != 2 ||
++        parts[0] != kPortableFolder ||
 +        parts[1] != "Thoron.exe") {
 +      continue;
 +    }
@@ -21734,10 +21776,10 @@ index 0000000000000000000000000000000000000000..d6752665f8724132fbb76d1f38ba6940
 +}  // namespace thoron_update
 diff --git a/components/thoron_update/portable_package.h b/components/thoron_update/portable_package.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..d09b33de77b94566d46fe0cfbb563ed78d834027
+index 0000000000000000000000000000000000000000..f236cd64f9a5767525c3b3ec2887f2f413344ae5
 --- /dev/null
 +++ b/components/thoron_update/portable_package.h
-@@ -0,0 +1,66 @@
+@@ -0,0 +1,74 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -21786,6 +21828,14 @@ index 0000000000000000000000000000000000000000..d09b33de77b94566d46fe0cfbb563ed7
 +
 +std::string_view UnpackResultName(UnpackResult result);
 +
++// Whether a path, as zip::ZipReader hands it out, had a part that could leave
++// the folder it is unpacked into. The reader keeps every entry inside: it turns
++// a ".." part into "UP", a "." part into "DOT" and a leading "/" into "ROOT"
++// (and calls the entry unsafe only when such a part is the last one). A package
++// or delta Thoron made never has such a name, so one that has is refused
++// (THREAT_MODEL U9).
++bool ZipPathWasMadeSafe(const base::FilePath& path);
++
 +// Unpacks the folder of `version` from `package` into `staged`, which must not
 +// exist, and lists its files in `files`: each path inside the version's folder,
 +// its length and the SHA-256 of what was written. Everything else in the
@@ -21806,10 +21856,10 @@ index 0000000000000000000000000000000000000000..d09b33de77b94566d46fe0cfbb563ed7
 +#endif  // COMPONENTS_THORON_UPDATE_PORTABLE_PACKAGE_H_
 diff --git a/components/thoron_update/portable_package_unittest.cc b/components/thoron_update/portable_package_unittest.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..27f891d13b10545dc2c188835a5306e2a3483e03
+index 0000000000000000000000000000000000000000..919297dd3d758f9cfe667cade867ad780c3635ba
 --- /dev/null
 +++ b/components/thoron_update/portable_package_unittest.cc
-@@ -0,0 +1,135 @@
+@@ -0,0 +1,191 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -21822,6 +21872,8 @@ index 0000000000000000000000000000000000000000..27f891d13b10545dc2c188835a5306e2
 +#include "base/files/file_util.h"
 +#include "base/files/scoped_temp_dir.h"
 +#include "base/strings/string_number_conversions.h"
++#include "build/build_config.h"
++#include "components/thoron_update/test_zip.h"
 +#include "crypto/hash.h"
 +#include "testing/gtest/include/gtest/gtest.h"
 +#include "third_party/zlib/google/zip.h"
@@ -21912,6 +21964,60 @@ index 0000000000000000000000000000000000000000..27f891d13b10545dc2c188835a5306e2
 +            UnpackResult::kNotAPackage);
 +  EXPECT_FALSE(base::PathExists(staged));
 +}
++
++TEST_F(ThoronUpdatePortablePackageTest, OnlyNamesTheZipReaderMadeSafeCount) {
++  EXPECT_TRUE(ZipPathWasMadeSafe(base::FilePath::FromUTF8Unsafe("a/UP/b")));
++  EXPECT_TRUE(ZipPathWasMadeSafe(base::FilePath::FromUTF8Unsafe("a/DOT/b")));
++  EXPECT_TRUE(ZipPathWasMadeSafe(base::FilePath::FromUTF8Unsafe("ROOT/etc/passwd")));
++  EXPECT_FALSE(ZipPathWasMadeSafe(base::FilePath::FromUTF8Unsafe("a/ROOT/b")));
++  EXPECT_FALSE(ZipPathWasMadeSafe(base::FilePath::FromUTF8Unsafe("ThoronPortable/Application/up/Updater")));
++  EXPECT_FALSE(ZipPathWasMadeSafe(base::FilePath::FromUTF8Unsafe("ThoronPortable/Thoron.exe")));
++}
++
++TEST_F(ThoronUpdatePortablePackageTest, ARewrittenPackageStillUnpacks) {
++  // The test zips below are written by WriteTestZip; one it writes is a good one.
++  const base::FilePath zip = Path("rewritten.zip");
++  ASSERT_TRUE(WriteTestZip(zip, ReadTestZip(Package("p"))));
++  std::vector<VersionFile> files;
++  EXPECT_EQ(UnpackVersion(zip, *ParseBuildVersion(kVersion), Path("s"), &files), UnpackResult::kDone);
++  EXPECT_EQ(files.size(), 3u);
++}
++
++TEST_F(ThoronUpdatePortablePackageTest, AnEntryThatClimbsOutOfTheFolderIsRefused) {
++  const std::vector<TestZipEntry> good = ReadTestZip(Package("p"));
++  ASSERT_FALSE(good.empty());
++  const std::string inside = std::string("ThoronPortable/Application/") + kVersion;
++  // zip::ZipReader keeps each of them inside the folder (as UP/, DOT/); a
++  // package that has one is refused all the same.
++  for (const char* bad : {"/../../../outside.txt", "/a/../../../../outside.txt", "/./thoron.exe",
++                          "/../../current"}) {
++    SCOPED_TRACE(bad);
++    std::vector<TestZipEntry> crafted = good;
++    crafted.push_back({inside + bad, "not from the package"});
++    const base::FilePath zip = Path("crafted.zip");
++    ASSERT_TRUE(WriteTestZip(zip, crafted));
++    const base::FilePath staged = Path("Application/158.0.8127.3010.staging");
++    std::vector<VersionFile> files;
++    EXPECT_EQ(UnpackVersion(zip, *ParseBuildVersion(kVersion), staged, &files), UnpackResult::kUnsafeEntry);
++    EXPECT_FALSE(base::PathExists(staged));
++    EXPECT_FALSE(base::PathExists(Path("outside.txt")));
++    EXPECT_FALSE(base::PathExists(Path("Application/outside.txt")));
++    EXPECT_FALSE(base::PathExists(Path("Application/current")));
++  }
++}
++
++#if BUILDFLAG(IS_POSIX)
++TEST_F(ThoronUpdatePortablePackageTest, ALinkInThePackageIsRefused) {
++  std::vector<TestZipEntry> crafted = ReadTestZip(Package("p"));
++  crafted.push_back({std::string("ThoronPortable/Application/") + kVersion + "/link", "/etc/passwd", true});
++  const base::FilePath zip = Path("link.zip");
++  ASSERT_TRUE(WriteTestZip(zip, crafted));
++  const base::FilePath staged = Path("s");
++  std::vector<VersionFile> files;
++  EXPECT_EQ(UnpackVersion(zip, *ParseBuildVersion(kVersion), staged, &files), UnpackResult::kUnsafeEntry);
++  EXPECT_FALSE(base::PathExists(staged));
++}
++#endif
 +
 +TEST_F(ThoronUpdatePortablePackageTest, AStagingFolderThatIsThereIsNeverWrittenInto) {
 +  const base::FilePath staged = Path("s");
@@ -23823,6 +23929,163 @@ index 0000000000000000000000000000000000000000..37445ffb780b10977cd785a2f5dd2390
 +
 +}  // namespace
 +}  // namespace thoron_update
+diff --git a/components/thoron_update/test_zip.cc b/components/thoron_update/test_zip.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..0efc016185bbe0b0eece2f28a92a2eb0ac9e48f8
+--- /dev/null
++++ b/components/thoron_update/test_zip.cc
+@@ -0,0 +1,113 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "components/thoron_update/test_zip.h"
++
++#include <stdint.h>
++
++#include "base/files/file_util.h"
++#include "third_party/zlib/google/zip_reader.h"
++
++namespace thoron_update {
++namespace {
++
++uint32_t Crc32(const std::string& data) {
++  uint32_t crc = 0xFFFFFFFFu;
++  for (const unsigned char c : data) {
++    crc ^= c;
++    for (int i = 0; i < 8; ++i) {
++      crc = (crc >> 1) ^ (0xEDB88320u & (0u - (crc & 1u)));
++    }
++  }
++  return ~crc;
++}
++
++void Put16(std::string& out, uint32_t value) {
++  out.push_back(static_cast<char>(value & 0xFF));
++  out.push_back(static_cast<char>((value >> 8) & 0xFF));
++}
++
++void Put32(std::string& out, uint32_t value) {
++  Put16(out, value & 0xFFFF);
++  Put16(out, value >> 16);
++}
++
++}  // namespace
++
++std::vector<TestZipEntry> ReadTestZip(const base::FilePath& path) {
++  std::vector<TestZipEntry> out;
++  zip::ZipReader reader;
++  if (!reader.Open(path)) {
++    return out;
++  }
++  while (const zip::ZipReader::Entry* entry = reader.Next()) {
++    if (entry->is_directory) {
++      continue;
++    }
++    std::string content;
++    if (!reader.ExtractCurrentEntryToString(64 * 1024 * 1024, &content)) {
++      return {};
++    }
++    out.push_back({entry->path.AsUTF8Unsafe(), content, false});
++  }
++  return out;
++}
++
++bool WriteTestZip(const base::FilePath& path, const std::vector<TestZipEntry>& entries) {
++  std::string out;
++  std::string central;
++  for (const TestZipEntry& entry : entries) {
++    const uint32_t offset = static_cast<uint32_t>(out.size());
++    const uint32_t crc = Crc32(entry.content);
++    const uint32_t size = static_cast<uint32_t>(entry.content.size());
++    const uint32_t name = static_cast<uint32_t>(entry.name.size());
++    // The local header: version 2.0, no flags, stored, 1980-01-01.
++    Put32(out, 0x04034b50);
++    Put16(out, 20);
++    Put16(out, 0);
++    Put16(out, 0);
++    Put16(out, 0);
++    Put16(out, 0x21);
++    Put32(out, crc);
++    Put32(out, size);
++    Put32(out, size);
++    Put16(out, name);
++    Put16(out, 0);
++    out += entry.name;
++    out += entry.content;
++    // The central directory: made on Unix, so the file mode in the upper half
++    // of the external attributes counts (a link: 0120777).
++    Put32(central, 0x02014b50);
++    Put16(central, (3 << 8) | 20);
++    Put16(central, 20);
++    Put16(central, 0);
++    Put16(central, 0);
++    Put16(central, 0);
++    Put16(central, 0x21);
++    Put32(central, crc);
++    Put32(central, size);
++    Put32(central, size);
++    Put16(central, name);
++    Put16(central, 0);
++    Put16(central, 0);
++    Put16(central, 0);
++    Put16(central, 0);
++    Put32(central, (entry.link ? 0120777u : 0100644u) << 16);
++    Put32(central, offset);
++    central += entry.name;
++  }
++  const uint32_t central_offset = static_cast<uint32_t>(out.size());
++  const uint32_t count = static_cast<uint32_t>(entries.size());
++  out += central;
++  Put32(out, 0x06054b50);
++  Put16(out, 0);
++  Put16(out, 0);
++  Put16(out, count);
++  Put16(out, count);
++  Put32(out, static_cast<uint32_t>(central.size()));
++  Put32(out, central_offset);
++  Put16(out, 0);
++  return base::WriteFile(path, out);
++}
++
++}  // namespace thoron_update
+diff --git a/components/thoron_update/test_zip.h b/components/thoron_update/test_zip.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..90c631d9916b19b794f9be66570e3ef2b99458ae
+--- /dev/null
++++ b/components/thoron_update/test_zip.h
+@@ -0,0 +1,32 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef COMPONENTS_THORON_UPDATE_TEST_ZIP_H_
++#define COMPONENTS_THORON_UPDATE_TEST_ZIP_H_
++
++#include <string>
++#include <vector>
++
++#include "base/files/file_path.h"
++
++namespace thoron_update {
++
++// One entry of a .zip made for a test: any name, also one no zip tool would
++// write ("../x"), and, when `link` is set, marked as a symbolic link the way a
++// zip made on Unix marks one.
++struct TestZipEntry {
++  std::string name;
++  std::string content;
++  bool link = false;
++};
++
++// The files of the .zip at `path`, in its order (folders left out); empty when
++// it cannot be read.
++std::vector<TestZipEntry> ReadTestZip(const base::FilePath& path);
++
++// Writes `entries`, uncompressed, as a .zip at `path`.
++bool WriteTestZip(const base::FilePath& path, const std::vector<TestZipEntry>& entries);
++
++}  // namespace thoron_update
++
++#endif  // COMPONENTS_THORON_UPDATE_TEST_ZIP_H_
 diff --git a/components/thoron_update/update_client.cc b/components/thoron_update/update_client.cc
 new file mode 100644
 index 0000000000000000000000000000000000000000..79ae1cc6c74d5590d3408e2afc83ca26c644c0e7

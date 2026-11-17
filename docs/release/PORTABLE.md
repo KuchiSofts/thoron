@@ -202,8 +202,18 @@ About the registry:
   `StabilityMetrics` is the mark of a clean exit; `ThirdParty` is the state of the check of other
   programs' libraries.
 - The keys were there before the run: an installed Thoron makes the same ones, and the check cannot tell
-  its writes from those of an installed Thoron in use at the same time. On a PC that never had Thoron the
-  key would be made; that was not measured.
+  its writes from those of an installed Thoron in use at the same time.
+- **On a PC that never had Thoron** (Windows Sandbox, 2026-11-17, `tools/qa/sandbox_portable_traces.py`:
+  the registry under `HKEY_CURRENT_USER`, the scheduled tasks and the names in `%LOCALAPPDATA%`, `%APPDATA%`
+  and `%TEMP%` compared before and after two starts, the second after the folder was moved) the portable
+  copy of 158.0.8127.6500 made `HKCU\Software\Thoron` with six values (`usagestats` 0, as usage
+  statistics are off, `UsageStatsInSample`, `FirstNotDefault`, and `metricsid` with its two dates, the
+  identifier empty), the keys `BLBeacon`, `PreferenceMACs\Default` (26 checksums and one for
+  `extensions.settings`), `StabilityMetrics` and `ThirdParty`, and one more key: an empty
+  `HKCU\Software\Google\Chrome\Extensions`. Chromium watches that key for extensions that other
+  programs register for Chrome (`docs/security/NETWORK.md`, `clients2.google.com`), and watching it makes
+  it. No scheduled task, and no file or folder in those three places. Windows' own records of a program
+  that ran (Explorer, the shell) are left aside.
 - A portable copy and an installed Thoron on one PC write the same values (both profiles are called
   `Default`). It is a trace, and it is shared. Whether the two can disturb each other was not looked into.
 

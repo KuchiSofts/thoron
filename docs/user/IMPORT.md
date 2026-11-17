@@ -13,6 +13,7 @@ were, so that browser keeps working and stays your backup.
 | Thorium, same Windows account | Everything: bookmarks, history, saved passwords, cookies (you stay signed in), extensions, settings, open tabs and tab groups | [2](#2-thorium-the-whole-profile) |
 | Chrome, Thorium, Thoron | Open windows, tabs and tab groups (names, colours, collapsed or not), pinned tabs, each tab's back and forward history | [3](#3-open-tabs-and-tab-groups) |
 | Chrome | Saved passwords, through Chrome's own export | [4](#4-chromes-saved-passwords) |
+| uBlock Origin, from its backup file | Your own filters, lists, trusted sites, rules, switches and the settings you changed, into Thoron adblock | [5](#5-ublock-origins-settings-into-thoron-adblock) |
 
 **Chrome's cookies cannot come over.** Chrome locks its saved passwords and cookies to itself
 (app-bound encryption), so no other program can read them. Thoron does not try to get around that:
@@ -20,7 +21,7 @@ the tricks that do are what password-stealing programs use. Passwords come over 
 export (section 4). For cookies there is no such way, so sign in to your sites again in Thoron.
 
 Not yet: bookmarks, history, extensions and settings from Chrome, and imports from Edge, Brave, Vivaldi,
-Opera and Firefox (section 5).
+Opera and Firefox (section 6).
 
 ## 1. Before you start
 
@@ -166,7 +167,28 @@ stopped before step 6, remove the file with:
 py -3 -I tools\migrate\chrome_passwords.py --wipe "<the file>"
 ```
 
-## 5. Comes later
+## 5. uBlock Origin's settings into Thoron adblock
+
+Thoron has its own ad blocker, Thoron adblock, so uBlock Origin is not needed beside it. What you set up
+in uBlock Origin comes over in two steps, and uBlock Origin itself is not changed:
+
+1. In uBlock Origin: its **Dashboard**, the **Settings** tab, **Back up to file**. It saves a file named
+   like `my-ublock-backup_2026-11-17_10.00.00.txt`.
+2. In Thoron: open `chrome://adblock`, the **Backup** tab, **Restore from file**, and pick that file.
+
+| Comes over | Note |
+|---|---|
+| Your own filters ("My filters") | as they are |
+| The filter lists you had on | uBlock Origin's own lists by their names; optional lists that Thoron adblock's list of lists has; lists you added by their address |
+| Trusted sites | the sites; uBlock Origin's own entries for browser pages are left out, they mean nothing here |
+| Your rules and the switches of sites | "My rules", the per-site switches (pop-ups, large media, fonts, JavaScript, cosmetic filtering) |
+| The settings you changed | the badge, pre-fetching, hyperlink auditing, WebRTC, the default behaviour, the theme and the accent colour; the others keep Thoron adblock's own defaults |
+
+The page names what has no place in Thoron adblock: a list it does not know (add it from the list of lists,
+if it is there) and uBlock Origin's advanced settings. Like any restore, it replaces Thoron adblock's
+lists, own filters, trusted sites and switches with the file's. Thoron's own phishing list stays as it is.
+
+## 6. Comes later
 
 | What | Stage |
 |---|---|

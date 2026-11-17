@@ -7,6 +7,7 @@ Explanations live in the design docs under `docs/design/`.
 ## [Unreleased]
 
 ### Added
+- **Ad blocking:** Thoron adblock's "Restore from file" takes uBlock Origin's own backup: your filters, lists, trusted sites, rules and changed settings come over.
 - **Quality:** a tool that watches each of the browser's processes for one that keeps the processor busy; none did in an hour of heavy pages (upstream had a report of processes that climbed).
 - **Updates:** before a release is published, the last release's own updater must have installed it.
 - **Quality:** a check that passwords are offered, saved, encrypted, kept after a restart and filled in again, also one added by hand; it passes on Windows (upstream had reports of lost passwords).

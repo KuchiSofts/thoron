@@ -78,7 +78,7 @@ changed in each version is in the [changelog](CHANGELOG.md), one line per change
 Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always current.
 
 <!-- roadmap:start -->
-**Overall:** `██████████████░░░░░░` 144 of 209 tasks done (69%) · roadmap updated 2026-11-12
+**Overall:** `██████████████░░░░░░` 145 of 209 tasks done (69%) · roadmap updated 2026-11-12
 
 | Area | Progress | Done | Status |
 |---|---|---|---|
@@ -88,7 +88,7 @@ Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always curre
 | [P2b - ARM64](ROADMAP.md#p2b---arm64) | `░░░░░░░░░░░░░░░░░░░░` | 0/5 | 🔄 In progress |
 | [P3 - Updater v1 + Import](ROADMAP.md#p3---updater-v1--import) | `█████████░░░░░░░░░░░` | 9/21 | 🔄 In progress |
 | [P4 - Updater v2](ROADMAP.md#p4---updater-v2) | `███████████░░░░░░░░░` | 6/11 | 🔄 In progress |
-| [P5 - Quality](ROADMAP.md#p5---quality) | `██████████████████░░` | 70/80 | 🔄 In progress |
+| [P5 - Quality](ROADMAP.md#p5---quality) | `██████████████████░░` | 71/80 | 🔄 In progress |
 | [Security (S)](ROADMAP.md#security-s) | `██████████████░░░░░░` | 11/16 | 🔄 In progress |
 | [Quality & performance (Q)](ROADMAP.md#quality--performance-q) | `███████████░░░░░░░░░` | 4/7 | 🔄 In progress |
 | [Docs (D)](ROADMAP.md#docs-d) | `████████████░░░░░░░░` | 6/10 | 🔄 In progress |
@@ -211,7 +211,7 @@ Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always curre
 
 **P5 - Quality**
 
-- [ ] **P5.1** uBlock Origin migration for existing profiles (frozen Web Store copy `cjpalh…` → updatable GitHub copy `fkgk…`), keeping settings and custom filters; never forced
+- [x] **P5.1** uBlock Origin's settings into Thoron adblock: "Restore from file" takes uBlock Origin's own backup file, keeping its own filters, lists, trusted sites, rules, switches and changed settings; uBlock Origin itself is never changed; never forced
 - [x] **P5.2** Ad-blocking phase 2 decision: keep Manifest V2 alive, or build a native engine (as Brave does with `adblock-rust`, MPL-2.0)
 - [ ] **P5.3** Investigate the M156 Windows CPU spike and "Unknown Hard Error" (#1313) on Thoron builds
 - [ ] **P5.4** Intermittent breakpoint crash in `sqlite3_dbdata_init` (#1230)

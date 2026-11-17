@@ -291,12 +291,14 @@ def run(browser: Path, work: Path) -> list[str]:
             report("ublock", found, got)
 
             # and round again: a backup made now holds what came over from uBlock Origin
-            before = set(downloads.glob("*.json"))
+            # the new file has the earlier one's name (the same day): that one goes first
+            for old in downloads.glob("*.json"):
+                old.unlink()
             _eval(page, "document.getElementById('backup').click(); 1")
             _wait_message(page, "saved as a file", 90)
             again: list[Path] = []
             for _ in range(40):
-                again = [f for f in downloads.glob("*.json") if f not in before]
+                again = list(downloads.glob("*.json"))
                 if again:
                     break
                 time.sleep(0.5)

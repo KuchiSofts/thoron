@@ -7,6 +7,7 @@ Explanations live in the design docs under `docs/design/`.
 ## [Unreleased]
 
 ### Added
+- **Releases:** a banner at the top of every release's notes, and a picture for links to the repository.
 - **Quality:** a video check for H.264, HEVC, AV1 and VP9 up to 4K60 on each graphics adapter; on NVIDIA graphics Thoron decodes all of them in hardware and drops about as few frames as Chrome.
 - **Ad blocking:** Thoron adblock's "Restore from file" takes uBlock Origin's own backup: your filters, lists, trusted sites, rules and changed settings come over.
 - **Quality:** a tool that watches each of the browser's processes for one that keeps the processor busy; none did in an hour of heavy pages (upstream had a report of processes that climbed).

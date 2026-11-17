@@ -251,6 +251,15 @@ class RenderTests(unittest.TestCase):
         self.assertNotIn(chr(0x2013), text)
         self.assertNotIn("@users.noreply", text)
 
+    def test_the_release_banner_opens_the_notes_when_the_release_names_it(self):
+        url = "https://raw.githubusercontent.com/example/thoron/v0.1.2/branding/thoron/social/thoron-release-banner.png"
+        text = self.notes(thoron_version="0.1.2", source={"tag": "v0.1.2", "commit": "0" * 40,
+                                                          "chromium_tag": "158.0.8127.30",
+                                                          "licences": "thoron-158.0.8127.3000-licenses.zip",
+                                                          "banner": url})
+        self.assertTrue(text.startswith(f"![Thoron]({url})\n\n# Thoron 0.1.2\n\n"))
+        self.assertFalse(self.notes(thoron_version="0.1.2").startswith("!["))
+
     def test_thorons_changes_come_from_the_short_changelog_when_it_is_given(self):
         text = self.notes(changes=cl.release_changes(SHORT)[1], thoron_version="0.1.2")
         self.assertTrue(text.startswith("# Thoron 0.1.2\n\nThoron 0.1.2 (build 158.0.8127.3000) is based on Chromium "

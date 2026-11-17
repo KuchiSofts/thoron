@@ -240,7 +240,9 @@ def render(version: str, chromium_old: str, chromium_new: str, repo: Path, since
     are grouped by prefix. `thoron_version` is the version people see; `version` stays the build number.
     `source` names the tag, the commit, the Chromium tag and the licence bundle of the release (L.2)."""
     built = f"Thoron {thoron_version} (build {version})" if thoron_version else f"Thoron {version}"
-    out = [f"# Thoron {thoron_version or version}", "",
+    # ROADMAP B.4: the release banner, from the release's own tag (branding/thoron/social/)
+    out = [f"![Thoron]({source['banner']})", ""] if source and source.get("banner") else []
+    out += [f"# Thoron {thoron_version or version}", "",
            f"{built} is based on Chromium {chromium_new} and the Thorium patch series.", ""]
     if highlights:
         out += ["## Highlights", "", _clean(highlights), ""]

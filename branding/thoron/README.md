@@ -17,6 +17,7 @@ that study (it was shown as "Vortex Mono"); all three are in [`concepts/2026-11-
 | `thoron-logo-mono.svg` | Single-colour mark on a transparent background (three blades with gaps and the core), for monochrome or symbolic icons; recolour as needed |
 | `thoron-logo-mono-white.svg` | The same mark in white, 24 px: the small mark next to the title of the settings, history, downloads and extensions pages in dark mode (the identity step puts it in place of Chromium's) |
 | `png/thoron_<size>.png`, `thoron.ico` | Generated raster sizes (16-512 px) and the Windows multi-size icon: regenerate, never edit by hand |
+| `social/thoron-social-preview.png` (1280 x 640), `social/thoron-release-banner.png` (1280 x 320), each with its `.svg` | The repository's social preview (GitHub, Settings, Social preview) and the banner at the top of every release's notes: regenerate, never edit by hand |
 | `png/thoron_wordmark.png`, `png/thoron_wordmark_white.png` | The mark plus the name "thoron" (342 x 64), dark and white text, where Chromium shows a product wordmark: regenerate, never edit by hand |
 
 Colours: light violet `#B097FA` to `#9A80E6`, violet `#894EEF` to `#7235DA`, deep violet `#5E34A0` to
@@ -36,6 +37,7 @@ Colours: light violet `#B097FA` to `#9A80E6`, violet `#894EEF` to `#7235DA`, dee
 py -3 -I tools/branding/export_icons.py --svg branding/thoron/thoron-logo.svg --out branding/thoron
 py -3 -I tools/branding/export_icons.py --svg branding/thoron/thoron-logo.svg --out branding/thoron --sizes 252 504 70 150
 py -3 -I tools/branding/wordmark.py --svg branding/thoron/thoron-logo.svg --out branding/thoron/png
+py -3 -I tools/branding/social.py --svg branding/thoron/thoron-logo.svg --out branding/thoron/social
 ```
 
 ## Licence

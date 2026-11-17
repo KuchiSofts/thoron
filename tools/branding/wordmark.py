@@ -40,20 +40,20 @@ def wordmark_svg(logo_svg: str, colour: str) -> str:
             f'fill="{colour}">thoron</text>\n</svg>\n')
 
 
-def render(svg_text: str, out_png: Path, browser: Path) -> None:
+def render(svg_text: str, out_png: Path, browser: Path, width: int = WIDTH, height: int = HEIGHT) -> None:
     with tempfile.TemporaryDirectory(prefix="thoron-wordmark-") as tmp:
         svg = Path(tmp) / "w.svg"
         svg.write_text(svg_text, encoding="utf-8")
         page = Path(tmp) / "page.html"
         page.write_text("<!doctype html><html><body style='margin:0;background:transparent;overflow:hidden'>"
-                        f"<img src='{svg.as_uri()}' width='{WIDTH}' height='{HEIGHT}' style='display:block'>"
+                        f"<img src='{svg.as_uri()}' width='{width}' height='{height}' style='display:block'>"
                         "</body></html>", encoding="utf-8")
         subprocess.run([str(browser), "--headless", "--disable-gpu", "--hide-scrollbars", "--no-first-run",
                         "--force-device-scale-factor=1", "--default-background-color=00000000", f"--user-data-dir={Path(tmp) / 'profile'}",
-                        f"--window-size={WIDTH},{HEIGHT}", f"--screenshot={out_png.resolve()}", page.as_uri()],
+                        f"--window-size={width},{height}", f"--screenshot={out_png.resolve()}", page.as_uri()],
                        check=True, capture_output=True, timeout=120)
-    if png_size(out_png.read_bytes()) != (WIDTH, HEIGHT):
-        raise RuntimeError(f"{out_png.name} is not {WIDTH}x{HEIGHT}")
+    if png_size(out_png.read_bytes()) != (width, height):
+        raise RuntimeError(f"{out_png.name} is not {width}x{height}")
 
 
 def main(argv: list[str]) -> int:

@@ -220,6 +220,14 @@ def keep_symbols(out: Path, dist: Path, version: str, variant: str, chrome_bin: 
     return target
 
 
+RELEASE_BANNER = "branding/thoron/social/thoron-release-banner.png"
+
+
+def release_banner_url(gh_repo: str, tag: str) -> str:
+    """The release banner (ROADMAP B.4) as the release's own tag holds it, for the top of its notes."""
+    return f"https://raw.githubusercontent.com/{gh_repo}/{tag}/{RELEASE_BANNER}"
+
+
 def sevenzip_for(given: str | None, src: Path) -> str:
     """The 7-Zip program to list an archive with: the one given, else the one Chromium keeps in its tree."""
     if given:
@@ -1091,6 +1099,8 @@ def _prepare(a) -> int:
                   "only be read by offsets")
         source = {"tag": info["source_tag"], "commit": info["thoron_commit"], "chromium_tag": info["chromium_tag"],
                   "licences": licence_bundle_name(version)}
+        if a.gh_repo:
+            source["banner"] = release_banner_url(a.gh_repo, info["source_tag"])
         notes = changelog.render(version, a.chromium_old, chromium_new, a.repo, a.since,
                                  artifacts=(a.dist / "SHA256SUMS").read_text(encoding="utf-8").splitlines(),
                                  security=security, highlights=highlights, changes=changes, thoron_version=thoron,

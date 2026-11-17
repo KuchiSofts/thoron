@@ -7,6 +7,7 @@ Explanations live in the design docs under `docs/design/`.
 ## [Unreleased]
 
 ### Added
+- **Quality:** a check that passwords are offered, saved, encrypted, kept after a restart and filled in again, also one added by hand; it passes on Windows (upstream had reports of lost passwords).
 - **Quality:** each release's debugging symbols are kept beside it, so a crash in a release can be read by function names.
 - **Quality:** Speedometer 3, JetStream 2.1 and MotionMark measured against Thorium 156 and Chrome 157; an AVX-512 build is not measurably faster than the AVX2 one, so none ships for now.
 - **Quality:** a check that a site does not crash its page; Discord's pages load without a crash on both builds (a crash was reported upstream).

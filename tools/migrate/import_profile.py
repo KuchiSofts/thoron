@@ -179,19 +179,31 @@ def _database_check(database: Path) -> str:
     return "ok" if result == "ok" else "damaged"
 
 
+MOST_BOOKMARKS_BYTES = 64 * 1024 * 1024   # a heavy real Bookmarks file is a few MB
+
+
 def _count_bookmarks(path: Path) -> int | None:
+    """How many bookmarks the Bookmarks file at `path` holds; None when it cannot be read or is not what a browser
+    writes. The file comes from another browser's profile, so its size is capped and its tree is walked without
+    recursion: a crafted file gives None, never an error."""
     try:
+        if path.stat().st_size > MOST_BOOKMARKS_BYTES:
+            return None
         data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+    except (OSError, ValueError, RecursionError):
         return None
-
-    def walk(node) -> int:
+    roots = (data.get("roots") or {}) if isinstance(data, dict) else None
+    if not isinstance(roots, dict):
+        return None
+    count, stack = 0, list(roots.values())
+    while stack:
+        node = stack.pop()
         if not isinstance(node, dict):
-            return 0
-        own = 1 if node.get("type") == "url" else 0
-        return own + sum(walk(child) for child in node.get("children", []) or [])
-
-    return sum(walk(root) for root in (data.get("roots") or {}).values())
+            continue
+        count += 1 if node.get("type") == "url" else 0
+        if isinstance(node.get("children"), list):
+            stack.extend(node["children"])
+    return count
 
 
 def _count_extensions(profile: Path) -> int | None:

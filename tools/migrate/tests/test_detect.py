@@ -4,6 +4,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from tools.migrate import detect
 
@@ -64,10 +65,50 @@ class DetectTests(unittest.TestCase):
         self.assertEqual(detect.detect({}), [])
         self.assertEqual(detect.detect({"LOCALAPPDATA": str(Path(self.tmp.name) / "nothing")}), [])
 
+    def test_another_user_s_and_system_wide_folders_are_never_looked_at(self):
+        # threat model I9: only the current user's own profile locations
+        root = Path(self.tmp.name)
+        someone_else = root / "Users" / "someone else"
+        user_data(someone_else / "AppData" / "Local", "Google/Chrome/User Data", {"Default": "Theirs"})
+        user_data(someone_else / "AppData" / "Local", "Chromium/User Data", {"Default": "Theirs too"})
+        shared = root / "ProgramData"
+        user_data(shared, "Chromium/User Data", {"Default": "Shared"})
+        env = dict(self.env, PROGRAMDATA=str(shared), ALLUSERSPROFILE=str(shared), PUBLIC=str(shared),
+                   PROGRAMFILES=str(shared), SYSTEMDRIVE=str(root), USERPROFILE=str(someone_else),
+                   HOMEPATH=str(someone_else))
+        found = detect.detect(env)
+        self.assertEqual(sorted(b["browser"] for b in found),
+                         ["Brave", "Chrome", "Edge", "Opera", "Thorium", "Vivaldi"])
+        own = (Path(self.env["LOCALAPPDATA"]), Path(self.env["APPDATA"]))
+        for browser in found:
+            self.assertTrue(any(Path(browser["folder"]).is_relative_to(base) for base in own), browser["folder"])
+        names = [p["name"] for b in found for p in b["profiles"]]
+        for theirs in ("Theirs", "Theirs too", "Shared"):
+            self.assertNotIn(theirs, names)
+
     def test_a_broken_local_state_gives_no_profile(self):
         folder = Path(self.env["LOCALAPPDATA"]) / "Vivaldi" / "User Data"
         (folder / "Local State").write_text("not json")
         self.assertEqual(detect.profiles_of(folder, False), [])
+
+    def test_a_crafted_local_state_gives_no_profile_and_no_error(self):
+        # threat model I3: another browser's file may hold anything
+        folder = Path(self.env["LOCALAPPDATA"]) / "Vivaldi" / "User Data"
+        for text in ("[" * 200_000, '{"profile": []}', '{"profile": {"info_cache": []}}',
+                     '{"profile": {"info_cache": 5}}', '{"profile": null}', "[]", '"text"'):
+            with self.subTest(text=text[:40]):
+                (folder / "Local State").write_text(text, encoding="utf-8")
+                self.assertEqual(detect.profiles_of(folder, False), [])
+        # the other browsers are found as before
+        found = {b["browser"]: b for b in detect.detect(self.env)}
+        self.assertEqual(found["Vivaldi"]["profiles"], [])
+        self.assertEqual(len(found["Thorium"]["profiles"]), 2)
+
+    def test_a_local_state_larger_than_it_can_be_is_not_read(self):
+        folder = Path(self.env["LOCALAPPDATA"]) / "Thorium" / "User Data"
+        with mock.patch.object(detect, "MOST_LOCAL_STATE_BYTES", 10):
+            self.assertEqual(detect.profiles_of(folder, False), [])
+        self.assertEqual(len(detect.profiles_of(folder, False)), 2)
 
 
 if __name__ == "__main__":

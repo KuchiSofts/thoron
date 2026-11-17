@@ -4,21 +4,45 @@ browser's replay rules, and bad input (cut, flipped, oversized) that gives Sessi
 import contextlib
 import io
 import json
+import os
 import random
 import re
 import shutil
 import struct
+import subprocess
 import tempfile
 import time
 import unittest
 from pathlib import Path
 from unittest import mock
 
+from tools.migrate import fuzz_sessions as fuzz
 from tools.migrate import sessions as s
 
 GOLDEN = Path(__file__).resolve().parent / "data" / "sessions"
 BROWSERS = ("chrome", "thorium", "thoron")
 NAV = s.navigation_pickle
+
+
+def folder_link(link: Path, target: Path, junction: bool) -> bool:
+    """Makes `link` point at the folder `target`: a junction (Windows only, needs no rights) or a symbolic link.
+    False when this system cannot make that kind."""
+    if junction:
+        return os.name == "nt" and subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(target)],
+                                                 capture_output=True).returncode == 0
+    try:
+        link.symlink_to(target, target_is_directory=True)
+    except OSError:
+        return False
+    return True
+
+
+def remove_link(link: Path) -> None:
+    """Removes the link or junction at `link`, never what it points at."""
+    try:
+        os.rmdir(link)                  # a junction, or a link to a folder on Windows
+    except OSError:
+        os.unlink(link)
 
 
 def golden(browser: str) -> tuple[Path, Path, dict]:
@@ -502,6 +526,61 @@ class ImportTests(unittest.TestCase):
         with self.assertRaisesRegex(s.ImportRefused, "not what a browser writes"):
             s.restore_on_next_start(self.dst.parent)
 
+    def test_the_temporary_local_state_goes_on_failure_too(self):
+        # threat model I8: the file written before the switch lies beside Local State, inside the destination, and
+        # is deleted whether the switch works or not
+        state = self.dst.parent / "Local State"
+        before = state.read_bytes()
+        with mock.patch.object(s.os, "replace", side_effect=OSError("the disk is full")):
+            with self.assertRaisesRegex(s.ImportRefused, "could not be written"):
+                s.restore_on_next_start(self.dst.parent)
+        self.assertEqual(state.read_bytes(), before)
+        self.assertEqual(sorted(p.name for p in self.dst.parent.iterdir()), ["Default", "Local State"])
+
+    def test_a_sessions_folder_that_is_a_link_or_junction_is_refused(self):
+        # threat model I4: nothing outside the two profiles is read or written through a link
+        held = self.tmp / "Held elsewhere"
+        shutil.move(str(self.src / "Sessions"), str(held))
+        outside = self.tmp / "Outside"
+        outside.mkdir()
+        made = 0
+        for junction in (False, True):
+            with self.subTest(junction=junction):
+                if not folder_link(self.src / "Sessions", held, junction):
+                    continue
+                made += 1
+                try:
+                    with self.assertRaisesRegex(s.ImportRefused, "link or junction"):
+                        s.import_sessions(self.src, self.dst)
+                    self.assertFalse((self.dst / "Sessions").exists())
+                finally:
+                    remove_link(self.src / "Sessions")
+                shutil.copytree(held, self.src / "Sessions")
+                self.assertTrue(folder_link(self.dst / "Sessions", outside, junction))
+                try:
+                    with self.assertRaisesRegex(s.ImportRefused, "link or junction"):
+                        s.import_sessions(self.src, self.dst)
+                finally:
+                    remove_link(self.dst / "Sessions")
+                    shutil.rmtree(self.src / "Sessions")
+                self.assertEqual(list(outside.iterdir()), [])
+        self.assertTrue(held.is_dir())
+        if not made:
+            self.skipTest("this system can make no link to a folder")
+
+    def test_a_session_file_that_is_a_link_is_passed_over(self):
+        outside = self.tmp / "outside session"
+        outside.write_bytes(s.snss([window(1), *tab(1, 2, 0, "http://127.0.0.1/outside")]))
+        link = self.src / "Sessions" / "Session_99999999999999999"        # newer than every real one
+        try:
+            link.symlink_to(outside)
+        except OSError:
+            self.skipTest("this system can make no link to a file")
+        self.assertNotIn(link, s.session_files(self.src / "Sessions", "Session"))
+        done = s.import_sessions(self.src, self.dst)
+        self.assertNotIn(link.name, done["files"])
+        self.assertFalse((self.dst / "Sessions" / link.name).exists())
+
     def test_the_command_line_import(self):
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
@@ -515,6 +594,31 @@ class ImportTests(unittest.TestCase):
         with contextlib.redirect_stdout(out):
             self.assertEqual(s.main(["import", "--from", str(self.src), "--to", str(self.dst)]), 1)
         self.assertIn("session of its own", out.getvalue())
+
+
+class FuzzerTests(unittest.TestCase):
+    """The fuzzer of the reader (threat model I3; the long runs are by hand): a fixed short run keeps every promise
+    the import relies on, and the fuzzer does tell a reader that breaks one."""
+
+    def test_a_fixed_run_of_mutated_inputs_reads_or_is_refused(self):
+        inputs = fuzz.corpus()
+        self.assertGreaterEqual(len(inputs), 2 * len(BROWSERS) + 2)       # the golden files and the made-up ones
+        for seed in range(300):
+            with self.subTest(seed=seed):
+                fuzz.check(fuzz.mutate(random.Random(seed), inputs))
+
+    def test_the_same_seed_gives_the_same_input(self):
+        inputs = fuzz.corpus()
+        self.assertEqual(fuzz.mutate(random.Random(7), inputs), fuzz.mutate(random.Random(7), inputs))
+
+    def test_a_reader_that_breaks_its_promise_is_found(self):
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()) as errors:
+            with mock.patch.object(s, "read_session", side_effect=IndexError("a crash")):
+                self.assertEqual(fuzz.main(["--repeat", "1"]), 1)
+        self.assertIn("IndexError", errors.getvalue())
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            self.assertEqual(fuzz.main(["--repeat", "1"]), 0)
+        self.assertIn("no crash", out.getvalue())
 
 
 if __name__ == "__main__":

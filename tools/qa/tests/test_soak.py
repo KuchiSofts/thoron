@@ -373,5 +373,18 @@ class ReportTests(unittest.TestCase):
         self.assertEqual(soak.problems(never), [f"no settled sample is comparable: every time, {why}"])
 
 
+class BuildTests(unittest.TestCase):
+    def test_the_report_names_the_build_of_the_browser_folder(self):
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as d:
+            folder = Path(d)
+            (folder / "158.0.8127.3010").mkdir()
+            (folder / "Extensions").mkdir()
+            self.assertEqual(soak.build_of(folder / "thoron.exe"), "158.0.8127.3010")
+            (folder / "158.0.8127.3000").mkdir()
+            self.assertEqual(soak.build_of(folder / "thoron.exe"), "")       # two: which one ran is not known
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -54,6 +54,7 @@ INVENTORY = patch_licenses.render_table([
     {"patch": "a.patch", "origin": "Thorium (Alex313031, gz83)", "license": "BSD-3-Clause", "evidence": "x"},
     {"patch": "b.patch", "origin": "ungoogled-chromium, Bromite", "license": "BSD-3-Clause AND GPL-3.0",
      "evidence": "y"}])
+SOAK_REPORT = f"Soak: 8.00 h, 4168 rounds of 6 tabs\nBuild: {BUILD}\nSOAK: PASSED\n"
 BENCH = {"browser": "Thoron", "startup_ms": {"median": 400.0, "spread_pct": 1.0},
          "memory_1_tab_mb": {"median": 180.0, "spread_pct": 1.0},
          "memory_20_tabs_mb": {"median": 900.0, "spread_pct": 1.0},
@@ -287,13 +288,15 @@ class ReleaseFixture(Fixture):
         return code, out.getvalue(), err.getvalue()
 
     def prepare(self, *more, dist: Path | None = None, previous: str = "156.0.8078.28", bench: dict | None = None,
-                **kw):
+                soak: str | None = None, **kw):
         bench_file = self.repo.parent / "bench.json"
         bench_file.write_text(json.dumps(bench or BENCH), encoding="utf-8")
+        soak_file = self.repo.parent / "soak.txt"
+        soak_file.write_text(soak if soak is not None else SOAK_REPORT, encoding="utf-8")
         return self.main("prepare", "--src", self.src, "--out", self.out, "--platform", "win", "--variant", VARIANT,
                          "--previous", previous, "--buildinfo", self.buildinfo, "--dist", dist or self.dist,
                          "--repo", self.repo, "--since", "v0.1.1", "--chromium-old", "156.0.8078.80",
-                         "--bench", bench_file, *more, **kw)
+                         "--bench", bench_file, "--soak", soak_file, *more, **kw)
 
     def with_manifest(self, *more) -> tuple:
         return ("--manifest-key", self.keys / "manifest.key", "--manifest-public-key", text(self.public),
@@ -868,7 +871,8 @@ class DryRunTests(ReleaseTestCase):
         self.f.tags.append(f"v{THORON}")                            # the first draft was published
         self.f.set_version(NEXT_BUILD, NEXT_THORON)
         code, out, err = self.f.prepare(*self.f.with_manifest("--previous-manifest", first / "update.json"),
-                                        dist=second, previous=BUILD, clock=NOW + 3600)
+                                        dist=second, previous=BUILD, clock=NOW + 3600,
+                                        soak=SOAK_REPORT.replace(BUILD, NEXT_BUILD))
         self.assertEqual(code, 0, out + err)
         data = mf.verify(*self.manifest(second), self.f.public, allowed_hosts=HOSTS)
         self.assertEqual((data["serial"], data["version"], data["thoron_version"], data["min_updater_version"]),
@@ -1552,6 +1556,27 @@ class SetupReleaseTests(unittest.TestCase):
                     self.assertEqual(len(rel.setup_problems(shipped)), 1)
             shipped.write_bytes(b"not a program")
             self.assertIn("is not a Windows program", rel.setup_problems(shipped)[0])
+
+
+class SoakGateTests(unittest.TestCase):
+    """ROADMAP Q.4: a release needs a passing 8-hour soak test of its own build."""
+
+    def problems(self, text):
+        with tempfile.TemporaryDirectory() as d:
+            report = Path(d) / "soak.txt"
+            report.write_text(text, encoding="utf-8")
+            return rel.soak_problems(report, BUILD)
+
+    def test_a_passing_run_of_this_build(self):
+        self.assertEqual(self.problems(SOAK_REPORT), [])
+
+    def test_what_is_refused(self):
+        self.assertEqual(len(rel.soak_problems(None, BUILD)), 1)
+        self.assertIn("not 8", self.problems(SOAK_REPORT.replace("8.00 h", "0.17 h"))[0])
+        self.assertIn("not " + BUILD, self.problems(SOAK_REPORT.replace(BUILD, "158.0.8127.2000"))[0])
+        self.assertIn("did not pass",
+                      self.problems(SOAK_REPORT.replace("SOAK: PASSED", "SOAK: FAILED (1 problem(s))"))[0])
+        self.assertEqual(len(self.problems("nothing")), 3)
 
 
 if __name__ == "__main__":

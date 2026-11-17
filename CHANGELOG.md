@@ -7,6 +7,7 @@ Explanations live in the design docs under `docs/design/`.
 ## [Unreleased]
 
 ### Added
+- **Quality:** every release must pass an 8-hour memory test first; the first run of 158 used 2 MB per hour more at most, under what can be measured.
 - **Install:** Thoron's elevation and tracing services have their own COM interface IDs, so a system-wide Thoron and Thorium never share a registration.
 - **Install:** `ThoronSetup.exe`, one small installer for every release: it downloads the newest signed Thoron for your processor, checks it and installs it.
 - **Updates:** a portable copy can update with a small delta instead of the whole package (about 2 % of it between two builds), checked file by file.

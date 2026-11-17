@@ -494,6 +494,32 @@ def performance_problems(repo: Path, bench: Path | None, thoron: str) -> list[st
     return perf_gate.problems(baseline, results, thoron, explained)
 
 
+# --- the soak test (ROADMAP Q.4) ----------------------------------------------------------------------------
+
+SOAK_HOURS = 8.0
+
+
+def soak_problems(soak: Path | None, version: str) -> list[str]:
+    """Why the release's soak test forbids it: there is none, it is of another build, shorter than 8 hours,
+    or it did not pass (tools/qa/soak.py: memory growing by more than its limit, a crash, an exit)."""
+    if soak is None:
+        return [f"no soak test of this build: run tools/qa/soak.py on it for {SOAK_HOURS:g} h and give --soak"]
+    try:
+        text = soak.read_text(encoding="utf-8")
+    except OSError as exc:
+        return [f"the soak report could not be read ({type(exc).__name__})"]
+    out = []
+    hours = re.search(r"^Soak: (\d+(?:\.\d+)?) h,", text, re.M)
+    if not hours or float(hours.group(1)) < SOAK_HOURS - 0.05:
+        out.append(f"the soak test ran {hours.group(1) if hours else 'an unknown time'} h, not {SOAK_HOURS:g}")
+    build = re.search(r"^Build: (\S+)", text, re.M)
+    if not build or build.group(1) != version:
+        out.append(f"the soak test is of build {build.group(1) if build else 'unknown'}, not {version}")
+    if not re.search(r"^SOAK: PASSED$", text, re.M):
+        out.append("the soak test did not pass")
+    return out
+
+
 # --- the wiki (ROADMAP D.9) --------------------------------------------------------------------------------
 
 def wiki_problems(repo: Path, thoron: str | None) -> list[str]:
@@ -920,6 +946,7 @@ def _prepare(a) -> int:
     problems += [f"credits: {p}" for p in credits_problems(a.repo, upstream_contributors(a.contributors))]
     problems += [f"patch licences: {p}" for p in licence_record_problems(a.repo)]
     problems += [f"performance: {p}" for p in performance_problems(a.repo, a.bench, thoron)]
+    problems += [f"memory: {p}" for p in soak_problems(a.soak, version)]
     audit_doc, audit_lines = changelog.audit_lines(a.repo)
     if not audit_lines:
         problems.append("upstream audit: no docs/security/UPSTREAM_AUDIT_*.md with lines \"For the release notes\" "
@@ -1037,6 +1064,8 @@ def main(argv: list[str], run=None) -> int:
     a_.add_argument("--minisign-key", type=Path)
     a_.add_argument("--security", type=Path, help="security.json: the fixes the notes name")
     a_.add_argument("--highlights", type=Path, help="a hand-written opening of the notes")
+    a_.add_argument("--soak", type=Path, help=f"tools/qa/soak.py's report of an {SOAK_HOURS:g} h run of this "
+                    "build (ROADMAP Q.4)")
     a_.add_argument("--bench", type=Path, help="tools/qa/bench.py's result for this build; it is compared "
                     "with docs/perf/baseline.json (ROADMAP Q.3)")
     a_.add_argument("--manifest-key", type=Path, help="the private key file that signs the update manifest")

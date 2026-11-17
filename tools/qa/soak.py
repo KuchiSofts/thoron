@@ -216,12 +216,21 @@ def problems(result: dict) -> list[str]:
     return out
 
 
+def build_of(browser: Path) -> str:
+    """The build version of a browser folder (Chrome-bin): the one folder beside the program named like
+    158.0.8127.3010; empty when there is not exactly one."""
+    found = [p.name for p in browser.parent.iterdir()
+             if p.is_dir() and re.fullmatch(r"\d+\.\d+\.\d+\.\d+", p.name)] if browser.parent.is_dir() else []
+    return found[0] if len(found) == 1 else ""
+
+
 def report(result: dict) -> str:
     """The short report of a run."""
     v = result["verdict"]
     lines = [f"Soak: {result['seconds'] / 3600:.2f} h, {result['rounds']} rounds of {result['tabs']} tabs, "
              f"{result['opened']} pages opened, {result['loaded']} finished their work, "
              f"{v['samples']} settled samples",
+             f"Build: {result.get('build') or 'unknown'}",
              "Private memory of the browser's process tree, in MB:",
              f"  with the tabs open: at most {result['peak']:.1f}"]
     if result.get("unforced"):
@@ -568,7 +577,7 @@ def run(browser: Path, work: Path, duration: float, interval: float, threshold: 
     profile = Path(tempfile.mkdtemp(prefix="soak-", dir=work))
     settled: list[tuple[float, dict]] = []
     result = {"seconds": 0.0, "rounds": 0, "tabs": tabs, "opened": 0, "loaded": 0, "peak": 0.0, "errors": [],
-              "unforced": [], "crash_dumps": []}
+              "unforced": [], "crash_dumps": [], "build": build_of(browser)}
     with Pages() as pages, open(csv_path, "w", newline="", encoding="utf-8") as out:
         rows = csv.writer(out)
         rows.writerow(CSV_HEADER)

@@ -78,7 +78,7 @@ changed in each version is in the [changelog](CHANGELOG.md), one line per change
 Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always current.
 
 <!-- roadmap:start -->
-**Overall:** `█████████████░░░░░░░` 140 of 209 tasks done (67%) · roadmap updated 2026-11-12
+**Overall:** `█████████████░░░░░░░` 141 of 209 tasks done (67%) · roadmap updated 2026-11-12
 
 | Area | Progress | Done | Status |
 |---|---|---|---|
@@ -90,7 +90,7 @@ Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always curre
 | [P4 - Updater v2](ROADMAP.md#p4---updater-v2) | `█████████░░░░░░░░░░░` | 5/11 | 🔄 In progress |
 | [P5 - Quality](ROADMAP.md#p5---quality) | `█████████████████░░░` | 68/80 | 🔄 In progress |
 | [Security (S)](ROADMAP.md#security-s) | `██████████████░░░░░░` | 11/16 | 🔄 In progress |
-| [Quality & performance (Q)](ROADMAP.md#quality--performance-q) | `█████████░░░░░░░░░░░` | 3/7 | 🔄 In progress |
+| [Quality & performance (Q)](ROADMAP.md#quality--performance-q) | `███████████░░░░░░░░░` | 4/7 | 🔄 In progress |
 | [Docs (D)](ROADMAP.md#docs-d) | `████████████░░░░░░░░` | 6/10 | 🔄 In progress |
 | [Legal & licensing (L)](ROADMAP.md#legal--licensing-l) | `████████░░░░░░░░░░░░` | 3/8 | 🔄 In progress |
 | [Branding (B)](ROADMAP.md#branding-b) | `███████████████░░░░░` | 3/4 | 🔄 In progress |
@@ -316,7 +316,7 @@ Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always curre
 - [ ] **Q.1** Benchmark suite `tools/qa/bench`: Speedometer 3, JetStream 2, MotionMark, start-up with 1 and 4 profiles, idle and 20-tab memory, idle CPU
 - [x] **Q.2** Baselines: Thorium M156 and Chrome of the same major version
 - [x] **Q.3** Regression gate in the release script (a release is blocked until any regression is explained)
-- [ ] **Q.4** Memory-leak soak test (8 h of tab churn; memory-growth threshold)
+- [x] **Q.4** Memory-leak soak test (8 h of tab churn; memory-growth threshold)
 - [ ] **Q.5** Crash triage process (local Crashpad dumps; symbol publication decision)
 - [ ] **Q.6** Test VMs: Windows 11 x64, Ubuntu 24.04 and 26.04 x64, clean snapshots
 - [x] **Q.7** Profile compatibility gate: a new version is first started offline on a copy of real profiles, and `tools/qa/profile_check.py` must report 1:1 (windows, tabs, pinned tabs, tab groups with names and colours, saved passwords, bookmarks, enabled extensions, cookies within normal expiry, cookie encryption unchanged, no new app-bound key); it never decrypts or prints secrets

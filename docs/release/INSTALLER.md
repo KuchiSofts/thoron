@@ -16,6 +16,10 @@ package has its own page, [PORTABLE.md](PORTABLE.md).
 - The program goes to `Application\thoron.exe` and `Application\<version>\`, and the uninstaller to
   `Application\<version>\Installer\setup.exe`. Thoron is listed among the installed programs as "Thoron"
   with Thoron's own version.
+- `--thoron-chrome-bin=<folder>` (Thoron's, for its updater): setup installs from a folder with the
+  layout of the archive's `Chrome-bin` instead of an archive. Chromium 158's setup has no differential
+  installer left, so an installed copy's delta is made into such a folder by the updater, and the newer
+  version's own `setup.exe`, which the delta also makes, installs it (ROADMAP P4.1).
 - Uninstalling removes the program and its entry and **keeps the profile** (`User Data`) unless the person
   ticks the box that deletes it (`--delete-profile`).
 - Installed over a running Thoron, it does one of two things. For one user (the default) it leaves Thoron
@@ -74,6 +78,11 @@ The update from 158.0.8127.3010 to 158.0.8127.6500 (the drill build of the
 |---|---|---|
 | For one user | exit 0, status 30 (updated while in use); `new_thoron.exe` waited while 3010 ran; on close it was swapped in; the next start ran 6500; the 3010 folder was removed; the profile kept | pass |
 | For every user | exit 0, status 2; the installer closed the running 3010 and updated in place; the next start ran 6500; the profile kept. With Thorium's installer alone the browser was ended from outside (it recorded its exit as "Crashed"); with Thoron's change it was asked to end its session first (3 windows of 9 processes; it saved and exited within a tenth of a second, recording "SessionEnded") | pass |
+
+An installed copy updated from a delta (`--installed-delta`, P4.1): the installed 158.0.8127.3010 and the
+delta to .6500 (31.2 MB) made by `tools/release/delta.py`; `thoron_update.exe --apply-installed-delta` made
+the new files and the new setup installed them in 18 s (exit 0); Thoron then started on .6500 with the
+profile kept, nothing was left in `Update`, and the new setup uninstalled it (exit 19). Pass.
 
 Found on the way:
 

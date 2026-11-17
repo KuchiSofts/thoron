@@ -44,6 +44,7 @@ FORMAT = 1
 EPOCH = 315532800                   # 1980-01-01, as the portable package
 MOST_PATCH_SHARE = 0.8              # a patch is kept when it is at most this share of the file
 _VERSION = re.compile(r"^\d+(\.\d+){3}$")
+VERSION_RE = _VERSION               # a build version as a release names it (release.py reads it too)
 
 
 class DeltaError(Exception):

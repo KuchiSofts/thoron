@@ -438,6 +438,86 @@ index 63754184d8fa2ef4d79262f8b929c5e2224f1ab0..ac8ee053d23878341532c404d2453224
    InstalledBrowserProcessFilter filter(target_path);
    base::CleanupProcesses(installer::kChromeExe, base::TimeDelta(),
                           /*exit_code=*/0, &filter);
+diff --git a/chrome/installer/setup/unpack_archive.cc b/chrome/installer/setup/unpack_archive.cc
+index df6c3f2f83d1655d50f0925c6dd864d3f0122451..3d689fea129cd0cf324e5c60c8389f4f36f6cd16 100644
+--- a/chrome/installer/setup/unpack_archive.cc
++++ b/chrome/installer/setup/unpack_archive.cc
+@@ -12,13 +12,16 @@
+ #include <ios>
+ #include <string>
+ #include <type_traits>
++#include <vector>
+ 
+ #include "base/check.h"
+ #include "base/check_op.h"
+ #include "base/command_line.h"
+ #include "base/compiler_specific.h"
+ #include "base/containers/span.h"
++#include "base/files/file_enumerator.h"
+ #include "base/files/file_path.h"
++#include "base/files/file_util.h"
+ #include "base/logging.h"
+ #include "base/memory/page_size.h"
+ #include "base/scoped_native_library.h"
+@@ -329,11 +332,58 @@ UnPackStatus UnpackFromMiniInstaller(const base::FilePath& mini_installer_path,
+       unpack_path, &uncompressed_archive);
+ }
+ 
++// Thoron (ROADMAP P4.1): a release that Thoron's updater made from a delta
++// comes as a folder with the layout of the archive's Chrome-bin (the program
++// and its version folder), not as an archive. Its files are copied into
++// `unpack_path`\Chrome-bin, leaving out the version folder's Installer folder,
++// which setup fills itself. The folder must be a real one, not a link.
++constexpr char kThoronChromeBin[] = "thoron-chrome-bin";
++
++bool CopyThoronChromeBin(const base::FilePath& folder, const base::FilePath& unpack_path) {
++  if (!base::DirectoryExists(folder) || base::IsLink(folder)) {
++    LOG(ERROR) << "--" << kThoronChromeBin << " is not a folder: " << folder;
++    return false;
++  }
++  const base::FilePath target = unpack_path.Append(kInstallSourceChromeDir);
++  if (!base::CreateDirectory(target)) {
++    return false;
++  }
++  base::FileEnumerator entries(folder, /*recursive=*/true,
++                               base::FileEnumerator::FILES | base::FileEnumerator::DIRECTORIES);
++  for (base::FilePath entry = entries.Next(); !entry.empty(); entry = entries.Next()) {
++    base::FilePath relative;
++    if (!folder.AppendRelativePath(entry, &relative)) {
++      return false;
++    }
++    const std::vector<base::FilePath::StringType> parts = relative.GetComponents();
++    if (parts.size() >= 2 && base::FilePath::CompareEqualIgnoreCase(parts[1], kInstallerDir)) {
++      continue;
++    }
++    const base::FilePath to = target.Append(relative);
++    const bool copied = entries.GetInfo().IsDirectory() ? base::CreateDirectory(to)
++                                                        : base::CopyFile(entry, to);
++    if (!copied) {
++      PLOG(ERROR) << "Copying " << entry << " to " << to << " failed";
++      return false;
++    }
++  }
++  return true;
++}
++
+ base::expected<void, InstallStatus> UnpackChromeArchiveImpl(
+     const base::FilePath& unpack_path,
+     const base::FilePath& setup_exe,
+     const base::CommandLine& cmd_line,
+     const InstallerState& installer_state) {
++  if (cmd_line.HasSwitch(kThoronChromeBin)) {
++    installer_state.SetStage(UNPACKING);
++    const base::FilePath folder = cmd_line.GetSwitchValuePath(kThoronChromeBin);
++    VLOG(1) << "Installing Chrome from the folder " << folder;
++    if (!CopyThoronChromeBin(folder, unpack_path)) {
++      return base::unexpected(UNPACKING_FAILED);
++    }
++    return base::ok();
++  }
+   base::FilePath mini_installer_path =
+       cmd_line.GetSwitchValuePath(switches::kMiniInstallerPath);
+   base::FilePath install_archive =
 diff --git a/components/page_info/BUILD.gn b/components/page_info/BUILD.gn
 index a248f84b52164a4731b74bec11f31c2abdcf700d..94dff65fd333283f0d4e88e6c1d071944fadc080 100644
 --- a/components/page_info/BUILD.gn
@@ -643,7 +723,7 @@ index a14e54eed88c57f7f0b4ebd6a6f4c352e94b7edd..dba79e15f60c31713758841d5b646ae5
  
  void AddStorageAccessStrings(content::WebUIDataSource* html_source) {
 diff --git a/components/strings/components_strings_es.xtb b/components/strings/components_strings_es.xtb
-index 4f61d050142dda9f442808b15ca8db92519ea057..45cb7910de3444879a7a7796cb619bd145125263 100644
+index 0a2433fcc6ffd4fa2770920a74d9edcd0dfa3719..4c22c8f89849f8560ca934b50ff5dedca0cb6bcd 100644
 --- a/components/strings/components_strings_es.xtb
 +++ b/components/strings/components_strings_es.xtb
 @@ -1,6 +1,24 @@
@@ -672,7 +752,7 @@ index 4f61d050142dda9f442808b15ca8db92519ea057..45cb7910de3444879a7a7796cb619bd1
  <translation id="100957008357583611">¿Usar tu ubicación?</translation>
  <translation id="1010148478459329879">Puede que tu cuenta de Google incluya otros tipos de historial de navegación en <ph name="BEGIN_LINK_GMA" />myactivity.google.com<ph name="END_LINK_GMA" />, como tu <ph name="BEGIN_LINK_GAA" />historial de Gemini<ph name="END_LINK_GAA" /></translation>
 diff --git a/components/strings/components_strings_fr.xtb b/components/strings/components_strings_fr.xtb
-index ec8661ff4a77db30fe3fd19969df113e778f0f87..0eac1c0fad210a3526e58852e626c44ff11c56cb 100644
+index 5507400a0b149a38e004959700b781493415742d..9156715f4ded81ba178e825150984c7532dd0d61 100644
 --- a/components/strings/components_strings_fr.xtb
 +++ b/components/strings/components_strings_fr.xtb
 @@ -1,6 +1,24 @@
@@ -701,7 +781,7 @@ index ec8661ff4a77db30fe3fd19969df113e778f0f87..0eac1c0fad210a3526e58852e626c44f
  <translation id="100957008357583611">Utiliser votre position ?</translation>
  <translation id="1010148478459329879">Votre compte Google peut inclure d'autres types d'historiques de navigation sur <ph name="BEGIN_LINK_GMA" />myactivity.google.com<ph name="END_LINK_GMA" />, comme votre <ph name="BEGIN_LINK_GAA" />Historique Gemini<ph name="END_LINK_GAA" /></translation>
 diff --git a/components/strings/components_strings_de.xtb b/components/strings/components_strings_de.xtb
-index 56e6637631705e23e2a07a648fa7ff74582fbff1..580caeda43f63133f57a8f3551c45b77d32c2bd3 100644
+index c753a1b97cf90c40e6c29f8f91684f117fd8b540..215ba7806d8fc6e08eb4bfe120782d98e285cce4 100644
 --- a/components/strings/components_strings_de.xtb
 +++ b/components/strings/components_strings_de.xtb
 @@ -1,6 +1,24 @@
@@ -730,7 +810,7 @@ index 56e6637631705e23e2a07a648fa7ff74582fbff1..580caeda43f63133f57a8f3551c45b77
  <translation id="100957008357583611">Standort verwenden?</translation>
  <translation id="1010148478459329879">Unter <ph name="BEGIN_LINK_GMA" />myactivity.google.com<ph name="END_LINK_GMA" /> sind möglicherweise weitere Arten von Browserverlaufsdaten für dein Google-Konto gespeichert, z. B. dein <ph name="BEGIN_LINK_GAA" />Gemini-Verlauf<ph name="END_LINK_GAA" /></translation>
 diff --git a/components/strings/components_strings_pt-BR.xtb b/components/strings/components_strings_pt-BR.xtb
-index d7fdf18b451e8bf6b0db51c95ed9e805f4ac6038..5c661888d0caae1972ffe601d193f8599fb69aec 100644
+index 0d30a421569a7969c8b99580392fa98b4da3872d..c41bd80f7db618b19cb98920e86f37de8ae8744f 100644
 --- a/components/strings/components_strings_pt-BR.xtb
 +++ b/components/strings/components_strings_pt-BR.xtb
 @@ -1,6 +1,24 @@
@@ -759,7 +839,7 @@ index d7fdf18b451e8bf6b0db51c95ed9e805f4ac6038..5c661888d0caae1972ffe601d193f859
  <translation id="100957008357583611">Usar sua localização?</translation>
  <translation id="1010148478459329879">Sua Conta do Google pode armazenar outras formas de histórico de navegação em <ph name="BEGIN_LINK_GMA" />myactivity.google.com<ph name="END_LINK_GMA" />, como seu <ph name="BEGIN_LINK_GAA" />Histórico do Gemini<ph name="END_LINK_GAA" /></translation>
 diff --git a/components/strings/components_strings_pt-PT.xtb b/components/strings/components_strings_pt-PT.xtb
-index 846ff7d1760affa1c8d6283b71b2bfee6eccf168..388fc58b9a162eafcd9f7d9c9d5b74945736b568 100644
+index 5482ca961fe6ece0ea0d58e42088c9de16bc2190..e2c74b89eb96db6060de46f1fb0904169016ccbb 100644
 --- a/components/strings/components_strings_pt-PT.xtb
 +++ b/components/strings/components_strings_pt-PT.xtb
 @@ -1,6 +1,24 @@
@@ -788,7 +868,7 @@ index 846ff7d1760affa1c8d6283b71b2bfee6eccf168..388fc58b9a162eafcd9f7d9c9d5b7494
  <translation id="100957008357583611">Quer utilizar a sua localização?</translation>
  <translation id="1010148478459329879">A sua Conta Google pode ter outras formas do histórico de navegação em <ph name="BEGIN_LINK_GMA" />myactivity.google.com<ph name="END_LINK_GMA" />, como o seu <ph name="BEGIN_LINK_GAA" />Histórico do Gemini<ph name="END_LINK_GAA" /></translation>
 diff --git a/components/strings/components_strings_ru.xtb b/components/strings/components_strings_ru.xtb
-index 5fc70f6835e306d0f95b7703d4d72cde26aaea51..4d7fc9b6e5f1184ad694f699c91d4b6a1a265ec9 100644
+index 4e5c6d4f8da89ebecd5dba2ebcfb50f1b05aaabd..7a2817abce58bf9faed06bb4ba86f465cd2cdccf 100644
 --- a/components/strings/components_strings_ru.xtb
 +++ b/components/strings/components_strings_ru.xtb
 @@ -1,6 +1,24 @@
@@ -2454,10 +2534,10 @@ index a8fb5de0b5a99198c901e81a2df54d7fcb9c7dd2..d134439f071fcda8430f589b0d23c950
  
 diff --git a/chrome/browser/thoron_update/BUILD.gn b/chrome/browser/thoron_update/BUILD.gn
 new file mode 100644
-index 0000000000000000000000000000000000000000..1b10ff55539379837a7ec09847faa9a0035db10d
+index 0000000000000000000000000000000000000000..f4930327956a1f94aa9adc946c91626bf38bdb84
 --- /dev/null
 +++ b/chrome/browser/thoron_update/BUILD.gn
-@@ -0,0 +1,43 @@
+@@ -0,0 +1,47 @@
 +# Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +# found in the LICENSE file.
 +
@@ -2500,6 +2580,10 @@ index 0000000000000000000000000000000000000000..1b10ff55539379837a7ec09847faa9a0
 +    "//services/network/public/cpp",
 +    "//url",
 +  ]
++  if (is_win) {
++    # An install for every user is told apart (install_static::IsSystemInstall).
++    deps += [ "//chrome/install_static:install_static_util" ]
++  }
 +}
 diff --git a/chrome/browser/thoron_update/args.gni b/chrome/browser/thoron_update/args.gni
 new file mode 100644
@@ -2529,10 +2613,10 @@ index 0000000000000000000000000000000000000000..26d5206b0d3bd2726cb709c61e859f84
 +thoron_update_test_public_key = "9i/S9Os0cVBrrPIeJJEiTNqJucILUa97MBNquyuERHM="
 diff --git a/chrome/browser/thoron_update/thoron_update_win.cc b/chrome/browser/thoron_update/thoron_update_win.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..f0f1a6c7d60c6812e2f3451d3743b1bf6a11c96c
+index 0000000000000000000000000000000000000000..bda1e9ed270116f45333d33e2c5a563efb452af7
 --- /dev/null
 +++ b/chrome/browser/thoron_update/thoron_update_win.cc
-@@ -0,0 +1,201 @@
+@@ -0,0 +1,232 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -2558,7 +2642,9 @@ index 0000000000000000000000000000000000000000..f0f1a6c7d60c6812e2f3451d3743b1bf
 +#include "base/version.h"
 +#include "chrome/browser/browser_process.h"
 +#include "chrome/browser/upgrade_detector/build_state.h"
++#include "chrome/install_static/install_util.h"
 +#include "components/thoron_update/cli.h"
++#include "components/thoron_update/delta_package.h"
 +#include "content/public/browser/browser_thread.h"
 +#include "net/base/network_change_notifier.h"
 +#include "services/network/public/cpp/shared_url_loader_factory.h"
@@ -2658,20 +2744,43 @@ index 0000000000000000000000000000000000000000..f0f1a6c7d60c6812e2f3451d3743b1bf
 +
 +bool RunInstaller(const base::FilePath& package, bool delta, const std::string& version) {
 +  base::CommandLine command(package);
-+  // The running browser stays as it is; the new version starts at the relaunch.
-+  command.AppendSwitch("do-not-launch-chrome");
++  base::FilePath staged;
++  if (delta) {
++    // P4.1: the next version is made from this copy's own Application folder
++    // with the delta, and installed by the newer setup.exe the delta made.
++    const std::optional<thoron_update::BuildVersion> from =
++        thoron_update::ParseBuildVersion(version_info::GetVersionNumber());
++    const std::optional<thoron_update::BuildVersion> to = thoron_update::ParseBuildVersion(version);
++    bool portable = false;
++    const base::FilePath program = ProgramFolder(&portable);
++    if (!from || !to || portable) {
++      return false;
++    }
++    staged = package.DirName().AppendASCII(version + ".staging");
++    base::DeletePathRecursively(staged);
++    if (thoron_update::PrepareInstalledDelta(package, program, *from, *to, /*system_level=*/false,
++                                             staged, &command) != thoron_update::DeltaResult::kDone) {
++      return false;
++    }
++  } else {
++    // Without --silent the installer shows its Install and OK buttons and
++    // waits for them; the running browser stays as it is, and the new version
++    // starts at the relaunch.
++    command.AppendSwitch("silent");
++    command.AppendSwitch("do-not-launch-chrome");
++  }
 +  base::LaunchOptions options;
 +  options.start_hidden = true;
 +  base::Process process = base::LaunchProcess(command, options);
-+  if (!process.IsValid()) {
-+    return false;
-+  }
 +  int exit_code = -1;
-+  if (!process.WaitForExitWithTimeout(kMostInstallerTime, &exit_code)) {
++  const bool ended = process.IsValid() && process.WaitForExitWithTimeout(kMostInstallerTime, &exit_code);
++  if (process.IsValid() && !ended) {
 +    process.Terminate(/*exit_code=*/1, /*wait=*/false);
-+    return false;
 +  }
-+  return InstallerSucceeded(exit_code);
++  if (!staged.empty()) {
++    base::DeletePathRecursively(staged);
++  }
++  return ended && InstallerSucceeded(exit_code);
 +}
 +
 +thoron_update::UpdateClient::Config ConfigForThisCopy() {
@@ -2705,6 +2814,12 @@ index 0000000000000000000000000000000000000000..f0f1a6c7d60c6812e2f3451d3743b1bf
 +    // Beside the version folders, never in the package's User Data.
 +    config.download_dir = program.AppendASCII("Update");
 +    config.install = base::BindRepeating(&RunPortableUpdate);
++  } else if (install_static::IsSystemInstall()) {
++    // An install for every user: its installer needs administrator rights,
++    // and the updater never asks for them (P3.10), so it only says what is out.
++    config.by_hand =
++        "this copy is installed for every user of this computer, so someone with administrator "
++        "rights installs the update with Thoron's installer";
 +  } else {
 +    // %LOCALAPPDATA%\Thoron\Update, beside Application and User Data.
 +    config.download_dir = program.DirName().AppendASCII("Update");
@@ -12690,10 +12805,10 @@ index 0000000000000000000000000000000000000000..7ec239331342b7f306c7d09622c231e6
 +]
 diff --git a/components/thoron_update/README.md b/components/thoron_update/README.md
 new file mode 100644
-index 0000000000000000000000000000000000000000..7411a1891eab751b076c52cb62d43795be6e7c64
+index 0000000000000000000000000000000000000000..35d8d4d6e1b99357d973bdac332fbba4c22f656c
 --- /dev/null
 +++ b/components/thoron_update/README.md
-@@ -0,0 +1,206 @@
+@@ -0,0 +1,220 @@
 +# thoron_update
 +
 +The core of Thoron's updater (ROADMAP P3.3): what a copy of Thoron makes of the two files a release
@@ -12790,6 +12905,8 @@ index 0000000000000000000000000000000000000000..7411a1891eab751b076c52cb62d43795
 +        [--handed-off]
 +    thoron_update --root <program folder> --apply-package <portable .zip> --version <v>
 +    thoron_update --root <program folder> --apply-delta <file.delta> --version <v>
++    thoron_update --root <Application folder> --apply-installed-delta <file.delta> --from <v> --version <v>
++        [--system-level]
 +    thoron_update --root <program folder> --rollback
 +    thoron_update --root <program folder> --mode [auto|notify|off]
 +    thoron_update --check --manifest <update.json> --signature <update.json.sig> --public-key <base64>
@@ -12826,6 +12943,17 @@ index 0000000000000000000000000000000000000000..7411a1891eab751b076c52cb62d43795
 +made against the new one's; a path that leaves the folder, a delta for other versions or a patch that does
 +not apply refuses the whole delta and leaves nothing. Then the swap as for `--apply`, through the updater of
 +the new version. A portable copy's browser uses it when the manifest names a delta from its version.
++
++**Deltas of installed copies (P4.1).** Chromium's setup no longer applies patches itself (158 installs only
++from a whole archive), so an installed copy's delta (`*-installed.delta`) is made from and to the files an
++installed copy holds: the browser folder with the release's `setup.exe` at `<version>\Installer\setup.exe`,
++where an installed copy keeps it. `PrepareInstalledDelta` makes the newer files from the `Application`
++folder with it, the newer `setup.exe` included, and gives the command that installs them: that `setup.exe`
++with `--thoron-chrome-bin=<the made folder>` (setup copies it in place of unpacking an archive, its own
++`Installer` folder aside), without starting the browser. The browser does that when the manifest names an
++installed delta from its version; `--apply-installed-delta` does it by hand, keeps the made files in
++`Update` beside `Application` and removes them when the setup has ended. An install for every user is
++never updated from the browser: its installer needs administrator rights, which the updater never asks for.
 +`tools/qa/delta_apply_check.py` applies a real delta between two builds and compares every file.
 +
 +**Rollback (P3.8). `--rollback` says what it would do and does it only with `--confirm`. With
@@ -12848,6 +12976,7 @@ index 0000000000000000000000000000000000000000..7411a1891eab751b076c52cb62d43795
 +| 15 | `--rollback`: there is no version before the current one |
 +| 16 | `--rollback` without `--confirm`: what it would do was said, nothing was done |
 +| 17 | `--rollback --restore-profile`: no snapshot from before the current version, or it does not verify; nothing changed |
++| 18 | `--apply-installed-delta`: the newer setup did not install the version (or did not end within 15 minutes) |
 +| 20 | `--check`: a newer release for this copy; the downloads follow `full:` and `delta:` |
 +| 21 | `--check`: the release cannot be verified (signature, form, channel, replay, dates, downgrade) |
 +| 22 | `--check`: a newer release that this updater may not apply; `full:` names the package whose updater applies it, when there is one |
@@ -12902,10 +13031,10 @@ index 0000000000000000000000000000000000000000..7411a1891eab751b076c52cb62d43795
 +of the spec ("A signature to test against") is among them, under its own throwaway key.
 diff --git a/components/thoron_update/cli.cc b/components/thoron_update/cli.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..7b45c475d6691d3a6144e469bf67300bedde249a
+index 0000000000000000000000000000000000000000..5c8886f3cf7438b7098c4225a0b8d46c1b6af3fc
 --- /dev/null
 +++ b/components/thoron_update/cli.cc
-@@ -0,0 +1,511 @@
+@@ -0,0 +1,564 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -13235,6 +13364,56 @@ index 0000000000000000000000000000000000000000..7b45c475d6691d3a6144e469bf67300b
 +  return SnapshotAndApply(command, root, staged, *version, files, out);
 +}
 +
++// --apply-installed-delta: an installed copy's next version made from its own
++// Application folder with the delta, and installed by the newer setup.exe the
++// delta made (P4.1). The staged files go in Update beside Application, as the
++// browser's own downloads do, and are removed when the setup has ended.
++int ApplyInstalledDeltaCommand(const base::CommandLine& command,
++                               const base::FilePath& root,
++                               std::string* out) {
++  const std::optional<BuildVersion> version = ParseBuildVersion(Arg(command, "version"));
++  const std::optional<BuildVersion> from = ParseBuildVersion(Arg(command, "from"));
++  const base::FilePath delta = command.GetSwitchValuePath("apply-installed-delta");
++  if (!version || !from || delta.empty()) {
++    *out += "--version, --from or --apply-installed-delta is missing or wrong\n";
++    return kExitUsage;
++  }
++  const base::FilePath update = root.DirName().AppendASCII("Update");
++  const base::FilePath staged = update.AppendASCII(ToString(*version) + ".staging");
++  if (!base::CreateDirectory(update)) {
++    *out += "the Update folder could not be made\n";
++    return kExitIoError;
++  }
++  base::DeletePathRecursively(staged);
++  base::CommandLine setup(base::CommandLine::NO_PROGRAM);
++  const DeltaResult made = PrepareInstalledDelta(delta, root, *from, *version,
++                                                 command.HasSwitch("system-level"), staged, &setup);
++  if (made != DeltaResult::kDone) {
++    *out += std::string(DeltaResultName(made)) + "\n";
++    return made == DeltaResult::kIoError        ? kExitIoError
++           : made == DeltaResult::kWrongVersion ? kExitBadRequest
++                                                : kExitBadFiles;
++  }
++  *out += "delta: " + ToString(*from) + " -> " + ToString(*version) + ", installing with " +
++          setup.GetProgram().AsUTF8Unsafe() + "\n";
++  base::LaunchOptions options;
++  options.start_hidden = true;
++  base::Process process = base::LaunchProcess(setup, options);
++  int exit_code = -1;
++  const bool ended =
++      process.IsValid() && process.WaitForExitWithTimeout(base::Minutes(15), &exit_code);
++  if (process.IsValid() && !ended) {
++    process.Terminate(/*exit_code=*/1, /*wait=*/true);
++  }
++  base::DeletePathRecursively(staged);
++  if (!ended) {
++    *out += "the newer setup did not end\n";
++    return kExitInstallerFailed;
++  }
++  *out += "setup ended with " + base::NumberToString(exit_code) + "\n";
++  return exit_code == 0 ? kExitOk : kExitInstallerFailed;
++}
++
 +// The end of --apply-package and --apply-delta: the profile's snapshot when
 +// asked for, the list of the staged files, and the apply through the updater
 +// in the staged folder.
@@ -13390,6 +13569,9 @@ index 0000000000000000000000000000000000000000..7b45c475d6691d3a6144e469bf67300b
 +  if (command.HasSwitch("apply-delta")) {
 +    return ApplyDeltaCommand(command, root, out);
 +  }
++  if (command.HasSwitch("apply-installed-delta")) {
++    return ApplyInstalledDeltaCommand(command, root, out);
++  }
 +  if (command.HasSwitch("apply")) {
 +    return Apply(command, root, out);
 +  }
@@ -13419,10 +13601,10 @@ index 0000000000000000000000000000000000000000..7b45c475d6691d3a6144e469bf67300b
 +}  // namespace thoron_update
 diff --git a/components/thoron_update/cli.h b/components/thoron_update/cli.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..c3ef0c8e52107507af272d552d2edbd9fa53a5f5
+index 0000000000000000000000000000000000000000..099370fdf58ce96475f7d593a92dd789cba71b81
 --- /dev/null
 +++ b/components/thoron_update/cli.h
-@@ -0,0 +1,121 @@
+@@ -0,0 +1,128 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -13450,6 +13632,11 @@ index 0000000000000000000000000000000000000000..c3ef0c8e52107507af272d552d2edbd9
 +//       [--snapshot-profile <User Data> --snapshots <folder>]
 +//   thoron_update --root <program folder> --apply-delta <file.delta> --version <v>
 +//       [--snapshot-profile <User Data> --snapshots <folder>]
++//   thoron_update --root <Application folder> --apply-installed-delta <file.delta> --from <v> --version <v>
++//       [--system-level]
++//       an installed copy (P4.1): the newer version made from the Application folder with the delta, then
++//       installed by its own setup.exe (PrepareInstalledDelta); the Application folder is not a program
++//       folder of swap.h
 +//   thoron_update --root <program folder> --rollback [--confirm]
 +//       [--restore-profile <User Data> --snapshots <folder>]
 +//   thoron_update --check --manifest <update.json> --signature <update.json.sig> --public-key <base64>
@@ -13490,6 +13677,8 @@ index 0000000000000000000000000000000000000000..c3ef0c8e52107507af272d552d2edbd9
 +  kExitNeedsConfirmation = 16,
 +  // --rollback --restore-profile: the snapshot did not verify; nothing changed.
 +  kExitSnapshotBad = 17,
++  // --apply-installed-delta: the newer setup did not install the version.
++  kExitInstallerFailed = 18,
 +};
 +
 +// The name of the snapshot taken before `version` was put in place.
@@ -13834,21 +14023,23 @@ index 0000000000000000000000000000000000000000..f21ca483286d302bd276d12ce6060fd0
 +}  // namespace thoron_update
 diff --git a/components/thoron_update/delta_package.cc b/components/thoron_update/delta_package.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..74880dc65bf55aff1a47db776d7f5843557f47d3
+index 0000000000000000000000000000000000000000..ddeeff3ebeb79dcb794bcf2ac9dddae6e1bd65b5
 --- /dev/null
 +++ b/components/thoron_update/delta_package.cc
-@@ -0,0 +1,295 @@
+@@ -0,0 +1,327 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
 +#include "components/thoron_update/delta_package.h"
 +
++#include <algorithm>
 +#include <map>
 +#include <optional>
 +#include <set>
 +#include <string>
 +#include <utility>
 +
++#include "base/command_line.h"
 +#include "base/containers/span.h"
 +#include "base/files/file_path.h"
 +#include "base/files/file_util.h"
@@ -14132,13 +14323,43 @@ index 0000000000000000000000000000000000000000..74880dc65bf55aff1a47db776d7f5843
 +  return DeltaResult::kDone;
 +}
 +
++DeltaResult PrepareInstalledDelta(const base::FilePath& delta,
++                                  const base::FilePath& program_folder,
++                                  const BuildVersion& from,
++                                  const BuildVersion& to,
++                                  bool system_level,
++                                  const base::FilePath& staged,
++                                  base::CommandLine* setup) {
++  std::vector<VersionFile> files;
++  const DeltaResult made = ApplyDelta(delta, program_folder, from, to, staged, &files);
++  if (made != DeltaResult::kDone) {
++    return made;
++  }
++  const std::string setup_path = ToString(to) + "/Installer/setup.exe";
++  const bool listed = std::ranges::any_of(
++      files, [&](const VersionFile& file) { return file.path == setup_path; });
++  const base::FilePath setup_exe =
++      staged.Append(base::FilePath::FromUTF8Unsafe(setup_path)).NormalizePathSeparators();
++  if (!listed || !base::PathExists(setup_exe)) {
++    return Abandon(staged, DeltaResult::kNotADelta);
++  }
++  base::CommandLine command(setup_exe);
++  command.AppendSwitchPath("thoron-chrome-bin", staged);
++  command.AppendSwitch("do-not-launch-chrome");
++  if (system_level) {
++    command.AppendSwitch("system-level");
++  }
++  *setup = std::move(command);
++  return DeltaResult::kDone;
++}
++
 +}  // namespace thoron_update
 diff --git a/components/thoron_update/delta_package.h b/components/thoron_update/delta_package.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..8b78e2339b0bb46b5eab6dd418201163aced3683
+index 0000000000000000000000000000000000000000..f10ff5c9aae8709808932b7a4ba53a5b5eaceef9
 --- /dev/null
 +++ b/components/thoron_update/delta_package.h
-@@ -0,0 +1,59 @@
+@@ -0,0 +1,77 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -14152,6 +14373,7 @@ index 0000000000000000000000000000000000000000..8b78e2339b0bb46b5eab6dd418201163
 +#include "components/thoron_update/swap.h"
 +
 +namespace base {
++class CommandLine;
 +class FilePath;
 +}  // namespace base
 +
@@ -14195,15 +14417,32 @@ index 0000000000000000000000000000000000000000..8b78e2339b0bb46b5eab6dd418201163
 +                       const base::FilePath& staged,
 +                       std::vector<VersionFile>* files);
 +
++// An installed copy (ROADMAP P4.1). Chromium's setup no longer applies patches
++// itself, so the delta of an installed release turns `program_folder`
++// (Application: thoron.exe and the folder of `from`, with its
++// Installer\setup.exe) into the newer version's files in `staged`, its own
++// setup.exe included at <version>\Installer\setup.exe. `setup` is then the
++// command that installs them: that setup.exe with --thoron-chrome-bin=<staged>,
++// without starting the browser, and --system-level for an install for every
++// user. A delta without that setup.exe is not one for installed copies
++// (kNotADelta). With anything but kDone, nothing is left at `staged`.
++DeltaResult PrepareInstalledDelta(const base::FilePath& delta,
++                                  const base::FilePath& program_folder,
++                                  const BuildVersion& from,
++                                  const BuildVersion& to,
++                                  bool system_level,
++                                  const base::FilePath& staged,
++                                  base::CommandLine* setup);
++
 +}  // namespace thoron_update
 +
 +#endif  // COMPONENTS_THORON_UPDATE_DELTA_PACKAGE_H_
 diff --git a/components/thoron_update/delta_package_unittest.cc b/components/thoron_update/delta_package_unittest.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..4a59e71e2a602e0efccdf2465649ab06325b2a8c
+index 0000000000000000000000000000000000000000..1f1f897614d303b384177cdfe4aa431815713ba8
 --- /dev/null
 +++ b/components/thoron_update/delta_package_unittest.cc
-@@ -0,0 +1,277 @@
+@@ -0,0 +1,324 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -14215,6 +14454,7 @@ index 0000000000000000000000000000000000000000..4a59e71e2a602e0efccdf2465649ab06
 +#include <string>
 +#include <vector>
 +
++#include "base/command_line.h"
 +#include "base/files/file_enumerator.h"
 +#include "base/files/file_path.h"
 +#include "base/files/file_util.h"
@@ -14338,6 +14578,52 @@ index 0000000000000000000000000000000000000000..4a59e71e2a602e0efccdf2465649ab06
 +  // the file the newer version does not have is not made
 +  EXPECT_FALSE(base::PathExists(Staged().AppendASCII(kNew).AppendASCII("gone.dat")));
 +  EXPECT_EQ(files[1].sha256, Hex(new_dll_));
++}
++
++// An installed copy (P4.1): the delta also makes the newer setup.exe, from the
++// one the installed copy keeps in its version folder, and that setup is the
++// command that installs the staged folder.
++TEST_F(ThoronUpdateDeltaTest, AnInstalledCopysDeltaGivesTheNewerSetupToInstallIt) {
++  const std::string setup = "the older setup, the same in the newer version";
++  Put(old_folder_, std::string(kOld) + "/Installer/setup.exe", setup);
++  const auto with_setup = base::BindRepeating(
++      [](const std::string& data, base::DictValue& d) {
++        base::DictValue entry;
++        entry.Set("path", std::string(kNew) + "/Installer/setup.exe");
++        entry.Set("size", static_cast<double>(data.size()));
++        entry.Set("sha256", Hex(data));
++        entry.Set("how", "same");
++        entry.Set("from_path", std::string(kOld) + "/Installer/setup.exe");
++        entry.Set("from_sha256", Hex(data));
++        d.FindList("files")->Append(std::move(entry));
++      },
++      setup);
++  for (const bool system_level : {false, true}) {
++    base::DeletePathRecursively(Staged());
++    base::CommandLine command(base::CommandLine::NO_PROGRAM);
++    ASSERT_EQ(PrepareInstalledDelta(Delta(with_setup), old_folder_, *ParseBuildVersion(kOld),
++                                    *ParseBuildVersion(kNew), system_level, Staged(), &command),
++              DeltaResult::kDone);
++    EXPECT_EQ(command.GetProgram(),
++              Staged().AppendASCII(kNew).AppendASCII("Installer").AppendASCII("setup.exe"));
++    EXPECT_EQ(command.GetSwitchValuePath("thoron-chrome-bin"), Staged());
++    EXPECT_TRUE(command.HasSwitch("do-not-launch-chrome"));
++    EXPECT_EQ(command.HasSwitch("system-level"), system_level);
++    std::string read;
++    ASSERT_TRUE(base::ReadFileToString(command.GetProgram(), &read));
++    EXPECT_EQ(read, setup);
++    ASSERT_TRUE(base::ReadFileToString(Staged().AppendASCII(kNew).AppendASCII("chrome.dll"), &read));
++    EXPECT_EQ(read, new_dll_);
++  }
++}
++
++TEST_F(ThoronUpdateDeltaTest, ADeltaWithoutASetupIsNotOneForInstalledCopies) {
++  base::CommandLine command(base::CommandLine::NO_PROGRAM);
++  EXPECT_EQ(PrepareInstalledDelta(Delta(), old_folder_, *ParseBuildVersion(kOld),
++                                  *ParseBuildVersion(kNew), false, Staged(), &command),
++            DeltaResult::kNotADelta);
++  EXPECT_FALSE(base::PathExists(Staged()));
++  EXPECT_TRUE(command.GetProgram().empty());
 +}
 +
 +TEST_F(ThoronUpdateDeltaTest, ADeltaForOtherVersionsIsRefused) {
@@ -24224,10 +24510,10 @@ index 0000000000000000000000000000000000000000..90c631d9916b19b794f9be66570e3ef2
 +#endif  // COMPONENTS_THORON_UPDATE_TEST_ZIP_H_
 diff --git a/components/thoron_update/update_client.cc b/components/thoron_update/update_client.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..79ae1cc6c74d5590d3408e2afc83ca26c644c0e7
+index 0000000000000000000000000000000000000000..1bcf72f9def75d215d15b6f8b33aaa2a8733627c
 --- /dev/null
 +++ b/components/thoron_update/update_client.cc
-@@ -0,0 +1,672 @@
+@@ -0,0 +1,678 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -24405,9 +24691,13 @@ index 0000000000000000000000000000000000000000..79ae1cc6c74d5590d3408e2afc83ca26
 +      break;
 +    case State::kAvailable:
 +      page.kind = PageKind::kFailed;
++      // Why it is not installed now, when there is a reason; else a portable
++      // copy's own words.
 +      page.message = "Thoron " + newest +
-+                     " is out. This copy updates by hand: close Thoron and replace everything in "
-+                     "its folder except User Data with the new package.";
++                     (status.detail.empty()
++                          ? " is out. This copy updates by hand: close Thoron and replace everything "
++                            "in its folder except User Data with the new package."
++                          : " is out: " + status.detail + ".");
 +      break;
 +    case State::kNoPackage:
 +      page.kind = PageKind::kFailed;
@@ -24634,6 +24924,8 @@ index 0000000000000000000000000000000000000000..79ae1cc6c74d5590d3408e2afc83ca26
 +    Status available;
 +    if (wait_for_connection) {
 +      available.detail = "waits for a connection that is not metered";
++    } else if (config_.install.is_null()) {
++      available.detail = config_.by_hand;
 +    }
 +    available.state = State::kAvailable;
 +    available.version = ToString(decision_->manifest->version);
@@ -24902,10 +25194,10 @@ index 0000000000000000000000000000000000000000..79ae1cc6c74d5590d3408e2afc83ca26
 +}  // namespace thoron_update
 diff --git a/components/thoron_update/update_client.h b/components/thoron_update/update_client.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..bec03c2af8d335a4a7ba01943823038a1902a86d
+index 0000000000000000000000000000000000000000..17efb371271376d9761bc40548244a765fd5a67e
 --- /dev/null
 +++ b/components/thoron_update/update_client.h
-@@ -0,0 +1,239 @@
+@@ -0,0 +1,244 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -25024,6 +25316,11 @@ index 0000000000000000000000000000000000000000..bec03c2af8d335a4a7ba01943823038a
 +    // profile. Made when needed.
 +    base::FilePath download_dir;
 +    Installer install;
++    // Without `install`: why this copy is updated by hand, said with a newer
++    // release ("" for a portable copy's own words). An install for every user
++    // gives it: its installer needs administrator rights, which the updater
++    // never asks for (P3.10).
++    std::string by_hand;
 +    // Called once a version is installed and waits for a relaunch: its build
 +    // version, and whether the release is a security release that should not
 +    // wait (the manifest's `critical`). The browser shows the relaunch badge.
@@ -25437,10 +25734,10 @@ index 0000000000000000000000000000000000000000..523d58db6e2a1b6f60e8f55bfb651424
 +#endif  // COMPONENTS_THORON_UPDATE_UPDATE_CLIENT_TEST_DATA_H_
 diff --git a/components/thoron_update/update_client_unittest.cc b/components/thoron_update/update_client_unittest.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..359916a019f36f2c89c132769b12893370e42045
+index 0000000000000000000000000000000000000000..a17177b4d30369835f1ede2d7501f9dca1898aa3
 --- /dev/null
 +++ b/components/thoron_update/update_client_unittest.cc
-@@ -0,0 +1,597 @@
+@@ -0,0 +1,619 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -25596,6 +25893,22 @@ index 0000000000000000000000000000000000000000..359916a019f36f2c89c132769b128933
 +  EXPECT_EQ(status.state, State::kUpToDate);
 +  EXPECT_EQ(prefs_.GetInt64("thoron_update.last_serial"), data::kSerial);
 +  EXPECT_TRUE(installed_.empty());
++}
++
++// An install for every user has no installer the updater may run (its
++// installer needs administrator rights, P3.10): even an asked look only says
++// what is out, and why it is not installed.
++TEST_F(ThoronUpdateClientTest, ACopyWithoutAnInstallerSaysWhyItUpdatesByHand) {
++  Publish();
++  config_.install = UpdateClient::Installer();
++  config_.by_hand = "this copy is installed for every user of this computer";
++  const UpdateClient::Status status = Look(*Client(), /*install=*/true);
++  EXPECT_EQ(status.state, State::kAvailable);
++  EXPECT_EQ(status.detail, config_.by_hand);
++  EXPECT_TRUE(installed_.empty());
++  EXPECT_EQ(UpdateClient::ForAboutPage(status).message,
++            "Thoron 0.1.2 (" + std::string(data::kNewest) +
++                ") is out: this copy is installed for every user of this computer.");
 +}
 +
 +TEST_F(ThoronUpdateClientTest, ALookWithoutInstallingSaysWhatIsThere) {
@@ -26002,7 +26315,8 @@ index 0000000000000000000000000000000000000000..359916a019f36f2c89c132769b128933
 +      {State::kInstalling, Kind::kUpdating, ""},
 +      {State::kReadyToRelaunch, Kind::kRelaunch, ""},
 +      {State::kUpToDate, Kind::kUpToDate, ""},
-+      {State::kAvailable, Kind::kFailed, "Thoron 0.1.2 (158.0.8127.4500) is out. This copy updates by hand"},
++      // with a reason (here the shared detail) the reason; without, a portable copy's words (below)
++      {State::kAvailable, Kind::kFailed, "Thoron 0.1.2 (158.0.8127.4500) is out: bad_signature."},
 +      {State::kNoPackage, Kind::kFailed, "not yet for this kind of computer"},
 +      {State::kNeedsInstaller, Kind::kFailed, "needs its own installer"},
 +      {State::kCannotVerify, Kind::kFailed, "cannot verify updates (bad_signature), so it installs nothing"},
@@ -26026,6 +26340,11 @@ index 0000000000000000000000000000000000000000..359916a019f36f2c89c132769b128933
 +    // nothing that cannot say "up to date" says it
 +    EXPECT_EQ(page.kind == Kind::kUpToDate, c.state == State::kUpToDate);
 +  }
++  status.state = State::kAvailable;
++  status.detail.clear();
++  EXPECT_NE(UpdateClient::ForAboutPage(status).message.find(
++                "Thoron 0.1.2 (158.0.8127.4500) is out. This copy updates by hand"),
++            std::string::npos);
 +}
 +
 +TEST(ThoronUpdateClientStateTest, TheFilesBesideTheManifest) {

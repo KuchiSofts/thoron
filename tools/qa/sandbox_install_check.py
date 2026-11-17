@@ -10,6 +10,9 @@ script inside it:
                Thoron's program, its version folder and its entry among the installed programs are there
     start      starts Thoron once with its window and closes the window as a person would: Thoron ends by
                itself within 30 s and has made its profile (`User Data`)
+    delta      (with --installed-delta, --delta-updater and --delta-to) applies an installed copy's delta
+               with the updater (`--apply-installed-delta`, P4.1): the newer version's folder is there, the
+               staged files are gone, and Thoron starts on the newer version with the profile kept
     update     (with --update) starts Thoron again and, while it runs, installs the newer build over it
                (Chromium's in-use update, status 30): new_thoron.exe waits beside thoron.exe; after the window
                is closed and Thoron started again it runs from the newer version folder, new_thoron.exe is
@@ -171,6 +174,29 @@ try {
   $r.profile = Test-Path (Join-Path $data 'Local State')
   New-Item -ItemType Directory -Force (Join-Path $data 'Default') | Out-Null
   Set-Content -Path $marker -Value 'kept'
+  if (Test-Path 'C:\ThoronTest\in\delta') {
+    # an installed copy's next version from a delta (P4.1): the updater makes it from the Application folder
+    # and the newer setup.exe the delta made installs it
+    Mark 'delta: apply'
+    $d = Get-ChildItem 'C:\ThoronTest\in\delta' -Filter '*.delta' | Select-Object -First 1
+    $tool = Join-Path $env:TEMP 'thoron_update.exe'
+    Copy-Item 'C:\ThoronTest\in\delta\thoron_update.exe' $tool
+    $deltaCopy = Join-Path $env:TEMP $d.Name
+    Copy-Item $d.FullName $deltaCopy
+    $to = (Get-Content 'C:\ThoronTest\in\delta\to.txt' -Raw).Trim()
+    $r.delta_from = (@(Versions))[0]
+    $r.delta_to = $to
+    # Chromium's command line: --name=value
+    $r.delta_exit = Timed $tool @("--root=$app", "--apply-installed-delta=$deltaCopy", "--from=$($r.delta_from)",
+                                  "--version=$to") 600
+    $r.delta_folders = @(Versions)
+    $r.delta_staging_left = [bool](Get-ChildItem (Join-Path (Split-Path $app) 'Update') -Filter '*.staging' -ErrorAction SilentlyContinue)
+    Mark 'delta: start'
+    $r.delta_started = Started
+    $r.delta_runs = Loaded
+    [void](Close)
+    $r.delta_marker_kept = Test-Path $marker
+  }
   if (Test-Path 'C:\ThoronTest\in\update') {
     # the newer build installed while the older one runs: Chromium leaves new_thoron.exe beside thoron.exe
     # and swaps them when the browser closes (or at its next start)
@@ -274,6 +300,8 @@ def problems(r: dict) -> dict[str, list[str]]:
         out["start"].append("Thoron did not close within 30 s of closing its window")
     if not r.get("profile"):
         out["start"].append("no profile was made")
+    if any(k.startswith("delta_") for k in r):
+        out["delta"] = delta_problems(r)
     if any(k.startswith("update_") for k in r):
         out["update"] = update_problems(r)
     out["uninstall"] = []
@@ -340,7 +368,27 @@ def update_problems(r: dict) -> list[str]:
     return found
 
 
-def run(installer: Path, work: Path, timeout: float, update: Path | None = None, system_level: bool = False) -> dict:
+def delta_problems(r: dict) -> list[str]:
+    """An installed copy updated from a delta (ROADMAP P4.1)."""
+    found = []
+    if r.get("delta_exit") != 0:
+        found.append(f"the updater ended with {r.get('delta_exit')} (see delta.txt in the output folder)")
+    if r.get("delta_to") not in _folders(r.get("delta_folders")):
+        found.append(f"no folder of {r.get('delta_to')} after the delta: {r.get('delta_folders')}")
+    if r.get("delta_staging_left"):
+        found.append("the staged files were left in Update")
+    if not r.get("delta_started"):
+        found.append("Thoron did not start after the delta")
+    elif r.get("delta_runs") != r.get("delta_to"):
+        found.append(f"after the delta Thoron runs {r.get('delta_runs') or 'no version'}, not {r.get('delta_to')}")
+    if not r.get("delta_marker_kept"):
+        found.append("the profile was not kept through the delta")
+    return found
+
+
+def run(installer: Path, work: Path, timeout: float, update: Path | None = None, system_level: bool = False,
+        delta: tuple[Path, Path, str] | None = None) -> dict:
+    """`delta`: an installed delta, the updater that applies it, and the version it makes."""
     if work.exists():
         shutil.rmtree(work)
     (work / "out").mkdir(parents=True)
@@ -348,6 +396,11 @@ def run(installer: Path, work: Path, timeout: float, update: Path | None = None,
         if file:
             (work / "in" / folder).mkdir(parents=True)
             shutil.copy2(file, work / "in" / folder / file.name)
+    if delta:
+        (work / "in" / "delta").mkdir(parents=True)
+        shutil.copy2(delta[0], work / "in" / "delta" / delta[0].name)
+        shutil.copy2(delta[1], work / "in" / "delta" / "thoron_update.exe")
+        (work / "in" / "delta" / "to.txt").write_text(delta[2], encoding="utf-8")
     if system_level:
         (work / "in" / "system-level").write_text("", encoding="utf-8")
     (work / "in" / "run.ps1").write_text(RUN, encoding="utf-8-sig", newline="\r\n")
@@ -396,6 +449,9 @@ def main(argv: list[str]) -> int:
     p.add_argument("--installer", type=Path, required=True)
     p.add_argument("--work", type=Path, required=True, help="a scratch folder; shared with the Sandbox")
     p.add_argument("--update", type=Path, help="a newer build's installer, installed while the first one runs")
+    p.add_argument("--installed-delta", type=Path, help="an installed copy's delta (P4.1), applied after the start")
+    p.add_argument("--delta-updater", type=Path, help="the thoron_update.exe that applies it")
+    p.add_argument("--delta-to", help="the version the delta makes")
     p.add_argument("--system-level", action="store_true",
                    help="install for every user of the PC (Program Files), not for the user who runs it")
     p.add_argument("--timeout", type=float, default=900)
@@ -403,8 +459,10 @@ def main(argv: list[str]) -> int:
     if not Path(SANDBOX).is_file():
         print("SANDBOX INSTALL CHECK: FAILED (Windows Sandbox is not on)")
         return 1
+    delta = ((a.installed_delta.resolve(), a.delta_updater.resolve(), a.delta_to)
+             if a.installed_delta and a.delta_updater and a.delta_to else None)
     found = run(a.installer.resolve(), a.work.resolve(), a.timeout, a.update.resolve() if a.update else None,
-                a.system_level)
+                a.system_level, delta)
     print(json.dumps(found, indent=1))
     by_step = problems(found)
     for step, found_problems in by_step.items():

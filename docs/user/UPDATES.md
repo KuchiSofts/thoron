@@ -30,11 +30,19 @@ on a test PC (ROADMAP P3.20). For an installed Thoron on Windows:
    expired (a manifest is good for 30 days by default and never for more than 90), one dated
    in the future (your clock may be off by up to 24 hours), and one that names a version older than yours.
 4. **The download.** When the manifest names a newer release, Thoron downloads its package (a smaller
-   delta package first when the release has one, the full package otherwise or when the delta fails;
-   delta packages come with ROADMAP P4.1). A download is used only when its length and SHA-256 are
-   exactly the ones in the signed manifest.
+   delta package first when the release has one, the full package otherwise or when the delta fails).
+   A delta holds only what changed: from 158.0.8127.3010 to .6500 an installed copy's was 31 MB, where the
+   installer is 143 MB. A download is used only when its length and SHA-256 are exactly the ones in the
+   signed manifest.
 5. **The install.** Chromium's own installer puts the new version in place while Thoron runs, and the
-   About page offers to relaunch. The new version starts with the relaunch.
+   About page offers to relaunch. The new version starts with the relaunch. With a delta, Thoron first
+   makes the new version's files from your installed ones, checks each of them, and the new version's own
+   installer puts them in place.
+
+**Installed for every user of the PC.** Such a copy is in Program Files, and only someone with
+administrator rights may change it. Thoron never asks for those rights on its own, so it does not install
+the update: the About page says a newer release is out, and someone with administrator rights installs it
+with Thoron's installer.
 
 **What the requests carry.** They are plain HTTPS requests for public files through the browser's own
 network: no profile, no cookies or other credentials, nothing stored in the cache, no identifier and no
@@ -237,6 +245,5 @@ A rollback is not offered yet (ROADMAP P3.8). Before you install a newer version
 | A portable copy updating itself (the swap at its start) | P3.12, P3.20 |
 | The update mode in Settings | P3.20 |
 | Looking for updates without administrator rights while Thoron is closed | P3.10 |
-| Delta packages | P4.1 |
 | Downloads that resume, pause on metered connections, and work through a proxy | P4.3 |
 | Rollback with the profile snapshot, a warning and your confirmation | P3.8 |

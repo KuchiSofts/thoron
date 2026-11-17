@@ -127,6 +127,27 @@ class ResultsTests(unittest.TestCase):
         self.assertIn("$r.done = $true", sb.RUN)
 
 
+class DeltaTests(unittest.TestCase):
+    GOOD = {"delta_from": OLD, "delta_to": NEW, "delta_exit": 0, "delta_folders": [OLD, NEW],
+            "delta_staging_left": False, "delta_started": True, "delta_runs": NEW, "delta_marker_kept": True}
+
+    def test_a_delta_that_worked(self):
+        self.assertEqual(sb.delta_problems(self.GOOD), [])
+        self.assertIn("delta", sb.problems({**GOOD, **self.GOOD}))
+
+    def test_what_a_delta_can_get_wrong(self):
+        for change, words in (({"delta_exit": 12}, "ended with 12"), ({"delta_folders": [OLD]}, "no folder"),
+                              ({"delta_staging_left": True}, "staged files"), ({"delta_started": False}, "did not start"),
+                              ({"delta_runs": OLD}, f"runs {OLD}, not {NEW}"), ({"delta_marker_kept": False}, "profile")):
+            with self.subTest(change=change):
+                found = sb.delta_problems({**self.GOOD, **change})
+                self.assertEqual(len(found), 1, found)
+                self.assertIn(words, found[0])
+
+    def test_the_script_applies_the_delta_with_the_updater(self):
+        self.assertIn('"--apply-installed-delta=$deltaCopy", "--from=$($r.delta_from)"', sb.RUN)
+
+
 class ConfigurationTests(unittest.TestCase):
     def test_the_sandbox_is_shut_off_from_the_network_and_the_installer_folder_is_read_only(self):
         root = ET.fromstring(sb.wsb(Path(r"C:\work & co")))

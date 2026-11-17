@@ -78,7 +78,7 @@ changed in each version is in the [changelog](CHANGELOG.md), one line per change
 Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always current.
 
 <!-- roadmap:start -->
-**Overall:** `██████████████░░░░░░` 148 of 209 tasks done (71%) · roadmap updated 2026-11-12
+**Overall:** `██████████████░░░░░░` 149 of 209 tasks done (71%) · roadmap updated 2026-11-12
 
 | Area | Progress | Done | Status |
 |---|---|---|---|
@@ -87,7 +87,7 @@ Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always curre
 | [P2 - First release](ROADMAP.md#p2---first-release) | `██████████░░░░░░░░░░` | 13/26 | 🔄 In progress |
 | [P2b - ARM64](ROADMAP.md#p2b---arm64) | `░░░░░░░░░░░░░░░░░░░░` | 0/5 | 🔄 In progress |
 | [P3 - Updater v1 + Import](ROADMAP.md#p3---updater-v1--import) | `██████████░░░░░░░░░░` | 10/21 | 🔄 In progress |
-| [P4 - Updater v2](ROADMAP.md#p4---updater-v2) | `█████████████░░░░░░░` | 7/11 | 🔄 In progress |
+| [P4 - Updater v2](ROADMAP.md#p4---updater-v2) | `███████████████░░░░░` | 8/11 | 🔄 In progress |
 | [P5 - Quality](ROADMAP.md#p5---quality) | `██████████████████░░` | 71/80 | 🔄 In progress |
 | [Security (S)](ROADMAP.md#security-s) | `██████████████░░░░░░` | 11/16 | 🔄 In progress |
 | [Quality & performance (Q)](ROADMAP.md#quality--performance-q) | `███████████░░░░░░░░░` | 4/7 | 🔄 In progress |
@@ -197,7 +197,7 @@ Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always curre
 
 **P4 - Updater v2**
 
-- [ ] **P4.1** Delta packages: per-file Zucchini patches from each of the previous 3 releases, per variant
+- [x] **P4.1** Delta packages: per-file Zucchini patches from each of the previous 3 releases, per variant
 - [x] **P4.2** Delta-chain selection (smallest total download) with automatic fallback to the full package on any base-hash mismatch
 - [ ] **P4.3** Resumable downloads (HTTP range; Windows BITS optional), pause on metered connections, proxy support
 - [x] **P4.4** CPU variant auto-selection (AVX2 / SSE4 / ARM64), plus the portable "moved to another PC" check

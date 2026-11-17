@@ -76,6 +76,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import zipfile
 from dataclasses import dataclass
@@ -474,6 +475,76 @@ def delta_name(old_version: str, version: str, variant: str) -> str:
     return f"thoron-{old_version}-to-{version}-{variant}-portable.delta"
 
 
+def installed_delta_name(old_version: str, version: str, variant: str) -> str:
+    return f"thoron-{old_version}-to-{version}-{variant}-installed.delta"
+
+
+def installed_folder(chrome_bin: Path, setup_exe: Path, version: str, into: Path) -> Path:
+    """An installed copy's files as an installed delta is made from and to (P4.1): the browser folder, with the
+    release's setup.exe at <version>/Installer/setup.exe, where an installed copy keeps it. Chromium's setup no
+    longer applies patches itself, so Thoron's updater makes the newer files and the newer setup installs them."""
+    target = into / CHROME_BIN
+    shutil.copytree(chrome_bin, target)
+    (target / version / "Installer").mkdir(parents=True, exist_ok=True)
+    shutil.copy2(setup_exe, target / version / "Installer" / "setup.exe")
+    return target
+
+
+def older_installed(release: Path, variant: str, sevenzip: str, into: Path, run=subprocess.run) -> tuple[str, Path]:
+    """An older release's installed files, from its folder as it was published: the version folder of its
+    portable package (the browser folder, without the package's own updater) and the setup.exe its installer
+    holds. Its version and the folder."""
+    zips = sorted(release.glob(f"thoron-*-{variant}-portable.zip"))
+    exes = sorted(release.glob(f"thoron-*-{variant}-installer.exe"))
+    if len(zips) != 1 or len(exes) != 1:
+        raise ReleaseError(f"{release.name} must hold one portable package and one installer of {variant}")
+    old_version = zips[0].name[len("thoron-"):-len(f"-{variant}-portable.zip")]
+    if not delta.VERSION_RE.fullmatch(old_version) or exes[0].name != installer_name(old_version, variant):
+        raise ReleaseError(f"{release.name}: the portable package and the installer are not of one version")
+    chrome = (into / CHROME_BIN).resolve()
+    prefix = f"ThoronPortable/Application/{old_version}/"
+    with zipfile.ZipFile(zips[0]) as z:
+        for info in z.infolist():
+            if info.is_dir() or not info.filename.startswith(prefix):
+                continue
+            name = info.filename[len(prefix):]
+            if name == portable.UPDATER:                    # the package's own updater; an installed copy has none
+                continue
+            target = (chrome / name).resolve()
+            if chrome not in target.parents:
+                raise ReleaseError(f"{zips[0].name} has a path that leaves its folder: {info.filename}")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(z.read(info))
+    setup_dir = chrome / old_version / "Installer"
+    setup_dir.mkdir(parents=True, exist_ok=True)
+    run([sevenzip, "e", "-y", f"-o{setup_dir}", str(exes[0]), "setup.exe"], check=True, capture_output=True)
+    if not (setup_dir / "setup.exe").is_file():
+        raise ReleaseError(f"{exes[0].name} holds no setup.exe")
+    return old_version, chrome
+
+
+def add_installed_deltas(chrome_bin: Path, setup_exe: Path, dist: Path, version: str, variant: str,
+                         releases: list[Path], zucchini: Path, sevenzip: str, work: Path,
+                         run=subprocess.run) -> tuple[list[Path], list[dict]]:
+    """The installed copies' deltas (P4.1) from each older release, as published, to this one: made from the
+    older installed files and this build's, its setup.exe included, applied once and checked before kept."""
+    if len(releases) > MOST_DELTAS:
+        raise ReleaseError(f"at most {MOST_DELTAS} installed deltas (--installed-delta-from), not {len(releases)}")
+    made, reports = [], []
+    if not releases:
+        return made, reports
+    new = installed_folder(chrome_bin, setup_exe, version, work / "new")
+    for i, release in enumerate(releases):
+        old_version, old = older_installed(release, variant, sevenzip, work / f"old-{i}", run)
+        target = dist / installed_delta_name(old_version, version, variant)
+        try:
+            reports.append({**delta.make(old, new, zucchini, target), "kind": "installed"})
+        except delta.DeltaError as exc:
+            raise ReleaseError(f"installed delta from {release.name}: {exc}") from None
+        made.append(target)
+    return made, reports
+
+
 def add_deltas(chrome_bin: Path, dist: Path, version: str, variant: str, olds: list[Path],
                zucchini: Path) -> tuple[list[Path], list[dict]]:
     """The delta packages from each older release's browser folder to this one (tools/release/delta.py), each
@@ -492,14 +563,24 @@ def add_deltas(chrome_bin: Path, dist: Path, version: str, variant: str, olds: l
     return made, reports
 
 
-def update_sizes(reports: list[dict], full_bytes: int) -> str:
-    """The notes' section on what an update downloads: the full package and each delta (P4.1)."""
+def update_sizes(reports: list[dict], full_bytes: int, installer_bytes: int = 0) -> str:
+    """The notes' section on what an update downloads: the full package and each delta (P4.1); an installed
+    copy's deltas beside the installer."""
+    portable_reports = [r for r in reports if r.get("kind") != "installed"]
+    installed_reports = [r for r in reports if r.get("kind") == "installed"]
     if not reports:
         return ""
     mib = 1024 * 1024
-    lines = ["", "## Update sizes", "",
-             f"- The whole portable package: {full_bytes / mib:.1f} MiB."]
-    for r in sorted(reports, key=lambda r: r["from"], reverse=True):
+    lines = ["", "## Update sizes", ""]
+    if installed_reports and installer_bytes:
+        lines.append(f"- The installer: {installer_bytes / mib:.1f} MiB.")
+        for r in sorted(installed_reports, key=lambda r: r["from"], reverse=True):
+            lines.append(f"- An installed copy from {r['from']}: {r['delta_bytes'] / mib:.1f} MiB, "
+                         f"{100 * r['delta_bytes'] / max(1, installer_bytes):.1f} % of the installer "
+                         f"({r['same']} files the same, {r['patch']} patched, {r['whole']} whole).")
+    if portable_reports:
+        lines.append(f"- The whole portable package: {full_bytes / mib:.1f} MiB.")
+    for r in sorted(portable_reports, key=lambda r: r["from"], reverse=True):
         lines.append(f"- From {r['from']}: {r['delta_bytes'] / mib:.1f} MiB, "
                      f"{100 * r['delta_bytes'] / max(1, full_bytes):.1f} % of the whole package "
                      f"({r['same']} files the same, {r['patch']} patched, {r['whole']} whole).")
@@ -688,7 +769,8 @@ def wiki_commands(gh_repo: str) -> list[str]:
 def assemble(out: Path, dist: Path, version: str, variant: str, buildinfo: Path, chrome_bin: Path | None = None,
              licences: dict[str, bytes] | None = None, launcher: Path | None = None,
              updater: Path | None = None, deltas_from: list[Path] | None = None, zucchini: Path | None = None,
-             delta_reports: list | None = None) -> list[Path]:
+             delta_reports: list | None = None, installed_from: list[Path] | None = None,
+             sevenzip: str | None = None, work: Path | None = None) -> list[Path]:
     """Fills the release folder. With `chrome_bin` the portable package of a Windows build is made beside
     the installer, with the launcher and the updater the build wrote into `out` unless others are named;
     with `licences` the licence bundle. SHA256SUMS lists every file."""
@@ -717,6 +799,20 @@ def assemble(out: Path, dist: Path, version: str, variant: str, buildinfo: Path,
         if deltas_from:
             made, reports = add_deltas(chrome_bin, dist, version, variant, list(deltas_from),
                                        zucchini or out / "zucchini.exe")
+            files += made
+            if delta_reports is not None:
+                delta_reports.extend(reports)
+        if installed_from:
+            setup_exe = out / "setup.exe"
+            if not setup_exe.is_file():
+                raise ReleaseError("the build wrote no setup.exe, which an installed copy's delta carries")
+            scratch = Path(tempfile.mkdtemp(prefix="installed-deltas-", dir=work))
+            try:
+                made, reports = add_installed_deltas(chrome_bin, setup_exe, dist, version, variant,
+                                                     list(installed_from), zucchini or out / "zucchini.exe",
+                                                     sevenzip or "7z", scratch)
+            finally:
+                shutil.rmtree(scratch, ignore_errors=True)
             files += made
             if delta_reports is not None:
                 delta_reports.extend(reports)
@@ -1004,6 +1100,12 @@ def manifest_packages(dist: Path, version: str, variant: str, gh_repo: str, tag:
               for path in sorted(dist.glob(f"thoron-*{suffix}"))}
     if deltas and "portable" in kinds:
         kinds["portable"]["deltas"] = deltas
+    # The installed copies' deltas (P4.1): they carry the newer setup.exe, which installs what they make.
+    suffix = f"-to-{version}-{variant}-installed.delta"
+    deltas = {path.name[len("thoron-"):-len(suffix)]: mf.file_entry(path, download_url(gh_repo, tag, path.name))
+              for path in sorted(dist.glob(f"thoron-*{suffix}"))}
+    if deltas and "installed" in kinds:
+        kinds["installed"]["deltas"] = deltas
     return {variant: kinds} if kinds else {}
 
 
@@ -1274,7 +1376,8 @@ def _prepare(a) -> int:
     try:
         delta_reports: list = []
         files = assemble(a.out, a.dist, version, a.variant, a.buildinfo, chrome_bin, licences, launcher, updater,
-                         a.delta_from, a.zucchini, delta_reports)
+                         a.delta_from, a.zucchini, delta_reports, a.installed_delta_from,
+                         sevenzip_for(a.sevenzip, a.src), a.dist.parent)
         installer = built_installer(a.out, a.platform)
         kept = keep_symbols(a.out, a.dist, version, a.variant, chrome_bin,
                             [p.name for p in (installer, launcher, updater) if p is not None] + [SETUP])
@@ -1293,8 +1396,10 @@ def _prepare(a) -> int:
                                  security=security, highlights=highlights, changes=changes, thoron_version=thoron,
                                  source=source, audit=changelog.audit_lines(a.repo))
         portable_zip = a.dist / portable_name(version, a.variant)
-        if delta_reports and portable_zip.is_file():
-            notes += update_sizes(delta_reports, portable_zip.stat().st_size)
+        installer_file = a.dist / installer_name(version, a.variant)
+        if delta_reports and (portable_zip.is_file() or installer_file.is_file()):
+            notes += update_sizes(delta_reports, portable_zip.stat().st_size if portable_zip.is_file() else 0,
+                                  installer_file.stat().st_size if installer_file.is_file() else 0)
             for r in delta_reports:
                 print(f"release: delta from {r['from']}: {r['delta_bytes']} bytes "
                       f"({r['same']} same, {r['patch']} patched, {r['whole']} whole), applied and checked")
@@ -1363,6 +1468,9 @@ def main(argv: list[str], run=None) -> int:
     a_.add_argument("--delta-from", type=Path, action="append", default=[],
                     help=f"an older release's browser folder (Chrome-bin) to make a delta package from; up to "
                     f"{MOST_DELTAS} times (ROADMAP P4.1)")
+    a_.add_argument("--installed-delta-from", type=Path, action="append", default=[],
+                    help=f"an older release's folder as published (its portable package and installer) to make an "
+                    f"installed copy's delta from; up to {MOST_DELTAS} times (ROADMAP P4.1)")
     a_.add_argument("--zucchini", type=Path, help="Chromium's zucchini.exe; default: the one in the out dir")
     a_.add_argument("--contributors", type=Path, help="a saved list of upstream's contributors, as "
                     "tools/credits/contributors.py --from-json reads it; default: ask GitHub (read only)")

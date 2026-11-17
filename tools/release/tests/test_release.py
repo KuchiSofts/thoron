@@ -1684,6 +1684,88 @@ class DeltaReleaseTests(unittest.TestCase):
             with self.assertRaises(rel.ReleaseError):
                 rel.add_deltas(Path(d), Path(d), "158.0.8127.3010", "win-x64-avx2", [Path(d)] * 4,
                                Path("zucchini.exe"))
+            with self.assertRaises(rel.ReleaseError):
+                rel.add_installed_deltas(Path(d), Path(d), Path(d), "158.0.8127.3010", "win-x64-avx2",
+                                         [Path(d)] * 4, Path("zucchini.exe"), "7z", Path(d))
+
+    @staticmethod
+    def older_release(folder: Path, version: str = "158.0.8127.3000", variant: str = "win-x64-avx2",
+                      extra: dict | None = None) -> Path:
+        """An older release's folder as published: its portable package and its installer."""
+        folder.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(folder / rel.portable_name(version, variant), "w") as z:
+            z.writestr("ThoronPortable/Thoron.exe", b"launcher")
+            z.writestr(f"ThoronPortable/Application/{version}/thoron.exe", b"browser")
+            z.writestr(f"ThoronPortable/Application/{version}/thoron_update.exe", b"the package's updater")
+            z.writestr(f"ThoronPortable/Application/{version}/{version}/chrome.dll", b"engine")
+            for name, data in (extra or {}).items():
+                z.writestr(name, data)
+        (folder / rel.installer_name(version, variant)).write_bytes(b"MZ installer")
+        return folder
+
+    @staticmethod
+    def seven_zip(cmd, **kw):
+        """7-Zip taking setup.exe out of an installer: here it writes one."""
+        out = Path(next(a for a in cmd if a.startswith("-o"))[2:])
+        (out / "setup.exe").write_bytes(b"the older setup")
+
+    def test_an_older_release_s_installed_files(self):
+        with tempfile.TemporaryDirectory() as d:
+            release = self.older_release(Path(d) / "release")
+            version, chrome = rel.older_installed(release, "win-x64-avx2", "7z", Path(d) / "old", self.seven_zip)
+            self.assertEqual(version, "158.0.8127.3000")
+            self.assertEqual(sorted(p.relative_to(chrome).as_posix() for p in chrome.rglob("*") if p.is_file()),
+                             ["158.0.8127.3000/Installer/setup.exe", "158.0.8127.3000/chrome.dll", "thoron.exe"])
+            self.assertEqual((chrome / "158.0.8127.3000/Installer/setup.exe").read_bytes(), b"the older setup")
+
+    def test_an_older_release_that_is_not_one_is_refused(self):
+        with tempfile.TemporaryDirectory() as d:
+            release = self.older_release(Path(d) / "mixed")
+            (release / rel.installer_name("158.0.8127.3000", "win-x64-avx2")).rename(
+                release / rel.installer_name("158.0.8127.2000", "win-x64-avx2"))
+            with self.assertRaisesRegex(rel.ReleaseError, "not of one version"):
+                rel.older_installed(release, "win-x64-avx2", "7z", Path(d) / "a", self.seven_zip)
+            climbing = self.older_release(Path(d) / "climbing", extra={
+                "ThoronPortable/Application/158.0.8127.3000/../../outside.txt": b"x"})
+            with self.assertRaisesRegex(rel.ReleaseError, "leaves its folder"):
+                rel.older_installed(climbing, "win-x64-avx2", "7z", Path(d) / "b", self.seven_zip)
+            self.assertFalse((Path(d) / "outside.txt").exists())
+            empty = Path(d) / "empty"
+            empty.mkdir()
+            with self.assertRaisesRegex(rel.ReleaseError, "one portable package and one installer"):
+                rel.older_installed(empty, "win-x64-avx2", "7z", Path(d) / "c", self.seven_zip)
+
+    def test_the_newer_installed_files_carry_this_build_s_setup(self):
+        with tempfile.TemporaryDirectory() as d:
+            chrome_bin = Path(d) / "Chrome-bin"
+            (chrome_bin / "158.0.8127.3010").mkdir(parents=True)
+            (chrome_bin / "thoron.exe").write_bytes(b"browser")
+            (chrome_bin / "158.0.8127.3010/chrome.dll").write_bytes(b"engine")
+            setup = Path(d) / "setup.exe"
+            setup.write_bytes(b"the newer setup")
+            new = rel.installed_folder(chrome_bin, setup, "158.0.8127.3010", Path(d) / "new")
+            self.assertEqual((new / "158.0.8127.3010/Installer/setup.exe").read_bytes(), b"the newer setup")
+            self.assertEqual((new / "thoron.exe").read_bytes(), b"browser")
+            self.assertFalse((chrome_bin / "158.0.8127.3010/Installer").exists())    # the build's folder is untouched
+
+    def test_the_manifest_names_the_installed_deltas_and_the_notes_their_sizes(self):
+        with tempfile.TemporaryDirectory() as d:
+            dist = Path(d)
+            version, variant = "158.0.8127.3010", "win-x64-avx2"
+            (dist / rel.installer_name(version, variant)).write_bytes(b"installer")
+            self.assertEqual(rel.installed_delta_name("158.0.8127.3000", version, variant),
+                             "thoron-158.0.8127.3000-to-158.0.8127.3010-win-x64-avx2-installed.delta")
+            (dist / rel.installed_delta_name("158.0.8127.3000", version, variant)).write_bytes(b"delta!")
+            packages = rel.manifest_packages(dist, version, variant, "KuchiSofts/thoron", "v0.1.2")
+            self.assertEqual(sorted(packages[variant]["installed"]["deltas"]), ["158.0.8127.3000"])
+            self.assertEqual(packages[variant]["installed"]["deltas"]["158.0.8127.3000"]["size"], 6)
+            mib = 1024 * 1024
+            text = rel.update_sizes([{"from": "158.0.8127.3000", "delta_bytes": 31 * mib, "same": 200, "patch": 60,
+                                      "whole": 3, "kind": "installed"}], 0, 143 * mib)
+            self.assertIn("- The installer: 143.0 MiB.", text)
+            self.assertIn("- An installed copy from 158.0.8127.3000: 31.0 MiB, 21.7 % of the installer "
+                          "(200 files the same, 60 patched, 3 whole).", text)
+            self.assertNotIn("portable package", text)
 
 
 

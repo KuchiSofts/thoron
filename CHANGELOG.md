@@ -7,6 +7,7 @@ Explanations live in the design docs under `docs/design/`.
 ## [Unreleased]
 
 ### Added
+- **Updates:** an installed Thoron downloads only what changed in a release: from 158.0.8127.3010 to .6500 that was 31 MB instead of the 143 MB installer. A Thoron installed for every user of the PC is not updated by the browser, which never asks for administrator rights; the About page says that a newer release is out.
 - **Quality:** every state of the About page's update line is checked in a running Thoron, from "Checking for updates" and the download's percentage to "Relaunch Thoron to finish updating", with a build that trusts only a test key.
 - **Import:** open windows, tabs and tab groups from Firefox, with each tab's history and pinned tabs; Firefox's own pages stay behind (`tools/migrate/firefox_sessions.py`).
 - **Quality:** Thoron's installer is checked on a clean Windows in Windows Sandbox: install, first start, an update while Thoron runs, uninstall, for one user and for every user of the PC, with the profile kept. Run from a read-only folder, the installer stops with code 109; run it from Downloads.

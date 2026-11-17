@@ -229,6 +229,7 @@ Commands are run from the repository root in the build window of
 | Credits (ROADMAP **L.3**) | `release.py prepare` | The contributor list in `CREDITS.md` is the one made now; every origin and licence of the patch inventory is in `CREDITS.md` and `NOTICE` |
 | Changelog and wiki (ROADMAP **D.10**, **D.9**) | `release.py prepare` | `CHANGELOG.md` is in its short form and lists the release's changes; the wiki pages pass the linter and name the version |
 | The build starts, the sandbox is in force, nothing crashes | `tools/build/smoke.py` | `SMOKE: PASSED` |
+| The last release's updater installs this one (THREAT_MODEL U14) | `tools/qa/portable_update_check.py --previous <the last release's portable .zip> --report <file>`, given to `release.py prepare --update-check` | `PORTABLE UPDATE CHECK: PASSED`, from the last release to this build; `prepare` refuses a release after the first without it |
 | Package contents | `tools/release/package_audit.py` (also run by `release.py prepare`, for the installer and the portable package) | The Thoron program is there; no Widevine, no Thorium-named file; no profile data in the portable package |
 | A real profile survives the update (ROADMAP **Q.7**) | `tools/qa/profile_rehearsal.py` on a copy of a real profile | The last line says the new build kept everything |
 | Signature | `release.py prepare --minisign-key`, then `minisign -Vm SHA256SUMS -P <public key>` | The signature verifies; `publish` refuses a release without one |
@@ -298,6 +299,7 @@ and the cause becomes a roadmap task.
 [ ] smoke.py: SMOKE: PASSED
 [ ] profile_rehearsal.py on a copy of a real profile: everything kept
 [ ] bench.py (offline) compared with the last release
+[ ] portable_update_check.py --previous <last release's portable .zip> --report: PASSED
 [ ] release.py prepare with --security and --highlights: no problem; NOTES.md names the fixes, in-the-wild ones first
 [ ] The release folder holds the installer, the portable .zip, BUILDINFO and the licence bundle
 [ ] SHA256SUMS signed and the signature verified

@@ -55,6 +55,9 @@ INVENTORY = patch_licenses.render_table([
     {"patch": "b.patch", "origin": "ungoogled-chromium, Bromite", "license": "BSD-3-Clause AND GPL-3.0",
      "evidence": "y"}])
 SOAK_REPORT = f"Soak: 8.00 h, 4168 rounds of 6 tabs\nBuild: {BUILD}\nSOAK: PASSED\n"
+LAST_RELEASE = "156.0.8078.28"
+UPDATE_REPORT = (f"Portable update check (tools/qa/portable_update_check.py)\nBuild: {BUILD}\nFrom: {LAST_RELEASE}\n"
+                 f"Previous package: thoron-{LAST_RELEASE}-win-x64-avx2-portable.zip\nPORTABLE UPDATE CHECK: PASSED\n")
 BENCH = {"browser": "Thoron", "startup_ms": {"median": 400.0, "spread_pct": 1.0},
          "memory_1_tab_mb": {"median": 180.0, "spread_pct": 1.0},
          "memory_20_tabs_mb": {"median": 900.0, "spread_pct": 1.0},
@@ -335,15 +338,18 @@ class ReleaseFixture(Fixture):
         return code, out.getvalue(), err.getvalue()
 
     def prepare(self, *more, dist: Path | None = None, previous: str = "156.0.8078.28", bench: dict | None = None,
-                soak: str | None = None, **kw):
+                soak: str | None = None, update: str | None = None, **kw):
         bench_file = self.repo.parent / "bench.json"
         bench_file.write_text(json.dumps(bench or BENCH), encoding="utf-8")
         soak_file = self.repo.parent / "soak.txt"
         soak_file.write_text(soak if soak is not None else SOAK_REPORT, encoding="utf-8")
+        update_file = self.repo.parent / "update-check.txt"
+        update_file.write_text((update if update is not None else UPDATE_REPORT).replace(
+            f"From: {LAST_RELEASE}", f"From: {previous}"), encoding="utf-8")
         return self.main("prepare", "--src", self.src, "--out", self.out, "--platform", "win", "--variant", VARIANT,
                          "--previous", previous, "--buildinfo", self.buildinfo, "--dist", dist or self.dist,
                          "--repo", self.repo, "--since", "v0.1.1", "--chromium-old", "156.0.8078.80",
-                         "--bench", bench_file, "--soak", soak_file, *more, **kw)
+                         "--bench", bench_file, "--soak", soak_file, "--update-check", update_file, *more, **kw)
 
     def with_manifest(self, *more) -> tuple:
         return ("--manifest-key", self.keys / "manifest.key", "--manifest-public-key", text(self.public),
@@ -919,7 +925,8 @@ class DryRunTests(ReleaseTestCase):
         self.f.set_version(NEXT_BUILD, NEXT_THORON)
         code, out, err = self.f.prepare(*self.f.with_manifest("--previous-manifest", first / "update.json"),
                                         dist=second, previous=BUILD, clock=NOW + 3600,
-                                        soak=SOAK_REPORT.replace(BUILD, NEXT_BUILD))
+                                        soak=SOAK_REPORT.replace(BUILD, NEXT_BUILD),
+                                        update=UPDATE_REPORT.replace(f"Build: {BUILD}", f"Build: {NEXT_BUILD}"))
         self.assertEqual(code, 0, out + err)
         data = mf.verify(*self.manifest(second), self.f.public, allowed_hosts=HOSTS)
         self.assertEqual((data["serial"], data["version"], data["thoron_version"], data["min_updater_version"]),
@@ -1603,6 +1610,39 @@ class SetupReleaseTests(unittest.TestCase):
                     self.assertEqual(len(rel.setup_problems(shipped)), 1)
             shipped.write_bytes(b"not a program")
             self.assertIn("is not a Windows program", rel.setup_problems(shipped)[0])
+
+
+class UpdateCheckGateTests(unittest.TestCase):
+    """THREAT_MODEL U14: a release after the first needs the last release's own updater to have installed it."""
+
+    def problems(self, text, first=False):
+        with tempfile.TemporaryDirectory() as d:
+            report = Path(d) / "update-check.txt"
+            report.write_text(text, encoding="utf-8")
+            return rel.update_check_problems(report, BUILD, LAST_RELEASE, first)
+
+    def test_a_passing_check_from_the_last_release(self):
+        self.assertEqual(self.problems(UPDATE_REPORT), [])
+
+    def test_the_first_release_needs_none(self):
+        self.assertEqual(rel.update_check_problems(None, BUILD, LAST_RELEASE, first=True), [])
+
+    def test_what_is_refused(self):
+        self.assertIn("--update-check", rel.update_check_problems(None, BUILD, LAST_RELEASE, first=False)[0])
+        self.assertIn("not " + BUILD, self.problems(UPDATE_REPORT.replace(f"Build: {BUILD}", "Build: 1.2.3.4"))[0])
+        self.assertIn("not the last release",
+                      self.problems(UPDATE_REPORT.replace(f"From: {LAST_RELEASE}", "From: 158.0.8127.3000"))[0])
+        same = UPDATE_REPORT.replace(f"thoron-{LAST_RELEASE}-win-x64-avx2-portable.zip",
+                                     "none (the same package, one version older)")
+        self.assertIn("own package", self.problems(same)[0])
+        self.assertIn("did not pass", self.problems(UPDATE_REPORT.replace("PASSED", "FAILED"))[0])
+        self.assertEqual(len(self.problems("nothing")), 4)
+
+    def test_prepare_refuses_a_release_without_it(self):
+        with tempfile.TemporaryDirectory() as d:
+            report = Path(d) / "update-check.txt"
+            report.write_text(UPDATE_REPORT.replace("PASSED", "FAILED"), encoding="utf-8")
+            self.assertTrue(rel.update_check_problems(report, BUILD, LAST_RELEASE, first=False))
 
 
 class SoakGateTests(unittest.TestCase):

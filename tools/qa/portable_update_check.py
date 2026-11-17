@@ -4,7 +4,8 @@
 
 The release's package is made by tools/release/portable.py from a build, with the launcher and the updater given.
 A portable copy one version older is made from the same package (its version folder renamed, so which version a
-start runs is told by the folder chrome://version names). In a folder with spaces, accented, Cyrillic and Chinese
+start runs is told by the folder chrome://version names), or, with --previous, the last release's own portable
+package is the older copy, so that the updater which runs is the one people have (THREAT_MODEL U14). In a folder with spaces, accented, Cyrillic and Chinese
 letters:
 
     start     Thoron.exe starts the older version; a setting is changed
@@ -22,14 +23,17 @@ letters:
 
 Nothing leaves the PC: the browser runs headless with every outside name unresolvable.
     py -3 -I tools/qa/portable_update_check.py --chrome-bin <Chrome-bin> --launcher <thoron_launcher.exe>
-        --updater <thoron_update.exe> --work <scratch dir>
+        --updater <thoron_update.exe> --work <scratch dir> [--previous <last release's portable .zip>]
+        [--report <file for release.py prepare --update-check>]
 Exit status 0 only when every step passes.
 """
 import argparse
 import hashlib
+import re
 import shutil
 import subprocess
 import sys
+import zipfile
 from pathlib import Path
 
 if __package__ in (None, ""):  # running as a script under `py -3 -I`: make `tools` importable
@@ -40,6 +44,7 @@ from tools.release import portable  # noqa: E402
 
 PLACE = "Ünïcødé update Пример 例 & more"
 OLDER = "158.0.8127.3000"
+VERSION = re.compile(r"^\d+\.\d+\.\d+\.\d+$")
 
 
 def update_problems(code: int, text: str, newer: str) -> list[str]:
@@ -71,7 +76,28 @@ def restored_problems(snapshot: dict[str, str], profile: Path) -> list[str]:
     return out
 
 
-def run(chrome_bin: Path, launcher: Path, updater: Path, work: Path) -> list[str]:
+def unpack_previous(package: Path, place: Path) -> str:
+    """Unpacks the last release's portable package into `place` (ThoronPortable/ in it) and returns the
+    version it runs. Python's extractall keeps every entry inside `place`."""
+    with zipfile.ZipFile(package) as z:
+        z.extractall(place)
+    current = (place / "ThoronPortable" / "Application" / "current").read_text(encoding="ascii").strip()
+    if not VERSION.match(current):
+        raise ValueError(f"the previous package names no version it runs ({current[:40]!r})")
+    return current
+
+
+def report_text(problems: list[str], newer: str, older: str, previous: Path | None) -> str:
+    """What release.py prepare reads (--update-check): which build was installed over which, by whose updater."""
+    return ("Portable update check (tools/qa/portable_update_check.py)\n"
+            f"Build: {newer}\n"
+            f"From: {older}\n"
+            f"Previous package: {previous.name if previous else 'none (the same package, one version older)'}\n"
+            f"PORTABLE UPDATE CHECK: {'PASSED' if not problems else 'FAILED'}\n")
+
+
+def run(chrome_bin: Path, launcher: Path, updater: Path, work: Path,
+        previous: Path | None = None) -> tuple[list[str], str, str]:
     if work.exists():
         shutil.rmtree(work)
     work.mkdir(parents=True)
@@ -88,18 +114,28 @@ def run(chrome_bin: Path, launcher: Path, updater: Path, work: Path) -> list[str
     print(f"package: {archive.name} ({archive.stat().st_size} bytes), Thoron {newer}")
 
     copy = work / PLACE / "ThoronPortable"
-    shutil.copytree(made["package"], copy)
-    app = copy / "Application"
-    (app / newer).rename(app / OLDER)
-    (app / "current").write_text(OLDER + "\n", encoding="ascii")
+    if previous is None:
+        # one version older, made from the same package: the updater that runs is this build's own
+        older = OLDER
+        shutil.copytree(made["package"], copy)
+        app = copy / "Application"
+        (app / newer).rename(app / older)
+        (app / "current").write_text(older + "\n", encoding="ascii")
+    else:
+        # the last release itself: its own updater installs this build (THREAT_MODEL U14)
+        older = unpack_previous(previous, work / PLACE)
+        app = copy / "Application"
+        print(f"previous release: {previous.name}, Thoron {older}")
+        if older == newer:
+            return [f"the previous package is of {older}, this same build"], newer, older
 
     found = pl._one_start(copy, change=23)
-    report("start", pl.started_problems("start", found, copy, OLDER) or
+    report("start", pl.started_problems("start", found, copy, older) or
            ([] if found.get("setting") == pc.DEFAULT else [f"start: the setting is {found.get('setting')}"]),
            found.get("executable_path"))
 
-    old_before = tree_hashes(app / OLDER)
-    old_updater = app / OLDER / "thoron_update.exe"
+    old_before = tree_hashes(app / older)
+    old_updater = app / older / "thoron_update.exe"
     snapshots = copy / "Snapshots"
     code, text = pl._cli(old_updater, f"--root={app}", f"--apply-package={archive}", f"--version={newer}",
                          f"--snapshot-profile={copy / 'User Data'}", f"--snapshots={snapshots}")
@@ -111,7 +147,7 @@ def run(chrome_bin: Path, launcher: Path, updater: Path, work: Path) -> list[str
            found.get("executable_path"))
 
     code, text = pl._cli(app / newer / "thoron_update.exe", f"--root={app}", "--status")
-    report("status", pl.status_problems(text, newer, OLDER) if code == 0 else [f"status gave {code}"],
+    report("status", pl.status_problems(text, newer, older) if code == 0 else [f"status gave {code}"],
            text.strip().replace("\n", " | "))
 
     # A version the package does not have, and a file that is not a package, switch nothing.
@@ -127,7 +163,7 @@ def run(chrome_bin: Path, launcher: Path, updater: Path, work: Path) -> list[str
         found.append(f"refused: a version the package lacks gave {code} {text.strip()!r}")
     if code2 != 12 or "not_a_package" not in text2:
         found.append(f"refused: a file that is not a package gave {code2} {text2.strip()!r}")
-    if pl.status_problems(text3, newer, OLDER):
+    if pl.status_problems(text3, newer, older):
         found.append("refused: something was switched")
     if any(p.name.endswith(".staging") for p in app.iterdir()):
         found.append("refused: a staging folder was left")
@@ -139,7 +175,7 @@ def run(chrome_bin: Path, launcher: Path, updater: Path, work: Path) -> list[str
     found = [] if code == 16 and "--confirm" in text and "is lost" in text else \
         [f"rollback: without --confirm it gave {code} {text.strip()[:160]!r}"]
     code_s, text_s = pl._cli(tool, f"--root={app}", "--status")
-    found += pl.status_problems(text_s, newer, OLDER)
+    found += pl.status_problems(text_s, newer, older)
     snapshot = snapshots / f"before-{newer}"
     held = tree_hashes(snapshot) if snapshot.is_dir() else {}
     if not held:
@@ -148,14 +184,14 @@ def run(chrome_bin: Path, launcher: Path, updater: Path, work: Path) -> list[str
     if code != 0 or "profile: put back" not in text:
         found.append(f"rollback: --confirm gave {code} {text.strip()[:160]!r}")
     found += restored_problems(held, copy / "User Data")
-    if tree_hashes(app / OLDER) != old_before:
-        found.append(f"rollback: the folder of {OLDER} is not what it was before the update")
+    if tree_hashes(app / older) != old_before:
+        found.append(f"rollback: the folder of {older} is not what it was before the update")
     after = pl._one_start(copy, change=None)
-    found += pl.started_problems("rollback", after, copy, OLDER)
+    found += pl.started_problems("rollback", after, copy, older)
     if after.get("setting") != 23:
         found.append(f"rollback: the setting is {after.get('setting')}, not 23 from before the update")
     report("rollback", found, f"{len(held)} files of the snapshot; {after.get('executable_path')}")
-    return problems
+    return problems, newer, older
 
 
 def main(argv: list[str]) -> int:
@@ -164,9 +200,14 @@ def main(argv: list[str]) -> int:
     p.add_argument("--launcher", type=Path, required=True)
     p.add_argument("--updater", type=Path, required=True)
     p.add_argument("--work", type=Path, required=True, help="a scratch folder; `portable-update` is made in it")
+    p.add_argument("--previous", type=Path, help="the last release's portable package (.zip): its own updater "
+                                                 "installs this build (THREAT_MODEL U14)")
+    p.add_argument("--report", type=Path, help="write the result for release.py prepare --update-check")
     a = p.parse_args(argv)
     sys.stdout.reconfigure(encoding="utf-8", errors="backslashreplace")
-    problems = run(a.chrome_bin, a.launcher, a.updater, a.work / "portable-update")
+    problems, newer, older = run(a.chrome_bin, a.launcher, a.updater, a.work / "portable-update", a.previous)
+    if a.report:
+        a.report.write_text(report_text(problems, newer, older, a.previous), encoding="utf-8", newline="\n")
     print(f"PORTABLE UPDATE CHECK: {'PASSED' if not problems else f'FAILED ({len(problems)} problem(s))'}")
     return 1 if problems else 0
 

@@ -575,6 +575,35 @@ def soak_problems(soak: Path | None, version: str) -> list[str]:
     return out
 
 
+def update_check_problems(report: Path | None, version: str, previous: str, first: bool) -> list[str]:
+    """Why it is not shown that the last release's own updater installs this build (THREAT_MODEL U14):
+    tools/qa/portable_update_check.py --previous <the last release's portable package> --report, run on this
+    build. The first release has no last release, so it needs none."""
+    if first:
+        return []
+    if report is None:
+        return ["no check that the last release's updater installs this build: run "
+                "tools/qa/portable_update_check.py --previous <its portable package> --report on it and give "
+                "--update-check"]
+    try:
+        text = report.read_text(encoding="utf-8")
+    except OSError as exc:
+        return [f"the update check could not be read ({type(exc).__name__})"]
+    out = []
+    build = re.search(r"^Build: (\S+)$", text, re.M)
+    if not build or build.group(1) != version:
+        out.append(f"the update check installed build {build.group(1) if build else 'unknown'}, not {version}")
+    source = re.search(r"^From: (\S+)$", text, re.M)
+    if not source or source.group(1) != previous:
+        out.append(f"the update check started from {source.group(1) if source else 'an unknown build'}, not "
+                   f"the last release {previous}")
+    if not re.search(r"^Previous package: \S+\.zip$", text, re.M):
+        out.append("the update check did not start from the last release's own package (--previous)")
+    if not re.search(r"^PORTABLE UPDATE CHECK: PASSED$", text, re.M):
+        out.append("the update check did not pass")
+    return out
+
+
 # --- the wiki (ROADMAP D.9) --------------------------------------------------------------------------------
 
 def wiki_problems(repo: Path, thoron: str | None) -> list[str]:
@@ -991,7 +1020,8 @@ def _prepare(a) -> int:
     chromium_new = ver.split(version)[0] if read_version(a.src)[1] else None
     chrome_bin = (a.chrome_bin or a.out / CHROME_BIN) if a.platform == "win" else None
     launcher, updater = a.launcher or a.out / portable.BUILT_LAUNCHER, a.updater or a.out / portable.UPDATER
-    problems += [f"Thoron version: {p}" for p in thoron_version_problems(thoron, ver.release_tags(a.repo))]
+    tags = ver.release_tags(a.repo)
+    problems += [f"Thoron version: {p}" for p in thoron_version_problems(thoron, tags)]
     problems += [f"BUILDINFO: {p}" for p in source_problems(info, thoron, chromium_new)]
     licences, found = licence_texts(a.repo, a.src)
     problems += [f"licences: {p}" for p in found]
@@ -1002,6 +1032,9 @@ def _prepare(a) -> int:
     problems += [f"patch licences: {p}" for p in licence_record_problems(a.repo)]
     problems += [f"performance: {p}" for p in performance_problems(a.repo, a.bench, thoron)]
     problems += [f"memory: {p}" for p in soak_problems(a.soak, version)]
+    if chrome_bin is not None:
+        first = ver.latest_thoron(tags) is None
+        problems += [f"update: {p}" for p in update_check_problems(a.update_check, version, a.previous, first)]
     audit_doc, audit_lines = changelog.audit_lines(a.repo)
     if not audit_lines:
         problems.append("upstream audit: no docs/security/UPSTREAM_AUDIT_*.md with lines \"For the release notes\" "
@@ -1130,6 +1163,8 @@ def main(argv: list[str], run=None) -> int:
     a_.add_argument("--highlights", type=Path, help="a hand-written opening of the notes")
     a_.add_argument("--soak", type=Path, help=f"tools/qa/soak.py's report of an {SOAK_HOURS:g} h run of this "
                     "build (ROADMAP Q.4)")
+    a_.add_argument("--update-check", type=Path, help="tools/qa/portable_update_check.py's --report: the last "
+                    "release's own portable package updated to this build (THREAT_MODEL U14)")
     a_.add_argument("--bench", type=Path, help="tools/qa/bench.py's result for this build; it is compared "
                     "with docs/perf/baseline.json (ROADMAP Q.3)")
     a_.add_argument("--manifest-key", type=Path, help="the private key file that signs the update manifest")

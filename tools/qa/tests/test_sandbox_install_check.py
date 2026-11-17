@@ -111,6 +111,65 @@ class ProblemsTests(unittest.TestCase):
         self.assertTrue(found["start"] and found["uninstall"])
 
 
+TASK = {"task": {"found": True, "Command": r"C:\Thoron\Application\158.0.8127.6500\ThoronSetup.exe",
+                 "Arguments": "--scheduled --variant=win-x64-avx2", "LogonType": "InteractiveToken",
+                 "RunLevel": "LeastPrivilege", "StartWhenAvailable": "true"},
+        "task_run": {"run_exit": 0, "status": "Queued", "last_result": "0"}, "task_direct": 4, "task_after": False,
+        "task_switched_off": 0, "task_install_again": 0}
+TASK["task_again"] = {**TASK["task"], "Enabled": "false"}
+
+
+class TaskTests(unittest.TestCase):
+    def test_a_task_that_worked_and_its_place_among_the_steps(self):
+        found = sb.problems({**GOOD, **TASK})
+        self.assertEqual(list(found), ["install", "task", "start", "uninstall"])
+        self.assertEqual(found["task"], [])
+
+    def test_what_the_task_can_get_wrong(self):
+        task = TASK["task"]
+        cases = [
+            ({"task": {"found": False}}, "registered no update task"),
+            ({"task": {**task, "Command": task["Command"].replace("6500", "3010")}}, "not the installed version's"),
+            ({"task": {**task, "Arguments": "--scheduled"}}, "arguments"),
+            ({"task": {**task, "LogonType": "Password"}}, "user's own rights"),
+            ({"task": {**task, "RunLevel": "HighestAvailable"}}, "user's own rights"),
+            ({"task": {**task, "StartWhenAvailable": "false"}}, "is skipped"),
+            ({"task_run": {"status": "Ready", "last_result": "267011"}}, "not held for the network"),
+            ({"task_direct": 0}, "ended with 0"),
+            ({"task_after": True}, "uninstall left the update task"),
+            ({"task_switched_off": 1}, "could not switch the task off"),
+            ({"task_install_again": 7}, "installing again ended with 7"),
+            ({"task_again": {**task, "Command": r"C:\Windows\System32\where.exe", "Enabled": "false"}},
+             "did not register Thoron's task again"),
+            ({"task_again": {**task, "Enabled": "true"}}, "switched the task back on"),
+        ]
+        for change, words in cases:
+            with self.subTest(change=change):
+                found = sb.task_problems({**GOOD, **TASK, **change})
+                self.assertEqual(len(found), 1, found)
+                self.assertIn(words, found[0])
+
+    def test_an_install_for_every_user_has_no_task(self):
+        self.assertEqual(sb.task_problems({**GOOD, "system_level": True, "task": {"found": False}}), [])
+        self.assertIn("every user", sb.task_problems({**GOOD, **TASK, "system_level": True})[0])
+
+    def test_after_an_update_the_task_runs_the_newer_version(self):
+        first = {**TASK["task"], "Command": TASK["task"]["Command"].replace(NEW, OLD)}
+        newer = {**GOOD, **TASK, **UPDATED, "version_folders": [OLD], "task": first,
+                 "update_task": {**TASK["task"]}}
+        self.assertEqual(sb.task_problems(newer), [])
+        stale = {**newer, "update_task": {**TASK["task"], "Command": TASK["task"]["Command"].replace(NEW, OLD)}}
+        self.assertIn("after the update", sb.task_problems(stale)[0])
+
+    def test_the_script_registers_runs_and_removes_nothing_itself(self):
+        # it reads the task (/Query), starts it (/Run) and switches it off as a person would (/Change): the
+        # installer registers it, the uninstaller removes it
+        self.assertIn("'/Query', '/TN', $taskName, '/XML'", sb.RUN)
+        self.assertIn("'/Run', '/TN', $taskName", sb.RUN)
+        self.assertNotIn("/Create", sb.RUN)
+        self.assertNotIn("/Delete", sb.RUN)
+
+
 class ResultsTests(unittest.TestCase):
     def test_partial_and_half_written_results(self):
         import tempfile

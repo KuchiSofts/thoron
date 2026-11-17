@@ -15,6 +15,11 @@ program (any program that ends by itself; thoron_update.exe prints its usage). T
     processor   on a processor without AVX2 the release, which has an AVX2 installer only, has none for it
                 (exit 3); on one without SSE4.2 Thoron cannot run at all (exit 3)
     too old     the release asks for a newer updater than this ThoronSetup (exit 7)
+    scheduled   (ROADMAP P3.10) the daily look of an installed copy, `--scheduled`, with a program folder made
+                for it: a release newer than its newest version folder is installed (exit 0); one that is not
+                newer is left (exit 8); with updates set to notify or off nothing is fetched (exit 9); the copy
+                keeps its build (`--variant=win-x64-sse4`: the release has no SSE4 installer, exit 3); on a
+                metered connection nothing is downloaded (exit 10)
     shipped     (with --shipped) the ThoronSetup.exe that ships holds none of the test build's switches and
                 not the test key (tools/release/release.py checks it the same way)
 
@@ -36,7 +41,9 @@ from tools.update import manifest as mf  # noqa: E402
 
 TEST_KEY_PHRASE = b"thoron-update test vectors: a key for tests only, never a release key"
 URL = "https://github.com/KuchiSofts/thoron/releases/download/v0.1.2/"
-INSTALLER = "thoron-158.0.8127.4500-win-x64-avx2-installer.exe"
+# above the build of ThoronSetup under test, so "too old" can ask for an updater newer than it
+VERSION = "158.0.8127.9000"
+INSTALLER = f"thoron-{VERSION}-win-x64-avx2-installer.exe"
 
 
 def release(folder: Path, installer: bytes, *, min_updater: str = "158.0.8127.3000", forge: bool = False,
@@ -47,7 +54,7 @@ def release(folder: Path, installer: bytes, *, min_updater: str = "158.0.8127.30
     private = hashlib.sha256(TEST_KEY_PHRASE).digest()
     public = mf.public_key_of(private)
     entry = {"url": URL + INSTALLER, "size": len(installer), "sha256": hashlib.sha256(installer).hexdigest()}
-    data = mf.build(channel="stable", version="158.0.8127.4500", thoron_version="0.1.2", critical=False,
+    data = mf.build(channel="stable", version=VERSION, thoron_version="0.1.2", critical=False,
                     min_updater_version=min_updater, packages={"win-x64-avx2": {"installed": {"full": entry}}},
                     published=published if published is not None else int(time.time()) - 600,
                     allowed_hosts=("github.com",))
@@ -74,7 +81,19 @@ CASES = (
     ("expired", {}, [f"--now={int(time.time()) + 200 * 86400}"], 2, "expired"),
     ("processor sse4", {}, ["--assume-cpu=sse4"], 3, "no installer for this computer yet"),
     ("processor old", {}, ["--assume-cpu=old"], 3, "too old for Thoron"),
-    ("too old", {"min_updater": "158.0.8127.4500"}, [], 7, "Download Thoron Setup again"),
+    ("too old", {"min_updater": VERSION}, [], 7, "Download Thoron Setup again"),
+    # the daily look (P3.10): `program` is the installed copy's folder, its version folders and its update mode
+    ("scheduled newer", {"program": ["158.0.8127.3010"]}, ["--scheduled", "--variant=win-x64-avx2"], 0,
+     "is installed"),
+    ("scheduled same", {"program": ["158.0.8127.3010", VERSION]}, ["--scheduled"], 8, "is the newest"),
+    ("scheduled installed is newer", {"program": ["158.0.8127.9500"]}, ["--scheduled"], 8, "is the newest"),
+    ("scheduled notify", {"program": ["158.0.8127.3010"], "mode": "notify"}, ["--scheduled"], 9,
+     "not automatic"),
+    ("scheduled off", {"program": ["158.0.8127.3010"], "mode": "off"}, ["--scheduled"], 9, "not automatic"),
+    ("scheduled keeps its build", {"program": ["158.0.8127.3010"]}, ["--scheduled", "--variant=win-x64-sse4"], 3,
+     "no installer for this computer yet"),
+    ("scheduled metered", {"program": ["158.0.8127.3010"]}, ["--scheduled", "--assume-metered"], 10,
+     "not downloaded on a metered connection"),
 )
 
 
@@ -94,6 +113,13 @@ def run(setup: Path, stand_in: Path, work: Path) -> list[str]:
             data = bytearray((folder / INSTALLER).read_bytes())
             data[len(data) // 2] ^= 0xFF
             (folder / INSTALLER).write_bytes(bytes(data))
+        if "program" in how:
+            program_folder = work / (name.replace(" ", "-") + "-program")
+            for version in how["program"]:
+                (program_folder / version).mkdir(parents=True)
+            if how.get("mode"):
+                (program_folder / "update-mode").write_text(how["mode"] + "\n", encoding="utf-8")
+            extra = [*extra, f"--program-folder={program_folder}"]
         code, said = run_setup(setup, folder, work / "message.txt", *extra)
         ok = judge(code, said, want, words)
         print(f"{'PASS' if ok else 'FAIL'}  {name}: exit {code}: {said[:110]}")

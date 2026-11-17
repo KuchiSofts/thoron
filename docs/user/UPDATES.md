@@ -20,7 +20,9 @@ that is signed (ROADMAP P2.11). An update of an installed Thoron from start to e
 on a test PC (ROADMAP P3.20). For an installed Thoron on Windows:
 
 1. **When it looks.** 10 minutes after Thoron starts and then every 5 hours, in the update mode `auto`
-   (section 4), and every time you open the About page (`chrome://settings/help`).
+   (section 4), and every time you open the About page (`chrome://settings/help`). A Thoron installed
+   for one user also looks once a day, whether it runs or not, through a task in Task Scheduler (section
+   4).
 2. **What it fetches.** Three small public files of the newest release on GitHub, from
    `https://github.com/KuchiSofts/thoron/releases/latest/download/`: `update.json` (the manifest: which
    release is the newest, and the size and SHA-256 of each of its packages), `update.json.sig` (its
@@ -99,10 +101,23 @@ folder could not be made", "no download of the release verified", "the installer
 | Mode | What Thoron does on its own | When you open the About page |
 |---|---|---|
 | `auto` (the default) | Looks 10 minutes after the start and every 5 hours. An installed Thoron downloads and installs what it finds, and the new version starts with the next start. A portable copy only looks | Looks, and an installed Thoron installs what it finds |
-| `notify` | Meant to tell you that a newer version is out, and install only when you ask. Today the browser looks on its own only in `auto`, so in `notify` it looks when you open the About page | The same |
+| `notify` | Meant to tell you that a newer version is out, and install only when you ask. Today the browser looks on its own only in `auto`, so in `notify` it looks when you open the About page; the daily task does nothing | The same |
 | `off` | Nothing | The same |
 
 A look that you ask for always shows its answer, in every mode.
+
+**The daily task (installed for one user).** The installer registers a task in Task Scheduler for your
+account, named `ThoronUpdateTaskUser` followed by your account's ID. It runs `ThoronSetup.exe --scheduled`
+from Thoron's version folder with your own rights, so there is never an administrator prompt. It runs once
+a day at a random time between 12:00 and 13:00, or as soon as the PC is on again when it was off then, and
+only with a network. ThoronSetup reads the same update mode: in `notify` and `off` it stops there. In
+`auto` it fetches the same three small files and checks them the way the browser does. When a newer release
+of your build (AVX2 or SSE4) is out, it downloads that release's installer, checks its size and SHA-256
+against the signed manifest, and runs it silently. A running Thoron keeps running, and the new version
+starts with its next start. On a metered connection it downloads nothing and tries again the next day.
+Each update registers the task again for the new version; if you switched the task off in Task
+Scheduler, it stays off. Uninstalling Thoron removes the task. A Thoron installed for every user of the PC
+has no task: someone with administrator rights updates it.
 
 **Setting the mode.** A switch in Settings comes later (ROADMAP P3.20). Today the mode is set with
 Thoron's updater, `thoron_update.exe`, which only the portable package holds, in its version folder. The
@@ -114,7 +129,12 @@ portable copy:
 ```
 
 Put `auto`, `notify` or `off` at the end. `--mode` with nothing after it prints the mode in use. An
-installed Thoron has no `thoron_update.exe`, so it stays in `auto` until the switch in Settings comes.
+installed Thoron has no `thoron_update.exe`; write the word into the file yourself. The browser and the
+daily task both read it:
+
+```powershell
+Set-Content -Path "$env:LOCALAPPDATA\Thoron\Application\update-mode" -Value off
+```
 
 ## 5. Update a portable copy by hand
 
@@ -244,6 +264,6 @@ A rollback is not offered yet (ROADMAP P3.8). Before you install a newer version
 | The update while Thoron runs, with a relaunch badge | P3.6 |
 | A portable copy updating itself (the swap at its start) | P3.12, P3.20 |
 | The update mode in Settings | P3.20 |
-| Looking for updates without administrator rights while Thoron is closed | P3.10 |
+| Looking for updates on Linux while Thoron is closed (a systemd user timer) | P3.10 |
 | Downloads that resume, pause on metered connections, and work through a proxy | P4.3 |
 | Rollback with the profile snapshot, a warning and your confirmation | P3.8 |

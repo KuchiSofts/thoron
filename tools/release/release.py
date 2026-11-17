@@ -481,7 +481,7 @@ def programs_problems(chrome_bin: Path, variant: str, extras: list[Path]) -> lis
 MOST_DELTAS = 3       # ROADMAP P4.1: from each of the previous 3 releases
 SETUP = "ThoronSetup.exe"  # ROADMAP P3.19: the one installer for good, the same name in every release
 # What only the build of ThoronSetup for tests holds: its switches and the published test key.
-SETUP_TEST_MARKS = (b"from-folder", b"assume-cpu", b"message-file", b"9i/S9Os0cVBrrPIeJJEiTNqJucILUa97MBNquyuERHM=")
+SETUP_TEST_MARKS = (b"from-folder", b"assume-cpu", b"message-file", b"program-folder", b"assume-metered", b"9i/S9Os0cVBrrPIeJJEiTNqJucILUa97MBNquyuERHM=")
 
 
 def setup_problems(path: Path) -> list[str]:

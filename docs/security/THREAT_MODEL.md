@@ -98,7 +98,9 @@ Residual risks, stated plainly:
 3. **The freeze window.** Until `expires` passes, a blocked copy believes it is current. How long that
    is has not been decided (question 3).
 4. **Same-user malware (L1)** can replace Thoron's files, its scheduled task and its profile. The
-   updater does not defend against it, and adds nothing to it.
+   updater does not defend against it, and adds nothing to it: the daily task of a per-user install
+   (P3.10) runs with the user's own rights (an interactive token, no stored password, the least
+   privilege), so it gives such a program nothing it does not have already.
 5. **A portable folder has no file permissions** on FAT or exFAT media: any program on the host, and
    anyone who holds the drive, can change the program. A folder can be compared byte for byte with the
    release ZIP: `tools/audit/compare_release.py`.

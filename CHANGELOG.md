@@ -7,6 +7,7 @@ Explanations live in the design docs under `docs/design/`.
 ## [Unreleased]
 
 ### Added
+- **Updates:** a Thoron installed for one user also looks for a newer release once a day, even while it is closed, through a task in Task Scheduler that runs with your own rights. It follows your update setting, keeps your build, downloads nothing on a metered connection, and stays off if you switch it off. Uninstalling Thoron removes it.
 - **Releases:** every program and library of a release is checked for the processor it is built for and for the libraries it loads, so a package never carries a file that would not start on a clean Windows.
 - **Updates:** an installed Thoron downloads only what changed in a release: from 158.0.8127.3010 to .6500 that was 31 MB instead of the 143 MB installer. A Thoron installed for every user of the PC is not updated by the browser, which never asks for administrator rights; the About page says that a newer release is out.
 - **Quality:** every state of the About page's update line is checked in a running Thoron, from "Checking for updates" and the download's percentage to "Relaunch Thoron to finish updating", with a build that trusts only a test key.

@@ -8,6 +8,12 @@ script inside it:
 
     install    runs the installer for the user (`--silent --do-not-launch-chrome`, from the Sandbox's own disk):
                Thoron's program, its version folder and its entry among the installed programs are there
+    task       the daily update task (P3.10): a per-user install registers it in Task Scheduler for the user
+               (the installed version's ThoronSetup.exe --scheduled, with the user's own rights); started, its
+               run waits in the queue for a network (the Sandbox has none), and ThoronSetup --scheduled run
+               directly ends with 4 (no network); switched off by hand (with another
+               program in it) and installed again, it is Thoron's task again and still off; the uninstall
+               removes it; an install for every user has none
     start      starts Thoron once with its window and closes the window as a person would: Thoron ends by
                itself within 30 s and has made its profile (`User Data`)
     delta      (with --installed-delta, --delta-updater and --delta-to) applies an installed copy's delta
@@ -128,6 +134,45 @@ function InstallerStatus {
   Trace "status: none kept"
   return $null
 }
+function Schtasks($arguments, $label) {
+  # schtasks.exe with a time limit: its exit code and what it printed
+  $file = Join-Path $out "schtasks-$label.txt"
+  $q = Start-Process schtasks.exe -ArgumentList $arguments -RedirectStandardOutput $file `
+         -RedirectStandardError (Join-Path $out "schtasks-$label-error.txt") -NoNewWindow -PassThru
+  $null = $q.Handle
+  if (-not $q.WaitForExit(30000)) { Stop-Process -Id $q.Id -Force -ErrorAction SilentlyContinue; return @{ exit = 'timeout'; text = '' } }
+  return @{ exit = $q.ExitCode; text = "$(Get-Content $file -Raw -ErrorAction SilentlyContinue)" }
+}
+$taskName = 'ThoronUpdateTaskUser' + [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+function Task($label) {
+  # the update task as Task Scheduler keeps it
+  Trace "task: query ($label)"
+  $q = Schtasks @('/Query', '/TN', $taskName, '/XML') $label
+  $t = [ordered]@{ found = ($q.exit -eq 0) }
+  foreach ($field in @('Command', 'Arguments', 'LogonType', 'RunLevel', 'StartWhenAvailable', 'Enabled')) {
+    if ($q.text -match "<$field>([^<]*)</$field>") { $t[$field] = $Matches[1] }
+  }
+  return $t
+}
+function RunTask {
+  # the task started as Task Scheduler starts it, and how its program ended
+  Trace 'task: run'
+  $q = Schtasks @('/Run', '/TN', $taskName) 'run'
+  $until = (Get-Date).AddSeconds(120)
+  do {
+    Start-Sleep -Seconds 5
+    # "HostName","TaskName","Next Run Time","Status","Logon Mode","Last Run Time","Last Result",...
+    $v = Schtasks @('/Query', '/TN', $taskName, '/V', '/FO', 'CSV', '/NH') 'state'
+    $fields = @($v.text.Trim().Trim('"') -split '","')
+    $status = if ($fields.Count -gt 6) { $fields[3] } else { '' }
+    $last = if ($fields.Count -gt 6) { $fields[6] } else { '' }
+  } while ($status -eq 'Running' -and (Get-Date) -lt $until)
+  # the same as Task Scheduler's own PowerShell commands see it
+  $info = Get-ScheduledTaskInfo -TaskName $taskName -ErrorAction SilentlyContinue
+  Trace "task: $status, last result $last, $($info.LastTaskResult)"
+  return [ordered]@{ run_exit = $q.exit; status = $status; last_result = $last;
+                     last_task_result = $info.LastTaskResult; last_run = "$($info.LastRunTime)" }
+}
 function Versions {
   @(Get-ChildItem $app -Directory -ErrorAction SilentlyContinue |
     Where-Object { $_.Name -match '^\d+\.\d+\.\d+\.\d+$' } | ForEach-Object { $_.Name })
@@ -166,6 +211,24 @@ try {
   $e = Entry
   $r.entry = [bool]$e
   if ($e) { $r.entry_name = "$($e.DisplayName)"; $r.entry_version = "$($e.DisplayVersion)" }
+  Mark 'task'
+  $r.task = Task 'install'
+  if ($r.task.found) {
+    $r.task_run = RunTask
+    # ThoronSetup's daily look run directly, for its exit code
+    $r.task_direct = Timed $r.task.Command @('--scheduled', '--variant=win-x64-avx2') 120
+    # a person switches the task off (and something changed it); installing again keeps it off
+    Mark 'task: switched off, installed again'
+    try {
+      Set-ScheduledTask -TaskName $taskName -Action (New-ScheduledTaskAction -Execute 'C:\Windows\System32\where.exe') -ErrorAction Stop | Out-Null
+      Disable-ScheduledTask -TaskName $taskName -ErrorAction Stop | Out-Null
+      $r.task_switched_off = 0
+    } catch {
+      $r.task_switched_off = "$_"
+    }
+    $r.task_install_again = Install 'install'
+    $r.task_again = Task 'again'
+  }
   Mark 'start'
   $r.started = Started
   $r.window = $r.started
@@ -196,6 +259,7 @@ try {
     $r.delta_runs = Loaded
     [void](Close)
     $r.delta_marker_kept = Test-Path $marker
+    $r.delta_task = Task 'delta'
   }
   if (Test-Path 'C:\ThoronTest\in\update') {
     # the newer build installed while the older one runs: Chromium leaves new_thoron.exe beside thoron.exe
@@ -233,6 +297,7 @@ try {
     $r.update_folders_after = @(Versions)
     $r.update_marker_kept = Test-Path $marker
     $r.update_local_state = Test-Path (Join-Path $data 'Local State')
+    $r.update_task = Task 'update'
   }
   $setup = Get-ChildItem $app -Recurse -Filter 'setup.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
   $r.setup_found = [bool]$setup
@@ -245,6 +310,7 @@ try {
   $r.entry_after = [bool](Entry)
   $r.profile_after = Test-Path $marker
   $r.local_state_after = Test-Path (Join-Path $data 'Local State')
+  $r.task_after = (Task 'uninstall').found
 } catch {
   $r.error = "$_"
 }
@@ -282,6 +348,8 @@ def _folders(value) -> list[str]:
 def problems(r: dict) -> dict[str, list[str]]:
     """What each step found wrong, by step."""
     out: dict[str, list[str]] = {"install": [], "start": []}       # in the order the steps run
+    if "task" in r:                                                 # the task step runs between them (P3.10)
+        out = {"install": [], "task": task_problems(r), "start": []}
     if r.get("error"):
         out["install"].append(f"the script stopped: {r['error']}")
     if r.get("install_exit") not in INSTALL_OK:
@@ -315,6 +383,55 @@ def problems(r: dict) -> dict[str, list[str]]:
         out["uninstall"].append("the entry among the installed programs is still there")
     if not r.get("profile_after") or not r.get("local_state_after"):
         out["uninstall"].append("the profile was not kept")
+    return out
+
+
+# ThoronSetup --scheduled ends with 4 when it cannot reach the releases (the Sandbox has no network): it took
+# the user's update setting as automatic and the copy as a per-user one, and went for the manifest.
+SCHEDULED_NO_NETWORK = "4"
+
+
+def task_problems(r: dict) -> list[str]:
+    """The daily update task (ROADMAP P3.10): a per-user install has one, an install for every user none."""
+    task = r.get("task") or {}
+    if r.get("system_level"):
+        return ["an install for every user registered the per-user update task"] if task.get("found") else []
+    if not task.get("found"):
+        return ["the install registered no update task"]
+    out = []
+    folders = _folders(r.get("version_folders"))
+    if not folders or not str(task.get("Command", "")).endswith(f"\\{folders[0]}\\ThoronSetup.exe"):
+        out.append(f"the task runs {task.get('Command')}, not the installed version's ThoronSetup.exe")
+    if not str(task.get("Arguments", "")).startswith("--scheduled --variant=win-"):
+        out.append(f"the task's arguments are {task.get('Arguments')!r}")
+    if task.get("LogonType") != "InteractiveToken" or task.get("RunLevel", "LeastPrivilege") != "LeastPrivilege":
+        out.append(f"the task does not run with the user's own rights ({task.get('LogonType')}, "
+                   f"{task.get('RunLevel')})")
+    if task.get("StartWhenAvailable") != "true":
+        out.append("a day the PC was off at the time is skipped (StartWhenAvailable is not on)")
+    if "task_switched_off" in r:
+        again = r.get("task_again") or {}
+        if r.get("task_switched_off") != 0:
+            out.append(f"the check could not switch the task off (schtasks ended with {r.get('task_switched_off')})")
+        elif r.get("task_install_again") not in INSTALL_OK:
+            out.append(f"installing again ended with {r.get('task_install_again')}")
+        elif not str(again.get("Command", "")).endswith("\\ThoronSetup.exe"):
+            out.append(f"installing again did not register Thoron's task again (it runs {again.get('Command')})")
+        elif again.get("Enabled") != "false":
+            out.append("installing again switched the task back on")
+    run = r.get("task_run") or {}
+    # the Sandbox has no network, and the task runs only with one: Task Scheduler keeps the run queued
+    if run.get("status") != "Queued":
+        out.append(f"the task's run was not held for the network ({run.get('status')!r}, last result "
+                   f"{run.get('last_result')!r})")
+    if "task_direct" in r and str(r.get("task_direct")) != SCHEDULED_NO_NETWORK:
+        out.append(f"ThoronSetup --scheduled ended with {r.get('task_direct')} ({SCHEDULED_NO_NETWORK} expected: "
+                   f"it found no network)")
+    for step, version in (("update_task", r.get("update_to")), ("delta_task", r.get("delta_to"))):
+        if step in r and version and f"\\{version}\\" not in str((r.get(step) or {}).get("Command", "")):
+            out.append(f"after the {step.split('_')[0]} the task does not run the newer version's ThoronSetup")
+    if r.get("task_after"):
+        out.append("the uninstall left the update task")
     return out
 
 

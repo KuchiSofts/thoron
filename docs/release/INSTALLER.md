@@ -22,6 +22,14 @@ package has its own page, [PORTABLE.md](PORTABLE.md).
   version's own `setup.exe`, which the delta also makes, installs it (ROADMAP P4.1).
 - Uninstalling removes the program and its entry and **keeps the profile** (`User Data`) unless the person
   ticks the box that deletes it (`--delete-profile`).
+- For one user (ROADMAP P3.10), every install and update registers the daily update task in Task
+  Scheduler, through Task Scheduler's own interface (`chrome/installer/setup/thoron_update_task.cc`):
+  `ThoronUpdateTaskUser<the user's SID>` runs `Application\<version>\ThoronSetup.exe --scheduled
+  --variant=<this build>` with the user's own rights (an interactive token, so no password is stored;
+  the least privilege), once a day at 12:00 plus up to an hour at random, as soon as the PC is on again
+  when it was off then, only with a network, for at most an hour. A task the person switched off stays
+  off when it is registered again. The uninstall removes it. An install for every user registers none.
+  `ThoronSetup.exe` is in each version folder for this (`chrome.release`).
 - Installed over a running Thoron, it does one of two things. For one user (the default) it leaves Thoron
   running: the new program waits as `new_thoron.exe` beside `thoron.exe` and replaces it when Thoron is
   closed or next started (Chromium's in-use update). For every user of the PC it closes the running Thoron
@@ -41,7 +49,8 @@ inside it:
 |---|---|---|
 | install | copies the installer to the Sandbox's own disk, runs it with `--silent --do-not-launch-chrome` | exit 0 (or another success code), `thoron.exe` there, one version folder, the entry among the installed programs |
 | start | starts Thoron with its window, waits 25 s, closes the window the way a person does | Thoron runs, has a window, ends by itself within 30 s of the close, and has made `User Data\Local State` |
-| uninstall | puts a file into the profile, runs `setup.exe --uninstall --force-uninstall` | exit 19 (uninstalled), `thoron.exe` and the entry gone, the profile and the file in it kept |
+| task | reads the update task (`schtasks /Query /XML`), starts it (`/Run`), runs its program directly, then switches it off with another program in it (Task Scheduler's PowerShell commands) and installs again | for one user: the task runs the installed version's `ThoronSetup.exe --scheduled --variant=win-...` with an interactive token and the least privilege, `StartWhenAvailable` on; started without a network (the Sandbox has none) its run waits in the queue; ThoronSetup run directly ends with 4 (it got as far as the network); after installing again it is Thoron's task again and still off. For every user: no task |
+| uninstall | puts a file into the profile, runs `setup.exe --uninstall --force-uninstall` | exit 19 (uninstalled), `thoron.exe` and the entry gone, the profile and the file in it kept; for one user the task is gone |
 
 Then the Sandbox shuts itself down; the check closes it if it is still there a minute after the results.
 
@@ -84,8 +93,19 @@ delta to .6500 (31.2 MB) made by `tools/release/delta.py`; `thoron_update.exe --
 the new files and the new setup installed them in 18 s (exit 0); Thoron then started on .6500 with the
 profile kept, nothing was left in `Update`, and the new setup uninstalled it (exit 19). Pass.
 
+The daily update task (P3.10), on 2026-11-18 with the build 158.0.8127.6500 that has it: for one user the
+install registered `ThoronUpdateTaskUser<SID>` running the installed version's `ThoronSetup.exe --scheduled
+--variant=win-x64-avx2` with an interactive token and the least privilege (Task Scheduler leaves the
+default `RunLevel` out of its export) and `StartWhenAvailable` on. Started, its run stayed in the queue: the
+task runs only with a network and the Sandbox has none. ThoronSetup run directly the same way ended with 4
+(it found no network). Switched off by hand with another program in it and installed again, it was
+Thoron's task again and still off. The uninstall removed it. Installed for every user: no task. Pass.
+
 Found on the way:
 
+- A task's on-demand run with "only with a network" waits in the queue without one, and Task Scheduler
+  then shows its last result as 0; the check reads the state (`Queued`) and runs ThoronSetup directly
+  for its exit code.
 - The installer run straight from the read-only shared folder stopped with code 109 (section 1). The check
   copies it to the Sandbox's disk first.
 - Chromium writes the entry of a system-wide install in the 32-bit view of the registry

@@ -114,6 +114,8 @@ On a USB drive:
    `Application`, your profile in `User Data`. It needs no administrator rights.
 6. Thoron is then in Windows' list of installed apps with its version. The program is
    `%LOCALAPPDATA%\Thoron\Application\thoron.exe`.
+7. It also registers a task in Task Scheduler that looks for a newer release once a day with your own
+   rights ([Updates](UPDATES.md), section 4). Uninstalling Thoron removes it.
 
 **For every user of the PC.** Someone with administrator rights can run the installer with
 `--system-level`: Thoron then goes into `C:\Program Files\Thoron`, and each user still has a profile of

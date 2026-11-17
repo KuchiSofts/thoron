@@ -357,10 +357,10 @@ index 846e4777c4d2e983078ad629621a3eb3acf780e4..8d838103321369f351eb8a290cb2cff2
    // Isolated world ID for AppleScript.
    ISOLATED_WORLD_ID_APPLESCRIPT,
 diff --git a/chrome/installer/mini_installer/chrome.release b/chrome/installer/mini_installer/chrome.release
-index 477dddb87ace2a0b48a108489ce6db7744e8457a..301e2b39dfad2510a012a72ab601caba2ddf5c41 100644
+index 477dddb87ace2a0b48a108489ce6db7744e8457a..1c4c51c79f756155337d6dc09f04b8b552b0ec09 100644
 --- a/chrome/installer/mini_installer/chrome.release
 +++ b/chrome/installer/mini_installer/chrome.release
-@@ -26,6 +26,12 @@ chrome_elf.dll: %(VersionDir)s\
+@@ -26,6 +26,15 @@ chrome_elf.dll: %(VersionDir)s\
  chrome_pwa_launcher.exe: %(VersionDir)s\
  chrome_renderer.dll: %(VersionDir)s\
  chrome_wer.dll: %(VersionDir)s\
@@ -370,6 +370,9 @@ index 477dddb87ace2a0b48a108489ce6db7744e8457a..301e2b39dfad2510a012a72ab601caba
 +thoron_adblock_engine.dat: %(VersionDir)s\
 +thoron_adblock_lists.txt: %(VersionDir)s\
 +thoron_adblock_resources.json: %(VersionDir)s\
++#
++# Thoron's daily update task of a per-user install runs it (ROADMAP P3.10)
++ThoronSetup.exe: %(VersionDir)s\
  content_resources.pak: %(VersionDir)s\
  content_shell.pak: %(VersionDir)s\
  d3dcompiler_47.dll: %(VersionDir)s\
@@ -518,6 +521,104 @@ index df6c3f2f83d1655d50f0925c6dd864d3f0122451..3d689fea129cd0cf324e5c60c8389f4f
    base::FilePath mini_installer_path =
        cmd_line.GetSwitchValuePath(switches::kMiniInstallerPath);
    base::FilePath install_archive =
+diff --git a/chrome/installer/setup/BUILD.gn b/chrome/installer/setup/BUILD.gn
+index 4d0ea119dcdef6ddd0236499f63aee8edb2c12a7..9af8430da90b03c1c45130ed4edbc1d55b23d4a1 100644
+--- a/chrome/installer/setup/BUILD.gn
++++ b/chrome/installer/setup/BUILD.gn
+@@ -5,6 +5,7 @@
+ import("//build/buildflag_header.gni")
+ import("//build/config/chrome_build.gni")
+ import("//build/config/compiler_opt.gni")
++import("//chrome/browser/thoron_update/args.gni")
+ import("//chrome/process_version_rc_template.gni")
+ import("//services/webnn/features.gni")
+ import("//testing/test.gni")
+@@ -52,6 +53,17 @@ if (is_win) {
+     libs = [ "netapi32.lib" ]
+   }
+ 
++  # Thoron (ROADMAP P3.10): the daily update task of a per-user install.
++  source_set("thoron_update_task") {
++    sources = [
++      "thoron_update_task.cc",
++      "thoron_update_task.h",
++    ]
++    defines = [ "THORON_UPDATE_VARIANT=\"$thoron_update_variant\"" ]
++    deps = [ "//base" ]
++    libs = [ "taskschd.lib" ]
++  }
++
+   static_library("lib") {
+     sources = [
+       "${branding_path_product}_behaviors.cc",
+@@ -119,6 +131,7 @@ if (is_win) {
+     ]
+ 
+     deps = [
++      ":thoron_update_task",
+       "//base",
+       "//build:branding_buildflags",
+       "//chrome/common:constants",
+diff --git a/chrome/installer/setup/install.cc b/chrome/installer/setup/install.cc
+index a1e330eba12530018a2b312adb083f8aa8ecce3b..6eb90bfdb4efed3d46fdd3bf996adb55e3a36401 100644
+--- a/chrome/installer/setup/install.cc
++++ b/chrome/installer/setup/install.cc
+@@ -28,6 +28,7 @@
+ #include "chrome/install_static/install_util.h"
+ #include "chrome/installer/setup/install_params.h"
+ #include "chrome/installer/setup/install_worker.h"
++#include "chrome/installer/setup/thoron_update_task.h"
+ #include "chrome/installer/setup/installer_crash_reporting.h"
+ #include "chrome/installer/setup/installer_state.h"
+ #include "chrome/installer/setup/setup_constants.h"
+@@ -505,6 +506,11 @@ InstallStatus InstallOrUpdateProduct(const InstallParams& install_params,
+     if (!installer_state.system_install()) {
+       UpdateDefaultBrowserBeaconForPath(
+           installer_state.target_path().Append(kChromeExe));
++      // Thoron (ROADMAP P3.10): the daily look for a newer release, with this
++      // version's ThoronSetup.
++      RegisterThoronUpdateTask(installer_state.target_path()
++                                   .AppendASCII(new_version.GetString())
++                                   .Append(L"ThoronSetup.exe"));
+     }
+ 
+     // Delete files that belong to old versions of Chrome. If that fails during
+diff --git a/chrome/installer/setup/uninstall.cc b/chrome/installer/setup/uninstall.cc
+index 823e20d1eb27b262701066c650f845c05bb1d690..a514afcedd1d6aff57e2a635c27db6797d12df38 100644
+--- a/chrome/installer/setup/uninstall.cc
++++ b/chrome/installer/setup/uninstall.cc
+@@ -48,6 +48,7 @@
+ #include "chrome/installer/setup/launch_chrome.h"
+ #include "chrome/installer/setup/modify_params.h"
+ #include "chrome/installer/setup/setup_constants.h"
++#include "chrome/installer/setup/thoron_update_task.h"
+ #include "chrome/installer/setup/setup_util.h"
+ #include "chrome/installer/setup/user_hive_visitor.h"
+ #include "chrome/installer/util/auto_launch_util.h"
+@@ -940,6 +941,11 @@ InstallStatus UninstallProduct(const ModifyParams& modify_params,
+ 
+   auto_launch_util::DisableStartAtLogin();
+ 
++  // Thoron (ROADMAP P3.10): the daily update task goes with the copy.
++  if (!installer_state.system_install()) {
++    RemoveThoronUpdateTask();
++  }
++
+   base::FilePath chrome_proxy_exe(
+       installer_state.target_path().Append(installer::kChromeProxyExe));
+ 
+diff --git a/chrome/installer/mini_installer/BUILD.gn b/chrome/installer/mini_installer/BUILD.gn
+index 5f9479bc4a852e38be23ccf129196a48a8b72286..53e0c4c044cf40db5529b1fbbdb858d9d02ed704 100644
+--- a/chrome/installer/mini_installer/BUILD.gn
++++ b/chrome/installer/mini_installer/BUILD.gn
+@@ -206,6 +206,7 @@ action("mini_installer_archive") {
+     "//chrome/chrome_elf",
+     "//chrome/common/win:eventlog_provider",
+     "//chrome/installer/setup",
++    "//components/thoron_update/setup:thoron_setup",
+     "//third_party/icu:icudata",
+   ]
+ 
 diff --git a/components/page_info/BUILD.gn b/components/page_info/BUILD.gn
 index a248f84b52164a4731b74bec11f31c2abdcf700d..94dff65fd333283f0d4e88e6c1d071944fadc080 100644
 --- a/components/page_info/BUILD.gn
@@ -2534,25 +2635,14 @@ index a8fb5de0b5a99198c901e81a2df54d7fcb9c7dd2..d134439f071fcda8430f589b0d23c950
  
 diff --git a/chrome/browser/thoron_update/BUILD.gn b/chrome/browser/thoron_update/BUILD.gn
 new file mode 100644
-index 0000000000000000000000000000000000000000..f4930327956a1f94aa9adc946c91626bf38bdb84
+index 0000000000000000000000000000000000000000..3d2dec9fdc0945cddceba82c4d6a77fcf38674b3
 --- /dev/null
 +++ b/chrome/browser/thoron_update/BUILD.gn
-@@ -0,0 +1,47 @@
+@@ -0,0 +1,36 @@
 +# Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +# found in the LICENSE file.
 +
 +import("//chrome/browser/thoron_update/args.gni")
-+
-+# The variant this build is, as the manifest names it.
-+if (current_cpu == "arm64") {
-+  _thoron_update_variant = "win-arm64-armv8"
-+} else if (thorium_x86_profile == "avx512_skx") {
-+  _thoron_update_variant = "win-x64-avx512"
-+} else if (thorium_x86_profile == "avx2_fma") {
-+  _thoron_update_variant = "win-x64-avx2"
-+} else {
-+  _thoron_update_variant = "win-x64-sse4"
-+}
 +
 +# The browser's updater on Windows (ROADMAP P3.20).
 +source_set("thoron_update") {
@@ -2568,7 +2658,7 @@ index 0000000000000000000000000000000000000000..f4930327956a1f94aa9adc946c91626b
 +    "THORON_UPDATE_PUBLIC_KEY=\"$thoron_update_public_key\"",
 +    "THORON_UPDATE_MANIFEST_URL=\"$thoron_update_manifest_url\"",
 +    "THORON_UPDATE_CHANNEL=\"$thoron_update_channel\"",
-+    "THORON_UPDATE_VARIANT=\"$_thoron_update_variant\"",
++    "THORON_UPDATE_VARIANT=\"$thoron_update_variant\"",
 +  ]
 +  public_deps = [ "//components/thoron_update:client" ]
 +  deps = [
@@ -2587,10 +2677,10 @@ index 0000000000000000000000000000000000000000..f4930327956a1f94aa9adc946c91626b
 +}
 diff --git a/chrome/browser/thoron_update/args.gni b/chrome/browser/thoron_update/args.gni
 new file mode 100644
-index 0000000000000000000000000000000000000000..26d5206b0d3bd2726cb709c61e859f845a2d2587
+index 0000000000000000000000000000000000000000..926c5df01e418e1ac402cb3caf69fa6515504e9c
 --- /dev/null
 +++ b/chrome/browser/thoron_update/args.gni
-@@ -0,0 +1,20 @@
+@@ -0,0 +1,31 @@
 +# Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +# found in the LICENSE file.
 +
@@ -2611,6 +2701,17 @@ index 0000000000000000000000000000000000000000..26d5206b0d3bd2726cb709c61e859f84
 +# (components/thoron_update/make_test_vectors.py: its private half is in the
 +# repository). Only programs made for tests trust it; nothing shipped does.
 +thoron_update_test_public_key = "9i/S9Os0cVBrrPIeJJEiTNqJucILUa97MBNquyuERHM="
++
++# The variant this build is, as the manifest names it.
++if (current_cpu == "arm64") {
++  thoron_update_variant = "win-arm64-armv8"
++} else if (thorium_x86_profile == "avx512_skx") {
++  thoron_update_variant = "win-x64-avx512"
++} else if (thorium_x86_profile == "avx2_fma") {
++  thoron_update_variant = "win-x64-avx2"
++} else {
++  thoron_update_variant = "win-x64-sse4"
++}
 diff --git a/chrome/browser/thoron_update/thoron_update_win.cc b/chrome/browser/thoron_update/thoron_update_win.cc
 new file mode 100644
 index 0000000000000000000000000000000000000000..bda1e9ed270116f45333d33e2c5a563efb452af7
@@ -8775,6 +8876,233 @@ index 0000000000000000000000000000000000000000..71237049bdd05890afff06c7c984b6eb
 +};
 +
 +#endif  // CHROME_BROWSER_UI_WEBUI_THORON_MAIL_UI_H_
+diff --git a/chrome/installer/setup/thoron_update_task.cc b/chrome/installer/setup/thoron_update_task.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..80f3daf7dbc4dc2d7cc0c2cdc98d356325349bbe
+--- /dev/null
++++ b/chrome/installer/setup/thoron_update_task.cc
+@@ -0,0 +1,173 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "chrome/installer/setup/thoron_update_task.h"
++
++#include <windows.h>
++
++#include <taskschd.h>
++#include <wrl/client.h>
++
++#include <iterator>
++#include <string>
++
++#include "base/files/file_path.h"
++#include "base/files/file_util.h"
++#include "base/logging.h"
++#include "base/win/scoped_bstr.h"
++#include "base/win/scoped_com_initializer.h"
++#include "base/win/scoped_variant.h"
++#include "base/win/win_util.h"
++
++namespace installer {
++
++namespace {
++
++constexpr wchar_t kVariant[] = L"" THORON_UPDATE_VARIANT;
++
++std::wstring XmlText(const std::wstring& text) {
++  std::wstring out;
++  for (wchar_t c : text) {
++    switch (c) {
++      case L'&':
++        out += L"&amp;";
++        break;
++      case L'<':
++        out += L"&lt;";
++        break;
++      case L'>':
++        out += L"&gt;";
++        break;
++      case L'"':
++        out += L"&quot;";
++        break;
++      default:
++        out += c;
++    }
++  }
++  return out;
++}
++
++// Task Scheduler's root folder, as the user who runs setup. Its Connect
++// crashes when Windows has no current user name (as Chromium's updater found,
++// chrome/updater/win/task_scheduler.cc), so then there is none.
++Microsoft::WRL::ComPtr<ITaskFolder> RootFolder() {
++  wchar_t user[257] = {};
++  DWORD size = std::size(user);
++  if (!::GetUserNameW(user, &size) || user[0] == L'\0') {
++    return nullptr;
++  }
++  Microsoft::WRL::ComPtr<ITaskService> service;
++  Microsoft::WRL::ComPtr<ITaskFolder> folder;
++  if (FAILED(::CoCreateInstance(CLSID_TaskScheduler, nullptr, CLSCTX_INPROC_SERVER,
++                                IID_PPV_ARGS(&service))) ||
++      FAILED(service->Connect(base::win::ScopedVariant::kEmptyVariant,
++                              base::win::ScopedVariant::kEmptyVariant,
++                              base::win::ScopedVariant::kEmptyVariant,
++                              base::win::ScopedVariant::kEmptyVariant)) ||
++      FAILED(service->GetFolder(base::win::ScopedBstr(L"\\").Get(), &folder))) {
++    return nullptr;
++  }
++  return folder;
++}
++
++// Whether the person switched the task off (in Task Scheduler): an update
++// keeps it off.
++bool SwitchedOff(ITaskFolder* folder) {
++  Microsoft::WRL::ComPtr<IRegisteredTask> task;
++  VARIANT_BOOL enabled = VARIANT_TRUE;
++  return SUCCEEDED(folder->GetTask(base::win::ScopedBstr(ThoronUpdateTaskName()).Get(), &task)) &&
++         SUCCEEDED(task->get_Enabled(&enabled)) && enabled == VARIANT_FALSE;
++}
++
++}  // namespace
++
++std::wstring ThoronUpdateTaskName() {
++  std::wstring sid;
++  if (!base::win::GetUserSidString(&sid)) {
++    sid.clear();
++  }
++  return L"ThoronUpdateTaskUser" + sid;
++}
++
++std::wstring ThoronUpdateTaskXml(const base::FilePath& thoron_setup, bool enabled) {
++  return L"<?xml version=\"1.0\" encoding=\"UTF-16\"?>\r\n"
++         L"<Task version=\"1.3\" xmlns=\"http://schemas.microsoft.com/windows/2004/02/mit/task\">\r\n"
++         L"  <RegistrationInfo>\r\n"
++         L"    <Description>Keeps Thoron up to date: once a day it looks for a newer signed "
++         L"release on Thoron's releases page and installs it, when Thoron's updates are set to "
++         L"automatic. Uninstalling Thoron removes this task.</Description>\r\n"
++         L"  </RegistrationInfo>\r\n"
++         L"  <Triggers>\r\n"
++         L"    <CalendarTrigger>\r\n"
++         L"      <StartBoundary>2026-01-01T12:00:00</StartBoundary>\r\n"
++         L"      <RandomDelay>PT1H</RandomDelay>\r\n"
++         L"      <ScheduleByDay><DaysInterval>1</DaysInterval></ScheduleByDay>\r\n"
++         L"    </CalendarTrigger>\r\n"
++         L"  </Triggers>\r\n"
++         L"  <Principals>\r\n"
++         L"    <Principal id=\"Author\">\r\n"
++         L"      <LogonType>InteractiveToken</LogonType>\r\n"
++         L"      <RunLevel>LeastPrivilege</RunLevel>\r\n"
++         L"    </Principal>\r\n"
++         L"  </Principals>\r\n"
++         L"  <Settings>\r\n"
++         L"    <Enabled>" +
++         std::wstring(enabled ? L"true" : L"false") +
++         L"</Enabled>\r\n"
++         L"    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>\r\n"
++         L"    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>\r\n"
++         L"    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>\r\n"
++         L"    <StartWhenAvailable>true</StartWhenAvailable>\r\n"
++         L"    <RunOnlyIfNetworkAvailable>true</RunOnlyIfNetworkAvailable>\r\n"
++         L"    <AllowStartOnDemand>true</AllowStartOnDemand>\r\n"
++         L"    <ExecutionTimeLimit>PT1H</ExecutionTimeLimit>\r\n"
++         L"    <Priority>7</Priority>\r\n"
++         L"  </Settings>\r\n"
++         L"  <Actions Context=\"Author\">\r\n"
++         L"    <Exec>\r\n"
++         L"      <Command>" +
++         XmlText(thoron_setup.value()) +
++         L"</Command>\r\n"
++         L"      <Arguments>--scheduled --variant=" +
++         XmlText(kVariant) +
++         L"</Arguments>\r\n"
++         L"    </Exec>\r\n"
++         L"  </Actions>\r\n"
++         L"</Task>\r\n";
++}
++
++bool RegisterThoronUpdateTask(const base::FilePath& thoron_setup) {
++  if (!base::PathExists(thoron_setup)) {
++    LOG(ERROR) << "No update task: " << thoron_setup << " is not there.";
++    return false;
++  }
++  base::win::ScopedCOMInitializer com;
++  Microsoft::WRL::ComPtr<ITaskFolder> folder = RootFolder();
++  if (!com.Succeeded() || !folder) {
++    LOG(ERROR) << "No update task: Task Scheduler cannot be reached.";
++    return false;
++  }
++  const bool enabled = !SwitchedOff(folder.Get());
++  Microsoft::WRL::ComPtr<IRegisteredTask> task;
++  const HRESULT result = folder->RegisterTask(
++      base::win::ScopedBstr(ThoronUpdateTaskName()).Get(),
++      base::win::ScopedBstr(ThoronUpdateTaskXml(thoron_setup, enabled)).Get(), TASK_CREATE_OR_UPDATE,
++      base::win::ScopedVariant::kEmptyVariant, base::win::ScopedVariant::kEmptyVariant,
++      TASK_LOGON_INTERACTIVE_TOKEN, base::win::ScopedVariant::kEmptyVariant, &task);
++  LOG_IF(ERROR, FAILED(result)) << "Task Scheduler did not take Thoron's update task: " << std::hex
++                                << result;
++  return SUCCEEDED(result);
++}
++
++void RemoveThoronUpdateTask() {
++  base::win::ScopedCOMInitializer com;
++  Microsoft::WRL::ComPtr<ITaskFolder> folder = RootFolder();
++  if (com.Succeeded() && folder) {
++    // There may be none (an install from before the task, or one removed by
++    // hand); that is fine.
++    folder->DeleteTask(base::win::ScopedBstr(ThoronUpdateTaskName()).Get(), 0);
++  }
++}
++
++}  // namespace installer
+diff --git a/chrome/installer/setup/thoron_update_task.h b/chrome/installer/setup/thoron_update_task.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..31302324f071b2ba170d45bd3d0c1b26f3de1ed7
+--- /dev/null
++++ b/chrome/installer/setup/thoron_update_task.h
+@@ -0,0 +1,42 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef CHROME_INSTALLER_SETUP_THORON_UPDATE_TASK_H_
++#define CHROME_INSTALLER_SETUP_THORON_UPDATE_TASK_H_
++
++#include <string>
++
++namespace base {
++class FilePath;
++}  // namespace base
++
++namespace installer {
++
++// Thoron (ROADMAP P3.10): the daily look of a per-user install for a newer
++// release. A task of Task Scheduler runs `<version>\ThoronSetup.exe
++// --scheduled --variant=<this build>` as the user (no administrator rights),
++// once a day, and as soon as the PC is on again when it was off at that time;
++// it needs the network. ThoronSetup does what the browser's update setting
++// says (automatic only) and installs a newer signed release of the same build
++// silently. Every install and update registers the task again (with the new
++// version's ThoronSetup); the uninstall removes it. A system install has none:
++// its administrator updates it (P3.9).
++
++// The task's name: one per user, as each user of the PC may have a per-user
++// Thoron.
++std::wstring ThoronUpdateTaskName();
++
++// The task's definition for Task Scheduler (its XML); `enabled` false keeps a
++// task the person switched off that way.
++std::wstring ThoronUpdateTaskXml(const base::FilePath& thoron_setup, bool enabled);
++
++// Registers (or replaces) the task, through Task Scheduler's own interface;
++// a task the person switched off stays off. False when it was not taken.
++bool RegisterThoronUpdateTask(const base::FilePath& thoron_setup);
++
++// Removes the task, when there is one.
++void RemoveThoronUpdateTask();
++
++}  // namespace installer
++
++#endif  // CHROME_INSTALLER_SETUP_THORON_UPDATE_TASK_H_
 diff --git a/components/thoron_mail/BUILD.gn b/components/thoron_mail/BUILD.gn
 new file mode 100644
 index 0000000000000000000000000000000000000000..0e19c03df16da1a1cba840bfc79f35ced095757b
@@ -22475,10 +22803,10 @@ index 0000000000000000000000000000000000000000..919297dd3d758f9cfe667cade867ad78
 +}  // namespace thoron_update
 diff --git a/components/thoron_update/setup/BUILD.gn b/components/thoron_update/setup/BUILD.gn
 new file mode 100644
-index 0000000000000000000000000000000000000000..e4ece09a964a66edf4249b3338daa420ef05e6df
+index 0000000000000000000000000000000000000000..e69eed4d193b0aa2d09670e12715daf74785d8f9
 --- /dev/null
 +++ b/components/thoron_update/setup/BUILD.gn
-@@ -0,0 +1,43 @@
+@@ -0,0 +1,44 @@
 +# Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +# found in the LICENSE file.
 +
@@ -22500,6 +22828,7 @@ index 0000000000000000000000000000000000000000..e4ece09a964a66edf4249b3338daa420
 +    ]
 +    libs = [
 +      "comctl32.lib",
++      "ole32.lib",
 +      "winhttp.lib",
 +    ]
 +  }
@@ -22524,10 +22853,10 @@ index 0000000000000000000000000000000000000000..e4ece09a964a66edf4249b3338daa420
 +}
 diff --git a/components/thoron_update/setup/thoron_setup_win.cc b/components/thoron_update/setup/thoron_setup_win.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..a386969ce53dd0f7f3b285e1c846e1c526b36360
+index 0000000000000000000000000000000000000000..3b5adeda0fba80dd593e0e3ed74d2a230cb80c10
 --- /dev/null
 +++ b/components/thoron_update/setup/thoron_setup_win.cc
-@@ -0,0 +1,372 @@
+@@ -0,0 +1,500 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -22541,18 +22870,37 @@ index 0000000000000000000000000000000000000000..a386969ce53dd0f7f3b285e1c846e1c5
 +//
 +// Exit status: 0 installed; 2 the release cannot be verified; 3 no installer
 +// for this computer; 4 the network failed; 5 the download is not the one the
-+// manifest names; 6 the installer failed; 7 this Setup is too old.
++// manifest names; 6 the installer failed; 7 this Setup is too old; 8 (with
++// --scheduled) the installed Thoron is the newest; 9 (with --scheduled) its
++// updates are not automatic, or it is installed for every user; 10 (with
++// --scheduled) the connection is metered, so the download waits.
++//
++// --scheduled [--variant=<build>] (ROADMAP P3.10): the daily look of an
++// installed Thoron, run by the task its installer registers for the user (no
++// administrator rights; chrome/installer/setup/thoron_update_task.h). No window
++// and no message. It does nothing (9) when Thoron's updates are not automatic
++// (the setting kept in the program folder, cli.h) or the copy is installed for
++// every user (under Program Files: its administrator updates it). Otherwise,
++// when the release of that build is newer than the newest version folder
++// beside this program's own (Application\<version>\ThoronSetup.exe), its
++// installer runs silently and leaves a running Thoron as it is (it takes the
++// new version at its next start); else nothing happens (8). On a metered
++// connection it downloads nothing (10), as the browser's own looks (design
++// 7.5); the next day's look tries again.
 +//
 +// The build for tests (thoron_setup_for_tests, never shipped: its key is the
 +// published test key) also takes --from-folder <dir> (the release's files from
 +// a folder instead of the network), --now <seconds>, --assume-cpu
-+// avx2|sse4|old and --message-file <path> (the message is written there
-+// instead of shown).
++// avx2|sse4|old, --message-file <path> (the message is written there
++// instead of shown), --program-folder <dir> (the installed copy the daily
++// look looks at) and --assume-metered.
 +
 +#include <windows.h>
 +
 +#include <commctrl.h>
++#include <netlistmgr.h>
 +#include <winhttp.h>
++#include <wrl/client.h>
 +
 +#include <optional>
 +#include <string>
@@ -22563,13 +22911,17 @@ index 0000000000000000000000000000000000000000..a386969ce53dd0f7f3b285e1c846e1c5
 +#include "base/command_line.h"
 +#include "base/files/file.h"
 +#include "base/files/file_path.h"
++#include "base/files/file_enumerator.h"
 +#include "base/files/file_util.h"
++#include "base/path_service.h"
 +#include "base/process/launch.h"
 +#include "base/process/process.h"
 +#include "base/strings/string_number_conversions.h"
 +#include "base/strings/utf_string_conversions.h"
 +#include "base/time/time.h"
++#include "base/win/scoped_com_initializer.h"
 +#include "base/version_info/version_info.h"
++#include "components/thoron_update/cli.h"
 +#include "components/thoron_update/manifest.h"
 +#include "components/thoron_update/package.h"
 +#include "components/thoron_update/setup_plan.h"
@@ -22589,6 +22941,9 @@ index 0000000000000000000000000000000000000000..a386969ce53dd0f7f3b285e1c846e1c5
 +  kBadDownload = 5,
 +  kInstallerFailed = 6,
 +  kSetupTooOld = 7,
++  kUpToDate = 8,
++  kNotAutomatic = 9,
++  kMetered = 10,
 +};
 +
 +constexpr UINT kProgressMessage = WM_APP + 1;
@@ -22743,6 +23098,75 @@ index 0000000000000000000000000000000000000000..a386969ce53dd0f7f3b285e1c846e1c5
 +  return now;
 +}
 +
++bool Scheduled() {
++  return Command().HasSwitch("scheduled");
++}
++
++// The installed Thoron's program folder: Application, the folder above this
++// program's own (the build for tests may name another with --program-folder).
++base::FilePath ProgramFolder() {
++  if (ForTests() && Command().HasSwitch("program-folder")) {
++    return Command().GetSwitchValuePath("program-folder");
++  }
++  base::FilePath exe;
++  if (!base::PathService::Get(base::FILE_EXE, &exe)) {
++    return base::FilePath();
++  }
++  return exe.DirName().DirName();
++}
++
++// A system install lives under Program Files.
++bool ForEveryUser(const base::FilePath& program) {
++  for (int key : {base::DIR_PROGRAM_FILES, base::DIR_PROGRAM_FILESX86,
++                  base::DIR_PROGRAM_FILES6432}) {
++    base::FilePath root;
++    if (base::PathService::Get(key, &root) && (root == program || root.IsParent(program))) {
++      return true;
++    }
++  }
++  return false;
++}
++
++// A connection paid for by the amount, or near its limit, as Windows knows it
++// (Chromium's own mapping: net/base/network_cost_change_notifier_win.cc).
++bool Metered() {
++  if (ForTests() && Command().HasSwitch("assume-metered")) {
++    return true;
++  }
++  base::win::ScopedCOMInitializer com(base::win::ScopedCOMInitializer::kMTA);
++  Microsoft::WRL::ComPtr<INetworkCostManager> costs;
++  DWORD cost = NLM_CONNECTION_COST_UNKNOWN;
++  if (!com.Succeeded() ||
++      FAILED(::CoCreateInstance(CLSID_NetworkListManager, nullptr, CLSCTX_ALL,
++                                IID_PPV_ARGS(&costs))) ||
++      FAILED(costs->GetCost(&cost, nullptr))) {
++    return false;
++  }
++  return cost != NLM_CONNECTION_COST_UNKNOWN && (cost & NLM_CONNECTION_COST_UNRESTRICTED) == 0;
++}
++
++// The build the daily look keeps: the task names it.
++std::optional<thoron_update::Variant> ScheduledVariant() {
++  if (!Scheduled() || !Command().HasSwitch("variant")) {
++    return std::nullopt;
++  }
++  return thoron_update::ParseVariant(Command().GetSwitchValueASCII("variant"));
++}
++
++// The newest version folder of the installed Thoron.
++std::optional<thoron_update::BuildVersion> InstalledVersion(const base::FilePath& program) {
++  std::optional<thoron_update::BuildVersion> newest;
++  base::FileEnumerator folders(program, /*recursive=*/false, base::FileEnumerator::DIRECTORIES);
++  for (base::FilePath folder = folders.Next(); !folder.empty(); folder = folders.Next()) {
++    const std::optional<thoron_update::BuildVersion> version =
++        thoron_update::ParseBuildVersion(folder.BaseName().AsUTF8Unsafe());
++    if (version && (!newest || *version > *newest)) {
++      newest = version;
++    }
++  }
++  return newest;
++}
++
 +void Finish(int code, const std::string& message) {
 +  g_state.exit_code = code;
 +  g_state.message = base::UTF8ToWide(message);
@@ -22751,6 +23175,16 @@ index 0000000000000000000000000000000000000000..a386969ce53dd0f7f3b285e1c846e1c5
 +// --- the work -----------------------------------------------------------------
 +
 +void Work() {
++  if (Scheduled()) {
++    const base::FilePath program = ProgramFolder();
++    if (program.empty() || ForEveryUser(program)) {
++      return Finish(kNotAutomatic, "A Thoron installed for every user is updated by its "
++                                   "administrator.");
++    }
++    if (thoron_update::ReadUpdateMode(program) != thoron_update::UpdateMode::kAuto) {
++      return Finish(kNotAutomatic, "Thoron's updates are not automatic.");
++    }
++  }
 +  SetLabel(L"Looking for the newest Thoron...");
 +  const GURL manifest_url(kManifestUrl);
 +  const std::optional<std::string> manifest =
@@ -22781,13 +23215,27 @@ index 0000000000000000000000000000000000000000..a386969ce53dd0f7f3b285e1c846e1c5
 +      thoron_update::ParseBuildVersion(version_info::GetVersionNumber());
 +  const thoron_update::SetupPlan plan = thoron_update::PlanSetup(
 +      *manifest, signature, thoron_update::TrustedKeys(built_in, statements), {"github.com"},
-+      kChannel, own.value_or(thoron_update::BuildVersion()), TheProcessor(), Now());
++      kChannel, own.value_or(thoron_update::BuildVersion()), TheProcessor(), Now(),
++      ScheduledVariant());
 +  if (plan.outcome != thoron_update::Outcome::kUpdate || !plan.file) {
 +    const int code = plan.outcome == thoron_update::Outcome::kNoPackage ? kNoInstaller
 +                     : plan.outcome == thoron_update::Outcome::kUpdaterTooOld
 +                         ? kSetupTooOld
 +                         : kCannotVerify;
 +    return Finish(code, thoron_update::SetupMessage(plan));
++  }
++  if (Scheduled()) {
++    const std::optional<thoron_update::BuildVersion> installed =
++        InstalledVersion(ProgramFolder());
++    const std::optional<thoron_update::BuildVersion> release =
++        thoron_update::ParseBuildVersion(plan.version);
++    if (!installed || !release || *release <= *installed) {
++      return Finish(kUpToDate, "The installed Thoron is the newest.");
++    }
++    if (Metered()) {
++      return Finish(kMetered, "Thoron " + plan.thoron_version +
++                                  " is out; it is not downloaded on a metered connection.");
++    }
 +  }
 +
 +  SetLabel(base::UTF8ToWide("Downloading Thoron " + plan.thoron_version + "..."));
@@ -22814,7 +23262,14 @@ index 0000000000000000000000000000000000000000..a386969ce53dd0f7f3b285e1c846e1c5
 +  }
 +
 +  SetLabel(base::UTF8ToWide("Installing Thoron " + plan.thoron_version + "..."));
-+  base::Process process = base::LaunchProcess(base::CommandLine(file), base::LaunchOptions());
++  base::CommandLine command(file);
++  if (Scheduled()) {
++    // No window, and a running Thoron stays as it is: the new version starts
++    // with its next start.
++    command.AppendSwitch("silent");
++    command.AppendSwitch("do-not-launch-chrome");
++  }
++  base::Process process = base::LaunchProcess(command, base::LaunchOptions());
 +  int code = -1;
 +  if (!process.IsValid() || !process.WaitForExit(&code)) {
 +    base::DeleteFile(file);
@@ -22871,7 +23326,7 @@ index 0000000000000000000000000000000000000000..a386969ce53dd0f7f3b285e1c846e1c5
 +  type.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
 +  type.lpszClassName = L"ThoronSetup";
 +  ::RegisterClassW(&type);
-+  const bool quiet = ForTests() && Command().HasSwitch("message-file");
++  const bool quiet = Scheduled() || (ForTests() && Command().HasSwitch("message-file"));
 +  g_state.window = ::CreateWindowExW(0, L"ThoronSetup", L"Thoron Setup",
 +                                     WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU, CW_USEDEFAULT,
 +                                     CW_USEDEFAULT, 440, 150, nullptr, nullptr, instance, nullptr);
@@ -22892,9 +23347,11 @@ index 0000000000000000000000000000000000000000..a386969ce53dd0f7f3b285e1c846e1c5
 +    ::WaitForSingleObject(worker, INFINITE);
 +    ::CloseHandle(worker);
 +  }
-+  if (quiet) {
++  if (ForTests() && Command().HasSwitch("message-file")) {
 +    base::WriteFile(Command().GetSwitchValuePath("message-file"),
 +                    base::WideToUTF8(g_state.message));
++  } else if (quiet) {
++    // --scheduled: nobody is there to read it; the exit status says it.
 +  } else if (g_state.exit_code != kInstalled) {
 +    ::MessageBoxW(nullptr, g_state.message.c_str(), L"Thoron Setup", MB_OK | MB_ICONWARNING);
 +  }
@@ -22902,10 +23359,10 @@ index 0000000000000000000000000000000000000000..a386969ce53dd0f7f3b285e1c846e1c5
 +}
 diff --git a/components/thoron_update/setup_plan.cc b/components/thoron_update/setup_plan.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..544bc76809b5d8e900769a9cc774a334172a69be
+index 0000000000000000000000000000000000000000..9c2eb27b2602f37a8afd0a2ee0e277fbc4a7c394
 --- /dev/null
 +++ b/components/thoron_update/setup_plan.cc
-@@ -0,0 +1,72 @@
+@@ -0,0 +1,76 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -22920,9 +23377,13 @@ index 0000000000000000000000000000000000000000..544bc76809b5d8e900769a9cc774a334
 +                    const std::string& channel,
 +                    const BuildVersion& own_build,
 +                    const Processor& cpu,
-+                    int64_t now) {
++                    int64_t now,
++                    std::optional<Variant> only) {
 +  SetupPlan plan;
-+  const std::vector<Variant> variants = VariantsFor(Os::kWindows, cpu);
++  std::vector<Variant> variants = VariantsFor(Os::kWindows, cpu);
++  if (only) {
++    std::erase_if(variants, [&](Variant variant) { return variant != *only; });
++  }
 +  if (variants.empty()) {
 +    plan.outcome = Outcome::kNoPackage;
 +    return plan;
@@ -22980,10 +23441,10 @@ index 0000000000000000000000000000000000000000..544bc76809b5d8e900769a9cc774a334
 +}  // namespace thoron_update
 diff --git a/components/thoron_update/setup_plan.h b/components/thoron_update/setup_plan.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..940796ec9da937f61ae3725e9e95304d9582ff5e
+index 0000000000000000000000000000000000000000..2822065a5320559a03d4def5d63039dfbc45b2a2
 --- /dev/null
 +++ b/components/thoron_update/setup_plan.h
-@@ -0,0 +1,50 @@
+@@ -0,0 +1,53 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -23019,6 +23480,8 @@ index 0000000000000000000000000000000000000000..940796ec9da937f61ae3725e9e95304d
 +// The plan for the manifest and signature as fetched, under `keys`, on this
 +// processor (`cpu`, Windows). The variants that run on it are tried fastest
 +// first; one without an installer gives way to the next (AVX2, then SSE4).
++// With `only`, that build alone is tried (the daily look of an installed copy
++// keeps its build, P3.10).
 +SetupPlan PlanSetup(std::string_view manifest,
 +                    std::string_view signature,
 +                    const std::vector<PublicKey>& keys,
@@ -23026,7 +23489,8 @@ index 0000000000000000000000000000000000000000..940796ec9da937f61ae3725e9e95304d
 +                    const std::string& channel,
 +                    const BuildVersion& own_build,
 +                    const Processor& cpu,
-+                    int64_t now);
++                    int64_t now,
++                    std::optional<Variant> only = std::nullopt);
 +
 +// A sentence for the person about a plan that is not kUpdate.
 +std::string SetupMessage(const SetupPlan& plan);
@@ -23036,10 +23500,10 @@ index 0000000000000000000000000000000000000000..940796ec9da937f61ae3725e9e95304d
 +#endif  // COMPONENTS_THORON_UPDATE_SETUP_PLAN_H_
 diff --git a/components/thoron_update/setup_plan_unittest.cc b/components/thoron_update/setup_plan_unittest.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..9ff45f1c48f2a4055ef0d7742f09012e9e607e3f
+index 0000000000000000000000000000000000000000..78e3db6b5690224ec235a8af17757658d9505961
 --- /dev/null
 +++ b/components/thoron_update/setup_plan_unittest.cc
-@@ -0,0 +1,83 @@
+@@ -0,0 +1,108 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -23101,6 +23565,31 @@ index 0000000000000000000000000000000000000000..9ff45f1c48f2a4055ef0d7742f09012e
 +  const SetupPlan old = Plan(Cpu(false, false));
 +  EXPECT_EQ(old.outcome, Outcome::kNoPackage);
 +  EXPECT_NE(SetupMessage(old).find("too old for Thoron"), std::string::npos);
++}
++
++TEST(ThoronUpdateSetupPlanTest, TheDailyLookKeepsTheInstalledBuild) {
++  // An SSE4 copy on an AVX2 processor stays SSE4: the release has no SSE4
++  // installer, so there is nothing for it, not the AVX2 one.
++  const SetupPlan sse4 = PlanSetup(data::kManifest, Bytes(data::kSignature, sizeof(data::kSignature)),
++                                   {TestKey()}, {"github.com"}, "stable",
++                                   *ParseBuildVersion(data::kInstalled), Cpu(true, true), data::kNow,
++                                   Variant::kWinX64Sse4);
++  EXPECT_EQ(sse4.outcome, Outcome::kNoPackage);
++  EXPECT_EQ(sse4.variant, Variant::kWinX64Sse4);
++  EXPECT_FALSE(sse4.file);
++  const SetupPlan avx2 = PlanSetup(data::kManifest, Bytes(data::kSignature, sizeof(data::kSignature)),
++                                   {TestKey()}, {"github.com"}, "stable",
++                                   *ParseBuildVersion(data::kInstalled), Cpu(true, true), data::kNow,
++                                   Variant::kWinX64Avx2);
++  EXPECT_EQ(avx2.outcome, Outcome::kUpdate);
++  ASSERT_TRUE(avx2.file);
++  EXPECT_EQ(avx2.file->url, data::kInstallerUrl);
++  // A build this processor cannot run gets nothing.
++  const SetupPlan none = PlanSetup(data::kManifest, Bytes(data::kSignature, sizeof(data::kSignature)),
++                                   {TestKey()}, {"github.com"}, "stable",
++                                   *ParseBuildVersion(data::kInstalled), Cpu(true, false), data::kNow,
++                                   Variant::kWinX64Avx2);
++  EXPECT_EQ(none.outcome, Outcome::kNoPackage);
 +}
 +
 +TEST(ThoronUpdateSetupPlanTest, ASetupBelowTheMinimumUpdaterStops) {

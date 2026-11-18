@@ -73,8 +73,8 @@ Good to know:
 - Saved passwords and sign-ins are locked to your Windows account: read
   [Portable passphrase](PORTABLE_PASSPHRASE.md) before you save any.
 - A portable copy does not update itself yet: see [Updates](UPDATES.md#5-update-a-portable-copy-by-hand).
-- The offers of the first start (import, default browser) are not made for portable copies yet (ROADMAP
-  P3.21).
+- At its first start a portable copy offers to import from another browser (the welcome page, section 3).
+  It does not offer to become the default browser: Windows does not know a portable copy as a program.
 
 ### Moving it, and USB drives
 
@@ -115,6 +115,10 @@ On a USB drive:
    `%LOCALAPPDATA%\Thoron\Application\thoron.exe`.
 7. It also registers a task in Task Scheduler that looks for a newer release once a day with your own
    rights ([Updates](UPDATES.md), section 4). Uninstalling Thoron removes it.
+8. At its first start Thoron opens a welcome page with two offers. **Import...** opens Settings' import
+   dialog for your other browser ([Import](IMPORT.md)). **Open Windows' setting** opens Windows' own page
+   for the default browser, where you confirm it or not; Thoron changes nothing by itself. Close the tab to
+   skip both; the page does not come again, and both stay in Settings.
 
 **For every user of the PC.** Someone with administrator rights can run the installer with
 `--system-level`: Thoron then goes into `C:\Program Files\Thoron`, and each user still has a profile of
@@ -132,7 +136,6 @@ Thorium profile over, see [Import](IMPORT.md).
 |---|---|
 | `ThoronSetup.exe`: one small installer that always installs the newest release | P3.19 |
 | The import offer in the installer and in Settings | P3.13 |
-| The first start's offers: import from your other browser, make Thoron the default browser | P3.21 |
 | Updates by itself ([Updates](UPDATES.md)) | P3.20 |
 | Signed checksums of a release | P2.11 |
 | Signed programs, so Windows does not warn | S.8 |

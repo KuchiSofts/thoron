@@ -7,6 +7,8 @@ Explanations live in the design docs under `docs/design/`.
 ## [Unreleased]
 
 ### Added
+- **Import:** Settings' "Import bookmarks and settings" now lists Thorium, Chrome, Edge, Brave, Vivaldi, Opera and Chromium when they are in your Windows account, and brings over bookmarks, history, saved passwords, search engines and form entries. It asks you to close the other browser first and never closes it, works on copies of its files, and leaves out passwords that Chrome locks to itself.
+- **First start:** a welcome page offers to import from another browser and to make Thoron your default browser. Windows asks you to confirm the default on its own page; closing the tab skips both.
 - **Guides:** the Windows steps of the install and update guides (the installer with its two questions, the portable package, removing both) are followed on a clean Windows for every build, clicks included, and every step does what the guide says.
 - **Updates:** a Thoron installed for one user also looks for a newer release once a day, even while it is closed, through a task in Task Scheduler that runs with your own rights. It follows your update setting, keeps your build, downloads nothing on a metered connection, and stays off if you switch it off. Uninstalling Thoron removes it.
 - **Releases:** every program and library of a release is checked for the processor it is built for and for the libraries it loads, so a package never carries a file that would not start on a clean Windows.

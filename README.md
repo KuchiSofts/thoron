@@ -6,7 +6,7 @@
 
 **A fast, secure and private browser for Windows, based on Thorium and Chromium.**
 
-[![Status](https://img.shields.io/badge/status-pre--release-F72F8E?style=flat-square)](#roadmap) <!-- progress-badge:start -->[![Roadmap progress](https://img.shields.io/badge/roadmap-71%25-7B2FF7?style=flat-square)](#roadmap)<!-- progress-badge:end --> [![Platforms](https://img.shields.io/badge/platforms-Windows%20first-24292f?style=flat-square)](#platforms) [![CPU](https://img.shields.io/badge/cpu-x64%20%7C%20ARM64-24292f?style=flat-square)](#platforms) [![License](https://img.shields.io/badge/license-BSD--3--Clause-24292f?style=flat-square)](LICENSE.md)
+[![Status](https://img.shields.io/badge/status-pre--release-F72F8E?style=flat-square)](#roadmap) <!-- progress-badge:start -->[![Roadmap progress](https://img.shields.io/badge/roadmap-72%25-7B2FF7?style=flat-square)](#roadmap)<!-- progress-badge:end --> [![Platforms](https://img.shields.io/badge/platforms-Windows%20first-24292f?style=flat-square)](#platforms) [![CPU](https://img.shields.io/badge/cpu-x64%20%7C%20ARM64-24292f?style=flat-square)](#platforms) [![License](https://img.shields.io/badge/license-BSD--3--Clause-24292f?style=flat-square)](LICENSE.md)
 
 [Why Thoron](#why-thoron) · [Features](#features) · [Install and update](#install-and-update) · [Versions](#versions) · [Roadmap](#roadmap) · [Platforms](#platforms) · [Verify](#verifying-downloads) · [Security](#security) · [Contributing](#contributing) · [Credits](#credits) · [Wiki](https://github.com/KuchiSofts/thoron/wiki)
 
@@ -78,7 +78,7 @@ changed in each version is in the [changelog](CHANGELOG.md), one line per change
 Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always current.
 
 <!-- roadmap:start -->
-**Overall:** `██████████████░░░░░░` 149 of 209 tasks done (71%) · roadmap updated 2026-11-12
+**Overall:** `██████████████░░░░░░` 150 of 209 tasks done (72%) · roadmap updated 2026-11-12
 
 | Area | Progress | Done | Status |
 |---|---|---|---|
@@ -86,7 +86,7 @@ Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always curre
 | [P1 - Build environment](ROADMAP.md#p1---build-environment) | `██████████████████░░` | 9/10 | 🔄 In progress |
 | [P2 - First release](ROADMAP.md#p2---first-release) | `██████████░░░░░░░░░░` | 13/26 | 🔄 In progress |
 | [P2b - ARM64](ROADMAP.md#p2b---arm64) | `░░░░░░░░░░░░░░░░░░░░` | 0/5 | 🔄 In progress · ⛔ blocked item |
-| [P3 - Updater v1 + Import](ROADMAP.md#p3---updater-v1--import) | `██████████░░░░░░░░░░` | 10/21 | 🔄 In progress |
+| [P3 - Updater v1 + Import](ROADMAP.md#p3---updater-v1--import) | `██████████░░░░░░░░░░` | 11/21 | 🔄 In progress |
 | [P4 - Updater v2](ROADMAP.md#p4---updater-v2) | `███████████████░░░░░` | 8/11 | 🔄 In progress |
 | [P5 - Quality](ROADMAP.md#p5---quality) | `██████████████████░░` | 71/80 | 🔄 In progress |
 | [Security (S)](ROADMAP.md#security-s) | `██████████████░░░░░░` | 11/16 | 🔄 In progress |
@@ -193,7 +193,7 @@ Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always curre
 - [x] **P3.18** Import report (counts per type, what was skipped and why; no secrets)
 - [ ] **P3.19** One installer for good, `ThoronSetup.exe`: a small program that never changes with a release; it reads the signed update manifest, downloads the newest full installer, checks the signature and the SHA-256, and runs it
 - [ ] **P3.20** Updates from inside the browser, Windows: a check on a schedule and from the About page, the signed manifest (P3.3), a verified download (P3.4), then Chromium's own installer applies the new version while the browser runs and the About page offers to relaunch; `User Data` is never opened by the update
-- [ ] **P3.21** First run on Windows: offers to import from the browsers it finds (P3.13, P3.14) and to make Thoron the default browser for web links and for the file types a browser opens; where Windows wants the person to confirm, it opens Windows' own page for it and takes nothing over silently
+- [x] **P3.21** First run on Windows: offers to import from the browsers it finds (P3.13, P3.14) and to make Thoron the default browser for web links and for the file types a browser opens; where Windows wants the person to confirm, it opens Windows' own page for it and takes nothing over silently
 
 **P4 - Updater v2**
 

@@ -1,7 +1,9 @@
 # Import from another browser
 
-Today an import is done with small command-line tools from Thoron's repository. An import screen in the
-installer and in Settings comes later (ROADMAP P3.13), and so does the offer at the first start (P3.21).
+Bookmarks, history, saved passwords, search engines and form entries come over from Thoron's Settings
+(section 1a); Thoron's welcome page at its first start leads there. Whole profiles, open tabs and Chrome's
+passwords come over with small command-line tools from Thoron's repository. An import screen in the
+installer comes later (ROADMAP P3.13).
 
 Every tool **copies and never moves**: the other browser's files are only read and stay exactly as they
 were, so that browser keeps working and stays your backup.
@@ -10,6 +12,7 @@ were, so that browser keeps working and stays your backup.
 
 | From | What comes over | Section |
 |---|---|---|
+| Thorium, Chrome, Edge, Brave, Vivaldi, Opera, Opera GX, Chromium | Bookmarks, history, saved passwords (not those Chrome locks to itself), search engines, form entries, in Thoron's Settings | [1a](#1a-in-thorons-settings) |
 | Thorium, same Windows account | Everything: bookmarks, history, saved passwords, cookies (you stay signed in), extensions, settings, open tabs and tab groups | [2](#2-thorium-the-whole-profile) |
 | Chrome, Thorium, Thoron | Open windows, tabs and tab groups (names, colours, collapsed or not), pinned tabs, each tab's back and forward history | [3](#3-open-tabs-and-tab-groups) |
 | Firefox | The same: open windows, tabs and tab groups, pinned tabs, each tab's history | [3](#from-firefox) |
@@ -22,8 +25,28 @@ were, so that browser keeps working and stays your backup.
 the tricks that do are what password-stealing programs use. Passwords come over through Chrome's own
 export (section 4). For cookies there is no such way, so sign in to your sites again in Thoron.
 
-Not yet: bookmarks, history, extensions and settings from Chrome, and imports from Edge, Brave, Vivaldi
-and Opera (section 6).
+Not yet: extensions, settings and cookies from Chrome, Edge, Brave, Vivaldi and Opera (section 6).
+
+## 1a. In Thoron's Settings
+
+1. Close the browser you import from, completely.
+2. In Thoron open **Settings**, then **Import bookmarks and settings** (or type
+   `chrome://settings/importData` into the address bar). At the first start, the welcome page's
+   **Import...** opens the same dialog.
+3. Pick the browser in the list. It names each one found in your own Windows account, with the profile's
+   name when it has several, such as "Brave (Work)". Thoron never lists itself.
+4. Leave ticked what you want, and choose **Import**.
+
+If that browser still runs, Thoron asks you to close it, and imports nothing until you have; it never
+closes it for you. Close it and choose **Try again**.
+
+What it does: it copies the files it needs (`Bookmarks`, `History`, `Login Data`, `Web Data` and the
+browser's `Local State`) into a temporary folder, checks each database copy with SQLite and leaves out one
+that is damaged, reads the copies and deletes them at the end. The other browser's files are only read.
+The bookmarks go into a folder of their own, "Imported from" and the browser's name. Saved passwords come
+over when they belong to your Windows account; those that Chrome locks to itself (app-bound encryption)
+are left out and never forced. Open tabs, extensions, settings and cookies do not come over this way
+(sections 2 and 3 for Thorium's whole profile and for tabs).
 
 ## 1. Before you start
 
@@ -236,9 +259,8 @@ lists, own filters, trusted sites and switches with the file's. Thoron's own phi
 
 | What | Stage |
 |---|---|
-| An import screen in the installer and in Settings: the browsers and profiles found, a checkbox per kind of data, a "please close the browser" prompt | P3.13 |
-| The whole import from Chrome, Edge, Brave, Vivaldi and Opera: bookmarks, history, settings, extensions, autofill, and passwords and cookies where the browser allows it | P3.14 |
+| An import screen in the installer | P3.13 |
+| Settings, extensions and cookies from Chrome, Edge, Brave, Vivaldi and Opera where the browser allows it, and a report of what came over | P3.14 |
 | Tabs from Edge, Brave, Vivaldi and Opera, checked | P3.15 |
-| The offer to import at the first start | P3.21 |
 | Taking over an upstream Thorium portable folder | P4.10 |
 | Linux: passwords imported from Thorium readable | P3.16 |

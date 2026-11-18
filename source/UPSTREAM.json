@@ -2,12 +2,12 @@
   "repository": "https://github.com/gz83/thorium",
   "commit": "efc0fffc256e7402ad4c3dc38ae1e5754221c03d",
   "chromium": "158.0.8127.65",
-  "tree": "0707c20fee36936ff860bad7ea956a2d08ad6eff",
+  "tree": "c4779f8cc250859b950cec9c99b0459e8d117900",
   "executable": [],
   "withheld": {
     "other/thorium-build-config-and-simd.patch": "9f4402144aea034a58e16210e13f313a54cdb6fe",
     "other/thorium-default-api-keys.patch": "2bd71f444e72568758920206982bf237c83a3294"
   },
-  "changed": 155,
+  "changed": 158,
   "removed": 12
 }

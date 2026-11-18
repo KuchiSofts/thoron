@@ -648,6 +648,33 @@ index 7ea42cc7c8da0a3a91c0ed93e8e5c6189812a16d..3feae7d09c9db177fc82007604ab7b63
      base::win::RegKey::ChangeCallback callback =
          base::BindOnce(&ExternalRegistryLoader::OnRegistryKeyChanged,
                         base::Unretained(this), base::Unretained(&hkcu_key_));
+diff --git a/chrome/app/generated_resources.grd b/chrome/app/generated_resources.grd
+index 02dbc0a2c2cf70d2bb15307f15f4b35ccd488b04..d5cf9f7efb61475b2673f3a843bc9ce2b0079a91 100644
+--- a/chrome/app/generated_resources.grd
++++ b/chrome/app/generated_resources.grd
+@@ -288,6 +288,7 @@ are declared in tools/grit/grit_args.gni.
+ 
+       <!-- Bookmarks specific strings -->
+       <part file="bookmarks_strings.grdp" />
++      <part file="thoron_welcome_strings.grdp" />
+ 
+       <!-- Glic specific strings -->
+       <part file="glic_strings.grdp" />
+@@ -11983,6 +11984,14 @@ Check your passwords anytime in <ph name="GOOGLE_PASSWORD_MANAGER">$1<ex>Google
+       <message name="IDS_IMPORTER_LOCK_TEXT" desc="The message to be displayed in the importer-lock dialog">
+         To finish importing, close all Firefox windows.
+       </message>
++      <!-- Thoron (ROADMAP P3.14): generic lock dialog for a Chromium-family
++           source browser (Chrome, Edge, Brave, and so on). -->
++      <message name="IDS_IMPORTER_LOCK_TITLE_CHROMIUM_FAMILY" desc="Dialog title for the importer lock dialog when the source is another browser that must be closed.">
++        Close the other browser
++      </message>
++      <message name="IDS_IMPORTER_LOCK_TEXT_CHROMIUM_FAMILY" desc="The message shown in the importer-lock dialog when the source browser must be closed to finish importing.">
++        To finish importing, close all windows of the browser you are importing from.
++      </message>
+       <if expr="use_titlecase">
+         <message name="IDS_IMPORTER_LOCK_OK" desc="In Title Case: Text for OK button (to try importing again) on importer lock dialog">
+           Try Again
 diff --git a/components/page_info/BUILD.gn b/components/page_info/BUILD.gn
 index a248f84b52164a4731b74bec11f31c2abdcf700d..94dff65fd333283f0d4e88e6c1d071944fadc080 100644
 --- a/components/page_info/BUILD.gn
@@ -1426,10 +1453,10 @@ index 792412915da65daf1ba2ab756c0292cc42eb865f..812d74d47da946c8783d8b1888d03e69
  
  void ChromeContentRendererClient::RunScriptsAtDocumentEnd(
 diff --git a/chrome/browser/ui/webui/BUILD.gn b/chrome/browser/ui/webui/BUILD.gn
-index 2e86cbe5385850937a25695dbee994c8fe846f4d..462340b8a3f6cf9700aa04b8afffb7d85169eab6 100644
+index 2e86cbe5385850937a25695dbee994c8fe846f4d..3341677349e05abd81518170c4cf2c7b2cba62c3 100644
 --- a/chrome/browser/ui/webui/BUILD.gn
 +++ b/chrome/browser/ui/webui/BUILD.gn
-@@ -39,10 +39,20 @@ source_set("configs") {
+@@ -39,10 +39,22 @@ source_set("configs") {
      "chrome_untrusted_web_ui_configs.cc",
      "chrome_web_ui_configs.cc",
      "thorium_easter_eggs.h",
@@ -1441,6 +1468,8 @@ index 2e86cbe5385850937a25695dbee994c8fe846f4d..462340b8a3f6cf9700aa04b8afffb7d8
 +    "thoron_adblock_ui.h",
 +    "thoron_mail_ui.cc",
 +    "thoron_mail_ui.h",
++    "thoron_welcome_ui.cc",
++    "thoron_welcome_ui.h",
    ]
  
    deps = [
@@ -1451,26 +1480,28 @@ index 2e86cbe5385850937a25695dbee994c8fe846f4d..462340b8a3f6cf9700aa04b8afffb7d8
      ":ntp_tiles_internals_ui",
      ":signin_internals_ui",
 diff --git a/chrome/browser/ui/webui/chrome_web_ui_configs.cc b/chrome/browser/ui/webui/chrome_web_ui_configs.cc
-index aee2aaf3e11b078a7bf6cce51a44e22942a8246c..f270a8cb160745c6260354feae416765e342a7d5 100644
+index aee2aaf3e11b078a7bf6cce51a44e22942a8246c..180b9850581188eef87fa697094461d16ca871e5 100644
 --- a/chrome/browser/ui/webui/chrome_web_ui_configs.cc
 +++ b/chrome/browser/ui/webui/chrome_web_ui_configs.cc
-@@ -57,6 +57,9 @@
+@@ -57,6 +57,10 @@
  #include "chrome/browser/ui/webui/suggest_internals/suggest_internals_ui.h"
  #include "chrome/browser/ui/webui/sync_internals/sync_internals_ui.h"
  #include "chrome/browser/ui/webui/thorium_easter_eggs.h"
 +#include "chrome/browser/ui/webui/thoron_adblock_popup_ui.h"
 +#include "chrome/browser/ui/webui/thoron_adblock_ui.h"
 +#include "chrome/browser/ui/webui/thoron_mail_ui.h"
++#include "chrome/browser/ui/webui/thoron_welcome_ui.h"
  #include "chrome/browser/ui/webui/translate_internals/translate_internals_ui.h"
  #include "chrome/browser/ui/webui/usb_internals/usb_internals_ui.h"
  #include "chrome/browser/ui/webui/version/version_ui.h"
-@@ -332,6 +335,9 @@ void RegisterChromeWebUIConfigs() {
+@@ -332,6 +336,10 @@ void RegisterChromeWebUIConfigs() {
    map.AddWebUIConfig(std::make_unique<SuggestInternalsUIConfig>());
    map.AddWebUIConfig(std::make_unique<SyncInternalsUIConfig>());
    map.AddWebUIConfig(std::make_unique<ThoriumAuthorsUIConfig>());
 +  map.AddWebUIConfig(std::make_unique<ThoronAdblockUIConfig>());
 +  map.AddWebUIConfig(std::make_unique<ThoronAdblockMenuUIConfig>());
 +  map.AddWebUIConfig(std::make_unique<ThoronMailMenuUIConfig>());
++  map.AddWebUIConfig(std::make_unique<ThoronWelcomeUIConfig>());
    map.AddWebUIConfig(std::make_unique<TranslateInternalsUIConfig>());
    map.AddWebUIConfig(std::make_unique<UsbInternalsUIConfig>());
    map.AddWebUIConfig(std::make_unique<user_actions_ui::UserActionsUIConfig>());
@@ -27187,3 +27218,2933 @@ index 0000000000000000000000000000000000000000..a17177b4d30369835f1ede2d7501f9dc
 +
 +}  // namespace
 +}  // namespace thoron_update
+diff --git a/chrome/app/bookmarks_strings.grdp b/chrome/app/bookmarks_strings.grdp
+index fb36bc26da007c0a036f9a8662efb5903afc78c3..64b7c09b28b1be079fe394c5e7b6add6b001f8c9 100644
+--- a/chrome/app/bookmarks_strings.grdp
++++ b/chrome/app/bookmarks_strings.grdp
+@@ -11,6 +11,11 @@
+       <message name="IDS_BOOKMARK_GROUP_FROM_EDGE" desc="The group name of bookmarks from Edge">
+         Imported From Edge
+       </message>
++      <!-- Thoron (ROADMAP P3.14): folder name for bookmarks imported from a
++           Chromium-family browser. $1 is the browser name, e.g. Brave. -->
++      <message name="IDS_BOOKMARK_GROUP_FROM_CHROMIUM_FAMILY" desc="The group name of bookmarks imported from a Chromium-family browser. The placeholder is the browser name.">
++        Imported from <ph name="BROWSER_NAME">$1<ex>Brave</ex></ph>
++      </message>
+     </if>
+     <message name="IDS_BOOKMARK_GROUP_FROM_FIREFOX" desc="The group name of bookmarks from Firefox">
+       Imported From Firefox
+diff --git a/chrome/app/generated_resources.grd.gritdeps b/chrome/app/generated_resources.grd.gritdeps
+index c56cb13d3c6b6dfaee4a006a1c5b8f1f4cf79000..68ddb4dc67afcb9ea7c565d382776f0016c237f2 100644
+--- a/chrome/app/generated_resources.grd.gritdeps
++++ b/chrome/app/generated_resources.grd.gritdeps
+@@ -107,5 +107,6 @@ chrome/app/sharesheet_strings.grdp
+ chrome/app/shortcut_input_strings.grdp
+ chrome/app/skills_strings.grdp
+ chrome/app/support_tool_strings.grdp
++chrome/app/thoron_welcome_strings.grdp
+ chrome/app/vr_strings.grdp
+ chrome/app/whats_new_strings.grdp
+diff --git a/chrome/browser/importer/BUILD.gn b/chrome/browser/importer/BUILD.gn
+index ed8e8bf048399ccab50b1f44498ef40dd73e8921..dce663b3d76b13dd782e06481bb5a05ceeb3dd22 100644
+--- a/chrome/browser/importer/BUILD.gn
++++ b/chrome/browser/importer/BUILD.gn
+@@ -65,6 +65,12 @@ source_set("impl") {
+ 
+   if (is_win) {
+     sources += [ "firefox_profile_lock_win.cc" ]
++    # Thoron (ROADMAP P3.14): detection and the running check for the
++    # Chromium-family importer. //chrome/common:constants gives DIR_USER_DATA.
++    deps += [
++      "//chrome/common:constants",
++      "//components/user_data_importer/chromium_family",
++    ]
+   } else {
+     sources += [ "firefox_profile_lock_posix.cc" ]
+   }
+diff --git a/chrome/browser/importer/DEPS b/chrome/browser/importer/DEPS
+index 6f0957d48299e596d4e4e79054f76aec52f77124..5e0736777d0a9c2606f6cb5d077eab1271ff2b53 100644
+--- a/chrome/browser/importer/DEPS
++++ b/chrome/browser/importer/DEPS
+@@ -1,3 +1,5 @@
+ include_rules = [
++  # Thoron (ROADMAP P3.14): detection and the running check.
++  "+components/user_data_importer/chromium_family",
+   "+components/user_data_importer/mojom",
+ ]
+diff --git a/chrome/browser/importer/external_process_importer_client.cc b/chrome/browser/importer/external_process_importer_client.cc
+index cf319714e5c89d052477e42686a5ccdcdfdf9f5f..7194c060caa3767a6392919c0b8ee78c76d8d913 100644
+--- a/chrome/browser/importer/external_process_importer_client.cc
++++ b/chrome/browser/importer/external_process_importer_client.cc
+@@ -9,6 +9,7 @@
+ #include "base/functional/bind.h"
+ #include "base/logging.h"
+ #include "base/strings/string_number_conversions.h"
++#include "build/build_config.h"
+ #include "chrome/browser/importer/external_process_importer_host.h"
+ #include "chrome/browser/importer/in_process_importer_bridge.h"
+ #include "chrome/common/importer/firefox_importer_utils.h"
+@@ -69,6 +70,13 @@ void ExternalProcessImporterClient::Start() {
+   localized_strings.try_emplace(
+       IDS_BOOKMARK_BAR_FOLDER_NAME,
+       l10n_util::GetStringUTF8(IDS_BOOKMARK_BAR_FOLDER_NAME));
++#if BUILDFLAG(IS_WIN)
++  // Thoron (ROADMAP P3.14): the Chromium-family importer's folder name. It
++  // keeps its $1 placeholder; the importer puts the browser name in.
++  localized_strings.try_emplace(
++      IDS_BOOKMARK_GROUP_FROM_CHROMIUM_FAMILY,
++      l10n_util::GetStringUTF8(IDS_BOOKMARK_GROUP_FROM_CHROMIUM_FAMILY));
++#endif
+ 
+   mojo::PendingRemote<user_data_importer::mojom::BookmarkHtmlParser>
+       bookmark_html_parser;
+diff --git a/chrome/browser/importer/external_process_importer_host.cc b/chrome/browser/importer/external_process_importer_host.cc
+index 051ffd1259dd1373470c56e8a49dd21ad8e57170..9580b00c733cf456b1beacdffb84193b3b8c8e66 100644
+--- a/chrome/browser/importer/external_process_importer_host.cc
++++ b/chrome/browser/importer/external_process_importer_host.cc
+@@ -7,6 +7,7 @@
+ #include <memory>
+ 
+ #include "base/functional/bind.h"
++#include "build/build_config.h"
+ #include "chrome/browser/bookmarks/bookmark_model_factory.h"
+ #include "chrome/browser/importer/external_process_importer_client.h"
+ #include "chrome/browser/importer/firefox_profile_lock.h"
+@@ -15,10 +16,15 @@
+ #include "chrome/browser/importer/in_process_importer_bridge.h"
+ #include "chrome/browser/profiles/profile.h"
+ #include "chrome/browser/search_engines/template_url_service_factory.h"
++#include "chrome/grit/generated_resources.h"
+ #include "components/bookmarks/browser/bookmark_model.h"
+ #include "components/search_engines/template_url_service.h"
+ #include "content/public/browser/browser_thread.h"
+ 
++#if BUILDFLAG(IS_WIN)
++#include "components/user_data_importer/chromium_family/browser_detection.h"
++#endif
++
+ using bookmarks::BookmarkModel;
+ using content::BrowserThread;
+ 
+@@ -59,6 +65,15 @@ void ExternalProcessImporterHost::StartImportSettings(
+     return;
+   }
+ 
++#if BUILDFLAG(IS_WIN)
++  // Thoron (ROADMAP P3.14): a Chromium-family source must be closed too, so
++  // the copies made for the import are consistent. Thoron never closes it.
++  if (!CheckForChromiumFamilyRunning(source_profile)) {
++    Cancel();
++    return;
++  }
++#endif
++
+   CheckForLoadedModels(items);
+ 
+   LaunchImportIfReady();
+@@ -133,16 +148,28 @@ void ExternalProcessImporterHost::ShowWarningDialog() {
+   importer::ShowImportLockDialog(
+       parent_window_,
+       base::BindOnce(&ExternalProcessImporterHost::OnImportLockDialogEnd,
+-                     weak_ptr_factory_.GetWeakPtr()));
++                     weak_ptr_factory_.GetWeakPtr()),
++      lock_title_id_, lock_text_id_);
+ }
+ 
+ void ExternalProcessImporterHost::OnImportLockDialogEnd(bool is_continue) {
+   if (is_continue) {
+-    // User chose to continue, then we check the lock again to make
+-    // sure that Firefox has been closed. Try to import the settings
+-    // if successful. Otherwise, show a warning dialog.
+-    firefox_lock_->Lock();
+-    if (firefox_lock_->HasAcquired()) {
++    // User chose to continue, then we check the lock again to make sure the
++    // source has been closed. Try to import the settings if successful.
++    // Otherwise, show a warning dialog.
++    bool now_readable = false;
++    if (firefox_lock_) {
++      firefox_lock_->Lock();
++      now_readable = firefox_lock_->HasAcquired();
++#if BUILDFLAG(IS_WIN)
++    } else if (source_profile_.importer_type ==
++               user_data_importer::TYPE_CHROMIUM_FAMILY) {
++      // Thoron (ROADMAP P3.14): re-check whether the source browser still runs.
++      now_readable = !user_data_importer::chromium_family::IsBrowserRunning(
++          source_profile_.app_path);
++#endif
++    }
++    if (now_readable) {
+       is_source_readable_ = true;
+       LaunchImportIfReady();
+     } else {
+@@ -153,6 +180,29 @@ void ExternalProcessImporterHost::OnImportLockDialogEnd(bool is_continue) {
+   }
+ }
+ 
++#if BUILDFLAG(IS_WIN)
++bool ExternalProcessImporterHost::CheckForChromiumFamilyRunning(
++    const user_data_importer::SourceProfile& source_profile) {
++  if (source_profile.importer_type !=
++      user_data_importer::TYPE_CHROMIUM_FAMILY) {
++    return true;
++  }
++  if (!user_data_importer::chromium_family::IsBrowserRunning(
++          source_profile.app_path)) {
++    return true;
++  }
++  // The source browser runs; ask the user to close it (never close it here).
++  is_source_readable_ = false;
++  lock_title_id_ = IDS_IMPORTER_LOCK_TITLE_CHROMIUM_FAMILY;
++  lock_text_id_ = IDS_IMPORTER_LOCK_TEXT_CHROMIUM_FAMILY;
++  if (headless_) {
++    return false;
++  }
++  ShowWarningDialog();
++  return true;
++}
++#endif  // BUILDFLAG(IS_WIN)
++
+ bool ExternalProcessImporterHost::CheckForFirefoxLock(
+     const user_data_importer::SourceProfile& source_profile) {
+   if (source_profile.importer_type != user_data_importer::TYPE_FIREFOX) {
+diff --git a/chrome/browser/importer/external_process_importer_host.h b/chrome/browser/importer/external_process_importer_host.h
+index e30cfba33a058c8fab9fedceab4563af4c358338..67836648aa2c1d8dd38df41d99a69880a4ec1fa0 100644
+--- a/chrome/browser/importer/external_process_importer_host.h
++++ b/chrome/browser/importer/external_process_importer_host.h
+@@ -13,8 +13,10 @@
+ #include "base/memory/scoped_refptr.h"
+ #include "base/memory/weak_ptr.h"
+ #include "base/scoped_observation.h"
++#include "build/build_config.h"
+ #include "chrome/browser/importer/importer_progress_observer.h"
+ #include "chrome/browser/importer/profile_writer.h"
++#include "chrome/grit/generated_resources.h"
+ #include "components/bookmarks/browser/base_bookmark_model_observer.h"
+ #include "components/search_engines/template_url_service.h"
+ #include "components/user_data_importer/common/importer_data_types.h"
+@@ -117,6 +119,14 @@ class ExternalProcessImporterHost
+   bool CheckForFirefoxLock(
+       const user_data_importer::SourceProfile& source_profile);
+ 
++#if BUILDFLAG(IS_WIN)
++  // Thoron (ROADMAP P3.14): make sure a Chromium-family source browser is not
++  // running, since its files are only consistent when it is closed. Shows the
++  // close-the-browser dialog if it is. Returns false iff import should abort.
++  bool CheckForChromiumFamilyRunning(
++      const user_data_importer::SourceProfile& source_profile);
++#endif
++
+   // Make sure BookmarkModel and TemplateURLService are loaded before import
+   // process starts, if bookmarks and/or search engines are among the items
+   // which are to be imported.
+@@ -150,6 +160,11 @@ class ExternalProcessImporterHost
+   // True if source profile is readable.
+   bool is_source_readable_;
+ 
++  // Thoron (ROADMAP P3.14): which strings the lock dialog shows. Default to the
++  // Firefox messages; CheckForChromiumFamilyRunning() swaps in generic ones.
++  int lock_title_id_ = IDS_IMPORTER_LOCK_TITLE;
++  int lock_text_id_ = IDS_IMPORTER_LOCK_TEXT;
++
+   // Writes data from the importer back to the profile.
+   scoped_refptr<ProfileWriter> writer_;
+ 
+diff --git a/chrome/browser/importer/importer_list.cc b/chrome/browser/importer/importer_list.cc
+index 1d7c9bca117843a2a869bac43de3b4e53ceedf65..864d52bf9fdfed8e45674a3a73316866df273a9f 100644
+--- a/chrome/browser/importer/importer_list.cc
++++ b/chrome/browser/importer/importer_list.cc
+@@ -24,12 +24,40 @@
+ #endif
+ 
+ #if BUILDFLAG(IS_WIN)
++#include "base/base_paths_win.h"
++#include "base/path_service.h"
++#include "chrome/common/chrome_paths.h"
+ #include "chrome/common/importer/edge_importer_utils_win.h"
++#include "components/user_data_importer/chromium_family/browser_detection.h"
+ #endif
+ 
+ namespace {
+ 
+ #if BUILDFLAG(IS_WIN)
++// Thoron (ROADMAP P3.14): the profiles of every Chromium-family browser of the
++// current user (Thorium, Chrome, Edge, Brave, Vivaldi, Opera, Chromium), never
++// Thoron itself.
++void DetectChromiumFamilyProfiles(
++    std::vector<user_data_importer::SourceProfile>* profiles) {
++  user_data_importer::chromium_family::DetectionFolders folders;
++  base::FilePath path;
++  if (base::PathService::Get(base::DIR_LOCAL_APP_DATA, &path)) {
++    folders.local_app_data = path;
++  }
++  if (base::PathService::Get(base::DIR_ROAMING_APP_DATA, &path)) {
++    folders.roaming_app_data = path;
++  }
++  // Our own user data folder, so Thoron is never offered as a source.
++  if (base::PathService::Get(chrome::DIR_USER_DATA, &path)) {
++    folders.own_user_data = path;
++  }
++
++  for (user_data_importer::SourceProfile& source :
++       user_data_importer::chromium_family::DetectSourceProfiles(folders)) {
++    profiles->push_back(std::move(source));
++  }
++}
++
+ void DetectIEProfiles(
+     std::vector<user_data_importer::SourceProfile>* profiles) {
+   base::ScopedBlockingCall scoped_blocking_call(FROM_HERE,
+@@ -67,6 +95,8 @@ void DetectBuiltinWindowsProfiles(
+     DetectEdgeProfiles(profiles);
+     DetectIEProfiles(profiles);
+   }
++  // Thoron (ROADMAP P3.14): offer the Chromium-family browsers too.
++  DetectChromiumFamilyProfiles(profiles);
+ }
+ 
+ #endif  // BUILDFLAG(IS_WIN)
+diff --git a/chrome/browser/importer/importer_uma.cc b/chrome/browser/importer/importer_uma.cc
+index d50675a79eb60f86b0278934884add02407a725a..85b761549bd1e0132eb0809d5e8cdae4e5cab645 100644
+--- a/chrome/browser/importer/importer_uma.cc
++++ b/chrome/browser/importer/importer_uma.cc
+@@ -24,6 +24,8 @@ enum ImporterTypeMetrics {
+   IMPORTER_METRICS_BOOKMARKS_FILE = 6,
+ #if BUILDFLAG(IS_WIN)
+   IMPORTER_METRICS_EDGE = 7,
++  // Thoron (ROADMAP P3.14): a Chromium-family browser profile.
++  IMPORTER_METRICS_CHROMIUM_FAMILY = 8,
+ #endif
+ 
+   // Insert new values here. Never remove any existing values, as this enum is
+@@ -47,6 +49,10 @@ void LogImporterUseToMetrics(const std::string& metric_postfix,
+     case user_data_importer::TYPE_EDGE:
+       metrics_type = IMPORTER_METRICS_EDGE;
+       break;
++    // Thoron (ROADMAP P3.14): a Chromium-family browser profile.
++    case user_data_importer::TYPE_CHROMIUM_FAMILY:
++      metrics_type = IMPORTER_METRICS_CHROMIUM_FAMILY;
++      break;
+ #endif
+     case user_data_importer::TYPE_FIREFOX:
+       metrics_type = IMPORTER_METRICS_FIREFOX3;
+diff --git a/chrome/browser/importer/in_process_importer_bridge.cc b/chrome/browser/importer/in_process_importer_bridge.cc
+index da614f0e7db5628e258f07fe0d7f2967dc1207f1..4735f6ab1d962524ed24ce78c0e069575a393465 100644
+--- a/chrome/browser/importer/in_process_importer_bridge.cc
++++ b/chrome/browser/importer/in_process_importer_bridge.cc
+@@ -53,6 +53,9 @@ history::VisitSource ConvertImporterVisitSourceToHistoryVisitSource(
+       return history::SOURCE_IE_IMPORTED;
+     case user_data_importer::VISIT_SOURCE_SAFARI_IMPORTED:
+       return history::SOURCE_SAFARI_IMPORTED;
++    // Thoron (ROADMAP P3.14): imported from another Chromium-family browser.
++    case user_data_importer::VISIT_SOURCE_CHROMIUM_FAMILY_IMPORTED:
++      return history::SOURCE_OS_MIGRATION_IMPORTED;
+   }
+   NOTREACHED();
+ }
+diff --git a/chrome/browser/ui/startup/startup_tab_provider.cc b/chrome/browser/ui/startup/startup_tab_provider.cc
+index 5aba18070560ae1fa55cc62299bd643e0a814560..08061992a9ffa57e268ad62166d3d61e9b8ab06b 100644
+--- a/chrome/browser/ui/startup/startup_tab_provider.cc
++++ b/chrome/browser/ui/startup/startup_tab_provider.cc
+@@ -17,6 +17,7 @@
+ #include "base/threading/thread_restrictions.h"
+ #include "build/build_config.h"
+ #include "chrome/browser/first_run/first_run.h"
++#include "chrome/browser/ui/webui/thoron_welcome_ui.h"
+ #include "chrome/browser/prefs/session_startup_pref.h"
+ #include "chrome/browser/profile_resetter/triggered_profile_resetter.h"
+ #include "chrome/browser/profile_resetter/triggered_profile_resetter_factory.h"
+@@ -110,6 +111,13 @@ StartupTabs StartupTabProviderImpl::GetDistributionFirstRunTabs(
+   StartupTabs tabs = GetInitialPrefsTabsForState(
+       first_run::IsChromeFirstRun(), browser_creator->first_run_tabs_);
+   browser_creator->first_run_tabs_.clear();
++#if BUILDFLAG(IS_WIN)
++  // Thoron (ROADMAP P3.21): at the first start, first, the offer to import
++  // from another browser and to make Thoron the default browser.
++  if (first_run::IsChromeFirstRun()) {
++    tabs.emplace(tabs.begin(), GURL(kThoronWelcomeURL));
++  }
++#endif
+   return tabs;
+ }
+ 
+diff --git a/chrome/common/importer/profile_import_process_param_traits_macros.h b/chrome/common/importer/profile_import_process_param_traits_macros.h
+index b19a5aa8cee272d0c37e227e163f2481ac33b5f6..35d802902bc0bcc909d602e76ac802b47839d9e7 100644
+--- a/chrome/common/importer/profile_import_process_param_traits_macros.h
++++ b/chrome/common/importer/profile_import_process_param_traits_macros.h
+@@ -21,9 +21,10 @@
+ #define IPC_MESSAGE_EXPORT
+ 
+ #if BUILDFLAG(IS_WIN)
++// Thoron (ROADMAP P3.14): TYPE_CHROMIUM_FAMILY is the highest Windows value.
+ IPC_ENUM_TRAITS_MIN_MAX_VALUE(user_data_importer::ImporterType,
+                               user_data_importer::TYPE_UNKNOWN,
+-                              user_data_importer::TYPE_EDGE)
++                              user_data_importer::TYPE_CHROMIUM_FAMILY)
+ #else
+ IPC_ENUM_TRAITS_MIN_MAX_VALUE(user_data_importer::ImporterType,
+                               user_data_importer::TYPE_UNKNOWN,
+diff --git a/chrome/utility/BUILD.gn b/chrome/utility/BUILD.gn
+index e5b851a44d644dfd5144ea8e661b546d8c8149a0..b713239073143341dcdd79c88bf0be1db8a4fa89 100644
+--- a/chrome/utility/BUILD.gn
++++ b/chrome/utility/BUILD.gn
+@@ -129,6 +129,9 @@ static_library("utility") {
+     }
+     if (is_win) {
+       sources += [
++        # Thoron (ROADMAP P3.14): the Chromium-family importer glue.
++        "importer/chromium_family_importer_win.cc",
++        "importer/chromium_family_importer_win.h",
+         "importer/edge_database_reader_win.cc",
+         "importer/edge_database_reader_win.h",
+         "importer/edge_importer_win.cc",
+@@ -139,7 +142,11 @@ static_library("utility") {
+         "importer/nss_decryptor_win.h",
+       ]
+ 
+-      deps += [ "//services/proxy_resolver_win" ]
++      deps += [
++        # Thoron (ROADMAP P3.14): the Chromium-family reader library.
++        "//components/user_data_importer/chromium_family",
++        "//services/proxy_resolver_win",
++      ]
+     }
+     deps += [
+       "//chrome/common:mojo_bindings",
+diff --git a/chrome/utility/importer/DEPS b/chrome/utility/importer/DEPS
+index 6daab6abc938eedd90b9ba4cce01ab6291a37dc1..f3e13103462901cc0c289afbd41e62de1ebb44fd 100644
+--- a/chrome/utility/importer/DEPS
++++ b/chrome/utility/importer/DEPS
+@@ -4,6 +4,8 @@ include_rules = [
+   "+components/favicon_base",
+   "+components/search_engines",
+   "+components/strings/grit",
++  # Thoron (ROADMAP P3.14): the Chromium-family reader library.
++  "+components/user_data_importer/chromium_family",
+   "+components/user_data_importer/common",
+   "+components/user_data_importer/content",
+   "+components/user_data_importer/utility",
+diff --git a/chrome/utility/importer/importer_creator.cc b/chrome/utility/importer/importer_creator.cc
+index 5f8f27c70bafe3eb6377350bcab26b51aae1cc7f..b8238485b74565db02f6e5e69548ccd23708373d 100644
+--- a/chrome/utility/importer/importer_creator.cc
++++ b/chrome/utility/importer/importer_creator.cc
+@@ -11,6 +11,7 @@
+ 
+ #if BUILDFLAG(IS_WIN)
+ #include "chrome/common/importer/edge_importer_utils_win.h"
++#include "chrome/utility/importer/chromium_family_importer_win.h"
+ #include "chrome/utility/importer/edge_importer_win.h"
+ #include "chrome/utility/importer/ie_importer_win.h"
+ #endif
+@@ -33,6 +34,9 @@ scoped_refptr<Importer> CreateImporterByType(
+       if (IsEdgeFavoritesLegacyMode())
+         return new IEImporter();
+       return new EdgeImporter();
++    // Thoron (ROADMAP P3.14): a Chromium-family browser profile.
++    case user_data_importer::TYPE_CHROMIUM_FAMILY:
++      return new ChromiumFamilyImporter();
+ #endif
+     case user_data_importer::TYPE_BOOKMARKS_FILE:
+       return new BookmarksFileImporter();
+diff --git a/components/user_data_importer/common/importer_data_types.h b/components/user_data_importer/common/importer_data_types.h
+index 3cac91f8d58380b688ad95177d0841cadeb5728c..cf892df8e258d8b467bb326f52b95431d1532df5 100644
+--- a/components/user_data_importer/common/importer_data_types.h
++++ b/components/user_data_importer/common/importer_data_types.h
+@@ -111,6 +111,9 @@ enum VisitSource {
+   VISIT_SOURCE_FIREFOX_IMPORTED = 1,
+   VISIT_SOURCE_IE_IMPORTED = 2,
+   VISIT_SOURCE_SAFARI_IMPORTED = 3,
++  // Thoron (ROADMAP P3.14): history imported from another Chromium-family
++  // browser profile.
++  VISIT_SOURCE_CHROMIUM_FAMILY_IMPORTED = 4,
+ };
+ 
+ }  // namespace user_data_importer
+diff --git a/components/user_data_importer/common/importer_type.h b/components/user_data_importer/common/importer_type.h
+index d4f7de8d9a49a5d84f3bfdfcc431b8873f02bf66..d52b6393547800c651f02e181afa91a1eadb5e9f 100644
+--- a/components/user_data_importer/common/importer_type.h
++++ b/components/user_data_importer/common/importer_type.h
+@@ -27,6 +27,10 @@ enum ImporterType {
+   TYPE_BOOKMARKS_FILE = 5,  // Identifies a 'bookmarks.html' file.
+ #if BUILDFLAG(IS_WIN)
+   TYPE_EDGE = 6,
++  // Thoron (ROADMAP P3.14): a profile of a browser of the Chromium family
++  // (Thorium, Chrome, Edge, Brave, Vivaldi, Opera, Chromium), read from copies
++  // of its files. See components/user_data_importer/chromium_family.
++  TYPE_CHROMIUM_FAMILY = 7,
+ #endif
+ };
+ 
+diff --git a/tools/metrics/histograms/enums.xml b/tools/metrics/histograms/enums.xml
+index cf586ad49722dc7ce8df41dd3b4d23f1fee7746e..a0b2bb38f13a512bda6f78dcf31ff645cbb70676 100644
+--- a/tools/metrics/histograms/enums.xml
++++ b/tools/metrics/histograms/enums.xml
+@@ -5880,6 +5880,9 @@ shown properly on the user-facing crash UI.
+     A bookmarks.html file
+   </int>
+   <int value="7" label="IMPORTER_METRICS_EDGE">Edge (Windows-only)</int>
++  <int value="8" label="IMPORTER_METRICS_CHROMIUM_FAMILY">
++    Chromium-family browser profile (Windows-only)
++  </int>
+ </enum>
+ 
+ <enum name="InactiveFrameDisallowActivationReason">
+diff --git a/tools/metrics/histograms/metadata/sql/histograms.xml b/tools/metrics/histograms/metadata/sql/histograms.xml
+index f6d7473a753334fed648b94b1e1fbcf2d1a0dad6..51e964416b4fe17e1d4d44568dfde43d72e720a2 100644
+--- a/tools/metrics/histograms/metadata/sql/histograms.xml
++++ b/tools/metrics/histograms/metadata/sql/histograms.xml
+@@ -101,6 +101,9 @@ chromium-metrics-reviews@google.com.
+   <variant name="SQLiteDiagnostics" summary="SQLiteDiagnostics"/>
+   <variant name="TabStateStorage" summary="TabStateStorage"/>
+   <variant name="Test" summary="Test"/>
++  <!-- Thoron (ROADMAP P3.14): reads copies of a Chromium-family browser's
++       Bookmarks/History/Login Data/Web Data during an import. -->
++  <variant name="ThoronChromiumImport" summary="ThoronChromiumImport"/>
+   <variant name="Thumbnail" summary="Thumbnail"/>
+   <variant name="TopSites" summary="TopSites"/>
+   <variant name="TrustTokens" summary="TrustTokens"/>
+diff --git a/chrome/app/thoron_welcome_strings.grdp b/chrome/app/thoron_welcome_strings.grdp
+new file mode 100644
+index 0000000000000000000000000000000000000000..b6eb09dc754d5fb775a343c383e29f919620d3ec
+--- /dev/null
++++ b/chrome/app/thoron_welcome_strings.grdp
+@@ -0,0 +1,33 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++     found in the LICENSE file. -->
++<!-- Thoron (ROADMAP P3.21): the welcome page of the first start, chrome://thoron-welcome. -->
++<grit-part>
++  <message name="IDS_THORON_WELCOME_TITLE" desc="Title of Thoron's welcome page, shown once at the browser's first start.">
++    Welcome to Thoron
++  </message>
++  <message name="IDS_THORON_WELCOME_IMPORT_HEADING" desc="Heading of the welcome page's offer to import data from another browser.">
++    Bring your things from another browser
++  </message>
++  <message name="IDS_THORON_WELCOME_IMPORT_TEXT" desc="What the import brings over, under the heading of the offer to import.">
++    Bookmarks, history, saved passwords, search engines and form entries from a browser on this computer. Close that browser first; nothing in it is changed.
++  </message>
++  <message name="IDS_THORON_WELCOME_IMPORT_BUTTON" desc="Button that opens the dialog to import from another browser.">
++    Import...
++  </message>
++  <message name="IDS_THORON_WELCOME_DEFAULT_HEADING" desc="Heading of the welcome page's offer to make Thoron the default browser.">
++    Make Thoron your default browser
++  </message>
++  <message name="IDS_THORON_WELCOME_DEFAULT_TEXT" desc="Explains that Windows asks the person to confirm the default browser on its own settings page.">
++    Links and web files then open in Thoron. Windows asks you to confirm it on its own settings page; Thoron opens that page and changes nothing by itself.
++  </message>
++  <message name="IDS_THORON_WELCOME_DEFAULT_BUTTON" desc="Button that opens Windows' settings page for the default browser.">
++    Open Windows' setting
++  </message>
++  <message name="IDS_THORON_WELCOME_ALREADY_DEFAULT" desc="Shown instead of the button when Thoron is already the default browser.">
++    Thoron is your default browser.
++  </message>
++  <message name="IDS_THORON_WELCOME_LATER" desc="Note at the bottom of the welcome page: both can be done later, and closing the tab skips them.">
++    You can do both later in Settings. Close this tab to skip them.
++  </message>
++</grit-part>
+diff --git a/chrome/browser/ui/webui/thoron_welcome_ui.cc b/chrome/browser/ui/webui/thoron_welcome_ui.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..a8b5951c5c51e49c78b8230889ae1bcbccb2f53f
+--- /dev/null
++++ b/chrome/browser/ui/webui/thoron_welcome_ui.cc
+@@ -0,0 +1,182 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "chrome/browser/ui/webui/thoron_welcome_ui.h"
++
++#include <memory>
++#include <string>
++#include <utility>
++
++#include "base/functional/bind.h"
++#include "base/i18n/rtl.h"
++#include "base/memory/ref_counted_memory.h"
++#include "base/memory/weak_ptr.h"
++#include "base/strings/escape.h"
++#include "base/strings/strcat.h"
++#include "base/values.h"
++#include "build/build_config.h"
++#include "chrome/browser/browser_process.h"
++#include "chrome/browser/profiles/profile.h"
++#include "chrome/browser/shell_integration.h"
++#include "chrome/grit/generated_resources.h"
++#include "content/public/browser/url_data_source.h"
++#include "content/public/browser/web_ui.h"
++#include "content/public/browser/web_ui_message_handler.h"
++#include "content/public/common/url_constants.h"
++#include "ui/base/l10n/l10n_util.h"
++
++#if BUILDFLAG(IS_WIN)
++#include "chrome/browser/thoron_update/thoron_update_win.h"
++#endif
++
++namespace {
++
++constexpr char kScriptPath[] = "/welcome.js";
++
++std::string Text(int id) {
++  return base::EscapeForHTML(l10n_util::GetStringUTF8(id));
++}
++
++// The page in the browser's language. Its text is filled in here, escaped; the
++// default security policy of a data source stays: script only from this page.
++std::string Page() {
++  const std::string locale =
++      g_browser_process ? g_browser_process->GetApplicationLocale() : "en";
++  return base::StrCat({
++      "<!doctype html><html lang=\"", base::EscapeForHTML(locale), "\" dir=\"",
++      base::i18n::IsRTL() ? "rtl" : "ltr",
++      "\"><head><meta charset=\"utf-8\"><title>", Text(IDS_THORON_WELCOME_TITLE),
++      "</title><style>"
++      ":root{color-scheme:light dark;font-family:system-ui,sans-serif}"
++      "body{max-width:640px;margin:48px auto;padding:0 24px;line-height:1.5}"
++      "h1{font-size:28px;font-weight:600;margin:0 0 32px}"
++      "section{border:1px solid color-mix(in srgb,currentColor 20%,transparent);"
++      "border-radius:12px;padding:20px 24px;margin:0 0 16px}"
++      "h2{font-size:17px;margin:0 0 6px}p{margin:0 0 14px;opacity:.85}"
++      "a.button,button{display:inline-block;font:inherit;font-weight:600;padding:8px 18px;"
++      "border-radius:18px;border:0;background:#0f8b8d;color:#fff;text-decoration:none;cursor:pointer}"
++      "#already{font-weight:600;margin:0}.later{opacity:.7;font-size:14px}"
++      "</style></head><body><h1>", Text(IDS_THORON_WELCOME_TITLE), "</h1>",
++      "<section><h2>", Text(IDS_THORON_WELCOME_IMPORT_HEADING), "</h2><p>",
++      Text(IDS_THORON_WELCOME_IMPORT_TEXT),
++      "</p><a class=\"button\" id=\"import\" href=\"chrome://settings/importData\">",
++      Text(IDS_THORON_WELCOME_IMPORT_BUTTON), "</a></section>",
++      "<section id=\"default\"><h2>", Text(IDS_THORON_WELCOME_DEFAULT_HEADING),
++      "</h2><p>", Text(IDS_THORON_WELCOME_DEFAULT_TEXT),
++      "</p><button id=\"make-default\">", Text(IDS_THORON_WELCOME_DEFAULT_BUTTON),
++      "</button><p id=\"already\" hidden>", Text(IDS_THORON_WELCOME_ALREADY_DEFAULT),
++      "</p></section><p class=\"later\">", Text(IDS_THORON_WELCOME_LATER),
++      "</p><script src=\"welcome.js\"></script></body></html>"});
++}
++
++// Asks the browser whether Thoron is the default, and to open Windows' page
++// for it; shows the answer. A portable copy is not offered it.
++constexpr char kScript[] = R"js(
++const button = document.getElementById('make-default');
++const already = document.getElementById('already');
++window.thoronWelcomeDefault = (isDefault, portable) => {
++  // a portable copy is no program Windows knows: it is never the default
++  document.getElementById('default').hidden = portable;
++  button.hidden = isDefault;
++  already.hidden = !isDefault;
++};
++button.addEventListener('click', () => chrome.send('makeDefault'));
++chrome.send('checkDefault');
++)js";
++
++class ThoronWelcomeDataSource : public content::URLDataSource {
++ public:
++  ThoronWelcomeDataSource() = default;
++  ThoronWelcomeDataSource(const ThoronWelcomeDataSource&) = delete;
++  ThoronWelcomeDataSource& operator=(const ThoronWelcomeDataSource&) = delete;
++
++  // content::URLDataSource:
++  std::string GetSource() override { return kThoronWelcomeHost; }
++  std::string GetMimeType(const GURL& url) override {
++    return url.path() == kScriptPath ? "text/javascript" : "text/html";
++  }
++  void StartDataRequest(const GURL& url,
++                        const content::WebContents::Getter& wc_getter,
++                        GotDataCallback callback) override {
++    std::move(callback).Run(base::MakeRefCounted<base::RefCountedString>(
++        url.path() == kScriptPath ? std::string(kScript) : Page()));
++  }
++};
++
++class ThoronWelcomeHandler : public content::WebUIMessageHandler {
++ public:
++  ThoronWelcomeHandler() = default;
++  ThoronWelcomeHandler(const ThoronWelcomeHandler&) = delete;
++  ThoronWelcomeHandler& operator=(const ThoronWelcomeHandler&) = delete;
++  ~ThoronWelcomeHandler() override = default;
++
++  // content::WebUIMessageHandler:
++  void RegisterMessages() override {
++    web_ui()->RegisterMessageCallback(
++        "checkDefault", base::BindRepeating(&ThoronWelcomeHandler::CheckDefault,
++                                            weak_factory_.GetWeakPtr()));
++    web_ui()->RegisterMessageCallback(
++        "makeDefault", base::BindRepeating(&ThoronWelcomeHandler::MakeDefault,
++                                           weak_factory_.GetWeakPtr()));
++  }
++
++ private:
++  void CheckDefault(const base::ListValue&) {
++    AllowJavascript();
++    if (Portable()) {
++      CallJavascriptFunction("thoronWelcomeDefault", base::Value(false),
++                             base::Value(true));
++      return;
++    }
++    base::MakeRefCounted<shell_integration::DefaultBrowserWorker>()
++        ->StartCheckIsDefault(base::BindOnce(&ThoronWelcomeHandler::Show,
++                                             weak_factory_.GetWeakPtr()));
++  }
++
++  // On Windows 10 and 11 this opens Windows' own page for the default browser:
++  // the person confirms there, or not.
++  void MakeDefault(const base::ListValue&) {
++    AllowJavascript();
++    if (Portable()) {
++      return;
++    }
++    base::MakeRefCounted<shell_integration::DefaultBrowserWorker>()
++        ->StartSetAsDefault(base::BindOnce(&ThoronWelcomeHandler::Show,
++                                           weak_factory_.GetWeakPtr()));
++  }
++
++  void Show(shell_integration::DefaultWebClientState state) {
++    if (IsJavascriptAllowed()) {
++      CallJavascriptFunction("thoronWelcomeDefault",
++                             base::Value(state == shell_integration::IS_DEFAULT),
++                             base::Value(false));
++    }
++  }
++
++  // A portable copy leaves no trace on the PC and is not registered with
++  // Windows, so it is never made the default browser (docs/release/PORTABLE.md).
++  static bool Portable() {
++#if BUILDFLAG(IS_WIN)
++    return thoron_update_win::ConfigForThisCopy().kind ==
++           thoron_update::Kind::kPortable;
++#else
++    return false;
++#endif
++  }
++
++  base::WeakPtrFactory<ThoronWelcomeHandler> weak_factory_{this};
++};
++
++}  // namespace
++
++ThoronWelcomeUIConfig::ThoronWelcomeUIConfig()
++    : DefaultWebUIConfig(content::kChromeUIScheme, kThoronWelcomeHost) {}
++
++ThoronWelcomeUI::ThoronWelcomeUI(content::WebUI* web_ui)
++    : content::WebUIController(web_ui) {
++  content::URLDataSource::Add(Profile::FromWebUI(web_ui),
++                              std::make_unique<ThoronWelcomeDataSource>());
++  web_ui->AddMessageHandler(std::make_unique<ThoronWelcomeHandler>());
++}
++
++ThoronWelcomeUI::~ThoronWelcomeUI() = default;
+diff --git a/chrome/browser/ui/webui/thoron_welcome_ui.h b/chrome/browser/ui/webui/thoron_welcome_ui.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..05d9b3c2fe8f46afc5448b3c22d7568bd4dfc456
+--- /dev/null
++++ b/chrome/browser/ui/webui/thoron_welcome_ui.h
+@@ -0,0 +1,40 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef CHROME_BROWSER_UI_WEBUI_THORON_WELCOME_UI_H_
++#define CHROME_BROWSER_UI_WEBUI_THORON_WELCOME_UI_H_
++
++#include "content/public/browser/web_ui_controller.h"
++#include "content/public/browser/webui_config.h"
++
++namespace content {
++class WebUI;
++}  // namespace content
++
++// chrome://thoron-welcome (ROADMAP P3.21): the page Thoron opens once, at its
++// first start on Windows. It offers the two things a person usually does with a
++// new browser: bring bookmarks, history and passwords over from another browser
++// (Settings' import, chrome://settings/importData), and make Thoron the default
++// browser, which Windows lets a person confirm only on its own settings page:
++// the page opens that page and takes nothing over silently. Closing the tab
++// declines both, and nothing changes.
++inline constexpr char kThoronWelcomeHost[] = "thoron-welcome";
++inline constexpr char kThoronWelcomeURL[] = "chrome://thoron-welcome/";
++
++class ThoronWelcomeUI;
++
++class ThoronWelcomeUIConfig
++    : public content::DefaultWebUIConfig<ThoronWelcomeUI> {
++ public:
++  ThoronWelcomeUIConfig();
++};
++
++class ThoronWelcomeUI : public content::WebUIController {
++ public:
++  explicit ThoronWelcomeUI(content::WebUI* web_ui);
++  ThoronWelcomeUI(const ThoronWelcomeUI&) = delete;
++  ThoronWelcomeUI& operator=(const ThoronWelcomeUI&) = delete;
++  ~ThoronWelcomeUI() override;
++};
++
++#endif  // CHROME_BROWSER_UI_WEBUI_THORON_WELCOME_UI_H_
+diff --git a/chrome/utility/importer/chromium_family_importer_win.cc b/chrome/utility/importer/chromium_family_importer_win.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..cdf87f9baf1ac11b2548222121f20d63f1efed1a
+--- /dev/null
++++ b/chrome/utility/importer/chromium_family_importer_win.cc
+@@ -0,0 +1,127 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "chrome/utility/importer/chromium_family_importer_win.h"
++
++#include <utility>
++#include <vector>
++
++#include "base/memory/raw_ptr.h"
++#include "base/strings/string_util.h"
++#include "base/strings/utf_string_conversions.h"
++#include "chrome/common/importer/importer_autofill_form_data_entry.h"
++#include "chrome/common/importer/importer_bridge.h"
++#include "chrome/grit/generated_resources.h"
++#include "components/user_data_importer/chromium_family/chromium_family_import_bridge.h"
++#include "components/user_data_importer/chromium_family/chromium_family_reader.h"
++#include "components/user_data_importer/common/importer_data_types.h"
++
++namespace {
++
++namespace cf = user_data_importer::chromium_family;
++
++// "Brave (Work)" -> "Brave". The browser name never contains " (", so the
++// first one is the separator the detector added.
++std::u16string BrowserNameOnly(const std::u16string& importer_name) {
++  size_t open = importer_name.find(u" (");
++  if (open != std::u16string::npos && !importer_name.empty() &&
++      importer_name.back() == u')') {
++    return importer_name.substr(0, open);
++  }
++  return importer_name;
++}
++
++// Forwards what the reader library extracts to Chromium's ImporterBridge.
++class BridgeAdapter : public cf::ChromiumFamilyImportBridge {
++ public:
++  explicit BridgeAdapter(ImporterBridge* bridge) : bridge_(bridge) {}
++
++  void AddBookmarks(
++      const std::vector<user_data_importer::ImportedBookmarkEntry>& bookmarks,
++      const std::u16string& top_level_folder_name) override {
++    bridge_->AddBookmarks(bookmarks, top_level_folder_name);
++  }
++
++  void SetHistory(
++      const std::vector<user_data_importer::ImporterURLRow>& rows) override {
++    bridge_->SetHistoryItems(
++        rows, user_data_importer::VISIT_SOURCE_CHROMIUM_FAMILY_IMPORTED);
++  }
++
++  void SetKeywords(
++      const std::vector<user_data_importer::SearchEngineInfo>& engines)
++      override {
++    // Dedup against existing engines by host+path, as the IE importer does, so
++    // Thoron's own prepopulated engines are not replaced.
++    bridge_->SetKeywords(engines, /*unique_on_host_and_path=*/true);
++  }
++
++  void AddPasswordForm(
++      const user_data_importer::ImportedPasswordForm& form) override {
++    bridge_->SetPasswordForm(form);
++  }
++
++  void SetAutofillEntries(
++      const std::vector<cf::ImportedAutofillEntry>& entries) override {
++    std::vector<ImporterAutofillFormDataEntry> converted;
++    converted.reserve(entries.size());
++    for (const cf::ImportedAutofillEntry& entry : entries) {
++      ImporterAutofillFormDataEntry out;
++      out.name = entry.name;
++      out.value = entry.value;
++      out.times_used = entry.times_used;
++      out.first_used = entry.date_created;
++      out.last_used = entry.date_last_used;
++      converted.push_back(std::move(out));
++    }
++    if (!converted.empty()) {
++      bridge_->SetAutofillFormData(converted);
++    }
++  }
++
++ private:
++  raw_ptr<ImporterBridge> bridge_;
++};
++
++}  // namespace
++
++ChromiumFamilyImporter::ChromiumFamilyImporter() = default;
++ChromiumFamilyImporter::~ChromiumFamilyImporter() = default;
++
++void ChromiumFamilyImporter::StartImport(
++    const user_data_importer::SourceProfile& source_profile,
++    uint16_t items,
++    ImporterBridge* bridge) {
++  bridge_ = bridge;
++  bridge_->NotifyStarted();
++
++  cf::ChromiumFamilyReader::Options options;
++  options.profile_path = source_profile.source_path;
++  options.user_data_path = source_profile.app_path;
++  const std::u16string browser_name =
++      BrowserNameOnly(source_profile.importer_name);
++  options.bookmark_folder_name = base::ReplaceStringPlaceholders(
++      bridge_->GetLocalizedString(IDS_BOOKMARK_GROUP_FROM_CHROMIUM_FAMILY),
++      browser_name, nullptr);
++
++  cf::ChromiumFamilyReader reader(options);
++  BridgeAdapter adapter(bridge_.get());
++
++  // Drive one item at a time so the progress UI sees each start and end. The
++  // order matches the reader's own (history before bookmarks, so favicons map
++  // onto known URLs).
++  static constexpr user_data_importer::ImportItem kOrder[] = {
++      user_data_importer::HISTORY, user_data_importer::FAVORITES,
++      user_data_importer::SEARCH_ENGINES,
++      user_data_importer::AUTOFILL_FORM_DATA, user_data_importer::PASSWORDS};
++  for (user_data_importer::ImportItem item : kOrder) {
++    if (!(items & item) || cancelled()) {
++      continue;
++    }
++    bridge_->NotifyItemStarted(item);
++    reader.Import(item, &adapter);
++    bridge_->NotifyItemEnded(item);
++  }
++
++  bridge_->NotifyEnded();
++}
+diff --git a/chrome/utility/importer/chromium_family_importer_win.h b/chrome/utility/importer/chromium_family_importer_win.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..e48c1456bbf27ff2c455fae15b44e59a07b53e94
+--- /dev/null
++++ b/chrome/utility/importer/chromium_family_importer_win.h
+@@ -0,0 +1,31 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef CHROME_UTILITY_IMPORTER_CHROMIUM_FAMILY_IMPORTER_WIN_H_
++#define CHROME_UTILITY_IMPORTER_CHROMIUM_FAMILY_IMPORTER_WIN_H_
++
++#include <stdint.h>
++
++#include "chrome/utility/importer/importer.h"
++
++// Thoron (ROADMAP P3.14): the utility-process importer for a Chromium-family
++// browser profile. Thin glue over
++// components/user_data_importer/chromium_family: it forwards what that library
++// reads to Chromium's ImporterBridge.
++class ChromiumFamilyImporter : public Importer {
++ public:
++  ChromiumFamilyImporter();
++
++  ChromiumFamilyImporter(const ChromiumFamilyImporter&) = delete;
++  ChromiumFamilyImporter& operator=(const ChromiumFamilyImporter&) = delete;
++
++  // Importer:
++  void StartImport(const user_data_importer::SourceProfile& source_profile,
++                   uint16_t items,
++                   ImporterBridge* bridge) override;
++
++ private:
++  ~ChromiumFamilyImporter() override;
++};
++
++#endif  // CHROME_UTILITY_IMPORTER_CHROMIUM_FAMILY_IMPORTER_WIN_H_
+diff --git a/components/user_data_importer/chromium_family/BUILD.gn b/components/user_data_importer/chromium_family/BUILD.gn
+new file mode 100644
+index 0000000000000000000000000000000000000000..c742ef3831d15e07f2cd464d1edff236a558e905
+--- /dev/null
++++ b/components/user_data_importer/chromium_family/BUILD.gn
+@@ -0,0 +1,58 @@
++# Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++# found in the LICENSE file.
++
++import("//testing/test.gni")
++
++# Thoron (ROADMAP P3.14): reads a Chromium-family browser's profile (Thorium,
++# Chrome, Edge, Brave, Vivaldi, Opera, Chromium) during an import. A small
++# library with few dependencies (base, sql, crypto, url and the importer common
++# types) so it can be tested without linking Chromium's giant unit_tests.
++assert(is_win, "The Chromium-family importer is Windows-only for now.")
++
++source_set("chromium_family") {
++  sources = [
++    "browser_detection.cc",
++    "browser_detection.h",
++    "chromium_family_import_bridge.h",
++    "chromium_family_reader.cc",
++    "chromium_family_reader.h",
++    "password_decryptor_win.cc",
++    "password_decryptor_win.h",
++  ]
++  deps = [
++    "//base",
++    "//components/user_data_importer/common",
++    "//crypto",
++    "//sql",
++    "//url",
++  ]
++}
++
++source_set("unit_tests") {
++  testonly = true
++  sources = [
++    "browser_detection_unittest.cc",
++    "chromium_family_reader_unittest.cc",
++    "password_decryptor_win_unittest.cc",
++  ]
++  deps = [
++    ":chromium_family",
++    "//base",
++    "//base/test:test_support",
++    "//components/user_data_importer/common",
++    "//crypto",
++    "//sql",
++    "//testing/gtest",
++    "//url",
++  ]
++}
++
++# The tests alone, without linking the rest of Chromium:
++#   thoron_chromium_import_unittests
++test("thoron_chromium_import_unittests") {
++  deps = [
++    ":unit_tests",
++    "//base/test:run_all_unittests",
++    "//testing/gtest",
++  ]
++}
+diff --git a/components/user_data_importer/chromium_family/DEPS b/components/user_data_importer/chromium_family/DEPS
+new file mode 100644
+index 0000000000000000000000000000000000000000..fc6697a3c130475f0f6791cbad053645ea00baf6
+--- /dev/null
++++ b/components/user_data_importer/chromium_family/DEPS
+@@ -0,0 +1,4 @@
++include_rules = [
++  "+crypto",
++  "+sql",
++]
+diff --git a/components/user_data_importer/chromium_family/browser_detection.cc b/components/user_data_importer/chromium_family/browser_detection.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..9cd75aaec9b81a0abdd2da01462ce1a79c11ec3d
+--- /dev/null
++++ b/components/user_data_importer/chromium_family/browser_detection.cc
+@@ -0,0 +1,206 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "components/user_data_importer/chromium_family/browser_detection.h"
++
++#include <windows.h>
++
++#include <string_view>
++
++#include "base/files/file_util.h"
++#include "base/json/json_reader.h"
++#include "base/strings/utf_string_conversion_utils.h"
++#include "base/strings/utf_string_conversions.h"
++#include "base/values.h"
++#include "components/user_data_importer/common/importer_type.h"
++
++namespace user_data_importer::chromium_family {
++
++namespace {
++
++enum class Base { kLocalAppData, kRoamingAppData };
++
++struct KnownBrowser {
++  const char* name;
++  Base base;
++  const wchar_t* folder;
++  // Opera keeps its only profile in the folder that holds `Local State`.
++  bool single_profile;
++};
++
++// detect.py's BROWSERS, in the same order.
++constexpr KnownBrowser kKnownBrowsers[] = {
++    {"Thorium", Base::kLocalAppData, L"Thorium\\User Data", false},
++    {"Chrome", Base::kLocalAppData, L"Google\\Chrome\\User Data", false},
++    {"Edge", Base::kLocalAppData, L"Microsoft\\Edge\\User Data", false},
++    {"Brave", Base::kLocalAppData, L"BraveSoftware\\Brave-Browser\\User Data",
++     false},
++    {"Vivaldi", Base::kLocalAppData, L"Vivaldi\\User Data", false},
++    {"Opera", Base::kRoamingAppData, L"Opera Software\\Opera Stable", true},
++    {"Opera GX", Base::kRoamingAppData, L"Opera Software\\Opera GX Stable",
++     true},
++    {"Chromium", Base::kLocalAppData, L"Chromium\\User Data", false},
++};
++
++// Another browser's file: a larger one is not read at all.
++constexpr size_t kMostLocalStateBytes = 8 * 1024 * 1024;
++constexpr size_t kMostProfileNameCharacters = 100;
++
++constexpr base::FilePath::CharType kLocalStateFile[] = L"Local State";
++constexpr base::FilePath::CharType kPreferencesFile[] = L"Preferences";
++constexpr base::FilePath::CharType kLockFile[] = L"lockfile";
++
++bool IsFile(const base::FilePath& path) {
++  return base::PathExists(path) && !base::DirectoryExists(path);
++}
++
++// At most kMostProfileNameCharacters code points of `name`, as detect.py's
++// `[:100]`.
++std::u16string ShortenName(const std::string& name) {
++  std::u16string wide = base::UTF8ToUTF16(name);
++  size_t index = 0;
++  size_t characters = 0;
++  for (; index < wide.size(); ++index) {
++    if (characters == kMostProfileNameCharacters) {
++      wide.resize(index);
++      break;
++    }
++    base_icu::UChar32 code_point;
++    base::ReadUnicodeCharacter(wide, &index, &code_point);
++    ++characters;
++  }
++  return wide;
++}
++
++// A profile folder name taken from another browser's file: only a plain name
++// of one folder is used.
++bool IsPlainFolderName(std::string_view folder) {
++  return !folder.empty() && folder != "." && folder != ".." &&
++         folder.find_first_of("/\\:") == std::string_view::npos;
++}
++
++// The profiles `Local State` lists that have their folder (detect.py's
++// profiles_of()).
++std::vector<DetectedProfile> ProfilesOf(const base::FilePath& user_data,
++                                        bool single_profile) {
++  std::vector<DetectedProfile> profiles;
++  if (single_profile) {
++    if (IsFile(user_data.Append(kPreferencesFile))) {
++      profiles.push_back({".", u"Default"});
++    }
++    return profiles;
++  }
++
++  std::string json;
++  if (!base::ReadFileToStringWithMaxSize(user_data.Append(kLocalStateFile),
++                                         &json, kMostLocalStateBytes)) {
++    return profiles;
++  }
++  // Another browser's file: any part of it may have another shape than the
++  // browser writes.
++  std::optional<base::DictValue> state =
++      base::JSONReader::ReadDict(json, base::JSON_PARSE_RFC);
++  if (!state) {
++    return profiles;
++  }
++  const base::DictValue* cache =
++      state->FindDictByDottedPath("profile.info_cache");
++  if (!cache) {
++    return profiles;
++  }
++  // DictValue keeps its keys sorted, as detect.py's sorted().
++  for (const auto [folder, info] : *cache) {
++    const base::DictValue* info_dict = info.GetIfDict();
++    if (!info_dict || !IsPlainFolderName(folder)) {
++      continue;
++    }
++    if (!IsFile(user_data.Append(base::UTF8ToWide(folder))
++                    .Append(kPreferencesFile))) {
++      continue;
++    }
++    const std::string* name = info_dict->FindString("name");
++    profiles.push_back(
++        {folder, ShortenName(name && !name->empty() ? *name : folder)});
++  }
++  return profiles;
++}
++
++}  // namespace
++
++DetectedBrowser::DetectedBrowser() = default;
++DetectedBrowser::DetectedBrowser(const DetectedBrowser&) = default;
++DetectedBrowser& DetectedBrowser::operator=(const DetectedBrowser&) = default;
++DetectedBrowser::~DetectedBrowser() = default;
++
++std::vector<DetectedBrowser> DetectBrowsers(const DetectionFolders& folders) {
++  std::vector<DetectedBrowser> found;
++  for (const KnownBrowser& known : kKnownBrowsers) {
++    const base::FilePath& root = known.base == Base::kLocalAppData
++                                     ? folders.local_app_data
++                                     : folders.roaming_app_data;
++    if (root.empty()) {
++      continue;
++    }
++    base::FilePath user_data = root.Append(known.folder);
++    if (!folders.own_user_data.empty() &&
++        base::FilePath::CompareEqualIgnoreCase(
++            user_data.StripTrailingSeparators().value(),
++            folders.own_user_data.StripTrailingSeparators().value())) {
++      continue;
++    }
++    if (!IsFile(user_data.Append(kLocalStateFile))) {
++      continue;
++    }
++    DetectedBrowser browser;
++    browser.name = known.name;
++    browser.user_data = user_data;
++    browser.running = IsBrowserRunning(user_data);
++    browser.profiles = ProfilesOf(user_data, known.single_profile);
++    found.push_back(std::move(browser));
++  }
++  return found;
++}
++
++std::vector<SourceProfile> MakeSourceProfiles(
++    const std::vector<DetectedBrowser>& browsers) {
++  std::vector<SourceProfile> sources;
++  for (const DetectedBrowser& browser : browsers) {
++    for (const DetectedProfile& profile : browser.profiles) {
++      SourceProfile source;
++      source.importer_type = TYPE_CHROMIUM_FAMILY;
++      source.importer_name = base::UTF8ToUTF16(browser.name);
++      if (browser.profiles.size() > 1) {
++        source.importer_name += u" (" + profile.name + u")";
++      }
++      source.source_path = profile.folder == "."
++                               ? browser.user_data
++                               : browser.user_data.Append(
++                                     base::UTF8ToWide(profile.folder));
++      source.app_path = browser.user_data;
++      source.services_supported = SupportedItems();
++      sources.push_back(std::move(source));
++    }
++  }
++  return sources;
++}
++
++std::vector<SourceProfile> DetectSourceProfiles(
++    const DetectionFolders& folders) {
++  return MakeSourceProfiles(DetectBrowsers(folders));
++}
++
++uint16_t SupportedItems() {
++  return FAVORITES | HISTORY | PASSWORDS | SEARCH_ENGINES | AUTOFILL_FORM_DATA;
++}
++
++bool IsBrowserRunning(const base::FilePath& user_data) {
++  if (user_data.empty()) {
++    return false;
++  }
++  // GetFileAttributes() instead of base::PathExists(): no file is opened, and
++  // it may be called on the UI thread (see the header).
++  return ::GetFileAttributesW(user_data.Append(kLockFile).value().c_str()) !=
++         INVALID_FILE_ATTRIBUTES;
++}
++
++}  // namespace user_data_importer::chromium_family
+diff --git a/components/user_data_importer/chromium_family/browser_detection.h b/components/user_data_importer/chromium_family/browser_detection.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..c47584c4438bfb91d34342c9d6ad59a1e753dd05
+--- /dev/null
++++ b/components/user_data_importer/chromium_family/browser_detection.h
+@@ -0,0 +1,88 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef COMPONENTS_USER_DATA_IMPORTER_CHROMIUM_FAMILY_BROWSER_DETECTION_H_
++#define COMPONENTS_USER_DATA_IMPORTER_CHROMIUM_FAMILY_BROWSER_DETECTION_H_
++
++#include <string>
++#include <vector>
++
++#include "base/files/file_path.h"
++#include "components/user_data_importer/common/importer_data_types.h"
++
++// Which browsers of the Chromium family the current Windows user has, and
++// their profiles (ROADMAP P3.13, P3.14). A port of Thoron's
++// tools/migrate/detect.py: the same browsers, the same folders, the same rules.
++//
++// Only the current user's own folders are looked at, never another user's or a
++// system-wide one. Nothing is read beyond each browser's `Local State` and the
++// names of its profile folders.
++namespace user_data_importer::chromium_family {
++
++// The folders detection looks in. The browser fills them from the current
++// user's known folders; tests point them at a fake tree.
++struct DetectionFolders {
++  // %LOCALAPPDATA% of the current user.
++  base::FilePath local_app_data;
++  // %APPDATA% (roaming) of the current user.
++  base::FilePath roaming_app_data;
++  // The running browser's own user data folder. A browser found there is never
++  // offered as a source, so Thoron never imports from itself.
++  base::FilePath own_user_data;
++};
++
++// A profile `Local State` lists that has its folder.
++struct DetectedProfile {
++  // The folder's name under the user data folder ("Default", "Profile 1"), or
++  // "." for a browser whose user data folder is its only profile (Opera).
++  std::string folder;
++  // The name the person gave the profile, at most 100 characters.
++  std::u16string name;
++};
++
++// A browser found for the current user.
++struct DetectedBrowser {
++  DetectedBrowser();
++  DetectedBrowser(const DetectedBrowser&);
++  DetectedBrowser& operator=(const DetectedBrowser&);
++  ~DetectedBrowser();
++
++  // As detect.py names it: "Thorium", "Chrome", "Edge", "Brave", "Vivaldi",
++  // "Opera", "Opera GX" or "Chromium".
++  std::string name;
++  // The folder that holds `Local State` and, while the browser runs, its
++  // `lockfile`.
++  base::FilePath user_data;
++  // Whether the browser runs (IsBrowserRunning()) at the time of detection.
++  bool running = false;
++  std::vector<DetectedProfile> profiles;
++};
++
++// The browsers found in `folders`, in detect.py's order (Thorium, Chrome, Edge,
++// Brave, Vivaldi, Opera, Opera GX, Chromium). A browser counts once its user
++// data folder holds a `Local State` file, even with no usable profile.
++std::vector<DetectedBrowser> DetectBrowsers(const DetectionFolders& folders);
++
++// One SourceProfile of type TYPE_CHROMIUM_FAMILY per profile of `browsers`,
++// named "Brave (Work)", or "Brave" alone for a browser with one profile.
++// `source_path` is the profile folder and `app_path` the browser's user data
++// folder (where `Local State` and `lockfile` are).
++std::vector<SourceProfile> MakeSourceProfiles(
++    const std::vector<DetectedBrowser>& browsers);
++
++// MakeSourceProfiles(DetectBrowsers(folders)).
++std::vector<SourceProfile> DetectSourceProfiles(
++    const DetectionFolders& folders);
++
++// The data a profile of the Chromium family offers to an import.
++uint16_t SupportedItems();
++
++// Whether the browser whose user data folder is `user_data` runs: Chromium
++// keeps a `lockfile` there, deleted by Windows when its last process ends. The
++// check only asks Windows for the file's attributes, so it is cheap enough for
++// the UI thread, like the Firefox profile lock check. It never closes anything.
++bool IsBrowserRunning(const base::FilePath& user_data);
++
++}  // namespace user_data_importer::chromium_family
++
++#endif  // COMPONENTS_USER_DATA_IMPORTER_CHROMIUM_FAMILY_BROWSER_DETECTION_H_
+diff --git a/components/user_data_importer/chromium_family/browser_detection_unittest.cc b/components/user_data_importer/chromium_family/browser_detection_unittest.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..215cfb4d69abb60ca927e50f84428e45ce70b241
+--- /dev/null
++++ b/components/user_data_importer/chromium_family/browser_detection_unittest.cc
+@@ -0,0 +1,170 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "components/user_data_importer/chromium_family/browser_detection.h"
++
++#include <algorithm>
++#include <string>
++
++#include "base/files/file_path.h"
++#include "base/files/file_util.h"
++#include "base/files/scoped_temp_dir.h"
++#include "base/strings/utf_string_conversions.h"
++#include "components/user_data_importer/common/importer_type.h"
++#include "testing/gtest/include/gtest/gtest.h"
++
++namespace user_data_importer::chromium_family {
++namespace {
++
++// Builds a fake LOCALAPPDATA / APPDATA tree and runs detection over it. No real
++// browser data is ever touched.
++class BrowserDetectionTest : public ::testing::Test {
++ protected:
++  void SetUp() override {
++    ASSERT_TRUE(local_.CreateUniqueTempDir());
++    ASSERT_TRUE(roaming_.CreateUniqueTempDir());
++    folders_.local_app_data = local_.GetPath();
++    folders_.roaming_app_data = roaming_.GetPath();
++  }
++
++  base::FilePath UserData(const base::FilePath& base,
++                          const std::wstring& rel) {
++    return base.Append(rel);
++  }
++
++  void Write(const base::FilePath& path, const std::string& contents) {
++    ASSERT_TRUE(base::CreateDirectory(path.DirName()));
++    ASSERT_TRUE(base::WriteFile(path, contents));
++  }
++
++  // A multi-profile browser: Local State lists `profiles`, each a {folder,
++  // name}, and a Preferences file is written for those that exist.
++  void MakeMultiProfile(const base::FilePath& user_data,
++                        const std::string& info_cache_json,
++                        const std::vector<std::string>& profile_folders,
++                        bool running) {
++    Write(user_data.Append(L"Local State"),
++          "{\"profile\":{\"info_cache\":" + info_cache_json + "}}");
++    for (const std::string& folder : profile_folders) {
++      Write(user_data.AppendASCII(folder).Append(L"Preferences"), "{}");
++    }
++    if (running) {
++      Write(user_data.Append(L"lockfile"), "");
++    }
++  }
++
++  base::ScopedTempDir local_;
++  base::ScopedTempDir roaming_;
++  DetectionFolders folders_;
++};
++
++TEST_F(BrowserDetectionTest, FindsMultiProfileBrowser) {
++  base::FilePath chrome =
++      UserData(local_.GetPath(), L"Google\\Chrome\\User Data");
++  MakeMultiProfile(
++      chrome,
++      "{\"Default\":{\"name\":\"Person 1\"},\"Profile 1\":{\"name\":\"Work\"}}",
++      {"Default", "Profile 1"}, /*running=*/true);
++
++  std::vector<DetectedBrowser> found = DetectBrowsers(folders_);
++  ASSERT_EQ(1u, found.size());
++  EXPECT_EQ("Chrome", found[0].name);
++  EXPECT_TRUE(found[0].running);
++  ASSERT_EQ(2u, found[0].profiles.size());
++  EXPECT_EQ("Default", found[0].profiles[0].folder);
++  EXPECT_EQ(u"Person 1", found[0].profiles[0].name);
++  EXPECT_EQ("Profile 1", found[0].profiles[1].folder);
++  EXPECT_EQ(u"Work", found[0].profiles[1].name);
++
++  std::vector<SourceProfile> sources = MakeSourceProfiles(found);
++  ASSERT_EQ(2u, sources.size());
++  EXPECT_EQ(TYPE_CHROMIUM_FAMILY, sources[0].importer_type);
++  EXPECT_EQ(u"Chrome (Person 1)", sources[0].importer_name);
++  EXPECT_EQ(u"Chrome (Work)", sources[1].importer_name);
++  EXPECT_EQ(chrome.AppendASCII("Default"), sources[0].source_path);
++  EXPECT_EQ(chrome, sources[0].app_path);
++  EXPECT_EQ(SupportedItems(), sources[0].services_supported);
++}
++
++TEST_F(BrowserDetectionTest, SingleProfileNameIsBrowserAlone) {
++  base::FilePath brave =
++      UserData(local_.GetPath(), L"BraveSoftware\\Brave-Browser\\User Data");
++  MakeMultiProfile(brave, "{\"Default\":{\"name\":\"Main\"}}", {"Default"},
++                   /*running=*/false);
++
++  std::vector<SourceProfile> sources = DetectSourceProfiles(folders_);
++  ASSERT_EQ(1u, sources.size());
++  EXPECT_EQ(u"Brave", sources[0].importer_name);
++}
++
++TEST_F(BrowserDetectionTest, OperaKeepsProfileInItsOwnFolder) {
++  base::FilePath opera =
++      UserData(roaming_.GetPath(), L"Opera Software\\Opera Stable");
++  Write(opera.Append(L"Local State"), "{}");
++  Write(opera.Append(L"Preferences"), "{}");
++
++  std::vector<DetectedBrowser> found = DetectBrowsers(folders_);
++  ASSERT_EQ(1u, found.size());
++  EXPECT_EQ("Opera", found[0].name);
++  ASSERT_EQ(1u, found[0].profiles.size());
++  EXPECT_EQ(".", found[0].profiles[0].folder);
++
++  std::vector<SourceProfile> sources = MakeSourceProfiles(found);
++  ASSERT_EQ(1u, sources.size());
++  // A single-folder browser's source is the user data folder itself.
++  EXPECT_EQ(opera, sources[0].source_path);
++}
++
++TEST_F(BrowserDetectionTest, SkipsProfileWithoutPreferences) {
++  base::FilePath chromium = UserData(local_.GetPath(), L"Chromium\\User Data");
++  // Local State lists two, but only "Default" has a Preferences file.
++  MakeMultiProfile(
++      chromium,
++      "{\"Default\":{\"name\":\"A\"},\"Profile 7\":{\"name\":\"Ghost\"}}",
++      {"Default"}, /*running=*/false);
++
++  std::vector<DetectedBrowser> found = DetectBrowsers(folders_);
++  ASSERT_EQ(1u, found.size());
++  ASSERT_EQ(1u, found[0].profiles.size());
++  EXPECT_EQ("Default", found[0].profiles[0].folder);
++}
++
++TEST_F(BrowserDetectionTest, NeverDetectsThoronItself) {
++  base::FilePath thorium = UserData(local_.GetPath(), L"Thorium\\User Data");
++  MakeMultiProfile(thorium, "{\"Default\":{\"name\":\"Me\"}}", {"Default"},
++                   /*running=*/true);
++  // Point own_user_data at that folder: it is the running browser, so it is
++  // never offered as a source.
++  folders_.own_user_data = thorium;
++
++  std::vector<DetectedBrowser> found = DetectBrowsers(folders_);
++  EXPECT_TRUE(found.empty());
++}
++
++TEST_F(BrowserDetectionTest, IgnoresAnotherBrowsersOddLocalState) {
++  base::FilePath vivaldi = UserData(local_.GetPath(), L"Vivaldi\\User Data");
++  // A Local State with no profile.info_cache yields a browser with no profile,
++  // but it is still detected (its folder holds a Local State).
++  Write(vivaldi.Append(L"Local State"), "{\"something\":true}");
++
++  std::vector<DetectedBrowser> found = DetectBrowsers(folders_);
++  ASSERT_EQ(1u, found.size());
++  EXPECT_EQ("Vivaldi", found[0].name);
++  EXPECT_TRUE(found[0].profiles.empty());
++  EXPECT_TRUE(MakeSourceProfiles(found).empty());
++}
++
++TEST_F(BrowserDetectionTest, NothingWhenNoBrowsers) {
++  EXPECT_TRUE(DetectBrowsers(folders_).empty());
++}
++
++TEST_F(BrowserDetectionTest, RunningCheckFollowsLockfile) {
++  base::FilePath chromium = UserData(local_.GetPath(), L"Chromium\\User Data");
++  Write(chromium.Append(L"Local State"), "{}");
++  EXPECT_FALSE(IsBrowserRunning(chromium));
++  ASSERT_TRUE(base::WriteFile(chromium.Append(L"lockfile"), ""));
++  EXPECT_TRUE(IsBrowserRunning(chromium));
++}
++
++}  // namespace
++}  // namespace user_data_importer::chromium_family
+diff --git a/components/user_data_importer/chromium_family/chromium_family_import_bridge.h b/components/user_data_importer/chromium_family/chromium_family_import_bridge.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..78e83ac1ea5968956af7aae4a2b72a14d4d2ec9c
+--- /dev/null
++++ b/components/user_data_importer/chromium_family/chromium_family_import_bridge.h
+@@ -0,0 +1,53 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef COMPONENTS_USER_DATA_IMPORTER_CHROMIUM_FAMILY_CHROMIUM_FAMILY_IMPORT_BRIDGE_H_
++#define COMPONENTS_USER_DATA_IMPORTER_CHROMIUM_FAMILY_CHROMIUM_FAMILY_IMPORT_BRIDGE_H_
++
++#include <string>
++#include <vector>
++
++#include "base/time/time.h"
++#include "components/user_data_importer/common/imported_bookmark_entry.h"
++#include "components/user_data_importer/common/importer_data_types.h"
++#include "components/user_data_importer/common/importer_url_row.h"
++
++namespace user_data_importer::chromium_family {
++
++// One name/value autofill pair. Kept here so the reader library needs nothing
++// from chrome/common/importer; the importer glue converts it to Chromium's
++// ImporterAutofillFormDataEntry.
++struct ImportedAutofillEntry {
++  std::u16string name;
++  std::u16string value;
++  int times_used = 0;
++  base::Time date_created;
++  base::Time date_last_used;
++};
++
++// Receives what the reader extracts from a source profile. The importer in
++// chrome/utility/importer implements this over Chromium's ImporterBridge; unit
++// tests implement a recording fake. Each method is called at most once per
++// import, with the whole set.
++class ChromiumFamilyImportBridge {
++ public:
++  virtual ~ChromiumFamilyImportBridge() = default;
++
++  virtual void AddBookmarks(
++      const std::vector<ImportedBookmarkEntry>& bookmarks,
++      const std::u16string& top_level_folder_name) = 0;
++
++  virtual void SetHistory(const std::vector<ImporterURLRow>& rows) = 0;
++
++  virtual void SetKeywords(
++      const std::vector<SearchEngineInfo>& search_engines) = 0;
++
++  virtual void AddPasswordForm(const ImportedPasswordForm& form) = 0;
++
++  virtual void SetAutofillEntries(
++      const std::vector<ImportedAutofillEntry>& entries) = 0;
++};
++
++}  // namespace user_data_importer::chromium_family
++
++#endif  // COMPONENTS_USER_DATA_IMPORTER_CHROMIUM_FAMILY_CHROMIUM_FAMILY_IMPORT_BRIDGE_H_
+diff --git a/components/user_data_importer/chromium_family/chromium_family_reader.cc b/components/user_data_importer/chromium_family/chromium_family_reader.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..4e43575ad48bb11d1f1156d1921166cb71f918fc
+--- /dev/null
++++ b/components/user_data_importer/chromium_family/chromium_family_reader.cc
+@@ -0,0 +1,430 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "components/user_data_importer/chromium_family/chromium_family_reader.h"
++
++#include <string_view>
++#include <utility>
++
++#include "base/files/file_util.h"
++#include "base/json/json_reader.h"
++#include "base/strings/string_number_conversions.h"
++#include "base/strings/utf_string_conversions.h"
++#include "base/values.h"
++#include "sql/database.h"
++#include "sql/statement.h"
++#include "url/gurl.h"
++
++#if BUILDFLAG(IS_WIN)
++#include "components/user_data_importer/chromium_family/password_decryptor_win.h"
++#endif
++
++namespace user_data_importer::chromium_family {
++
++namespace {
++
++inline constexpr sql::Database::Tag kDatabaseTag{"ThoronChromiumImport"};
++
++constexpr base::FilePath::CharType kBookmarksFile[] = L"Bookmarks";
++constexpr base::FilePath::CharType kHistoryFile[] = L"History";
++constexpr base::FilePath::CharType kLoginDataFile[] = L"Login Data";
++constexpr base::FilePath::CharType kWebDataFile[] = L"Web Data";
++constexpr base::FilePath::CharType kLocalStateFile[] = L"Local State";
++
++// A URL is worth importing only if it parses and is not an internal page.
++bool CanImportURL(const GURL& url) {
++  if (!url.is_valid()) {
++    return false;
++  }
++  static constexpr const char* kSkip[] = {"about", "chrome",  "chrome-untrusted",
++                                          "edge",  "brave",   "vivaldi",
++                                          "opera", "devtools"};
++  for (const char* scheme : kSkip) {
++    if (url.SchemeIs(scheme)) {
++      return false;
++    }
++  }
++  return true;
++}
++
++// Chromium stores bookmark times as microseconds since the Windows epoch, held
++// as a decimal string.
++base::Time TimeFromWebkitString(const std::string* microseconds) {
++  int64_t value = 0;
++  if (!microseconds || !base::StringToInt64(*microseconds, &value) ||
++      value <= 0) {
++    return base::Time();
++  }
++  return base::Time::FromDeltaSinceWindowsEpoch(base::Microseconds(value));
++}
++
++// Opens a database copy read only and returns it only if PRAGMA quick_check
++// reports "ok".
++std::unique_ptr<sql::Database> OpenCheckedDatabase(const base::FilePath& path) {
++  if (path.empty()) {
++    return nullptr;
++  }
++  auto db = std::make_unique<sql::Database>(
++      sql::DatabaseOptions().set_read_only(true), kDatabaseTag);
++  if (!db->Open(path)) {
++    return nullptr;
++  }
++  sql::Statement check(db->GetUniqueStatement("PRAGMA quick_check"));
++  if (!check.Step() || check.ColumnStringView(0) != "ok") {
++    return nullptr;
++  }
++  return db;
++}
++
++void WalkBookmarkNode(const base::DictValue& node,
++                      bool in_toolbar,
++                      bool synced,
++                      std::vector<std::u16string> path,
++                      std::vector<ImportedBookmarkEntry>* out) {
++  const std::string* type = node.FindString("type");
++  if (!type) {
++    return;
++  }
++  const std::string* name = node.FindString("name");
++  std::u16string title = name ? base::UTF8ToUTF16(*name) : std::u16string();
++
++  if (*type == "url") {
++    const std::string* url = node.FindString("url");
++    GURL gurl(url ? *url : std::string());
++    if (!CanImportURL(gurl)) {
++      return;
++    }
++    ImportedBookmarkEntry entry;
++    entry.in_toolbar = in_toolbar;
++    entry.is_folder = false;
++    entry.url = gurl;
++    entry.path = path;
++    entry.title = title;
++    entry.creation_time = TimeFromWebkitString(node.FindString("date_added"));
++    entry.synced = synced;
++    out->push_back(std::move(entry));
++    return;
++  }
++
++  if (*type != "folder") {
++    return;
++  }
++  const base::ListValue* children = node.FindList("children");
++  if (!children) {
++    return;
++  }
++  // Empty folder: keep it, so an empty folder structure survives.
++  if (children->empty()) {
++    ImportedBookmarkEntry entry;
++    entry.in_toolbar = in_toolbar;
++    entry.is_folder = true;
++    entry.path = path;
++    entry.title = title;
++    entry.creation_time = TimeFromWebkitString(node.FindString("date_added"));
++    entry.synced = synced;
++    out->push_back(std::move(entry));
++    return;
++  }
++  std::vector<std::u16string> child_path = path;
++  child_path.push_back(title);
++  for (const base::Value& child : *children) {
++    if (const base::DictValue* dict = child.GetIfDict()) {
++      WalkBookmarkNode(*dict, in_toolbar, synced, child_path, out);
++    }
++  }
++}
++
++}  // namespace
++
++ChromiumFamilyReader::ChromiumFamilyReader(const Options& options)
++    : options_(options) {}
++
++ChromiumFamilyReader::~ChromiumFamilyReader() = default;
++
++base::FilePath ChromiumFamilyReader::CopyForReading(
++    const base::FilePath& source_file) {
++  if (!base::PathExists(source_file)) {
++    return {};
++  }
++  if (!temp_dir_.IsValid() && !temp_dir_.CreateUniqueTempDir()) {
++    return {};
++  }
++  base::FilePath destination =
++      temp_dir_.GetPath().Append(source_file.BaseName());
++  // A type may need the same file twice (keywords and autofill both live in
++  // Web Data); copy once.
++  if (base::PathExists(destination) ||
++      base::CopyFile(source_file, destination)) {
++    return destination;
++  }
++  return {};
++}
++
++std::unique_ptr<sql::Database> ChromiumFamilyReader::OpenCopiedDatabase(
++    const base::FilePath& source_file) {
++  base::FilePath copy = CopyForReading(source_file);
++  if (copy.empty()) {
++    return nullptr;
++  }
++  std::unique_ptr<sql::Database> db = OpenCheckedDatabase(copy);
++  if (!db) {
++    // A SQLite file whose copy fails quick_check is skipped; count it once.
++    if (refused_databases_.insert(copy).second) {
++      ++stats_.databases_refused;
++    }
++  }
++  return db;
++}
++
++ChromiumFamilyReader::Stats ChromiumFamilyReader::Import(
++    uint16_t items,
++    ChromiumFamilyImportBridge* bridge) {
++  // History before bookmarks, like Chromium's own importers.
++  if (items & HISTORY) {
++    ImportHistory(bridge);
++  }
++  if (items & FAVORITES) {
++    ImportBookmarks(bridge);
++  }
++  if (items & SEARCH_ENGINES) {
++    ImportSearchEngines(bridge);
++  }
++  if (items & AUTOFILL_FORM_DATA) {
++    ImportAutofill(bridge);
++  }
++  if (items & PASSWORDS) {
++    ImportPasswords(bridge);
++  }
++  return stats_;
++}
++
++void ChromiumFamilyReader::ImportBookmarks(ChromiumFamilyImportBridge* bridge) {
++  base::FilePath copy =
++      CopyForReading(options_.profile_path.Append(kBookmarksFile));
++  if (copy.empty()) {
++    return;
++  }
++  std::string json;
++  if (!base::ReadFileToString(copy, &json)) {
++    return;
++  }
++  std::optional<base::DictValue> root =
++      base::JSONReader::ReadDict(json, base::JSON_PARSE_RFC);
++  if (!root) {
++    return;
++  }
++  const base::DictValue* roots = root->FindDict("roots");
++  if (!roots) {
++    return;
++  }
++
++  std::vector<ImportedBookmarkEntry> bookmarks;
++  // A root is never an entry itself; its children are walked. ProfileWriter
++  // expects toolbar entries to carry the bar's name as path[0] (it skips that
++  // element when importing straight into an empty bar), so the bar keeps its
++  // name. "Other bookmarks" is left out, so its items go straight into the
++  // import folder. The mobile root keeps its name so its items stay grouped.
++  struct Root {
++    const char* key;
++    bool in_toolbar;
++    bool synced;
++    bool keep_name;
++    const char16_t* fallback_name;
++  };
++  for (const Root& r :
++       {Root{"bookmark_bar", true, false, true, u"Bookmarks bar"},
++        Root{"other", false, false, false, u""},
++        Root{"synced", false, true, true, u"Mobile bookmarks"}}) {
++    const base::DictValue* node = roots->FindDict(r.key);
++    if (!node) {
++      continue;
++    }
++    const base::ListValue* children = node->FindList("children");
++    if (!children) {
++      continue;
++    }
++    std::vector<std::u16string> path;
++    if (r.keep_name) {
++      const std::string* name = node->FindString("name");
++      path.push_back(name && !name->empty() ? base::UTF8ToUTF16(*name)
++                                            : std::u16string(r.fallback_name));
++    }
++    for (const base::Value& child : *children) {
++      if (const base::DictValue* dict = child.GetIfDict()) {
++        WalkBookmarkNode(*dict, r.in_toolbar, r.synced, path, &bookmarks);
++      }
++    }
++  }
++
++  stats_.bookmarks = static_cast<int>(bookmarks.size());
++  if (!bookmarks.empty()) {
++    bridge->AddBookmarks(bookmarks, options_.bookmark_folder_name);
++  }
++}
++
++void ChromiumFamilyReader::ImportHistory(ChromiumFamilyImportBridge* bridge) {
++  std::unique_ptr<sql::Database> db =
++      OpenCopiedDatabase(options_.profile_path.Append(kHistoryFile));
++  if (!db) {
++    return;
++  }
++  sql::Statement s(db->GetUniqueStatement(
++      "SELECT url, title, visit_count, typed_count, last_visit_time, hidden "
++      "FROM urls"));
++  if (!s.is_valid()) {
++    return;
++  }
++  std::vector<ImporterURLRow> rows;
++  while (s.Step()) {
++    GURL url(s.ColumnStringView(0));
++    if (!CanImportURL(url)) {
++      continue;
++    }
++    ImporterURLRow row(url);
++    row.title = s.ColumnString16(1);
++    row.visit_count = s.ColumnInt(2);
++    row.typed_count = s.ColumnInt(3);
++    row.last_visit = s.ColumnTime(4);
++    row.hidden = s.ColumnInt(5) != 0;
++    rows.push_back(std::move(row));
++  }
++  stats_.history = static_cast<int>(rows.size());
++  if (!rows.empty()) {
++    bridge->SetHistory(rows);
++  }
++}
++
++void ChromiumFamilyReader::ImportSearchEngines(
++    ChromiumFamilyImportBridge* bridge) {
++  std::unique_ptr<sql::Database> db =
++      OpenCopiedDatabase(options_.profile_path.Append(kWebDataFile));
++  if (!db) {
++    return;
++  }
++  sql::Statement s(db->GetUniqueStatement(
++      "SELECT short_name, keyword, url FROM keywords"));
++  if (!s.is_valid()) {
++    return;
++  }
++  std::vector<SearchEngineInfo> engines;
++  while (s.Step()) {
++    std::u16string keyword = s.ColumnString16(1);
++    std::u16string url = s.ColumnString16(2);
++    if (keyword.empty() || url.empty()) {
++      continue;
++    }
++    SearchEngineInfo engine;
++    engine.display_name = s.ColumnString16(0);
++    engine.keyword = keyword;
++    // Chromium keeps the URL already in the {searchTerms} form that
++    // TemplateURLData expects, so it is passed through unchanged.
++    engine.url = url;
++    engines.push_back(std::move(engine));
++  }
++  stats_.search_engines = static_cast<int>(engines.size());
++  if (!engines.empty()) {
++    bridge->SetKeywords(engines);
++  }
++}
++
++void ChromiumFamilyReader::ImportAutofill(ChromiumFamilyImportBridge* bridge) {
++  std::unique_ptr<sql::Database> db =
++      OpenCopiedDatabase(options_.profile_path.Append(kWebDataFile));
++  if (!db) {
++    return;
++  }
++  sql::Statement s(db->GetUniqueStatement(
++      "SELECT name, value, count, date_created, date_last_used FROM autofill"));
++  if (!s.is_valid()) {
++    return;
++  }
++  std::vector<ImportedAutofillEntry> entries;
++  while (s.Step()) {
++    ImportedAutofillEntry entry;
++    entry.name = s.ColumnString16(0);
++    entry.value = s.ColumnString16(1);
++    if (entry.name.empty() || entry.value.empty()) {
++      continue;
++    }
++    entry.times_used = s.ColumnInt(2);
++    // Chromium's Web Data stores these as seconds since the Unix epoch.
++    entry.date_created = base::Time::FromTimeT(s.ColumnInt64(3));
++    entry.date_last_used = base::Time::FromTimeT(s.ColumnInt64(4));
++    entries.push_back(std::move(entry));
++  }
++  stats_.autofill = static_cast<int>(entries.size());
++  if (!entries.empty()) {
++    bridge->SetAutofillEntries(entries);
++  }
++}
++
++void ChromiumFamilyReader::ImportPasswords(ChromiumFamilyImportBridge* bridge) {
++#if BUILDFLAG(IS_WIN)
++  std::unique_ptr<sql::Database> db =
++      OpenCopiedDatabase(options_.profile_path.Append(kLoginDataFile));
++  if (!db) {
++    return;
++  }
++  // The profile key lives in the browser's Local State, not the profile folder.
++  std::string local_state;
++  base::FilePath local_state_copy =
++      CopyForReading(options_.user_data_path.Append(kLocalStateFile));
++  std::optional<PasswordKey> key;
++  if (!local_state_copy.empty() &&
++      base::ReadFileToString(local_state_copy, &local_state)) {
++    key = PasswordKey::FromLocalState(local_state);
++  }
++  PasswordKey empty_key;
++
++  sql::Statement s(db->GetUniqueStatement(
++      "SELECT origin_url, action_url, username_element, username_value, "
++      "password_element, password_value, signon_realm, blacklisted_by_user, "
++      "scheme FROM logins"));
++  if (!s.is_valid()) {
++    return;
++  }
++  while (s.Step()) {
++    base::span<const uint8_t> encrypted = s.ColumnBlob(5);
++    std::string password;
++    DecryptResult result =
++        DecryptPasswordValue(key ? *key : empty_key, encrypted, &password);
++    switch (result) {
++      case DecryptResult::kSkippedV20:
++        ++stats_.passwords_skipped_app_bound;
++        continue;
++      case DecryptResult::kSkippedOther:
++        ++stats_.passwords_skipped_other;
++        continue;
++      case DecryptResult::kError:
++        ++stats_.passwords_failed;
++        continue;
++      case DecryptResult::kOk:
++        break;
++    }
++
++    ImportedPasswordForm form;
++    form.scheme = s.ColumnInt(8) == 1
++                      ? ImportedPasswordForm::Scheme::kBasic
++                      : ImportedPasswordForm::Scheme::kHtml;
++    form.signon_realm = s.ColumnString(6);
++    form.url = GURL(s.ColumnStringView(0));
++    form.action = GURL(s.ColumnStringView(1));
++    form.username_element = s.ColumnString16(2);
++    form.username_value = s.ColumnString16(3);
++    form.password_element = s.ColumnString16(4);
++    form.password_value = base::UTF8ToUTF16(password);
++    form.blocked_by_user = s.ColumnInt(7) != 0;
++    if (form.username_value.empty() && form.password_value.empty() &&
++        !form.blocked_by_user) {
++      continue;
++    }
++    ++stats_.passwords;
++    bridge->AddPasswordForm(form);
++  }
++  if (key) {
++    key->Clear();
++  }
++#endif  // BUILDFLAG(IS_WIN)
++}
++
++}  // namespace user_data_importer::chromium_family
+diff --git a/components/user_data_importer/chromium_family/chromium_family_reader.h b/components/user_data_importer/chromium_family/chromium_family_reader.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..fadf5e87dc46e9ecf55228faa3225a668acf5866
+--- /dev/null
++++ b/components/user_data_importer/chromium_family/chromium_family_reader.h
+@@ -0,0 +1,104 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef COMPONENTS_USER_DATA_IMPORTER_CHROMIUM_FAMILY_CHROMIUM_FAMILY_READER_H_
++#define COMPONENTS_USER_DATA_IMPORTER_CHROMIUM_FAMILY_CHROMIUM_FAMILY_READER_H_
++
++#include <stdint.h>
++
++#include <memory>
++#include <set>
++#include <string>
++
++#include "base/files/file_path.h"
++#include "base/files/scoped_temp_dir.h"
++#include "components/user_data_importer/chromium_family/chromium_family_import_bridge.h"
++
++namespace sql {
++class Database;
++}  // namespace sql
++
++namespace user_data_importer::chromium_family {
++
++// Reads bookmarks, history, saved passwords, search engines and autofill from
++// one profile of a Chromium-family browser and hands them to a bridge (ROADMAP
++// P3.14). The source is never written: each file a type needs is copied to a
++// temporary folder, the copies are opened read only, and each SQLite copy is
++// refused unless `PRAGMA quick_check` passes. The copies are deleted when the
++// reader is destroyed.
++class ChromiumFamilyReader {
++ public:
++  struct Options {
++    // The profile folder (the browser's `Local State` names it), e.g.
++    // ...\User Data\Default. Holds `Bookmarks`, `History`, `Login Data`,
++    // `Web Data`.
++    base::FilePath profile_path;
++    // The browser's user data folder, which holds `Local State` (and the
++    // password key inside it).
++    base::FilePath user_data_path;
++    // The folder imported bookmarks go under, already localized, e.g.
++    // "Imported from Brave". The glue builds it from a string resource.
++    std::u16string bookmark_folder_name;
++  };
++
++  // Counts for the import report. No secrets.
++  struct Stats {
++    int bookmarks = 0;
++    int history = 0;
++    int search_engines = 0;
++    int autofill = 0;
++    int passwords = 0;
++    // "v20" app-bound values, left alone on purpose.
++    int passwords_skipped_app_bound = 0;
++    // Values in no recognised format.
++    int passwords_skipped_other = 0;
++    // Recognised values that failed to decrypt.
++    int passwords_failed = 0;
++    // A SQLite file whose copy failed PRAGMA quick_check, so its type was
++    // skipped.
++    int databases_refused = 0;
++  };
++
++  explicit ChromiumFamilyReader(const Options& options);
++  ChromiumFamilyReader(const ChromiumFamilyReader&) = delete;
++  ChromiumFamilyReader& operator=(const ChromiumFamilyReader&) = delete;
++  ~ChromiumFamilyReader();
++
++  // Reads the chosen `items` (a bitmask of ImportItem) and reports them to
++  // `bridge`. Returns the counts so far. May be called once per item; the
++  // copies are kept between calls and deleted when the reader is destroyed.
++  Stats Import(uint16_t items, ChromiumFamilyImportBridge* bridge);
++
++  // The folder holding the copies (empty until the first copy is made).
++  base::FilePath copies_folder_for_testing() const {
++    return temp_dir_.IsValid() ? temp_dir_.GetPath() : base::FilePath();
++  }
++
++ private:
++  // Copies `source_file` into the temp folder once and returns the copy's
++  // path, or empty if the source is missing or the copy fails.
++  base::FilePath CopyForReading(const base::FilePath& source_file);
++
++  // Copies a SQLite file and opens the copy read only, returning it only if
++  // PRAGMA quick_check passes. On a quick_check failure the type is skipped and
++  // counted once.
++  std::unique_ptr<sql::Database> OpenCopiedDatabase(
++      const base::FilePath& source_file);
++
++  void ImportBookmarks(ChromiumFamilyImportBridge* bridge);
++  void ImportHistory(ChromiumFamilyImportBridge* bridge);
++  void ImportSearchEngines(ChromiumFamilyImportBridge* bridge);
++  void ImportAutofill(ChromiumFamilyImportBridge* bridge);
++  void ImportPasswords(ChromiumFamilyImportBridge* bridge);
++
++  const Options options_;
++  base::ScopedTempDir temp_dir_;
++  // SQLite copies already refused by quick_check, so Web Data (keywords and
++  // autofill) is not counted twice.
++  std::set<base::FilePath> refused_databases_;
++  Stats stats_;
++};
++
++}  // namespace user_data_importer::chromium_family
++
++#endif  // COMPONENTS_USER_DATA_IMPORTER_CHROMIUM_FAMILY_CHROMIUM_FAMILY_READER_H_
+diff --git a/components/user_data_importer/chromium_family/chromium_family_reader_unittest.cc b/components/user_data_importer/chromium_family/chromium_family_reader_unittest.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..79b51bde452d010795196d738ab884e064936c72
+--- /dev/null
++++ b/components/user_data_importer/chromium_family/chromium_family_reader_unittest.cc
+@@ -0,0 +1,430 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "components/user_data_importer/chromium_family/chromium_family_reader.h"
++
++#include <windows.h>
++
++#include <wincrypt.h>
++
++#include <array>
++#include <string>
++#include <vector>
++
++#include "base/base64.h"
++#include "base/compiler_specific.h"
++#include "base/containers/span.h"
++#include "base/files/file.h"
++#include "base/files/file_path.h"
++#include "base/files/file_util.h"
++#include "base/files/scoped_temp_dir.h"
++#include "base/strings/strcat.h"
++#include "base/strings/utf_string_conversions.h"
++#include "base/time/time.h"
++#include "base/win/scoped_localalloc.h"
++#include "components/user_data_importer/chromium_family/chromium_family_import_bridge.h"
++#include "crypto/aead.h"
++#include "crypto/random.h"
++#include "sql/database.h"
++#include "sql/statement.h"
++#include "testing/gtest/include/gtest/gtest.h"
++
++namespace user_data_importer::chromium_family {
++namespace {
++
++// Records what the reader hands it.
++class FakeBridge : public ChromiumFamilyImportBridge {
++ public:
++  void AddBookmarks(const std::vector<ImportedBookmarkEntry>& entries,
++                    const std::u16string& folder) override {
++    bookmarks = entries;
++    bookmark_folder = folder;
++  }
++  void SetHistory(const std::vector<ImporterURLRow>& rows) override {
++    history = rows;
++  }
++  void SetKeywords(const std::vector<SearchEngineInfo>& engines) override {
++    keywords = engines;
++  }
++  void AddPasswordForm(const ImportedPasswordForm& form) override {
++    passwords.push_back(form);
++  }
++  void SetAutofillEntries(
++      const std::vector<ImportedAutofillEntry>& entries) override {
++    autofill = entries;
++  }
++
++  std::vector<ImportedBookmarkEntry> bookmarks;
++  std::u16string bookmark_folder;
++  std::vector<ImporterURLRow> history;
++  std::vector<SearchEngineInfo> keywords;
++  std::vector<ImportedPasswordForm> passwords;
++  std::vector<ImportedAutofillEntry> autofill;
++};
++
++std::array<uint8_t, 32> MakeKey() {
++  std::array<uint8_t, 32> key = {};
++  crypto::RandBytes(key);
++  return key;
++}
++
++std::vector<uint8_t> WrapForCurrentUser(base::span<const uint8_t> plaintext) {
++  DATA_BLOB input = {};
++  input.pbData = const_cast<BYTE*>(plaintext.data());
++  input.cbData = static_cast<DWORD>(plaintext.size());
++  DATA_BLOB output = {};
++  EXPECT_TRUE(::CryptProtectData(&input, L"", nullptr, nullptr, nullptr, 0,
++                                 &output));
++  auto owned = base::win::TakeLocalAlloc(output.pbData);
++  return std::vector<uint8_t>(owned.get(),
++                              UNSAFE_TODO(owned.get() + output.cbData));
++}
++
++std::vector<uint8_t> MakeV10Value(base::span<const uint8_t> raw_key,
++                                  const std::string& plaintext) {
++  std::array<uint8_t, 12> nonce = {};
++  crypto::RandBytes(nonce);
++  std::vector<uint8_t> sealed =
++      crypto::aead::Seal(crypto::aead::AES_256_GCM, raw_key,
++                         base::as_byte_span(plaintext), nonce, {});
++  std::vector<uint8_t> value = {'v', '1', '0'};
++  value.insert(value.end(), nonce.begin(), nonce.end());
++  value.insert(value.end(), sealed.begin(), sealed.end());
++  return value;
++}
++
++class ChromiumFamilyReaderTest : public ::testing::Test {
++ protected:
++  void SetUp() override {
++    ASSERT_TRUE(dir_.CreateUniqueTempDir());
++    user_data_ = dir_.GetPath().Append(L"User Data");
++    profile_ = user_data_.Append(L"Default");
++    ASSERT_TRUE(base::CreateDirectory(profile_));
++  }
++
++  void Write(const base::FilePath& path, const std::string& contents) {
++    ASSERT_TRUE(base::WriteFile(path, contents));
++  }
++
++  // A History DB with the given rows; `visited` is the last visit time.
++  void MakeHistory(base::Time visited) {
++    sql::Database db(sql::Database::Tag("Test"));
++    ASSERT_TRUE(db.Open(profile_.Append(L"History")));
++    ASSERT_TRUE(db.Execute(
++        "CREATE TABLE urls(id INTEGER PRIMARY KEY, url LONGVARCHAR, "
++        "title LONGVARCHAR, visit_count INTEGER, typed_count INTEGER, "
++        "last_visit_time INTEGER, hidden INTEGER)"));
++    sql::Statement s(db.GetUniqueStatement(
++        "INSERT INTO urls(url, title, visit_count, typed_count, "
++        "last_visit_time, hidden) VALUES(?,?,?,?,?,?)"));
++    s.BindString(0, "https://example.com/");
++    s.BindString16(1, u"Example");
++    s.BindInt(2, 7);
++    s.BindInt(3, 2);
++    s.BindInt64(4, visited.ToDeltaSinceWindowsEpoch().InMicroseconds());
++    s.BindInt(5, 0);
++    ASSERT_TRUE(s.Run());
++    // An internal page that must be filtered out.
++    sql::Statement s2(db.GetUniqueStatement(
++        "INSERT INTO urls(url, title, visit_count, typed_count, "
++        "last_visit_time, hidden) VALUES(?,?,?,?,?,?)"));
++    s2.BindString(0, "chrome://settings/");
++    s2.BindString16(1, u"Settings");
++    s2.BindInt(2, 1);
++    s2.BindInt(3, 0);
++    s2.BindInt64(4, visited.ToDeltaSinceWindowsEpoch().InMicroseconds());
++    s2.BindInt(5, 0);
++    ASSERT_TRUE(s2.Run());
++  }
++
++  void MakeWebData() {
++    sql::Database db(sql::Database::Tag("Test"));
++    ASSERT_TRUE(db.Open(profile_.Append(L"Web Data")));
++    ASSERT_TRUE(db.Execute(
++        "CREATE TABLE keywords(id INTEGER PRIMARY KEY, short_name VARCHAR, "
++        "keyword VARCHAR, url VARCHAR)"));
++    sql::Statement k(db.GetUniqueStatement(
++        "INSERT INTO keywords(short_name, keyword, url) VALUES(?,?,?)"));
++    k.BindString16(0, u"My Search");
++    k.BindString16(1, u"mys");
++    k.BindString16(2, u"https://s.example.com/?q={searchTerms}");
++    ASSERT_TRUE(k.Run());
++
++    ASSERT_TRUE(db.Execute(
++        "CREATE TABLE autofill(name VARCHAR, value VARCHAR, count INTEGER, "
++        "date_created INTEGER, date_last_used INTEGER)"));
++    sql::Statement a(db.GetUniqueStatement(
++        "INSERT INTO autofill(name, value, count, date_created, "
++        "date_last_used) VALUES(?,?,?,?,?)"));
++    a.BindString16(0, u"email");
++    a.BindString16(1, u"person1@example.com");
++    a.BindInt(2, 3);
++    a.BindInt64(3, 1000000000);  // Seconds since the Unix epoch.
++    a.BindInt64(4, 1000500000);
++    ASSERT_TRUE(a.Run());
++  }
++
++  void MakeLoginData(base::span<const uint8_t> raw_key) {
++    sql::Database db(sql::Database::Tag("Test"));
++    ASSERT_TRUE(db.Open(profile_.Append(L"Login Data")));
++    ASSERT_TRUE(db.Execute(
++        "CREATE TABLE logins(origin_url VARCHAR, action_url VARCHAR, "
++        "username_element VARCHAR, username_value VARCHAR, "
++        "password_element VARCHAR, password_value BLOB, signon_realm VARCHAR, "
++        "blacklisted_by_user INTEGER, scheme INTEGER)"));
++    auto insert = [&](const std::string& realm,
++                      const std::u16string& username,
++                      const std::vector<uint8_t>& value) {
++      sql::Statement s(db.GetUniqueStatement(
++          "INSERT INTO logins(origin_url, action_url, username_element, "
++          "username_value, password_element, password_value, signon_realm, "
++          "blacklisted_by_user, scheme) VALUES(?,?,?,?,?,?,?,?,?)"));
++      s.BindString(0, "https://site.example.com/login");
++      s.BindString(1, "https://site.example.com/auth");
++      s.BindString16(2, u"u");
++      s.BindString16(3, username);
++      s.BindString16(4, u"p");
++      s.BindBlob(5, value);
++      s.BindString(6, realm);
++      s.BindInt(7, 0);
++      s.BindInt(8, 0);
++      ASSERT_TRUE(s.Run());
++    };
++    // A readable v10 password.
++    insert("https://site.example.com/", u"person1",
++           MakeV10Value(raw_key, "topsecret"));
++    // A v20 app-bound password: must be skipped and counted.
++    std::vector<uint8_t> v20 = {'v', '2', '0', 9, 9, 9, 9};
++    insert("https://app.example.com/", u"person2", v20);
++  }
++
++  // A Local State whose os_crypt.encrypted_key wraps `raw_key`.
++  void MakeLocalState(base::span<const uint8_t> raw_key) {
++    std::vector<uint8_t> prefixed = {'D', 'P', 'A', 'P', 'I'};
++    std::vector<uint8_t> wrapped = WrapForCurrentUser(raw_key);
++    prefixed.insert(prefixed.end(), wrapped.begin(), wrapped.end());
++    Write(user_data_.Append(L"Local State"),
++          base::StrCat({"{\"os_crypt\":{\"encrypted_key\":\"",
++                        base::Base64Encode(prefixed), "\"}}"}));
++  }
++
++  void MakeBookmarks() {
++    Write(profile_.Append(L"Bookmarks"), R"({
++      "roots": {
++        "bookmark_bar": {
++          "type": "folder", "name": "Bookmarks bar", "date_added": "13300000000000000",
++          "children": [
++            {"type": "url", "name": "Toolbar Link",
++             "url": "https://toolbar.example.com/", "date_added": "13300000000000000"},
++            {"type": "folder", "name": "Sub", "date_added": "13300000000000000",
++             "children": [
++               {"type": "url", "name": "Nested",
++                "url": "https://nested.example.com/", "date_added": "13300000000000000"}
++             ]},
++            {"type": "folder", "name": "Empty", "date_added": "13300000000000000",
++             "children": []}
++          ]
++        },
++        "other": {
++          "type": "folder", "name": "Other bookmarks", "date_added": "13300000000000000",
++          "children": [
++            {"type": "url", "name": "Other Link",
++             "url": "https://other.example.com/", "date_added": "13300000000000000"},
++            {"type": "url", "name": "Internal",
++             "url": "chrome://flags", "date_added": "13300000000000000"}
++          ]
++        },
++        "synced": {"type": "folder", "name": "Mobile bookmarks", "children": []}
++      }
++    })");
++  }
++
++  ChromiumFamilyReader::Options Options() {
++    ChromiumFamilyReader::Options options;
++    options.profile_path = profile_;
++    options.user_data_path = user_data_;
++    options.bookmark_folder_name = u"Imported from Brave";
++    return options;
++  }
++
++  base::ScopedTempDir dir_;
++  base::FilePath user_data_;
++  base::FilePath profile_;
++};
++
++TEST_F(ChromiumFamilyReaderTest, ImportsEverything) {
++  std::array<uint8_t, 32> raw_key = MakeKey();
++  base::Time visited = base::Time::Now() - base::Days(3);
++  MakeBookmarks();
++  MakeHistory(visited);
++  MakeWebData();
++  MakeLocalState(raw_key);
++  MakeLoginData(raw_key);
++
++  FakeBridge bridge;
++  ChromiumFamilyReader reader(Options());
++  ChromiumFamilyReader::Stats stats = reader.Import(ALL, &bridge);
++
++  // Bookmarks: 3 URLs (toolbar, nested, other) plus the empty "Empty" folder.
++  // chrome://flags is filtered, and the empty mobile root is not an entry.
++  EXPECT_EQ(u"Imported from Brave", bridge.bookmark_folder);
++  EXPECT_EQ(4, stats.bookmarks);
++  ASSERT_EQ(4u, bridge.bookmarks.size());
++  int in_toolbar = 0;
++  int checked = 0;
++  for (const auto& b : bridge.bookmarks) {
++    if (b.in_toolbar) {
++      ++in_toolbar;
++    }
++    // ProfileWriter's contract: toolbar entries carry the bar's name as
++    // path[0]; "Other bookmarks" items carry no root name.
++    if (b.title == u"Toolbar Link") {
++      EXPECT_EQ(std::vector<std::u16string>({u"Bookmarks bar"}), b.path);
++      ++checked;
++    } else if (b.title == u"Nested") {
++      EXPECT_EQ(std::vector<std::u16string>({u"Bookmarks bar", u"Sub"}),
++                b.path);
++      ++checked;
++    } else if (b.title == u"Empty") {
++      EXPECT_TRUE(b.is_folder);
++      EXPECT_EQ(std::vector<std::u16string>({u"Bookmarks bar"}), b.path);
++      ++checked;
++    } else if (b.title == u"Other Link") {
++      EXPECT_FALSE(b.in_toolbar);
++      EXPECT_TRUE(b.path.empty());
++      // WebKit epoch: microseconds since 1601-01-01.
++      EXPECT_EQ(13300000000000000,
++                b.creation_time.ToDeltaSinceWindowsEpoch().InMicroseconds());
++      ++checked;
++    }
++  }
++  EXPECT_EQ(4, checked);
++  EXPECT_EQ(3, in_toolbar);  // Toolbar Link, Nested and Empty.
++
++  // History: the internal page is filtered.
++  ASSERT_EQ(1u, bridge.history.size());
++  EXPECT_EQ("https://example.com/", bridge.history[0].url.spec());
++  EXPECT_EQ(7, bridge.history[0].visit_count);
++  EXPECT_EQ(visited.ToDeltaSinceWindowsEpoch().InMicroseconds(),
++            bridge.history[0].last_visit.ToDeltaSinceWindowsEpoch()
++                .InMicroseconds());
++
++  // Search engines, kept in the {searchTerms} form.
++  ASSERT_EQ(1u, bridge.keywords.size());
++  EXPECT_EQ(u"mys", bridge.keywords[0].keyword);
++  EXPECT_EQ(u"https://s.example.com/?q={searchTerms}", bridge.keywords[0].url);
++
++  // Autofill.
++  ASSERT_EQ(1u, bridge.autofill.size());
++  EXPECT_EQ(u"email", bridge.autofill[0].name);
++  EXPECT_EQ(u"person1@example.com", bridge.autofill[0].value);
++  EXPECT_EQ(3, bridge.autofill[0].times_used);
++
++  // Passwords: the v10 one read, the v20 one skipped and counted.
++  ASSERT_EQ(1u, bridge.passwords.size());
++  EXPECT_EQ(u"person1", bridge.passwords[0].username_value);
++  EXPECT_EQ(u"topsecret", bridge.passwords[0].password_value);
++  EXPECT_EQ(1, stats.passwords);
++  EXPECT_EQ(1, stats.passwords_skipped_app_bound);
++}
++
++TEST_F(ChromiumFamilyReaderTest, SourceUntouchedAndCopiesDeleted) {
++  std::array<uint8_t, 32> raw_key = MakeKey();
++  MakeBookmarks();
++  MakeHistory(base::Time::Now());
++  MakeWebData();
++  MakeLocalState(raw_key);
++  MakeLoginData(raw_key);
++
++  const std::vector<base::FilePath> sources = {
++      profile_.Append(L"Bookmarks"), profile_.Append(L"History"),
++      profile_.Append(L"Web Data"), profile_.Append(L"Login Data"),
++      user_data_.Append(L"Local State")};
++  std::vector<std::string> before;
++  for (const base::FilePath& path : sources) {
++    std::string contents;
++    ASSERT_TRUE(base::ReadFileToString(path, &contents));
++    before.push_back(std::move(contents));
++  }
++
++  base::FilePath copies;
++  {
++    FakeBridge bridge;
++    ChromiumFamilyReader reader(Options());
++    reader.Import(ALL, &bridge);
++    copies = reader.copies_folder_for_testing();
++    ASSERT_FALSE(copies.empty());
++    // The copies sit outside the source profile.
++    EXPECT_FALSE(dir_.GetPath().IsParent(copies));
++    EXPECT_TRUE(base::PathExists(copies));
++  }
++  // Copies are deleted with the reader.
++  EXPECT_FALSE(base::PathExists(copies));
++
++  // Copied, never moved or written: every source file is still there, byte for
++  // byte.
++  for (size_t i = 0; i < sources.size(); ++i) {
++    std::string after;
++    ASSERT_TRUE(base::ReadFileToString(sources[i], &after)) << sources[i];
++    EXPECT_EQ(before[i], after) << sources[i];
++  }
++}
++
++TEST_F(ChromiumFamilyReaderTest, OnlyRequestedItems) {
++  MakeBookmarks();
++  MakeHistory(base::Time::Now());
++  FakeBridge bridge;
++  ChromiumFamilyReader reader(Options());
++  reader.Import(FAVORITES, &bridge);
++  EXPECT_FALSE(bridge.bookmarks.empty());
++  EXPECT_TRUE(bridge.history.empty());
++}
++
++TEST_F(ChromiumFamilyReaderTest, DamagedDatabaseIsRefused) {
++  // A History DB that opens but whose body is corrupt, so quick_check fails.
++  MakeHistory(base::Time::Now());
++  base::FilePath history = profile_.Append(L"History");
++  {
++    // Pad the file so it has pages beyond the schema page, then corrupt a
++    // region past the first page while keeping the 100-byte header.
++    sql::Database db(sql::Database::Tag("Test"));
++    ASSERT_TRUE(db.Open(history));
++    sql::Statement s(db.GetUniqueStatement(
++        "INSERT INTO urls(url, title, visit_count, typed_count, "
++        "last_visit_time, hidden) VALUES(?,?,0,0,0,0)"));
++    for (int i = 0; i < 400; ++i) {
++      s.Reset(true);
++      s.BindString(0, base::StrCat({"https://example.com/", std::to_string(i)}));
++      s.BindString16(1, u"pad");
++      ASSERT_TRUE(s.Run());
++    }
++  }
++  base::File file(history, base::File::FLAG_OPEN | base::File::FLAG_READ |
++                               base::File::FLAG_WRITE);
++  ASSERT_TRUE(file.IsValid());
++  ASSERT_GT(file.GetLength(), 8192);
++  std::array<uint8_t, 4096> garbage;
++  garbage.fill(0xA5);
++  // Overwrite the second page onward; page 1 (schema) stays intact.
++  std::optional<size_t> written = file.Write(4096, garbage);
++  ASSERT_EQ(garbage.size(), written);
++  file.Close();
++
++  FakeBridge bridge;
++  ChromiumFamilyReader reader(Options());
++  ChromiumFamilyReader::Stats stats = reader.Import(HISTORY, &bridge);
++  EXPECT_TRUE(bridge.history.empty());
++  EXPECT_EQ(1, stats.databases_refused);
++}
++
++TEST_F(ChromiumFamilyReaderTest, MissingFilesAreHarmless) {
++  FakeBridge bridge;
++  ChromiumFamilyReader reader(Options());
++  ChromiumFamilyReader::Stats stats = reader.Import(ALL, &bridge);
++  EXPECT_TRUE(bridge.bookmarks.empty());
++  EXPECT_TRUE(bridge.history.empty());
++  EXPECT_EQ(0, stats.passwords);
++}
++
++}  // namespace
++}  // namespace user_data_importer::chromium_family
+diff --git a/components/user_data_importer/chromium_family/password_decryptor_win.cc b/components/user_data_importer/chromium_family/password_decryptor_win.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..f8ce7f05f49fc1e93ba27b9839d051fc4a9fac6d
+--- /dev/null
++++ b/components/user_data_importer/chromium_family/password_decryptor_win.cc
+@@ -0,0 +1,169 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "components/user_data_importer/chromium_family/password_decryptor_win.h"
++
++#include <windows.h>
++
++#include <wincrypt.h>
++
++#include <array>
++#include <string_view>
++#include <utility>
++
++#include "base/base64.h"
++#include "base/compiler_specific.h"
++#include "base/json/json_reader.h"
++#include "base/values.h"
++#include "base/win/scoped_localalloc.h"
++#include "crypto/aead.h"
++#include "crypto/secure_util.h"
++
++namespace user_data_importer::chromium_family {
++
++namespace {
++
++// Matches os_crypt_win.cc.
++constexpr uint8_t kDpapiKeyPrefix[] = {'D', 'P', 'A', 'P', 'I'};
++constexpr char kV10Prefix[] = "v10";
++constexpr char kV20Prefix[] = "v20";
++constexpr size_t kPrefixLength = 3;    // "v10" / "v20".
++constexpr size_t kNonceLength = 12;    // AES-256-GCM nonce.
++constexpr size_t kTagLength = 16;      // AES-256-GCM tag.
++constexpr size_t kKeyLength = 32;      // AES-256 key.
++
++// Unwraps a DPAPI blob for the current Windows user. Returns nullopt on
++// failure (for example a blob wrapped by a different user).
++std::optional<std::vector<uint8_t>> UnwrapForCurrentUser(
++    base::span<const uint8_t> wrapped) {
++  DATA_BLOB input = {};
++  input.pbData = const_cast<BYTE*>(wrapped.data());
++  input.cbData = static_cast<DWORD>(wrapped.size());
++
++  DATA_BLOB output = {};
++  if (!::CryptUnprotectData(&input, nullptr, nullptr, nullptr, nullptr, 0,
++                            &output)) {
++    return std::nullopt;
++  }
++  auto owned = base::win::TakeLocalAlloc(output.pbData);
++  std::vector<uint8_t> result(owned.get(),
++                              UNSAFE_TODO(owned.get() + output.cbData));
++  // Wipe the decrypted copy DPAPI left behind before its memory is freed.
++  ::SecureZeroMemory(owned.get(), output.cbData);
++  return result;
++}
++
++bool HasPrefix(base::span<const uint8_t> value, std::string_view prefix) {
++  if (value.size() < prefix.size()) {
++    return false;
++  }
++  return std::equal(prefix.begin(), prefix.end(), value.begin());
++}
++
++}  // namespace
++
++PasswordKey::PasswordKey() = default;
++PasswordKey::PasswordKey(PasswordKey&&) noexcept = default;
++PasswordKey& PasswordKey::operator=(PasswordKey&&) noexcept = default;
++
++PasswordKey::~PasswordKey() {
++  Clear();
++}
++
++void PasswordKey::Clear() {
++  if (!key_.empty()) {
++    crypto::SecureZeroBuffer(base::span(key_));
++    key_.clear();
++  }
++}
++
++// static
++std::optional<PasswordKey> PasswordKey::FromLocalState(
++    const std::string& local_state_json) {
++  std::optional<base::DictValue> state =
++      base::JSONReader::ReadDict(local_state_json, base::JSON_PARSE_RFC);
++  if (!state) {
++    return std::nullopt;
++  }
++  const std::string* encoded =
++      state->FindStringByDottedPath("os_crypt.encrypted_key");
++  if (!encoded) {
++    return std::nullopt;
++  }
++  std::optional<std::vector<uint8_t>> decoded = base::Base64Decode(*encoded);
++  if (!decoded || decoded->size() <= std::size(kDpapiKeyPrefix)) {
++    return std::nullopt;
++  }
++  if (!std::equal(std::begin(kDpapiKeyPrefix), std::end(kDpapiKeyPrefix),
++                  decoded->begin())) {
++    return std::nullopt;
++  }
++  base::span<const uint8_t> wrapped =
++      base::span(*decoded).subspan(std::size(kDpapiKeyPrefix));
++  std::optional<std::vector<uint8_t>> unwrapped = UnwrapForCurrentUser(wrapped);
++  crypto::SecureZeroBuffer(base::span(*decoded));
++  if (!unwrapped || unwrapped->size() != kKeyLength) {
++    if (unwrapped) {
++      crypto::SecureZeroBuffer(base::span(*unwrapped));
++    }
++    return std::nullopt;
++  }
++  PasswordKey key;
++  key.key_ = std::move(*unwrapped);
++  return key;
++}
++
++// static
++std::optional<PasswordKey> PasswordKey::FromRawKeyForTesting(
++    base::span<const uint8_t> raw_key) {
++  if (raw_key.size() != kKeyLength) {
++    return std::nullopt;
++  }
++  PasswordKey key;
++  key.key_.assign(raw_key.begin(), raw_key.end());
++  return key;
++}
++
++DecryptResult DecryptPasswordValue(const PasswordKey& key,
++                                   base::span<const uint8_t> value,
++                                   std::string* plaintext) {
++  // App-bound value: counted, never read.
++  if (HasPrefix(value, kV20Prefix)) {
++    return DecryptResult::kSkippedV20;
++  }
++
++  // Old value with no known prefix: unwrap for the current user directly.
++  if (!HasPrefix(value, kV10Prefix)) {
++    std::optional<std::vector<uint8_t>> unwrapped =
++        UnwrapForCurrentUser(value);
++    if (!unwrapped) {
++      return DecryptResult::kSkippedOther;
++    }
++    plaintext->assign(unwrapped->begin(), unwrapped->end());
++    crypto::SecureZeroBuffer(base::span(*unwrapped));
++    return DecryptResult::kOk;
++  }
++
++  // "v10": AES-256-GCM with the profile key.
++  if (!key.is_valid()) {
++    return DecryptResult::kError;
++  }
++  if (value.size() < kPrefixLength + kNonceLength + kTagLength) {
++    return DecryptResult::kSkippedOther;
++  }
++  base::span<const uint8_t> body = value.subspan(kPrefixLength);
++  base::span<const uint8_t> nonce = body.first(kNonceLength);
++  base::span<const uint8_t> ciphertext_and_tag = body.subspan(kNonceLength);
++
++  crypto::Aead aead(crypto::Aead::AES_256_GCM, key.bytes());
++  std::optional<std::vector<uint8_t>> decrypted =
++      aead.Open(ciphertext_and_tag, nonce, /*additional_data=*/{});
++  if (!decrypted) {
++    return DecryptResult::kError;
++  }
++  plaintext->assign(decrypted->begin(), decrypted->end());
++  crypto::SecureZeroBuffer(base::span(*decrypted));
++  return DecryptResult::kOk;
++}
++
++}  // namespace user_data_importer::chromium_family
+diff --git a/components/user_data_importer/chromium_family/password_decryptor_win.h b/components/user_data_importer/chromium_family/password_decryptor_win.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..ba6c062ddc3f7e98cb3dd62a4958f88ca64c5783
+--- /dev/null
++++ b/components/user_data_importer/chromium_family/password_decryptor_win.h
+@@ -0,0 +1,80 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef COMPONENTS_USER_DATA_IMPORTER_CHROMIUM_FAMILY_PASSWORD_DECRYPTOR_WIN_H_
++#define COMPONENTS_USER_DATA_IMPORTER_CHROMIUM_FAMILY_PASSWORD_DECRYPTOR_WIN_H_
++
++#include <stdint.h>
++
++#include <optional>
++#include <string>
++#include <vector>
++
++#include "base/containers/span.h"
++
++// Reads the saved-password values a Chromium-family browser wrote in its
++// `Login Data` on Windows (ROADMAP P3.14). The profile key lives in the
++// browser's `Local State` under os_crypt.encrypted_key: base64 of the bytes
++// "DPAPI" followed by the key wrapped for the current Windows user. Only the
++// user who wrapped it can unwrap it, so only that user's own data is readable.
++//
++// Value formats handled:
++//  - "v10" + 12-byte nonce + ciphertext + 16-byte tag: AES-256-GCM with the
++//    profile key.
++//  - No known prefix: an older value wrapped directly for the current user.
++//  - "v20" (app-bound) and anything else: reported as unsupported and left
++//    alone. Thoron's design forbids working around another browser's
++//    protection, so these are only counted, never read.
++namespace user_data_importer::chromium_family {
++
++// The 32-byte AES-256-GCM key of a profile, recovered from the browser's
++// `Local State`. Holds the key only as long as it is needed and clears it on
++// destruction.
++class PasswordKey {
++ public:
++  PasswordKey();
++  PasswordKey(const PasswordKey&) = delete;
++  PasswordKey& operator=(const PasswordKey&) = delete;
++  PasswordKey(PasswordKey&&) noexcept;
++  PasswordKey& operator=(PasswordKey&&) noexcept;
++  ~PasswordKey();
++
++  // Reads os_crypt.encrypted_key from the JSON text of a `Local State` file and
++  // recovers the profile key. Returns nullopt when the field is missing, not
++  // the expected "DPAPI"-prefixed shape, or cannot be unwrapped for the current
++  // user. `local_state_json` is the file's contents, not a path.
++  static std::optional<PasswordKey> FromLocalState(
++      const std::string& local_state_json);
++
++  // A key built directly from 32 raw bytes, for tests.
++  static std::optional<PasswordKey> FromRawKeyForTesting(
++      base::span<const uint8_t> raw_key);
++
++  bool is_valid() const { return !key_.empty(); }
++  base::span<const uint8_t> bytes() const { return key_; }
++
++  // Zeroes the stored key.
++  void Clear();
++
++ private:
++  std::vector<uint8_t> key_;
++};
++
++// What became of one stored value.
++enum class DecryptResult {
++  kOk,           // Decrypted into `plaintext`.
++  kSkippedV20,   // "v20" app-bound value: left alone and counted.
++  kSkippedOther,  // Unrecognised or malformed value: left alone and counted.
++  kError,        // A known format that failed to decrypt (e.g. bad tag).
++};
++
++// Reads one `password_value` blob. For a "v10" value it uses `key`; for an
++// unprefixed value it unwraps for the current user; "v20" and unknown values
++// return kSkippedV20 / kSkippedOther without touching `plaintext`.
++DecryptResult DecryptPasswordValue(const PasswordKey& key,
++                                   base::span<const uint8_t> value,
++                                   std::string* plaintext);
++
++}  // namespace user_data_importer::chromium_family
++
++#endif  // COMPONENTS_USER_DATA_IMPORTER_CHROMIUM_FAMILY_PASSWORD_DECRYPTOR_WIN_H_
+diff --git a/components/user_data_importer/chromium_family/password_decryptor_win_unittest.cc b/components/user_data_importer/chromium_family/password_decryptor_win_unittest.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..20b177fffd4d5f893565a8295d2c0330fc08d245
+--- /dev/null
++++ b/components/user_data_importer/chromium_family/password_decryptor_win_unittest.cc
+@@ -0,0 +1,139 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "components/user_data_importer/chromium_family/password_decryptor_win.h"
++
++#include <windows.h>
++
++#include <wincrypt.h>
++
++#include <array>
++#include <string>
++#include <vector>
++
++#include "base/base64.h"
++#include "base/compiler_specific.h"
++#include "base/containers/span.h"
++#include "base/strings/strcat.h"
++#include "base/win/scoped_localalloc.h"
++#include "crypto/aead.h"
++#include "crypto/random.h"
++#include "testing/gtest/include/gtest/gtest.h"
++
++namespace user_data_importer::chromium_family {
++namespace {
++
++// Wraps `plaintext` for the current Windows user, as the browser's os_crypt
++// does for its key.
++std::vector<uint8_t> WrapForCurrentUser(base::span<const uint8_t> plaintext) {
++  DATA_BLOB input = {};
++  input.pbData = const_cast<BYTE*>(plaintext.data());
++  input.cbData = static_cast<DWORD>(plaintext.size());
++  DATA_BLOB output = {};
++  EXPECT_TRUE(::CryptProtectData(&input, L"", nullptr, nullptr, nullptr, 0,
++                                 &output));
++  auto owned = base::win::TakeLocalAlloc(output.pbData);
++  return std::vector<uint8_t>(owned.get(),
++                              UNSAFE_TODO(owned.get() + output.cbData));
++}
++
++// A Local State JSON whose os_crypt.encrypted_key wraps `raw_key`.
++std::string LocalStateWithKey(base::span<const uint8_t> raw_key) {
++  std::vector<uint8_t> wrapped = WrapForCurrentUser(raw_key);
++  std::vector<uint8_t> prefixed = {'D', 'P', 'A', 'P', 'I'};
++  prefixed.insert(prefixed.end(), wrapped.begin(), wrapped.end());
++  std::string encoded = base::Base64Encode(prefixed);
++  return base::StrCat(
++      {"{\"os_crypt\":{\"encrypted_key\":\"", encoded, "\"}}"});
++}
++
++// A "v10" password value: "v10" + 12-byte nonce + ciphertext + 16-byte tag.
++std::vector<uint8_t> MakeV10Value(base::span<const uint8_t> raw_key,
++                                  const std::string& plaintext) {
++  std::array<uint8_t, 12> nonce = {};
++  crypto::RandBytes(nonce);
++  std::vector<uint8_t> sealed = crypto::aead::Seal(
++      crypto::aead::AES_256_GCM, raw_key, base::as_byte_span(plaintext), nonce,
++      /*associated_data=*/{});
++  std::vector<uint8_t> value = {'v', '1', '0'};
++  value.insert(value.end(), nonce.begin(), nonce.end());
++  value.insert(value.end(), sealed.begin(), sealed.end());
++  return value;
++}
++
++std::array<uint8_t, 32> MakeKey() {
++  std::array<uint8_t, 32> key = {};
++  crypto::RandBytes(key);
++  return key;
++}
++
++TEST(ChromiumFamilyPasswordDecryptorTest, V10RoundTrip) {
++  std::array<uint8_t, 32> raw_key = MakeKey();
++  std::optional<PasswordKey> key =
++      PasswordKey::FromLocalState(LocalStateWithKey(raw_key));
++  ASSERT_TRUE(key);
++  EXPECT_TRUE(key->is_valid());
++
++  std::vector<uint8_t> value = MakeV10Value(raw_key, "hunter2");
++  std::string plaintext;
++  EXPECT_EQ(DecryptResult::kOk,
++            DecryptPasswordValue(*key, value, &plaintext));
++  EXPECT_EQ("hunter2", plaintext);
++}
++
++TEST(ChromiumFamilyPasswordDecryptorTest, V20IsSkippedAndNotRead) {
++  std::array<uint8_t, 32> raw_key = MakeKey();
++  std::optional<PasswordKey> key =
++      PasswordKey::FromLocalState(LocalStateWithKey(raw_key));
++  ASSERT_TRUE(key);
++
++  // "v20" app-bound value. It must be refused outright, never read.
++  std::vector<uint8_t> value = {'v', '2', '0', 1, 2, 3, 4, 5};
++  std::string plaintext = "untouched";
++  EXPECT_EQ(DecryptResult::kSkippedV20,
++            DecryptPasswordValue(*key, value, &plaintext));
++  EXPECT_EQ("untouched", plaintext);
++}
++
++TEST(ChromiumFamilyPasswordDecryptorTest, OldDpapiValueRoundTrip) {
++  // A value with no "v10"/"v20" prefix is an old blob wrapped for the user.
++  std::vector<uint8_t> value = WrapForCurrentUser(base::as_byte_span(
++      std::string_view("legacy-secret")));
++  PasswordKey no_key;  // Not needed for an unprefixed value.
++  std::string plaintext;
++  EXPECT_EQ(DecryptResult::kOk,
++            DecryptPasswordValue(no_key, value, &plaintext));
++  EXPECT_EQ("legacy-secret", plaintext);
++}
++
++TEST(ChromiumFamilyPasswordDecryptorTest, V10WithWrongKeyFails) {
++  std::array<uint8_t, 32> raw_key = MakeKey();
++  std::vector<uint8_t> value = MakeV10Value(raw_key, "secret");
++
++  std::array<uint8_t, 32> other_key = MakeKey();
++  std::optional<PasswordKey> key = PasswordKey::FromRawKeyForTesting(other_key);
++  ASSERT_TRUE(key);
++  std::string plaintext;
++  EXPECT_EQ(DecryptResult::kError,
++            DecryptPasswordValue(*key, value, &plaintext));
++}
++
++TEST(ChromiumFamilyPasswordDecryptorTest, GarbageValueSkipped) {
++  std::array<uint8_t, 32> raw_key = MakeKey();
++  std::optional<PasswordKey> key = PasswordKey::FromRawKeyForTesting(raw_key);
++  ASSERT_TRUE(key);
++  std::vector<uint8_t> value = {1, 2, 3};  // Too short for an old blob.
++  std::string plaintext;
++  EXPECT_EQ(DecryptResult::kSkippedOther,
++            DecryptPasswordValue(*key, value, &plaintext));
++}
++
++TEST(ChromiumFamilyPasswordDecryptorTest, BadLocalStateHasNoKey) {
++  EXPECT_FALSE(PasswordKey::FromLocalState("not json"));
++  EXPECT_FALSE(PasswordKey::FromLocalState("{}"));
++  EXPECT_FALSE(PasswordKey::FromLocalState(
++      "{\"os_crypt\":{\"encrypted_key\":\"!!!notbase64\"}}"));
++}
++
++}  // namespace
++}  // namespace user_data_importer::chromium_family

@@ -2,8 +2,9 @@
 # Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be found in the LICENSE file.
 """Coverage-guided fuzzing of the updater's readers (ROADMAP S.2, U9): seeds and a timed run.
 
-Two libFuzzer targets of components/thoron_update, built with a fuzzing engine (use_libfuzzer = true,
-is_asan = true):
+Two libFuzzer targets of components/thoron_update, built with a fuzzing engine (use_libfuzzer = true; on
+Windows also is_asan = true, a release and static build, where the build's own protoc stops on
+AddressSanitizer reports of its own before the targets are built, so they are run on the Linux build):
 
     thoron_update_manifest_fuzzer     the signed manifest past its signature: the first byte of an input
                                       picks the copy, the rest is the manifest; the target signs it with the

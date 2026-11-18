@@ -41,8 +41,9 @@ If that browser still runs, Thoron asks you to close it, and imports nothing unt
 closes it for you. Close it and choose **Try again**.
 
 What it does: it copies the files it needs (`Bookmarks`, `History`, `Login Data`, `Web Data` and the
-browser's `Local State`) into a temporary folder, checks each database copy with SQLite and leaves out one
-that is damaged, reads the copies and deletes them at the end. The other browser's files are only read.
+browser's `Local State`, and a database's `-wal` file when the browser did not close cleanly) into a temporary
+folder, checks each database copy with SQLite and leaves out one that is damaged, reads the copies and
+deletes them at the end. The other browser's files are only read.
 The bookmarks go into a folder of their own, "Imported from" and the browser's name. Saved passwords and
 cookies (**Cookies and site sign-ins**) come over when they belong to your Windows account; those that
 Chrome locks to itself (app-bound encryption) are left out and never forced. Cookies that end when the

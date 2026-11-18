@@ -29551,10 +29551,10 @@ index 0000000000000000000000000000000000000000..104891f666b37f22a60ba5da80c710e6
 +#endif  // COMPONENTS_USER_DATA_IMPORTER_CHROMIUM_FAMILY_CHROMIUM_FAMILY_IMPORT_BRIDGE_H_
 diff --git a/components/user_data_importer/chromium_family/chromium_family_reader.cc b/components/user_data_importer/chromium_family/chromium_family_reader.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..f926b50e4423d539774654516a400e0a01d5c131
+index 0000000000000000000000000000000000000000..f8a71d1b985429e5c22759ec814b52ad82298e08
 --- /dev/null
 +++ b/components/user_data_importer/chromium_family/chromium_family_reader.cc
-@@ -0,0 +1,563 @@
+@@ -0,0 +1,578 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -29620,14 +29620,19 @@ index 0000000000000000000000000000000000000000..f926b50e4423d539774654516a400e0a
 +  return base::Time::FromDeltaSinceWindowsEpoch(base::Microseconds(value));
 +}
 +
-+// Opens a database copy read only and returns it only if PRAGMA quick_check
-+// reports "ok".
++// Opens a database copy and returns it only if PRAGMA quick_check reports "ok".
++// A copy is opened read only, unless its -wal file came along: then for
++// writing, so that SQLite takes the last writes into it (the copy is the
++// reader's own).
 +std::unique_ptr<sql::Database> OpenCheckedDatabase(const base::FilePath& path) {
 +  if (path.empty()) {
 +    return nullptr;
 +  }
++  const bool has_wal =
++      base::PathExists(base::FilePath(path.value() + FILE_PATH_LITERAL("-wal")));
 +  auto db = std::make_unique<sql::Database>(
-+      sql::DatabaseOptions().set_read_only(true), kDatabaseTag);
++      sql::DatabaseOptions().set_read_only(!has_wal).set_wal_mode(has_wal),
++      kDatabaseTag);
 +  if (!db->Open(path)) {
 +    return nullptr;
 +  }
@@ -29715,11 +29720,21 @@ index 0000000000000000000000000000000000000000..f926b50e4423d539774654516a400e0a
 +      temp_dir_.GetPath().Append(source_file.BaseName());
 +  // A type may need the same file twice (keywords and autofill both live in
 +  // Web Data); copy once.
-+  if (base::PathExists(destination) ||
-+      base::CopyFile(source_file, destination)) {
++  if (base::PathExists(destination)) {
 +    return destination;
 +  }
-+  return {};
++  if (!base::CopyFile(source_file, destination)) {
++    return {};
++  }
++  // A browser that did not close cleanly leaves its last writes in the
++  // database's -wal file. It comes along, so the copy holds them; the source
++  // itself is never opened.
++  const base::FilePath wal(source_file.value() + FILE_PATH_LITERAL("-wal"));
++  if (base::PathExists(wal)) {
++    base::CopyFile(wal,
++                   base::FilePath(destination.value() + FILE_PATH_LITERAL("-wal")));
++  }
++  return destination;
 +}
 +
 +std::unique_ptr<sql::Database> ChromiumFamilyReader::OpenCopiedDatabase(
@@ -30236,10 +30251,10 @@ index 0000000000000000000000000000000000000000..171467f3ffeb8631468a1ae3b52eaace
 +#endif  // COMPONENTS_USER_DATA_IMPORTER_CHROMIUM_FAMILY_CHROMIUM_FAMILY_READER_H_
 diff --git a/components/user_data_importer/chromium_family/chromium_family_reader_unittest.cc b/components/user_data_importer/chromium_family/chromium_family_reader_unittest.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..e33236946c71b2b6a991a8d2377d2edb8b486023
+index 0000000000000000000000000000000000000000..39af22b036e41e3987b7d5339db29c9ee97de4da
 --- /dev/null
 +++ b/components/user_data_importer/chromium_family/chromium_family_reader_unittest.cc
-@@ -0,0 +1,567 @@
+@@ -0,0 +1,611 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -30747,6 +30762,50 @@ index 0000000000000000000000000000000000000000..e33236946c71b2b6a991a8d2377d2edb
 +    ASSERT_TRUE(base::ReadFileToString(sources[i], &after)) << sources[i];
 +    EXPECT_EQ(before[i], after) << sources[i];
 +  }
++}
++
++// A browser that did not close cleanly leaves its last writes in History-wal;
++// they come over too, read from the copy.
++TEST_F(ChromiumFamilyReaderTest, LastWritesInTheWalFileComeOver) {
++  const base::FilePath live = dir_.GetPath().Append(L"live");
++  ASSERT_TRUE(base::CreateDirectory(live));
++  {
++    // While this connection holds the database, its rows are only in the
++    // -wal file: the files are copied as a crash leaves them.
++    sql::Database db(sql::DatabaseOptions().set_wal_mode(true),
++                     sql::Database::Tag("Test"));
++    ASSERT_TRUE(db.Open(live.Append(L"History")));
++    ASSERT_TRUE(db.Execute(
++        "CREATE TABLE urls(id INTEGER PRIMARY KEY, url LONGVARCHAR, "
++        "title LONGVARCHAR, visit_count INTEGER, typed_count INTEGER, "
++        "last_visit_time INTEGER, hidden INTEGER)"));
++    sql::Statement s(db.GetUniqueStatement(
++        "INSERT INTO urls(url, title, visit_count, typed_count, "
++        "last_visit_time, hidden) VALUES(?,?,?,?,?,?)"));
++    s.BindString(0, "https://example.com/from-the-wal");
++    s.BindString16(1, u"Unsaved");
++    s.BindInt(2, 1);
++    s.BindInt(3, 0);
++    s.BindInt64(4, base::Time::Now().ToDeltaSinceWindowsEpoch().InMicroseconds());
++    s.BindInt(5, 0);
++    ASSERT_TRUE(s.Run());
++    ASSERT_TRUE(base::PathExists(live.Append(L"History-wal")));
++    ASSERT_TRUE(base::CopyFile(live.Append(L"History"), profile_.Append(L"History")));
++    ASSERT_TRUE(
++        base::CopyFile(live.Append(L"History-wal"), profile_.Append(L"History-wal")));
++  }
++  std::string source_before;
++  ASSERT_TRUE(base::ReadFileToString(profile_.Append(L"History"), &source_before));
++  FakeBridge bridge;
++  ChromiumFamilyReader reader(Options());
++  reader.Import(HISTORY, &bridge);
++  ASSERT_EQ(bridge.history.size(), 1u);
++  EXPECT_EQ(bridge.history[0].url.spec(), "https://example.com/from-the-wal");
++  // The source's files are as they were: only the copy took the -wal in.
++  std::string source_after;
++  ASSERT_TRUE(base::ReadFileToString(profile_.Append(L"History"), &source_after));
++  EXPECT_EQ(source_before, source_after);
++  EXPECT_TRUE(base::PathExists(profile_.Append(L"History-wal")));
 +}
 +
 +TEST_F(ChromiumFamilyReaderTest, OnlyRequestedItems) {

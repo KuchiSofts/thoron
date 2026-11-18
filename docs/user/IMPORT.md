@@ -48,6 +48,13 @@ over when they belong to your Windows account; those that Chrome locks to itself
 are left out and never forced. Open tabs, extensions, settings and cookies do not come over this way
 (sections 2 and 3 for Thorium's whole profile and for tabs).
 
+**The report.** Each import writes `Thoron import report.json` into the Thoron profile's folder (for an
+installed Thoron, `%LOCALAPPDATA%\Thoron\User Data\Default`), replacing the one before: when, from which
+browser, how many bookmarks, history entries, saved passwords, search engines and form entries came over,
+and how many were left out and why (passwords locked by Chrome, in no format Thoron knows, or that did not
+decrypt; a damaged database). It holds counts and the browser's name only, never an address, a name, a
+password or any other value.
+
 ## 1. Before you start
 
 1. Install **Python 3.11 or newer** for Windows (from python.org). It brings the `py` command the guides use.

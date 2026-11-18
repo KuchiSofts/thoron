@@ -18,6 +18,8 @@ pressing it by its element ids, never by its words:
                      with success
     the data         after Thoron is closed, its profile holds the bookmark (in a folder of its own) and the
                      history entry; Thorium's profile still holds both, unchanged
+    the report       the profile holds `Thoron import report.json`: from Thorium, at least the bookmark and
+                     the history entry counted, what was left out counted, and no address or other value
 
     py -3 -I tools/qa/sandbox_settings_import_check.py --installer <thoron_AVX2_mini_installer.exe> --work <scratch>
 """
@@ -172,6 +174,7 @@ try {
   Get-Process thoron -ErrorAction SilentlyContinue | Stop-Process -Force
   Start-Sleep -Seconds 3
   $r.thoron_after = Python @('C:\ThoronTest\in\data.py', 'read', "`"$thoron`"")
+  $r.report = "$(Get-Content (Join-Path $thoron 'Default\Thoron import report.json') -Raw -ErrorAction SilentlyContinue)"
   $r.thorium_after = Python @('C:\ThoronTest\in\data.py', 'read', "`"$thorium`"")
 } catch {
   $r.error = "$_"
@@ -227,6 +230,13 @@ def problems(r: dict) -> dict[str, list[str]]:
           f"Thoron's profile does not hold the bookmark and the history entry: {r.get('thoron_after')!r}")
     check("the data", _flags(r.get("thorium_after")) == {"bookmark": True, "history": True},
           f"Thorium's profile lost the data: {r.get('thorium_after')!r}")
+    report = _flags(r.get("report"))
+    imported = report.get("imported") or {}
+    check("the report", report.get("format") == 1 and str(report.get("source", "")).startswith("Thorium")
+          and imported.get("bookmarks", 0) >= 1 and imported.get("history", 0) >= 1
+          and isinstance(report.get("left_out"), dict),
+          f"no report with the counts of the import: {str(r.get('report'))[:200]!r}")
+    check("the report", "example.org" not in str(r.get("report")), "the report holds an address")
     return out
 
 

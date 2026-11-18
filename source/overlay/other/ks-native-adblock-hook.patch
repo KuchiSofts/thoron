@@ -27273,7 +27273,7 @@ index 6f0957d48299e596d4e4e79054f76aec52f77124..5e0736777d0a9c2606f6cb5d077eab12
    "+components/user_data_importer/mojom",
  ]
 diff --git a/chrome/browser/importer/external_process_importer_client.cc b/chrome/browser/importer/external_process_importer_client.cc
-index cf319714e5c89d052477e42686a5ccdcdfdf9f5f..7194c060caa3767a6392919c0b8ee78c76d8d913 100644
+index cf319714e5c89d052477e42686a5ccdcdfdf9f5f..d719658adf7fb7ae32339766040e982b2f40e0d8 100644
 --- a/chrome/browser/importer/external_process_importer_client.cc
 +++ b/chrome/browser/importer/external_process_importer_client.cc
 @@ -9,6 +9,7 @@
@@ -27298,19 +27298,57 @@ index cf319714e5c89d052477e42686a5ccdcdfdf9f5f..7194c060caa3767a6392919c0b8ee78c
  
    mojo::PendingRemote<user_data_importer::mojom::BookmarkHtmlParser>
        bookmark_html_parser;
+@@ -126,6 +134,30 @@ void ExternalProcessImporterClient::OnImportFinished(
+   Cleanup();
+ }
+ 
++// Thoron (ROADMAP P3.14): what came over and what was left out, for the
++// report the host writes when the import ends.
++void ExternalProcessImporterClient::OnThoronImportReport(
++    chrome::mojom::ThoronImportReportPtr report) {
++  if (cancelled_ || !report || !process_importer_host_) {
++    return;
++  }
++  base::DictValue imported;
++  imported.Set("bookmarks", report->bookmarks);
++  imported.Set("history", report->history);
++  imported.Set("search_engines", report->search_engines);
++  imported.Set("autofill", report->autofill);
++  imported.Set("passwords", report->passwords);
++  base::DictValue left_out;
++  left_out.Set("passwords_locked_by_chrome", report->passwords_skipped_app_bound);
++  left_out.Set("passwords_in_no_known_format", report->passwords_skipped_other);
++  left_out.Set("passwords_that_did_not_decrypt", report->passwords_failed);
++  left_out.Set("damaged_databases", report->databases_refused);
++  base::DictValue counts;
++  counts.Set("imported", std::move(imported));
++  counts.Set("left_out", std::move(left_out));
++  process_importer_host_->SetThoronImportReport(std::move(counts));
++}
++
+ void ExternalProcessImporterClient::OnImportItemStart(
+     user_data_importer::ImportItem import_item) {
+   if (cancelled_)
 diff --git a/chrome/browser/importer/external_process_importer_host.cc b/chrome/browser/importer/external_process_importer_host.cc
-index 051ffd1259dd1373470c56e8a49dd21ad8e57170..9580b00c733cf456b1beacdffb84193b3b8c8e66 100644
+index 051ffd1259dd1373470c56e8a49dd21ad8e57170..255fac7185e700aa3fa5bab6aef56b6ec72a1f12 100644
 --- a/chrome/browser/importer/external_process_importer_host.cc
 +++ b/chrome/browser/importer/external_process_importer_host.cc
-@@ -7,6 +7,7 @@
+@@ -6,7 +6,14 @@
+ 
  #include <memory>
  
++#include "base/files/file_util.h"
  #include "base/functional/bind.h"
++#include "base/i18n/time_formatting.h"
++#include "base/json/json_writer.h"
++#include "base/strings/utf_string_conversions.h"
++#include "base/task/thread_pool.h"
++#include "base/time/time.h"
 +#include "build/build_config.h"
  #include "chrome/browser/bookmarks/bookmark_model_factory.h"
  #include "chrome/browser/importer/external_process_importer_client.h"
  #include "chrome/browser/importer/firefox_profile_lock.h"
-@@ -15,10 +16,15 @@
+@@ -15,10 +22,15 @@
  #include "chrome/browser/importer/in_process_importer_bridge.h"
  #include "chrome/browser/profiles/profile.h"
  #include "chrome/browser/search_engines/template_url_service_factory.h"
@@ -27326,7 +27364,7 @@ index 051ffd1259dd1373470c56e8a49dd21ad8e57170..9580b00c733cf456b1beacdffb84193b
  using bookmarks::BookmarkModel;
  using content::BrowserThread;
  
-@@ -59,6 +65,15 @@ void ExternalProcessImporterHost::StartImportSettings(
+@@ -59,6 +71,15 @@ void ExternalProcessImporterHost::StartImportSettings(
      return;
    }
  
@@ -27342,7 +27380,45 @@ index 051ffd1259dd1373470c56e8a49dd21ad8e57170..9580b00c733cf456b1beacdffb84193b
    CheckForLoadedModels(items);
  
    LaunchImportIfReady();
-@@ -133,16 +148,28 @@ void ExternalProcessImporterHost::ShowWarningDialog() {
+@@ -81,9 +102,37 @@ void ExternalProcessImporterHost::NotifyImportItemEnded(
+     observer_->ImportItemEnded(item);
+ }
+ 
++void ExternalProcessImporterHost::SetThoronImportReport(
++    base::DictValue counts) {
++  thoron_report_ = std::move(counts);
++}
++
+ void ExternalProcessImporterHost::NotifyImportEnded() {
+   CHECK_CURRENTLY_ON(BrowserThread::UI, base::NotFatalUntil::M161);
+   firefox_lock_.reset();
++  // Thoron (ROADMAP P3.14): the import's local report, in the profile's
++  // folder: when, from which browser, what came over and what was left out.
++  // Counts and the source's name only, never a value.
++  if (thoron_report_ && profile_) {
++    thoron_report_->Set("format", 1);
++    thoron_report_->Set("time", base::TimeFormatAsIso8601(base::Time::Now()));
++    thoron_report_->Set("source",
++                        base::UTF16ToUTF8(source_profile_.importer_name));
++    std::string json;
++    base::JSONWriter::WriteWithOptions(
++        *thoron_report_, base::JSONWriter::OPTIONS_PRETTY_PRINT, &json);
++    base::ThreadPool::PostTask(
++        FROM_HERE,
++        {base::MayBlock(), base::TaskPriority::BEST_EFFORT,
++         base::TaskShutdownBehavior::BLOCK_SHUTDOWN},
++        base::BindOnce(
++            [](const base::FilePath& path, const std::string& text) {
++              base::WriteFile(path, text);
++            },
++            profile_->GetPath().Append(
++                FILE_PATH_LITERAL("Thoron import report.json")),
++            std::move(json)));
++  }
+   if (observer_)
+     observer_->ImportEnded();
+   delete this;
+@@ -133,16 +182,28 @@ void ExternalProcessImporterHost::ShowWarningDialog() {
    importer::ShowImportLockDialog(
        parent_window_,
        base::BindOnce(&ExternalProcessImporterHost::OnImportLockDialogEnd,
@@ -27377,7 +27453,7 @@ index 051ffd1259dd1373470c56e8a49dd21ad8e57170..9580b00c733cf456b1beacdffb84193b
        is_source_readable_ = true;
        LaunchImportIfReady();
      } else {
-@@ -153,6 +180,29 @@ void ExternalProcessImporterHost::OnImportLockDialogEnd(bool is_continue) {
+@@ -153,6 +214,29 @@ void ExternalProcessImporterHost::OnImportLockDialogEnd(bool is_continue) {
    }
  }
  
@@ -27408,13 +27484,20 @@ index 051ffd1259dd1373470c56e8a49dd21ad8e57170..9580b00c733cf456b1beacdffb84193b
      const user_data_importer::SourceProfile& source_profile) {
    if (source_profile.importer_type != user_data_importer::TYPE_FIREFOX) {
 diff --git a/chrome/browser/importer/external_process_importer_host.h b/chrome/browser/importer/external_process_importer_host.h
-index e30cfba33a058c8fab9fedceab4563af4c358338..67836648aa2c1d8dd38df41d99a69880a4ec1fa0 100644
+index e30cfba33a058c8fab9fedceab4563af4c358338..5d5d1c0ab0ee30fd120aceb9f986123fab31c0a4 100644
 --- a/chrome/browser/importer/external_process_importer_host.h
 +++ b/chrome/browser/importer/external_process_importer_host.h
-@@ -13,8 +13,10 @@
+@@ -8,13 +8,17 @@
+ #include <stdint.h>
+ 
+ #include <memory>
++#include <optional>
+ 
+ #include "base/memory/raw_ptr.h"
  #include "base/memory/scoped_refptr.h"
  #include "base/memory/weak_ptr.h"
  #include "base/scoped_observation.h"
++#include "base/values.h"
 +#include "build/build_config.h"
  #include "chrome/browser/importer/importer_progress_observer.h"
  #include "chrome/browser/importer/profile_writer.h"
@@ -27422,7 +27505,18 @@ index e30cfba33a058c8fab9fedceab4563af4c358338..67836648aa2c1d8dd38df41d99a69880
  #include "components/bookmarks/browser/base_bookmark_model_observer.h"
  #include "components/search_engines/template_url_service.h"
  #include "components/user_data_importer/common/importer_data_types.h"
-@@ -117,6 +119,14 @@ class ExternalProcessImporterHost
+@@ -81,6 +85,10 @@ class ExternalProcessImporterHost
+   void NotifyImportItemEnded(user_data_importer::ImportItem item);
+   void NotifyImportEnded();
+ 
++  // Thoron (ROADMAP P3.14): the counts of the import, sent by the
++  // Chromium-family importer, for the local report written when it ends.
++  void SetThoronImportReport(base::DictValue counts);
++
+  private:
+   // ExternalProcessImporterHost deletes itself in OnImportEnded().
+   ~ExternalProcessImporterHost() override;
+@@ -117,6 +125,14 @@ class ExternalProcessImporterHost
    bool CheckForFirefoxLock(
        const user_data_importer::SourceProfile& source_profile);
  
@@ -27437,10 +27531,14 @@ index e30cfba33a058c8fab9fedceab4563af4c358338..67836648aa2c1d8dd38df41d99a69880
    // Make sure BookmarkModel and TemplateURLService are loaded before import
    // process starts, if bookmarks and/or search engines are among the items
    // which are to be imported.
-@@ -150,6 +160,11 @@ class ExternalProcessImporterHost
+@@ -150,6 +166,15 @@ class ExternalProcessImporterHost
    // True if source profile is readable.
    bool is_source_readable_;
  
++  // Thoron (ROADMAP P3.14): the counts of the import's local report, which
++  // NotifyImportEnded() writes beside the profile's files.
++  std::optional<base::DictValue> thoron_report_;
++
 +  // Thoron (ROADMAP P3.14): which strings the lock dialog shows. Default to the
 +  // Firefox messages; CheckForChromiumFamilyRunning() swaps in generic ones.
 +  int lock_title_id_ = IDS_IMPORTER_LOCK_TITLE;
@@ -27583,6 +27681,131 @@ index b19a5aa8cee272d0c37e227e163f2481ac33b5f6..35d802902bc0bcc909d602e76ac802b4
  #else
  IPC_ENUM_TRAITS_MIN_MAX_VALUE(user_data_importer::ImporterType,
                                user_data_importer::TYPE_UNKNOWN,
+diff --git a/chrome/common/importer/profile_import.mojom b/chrome/common/importer/profile_import.mojom
+index 815b91161f772d93e6114b0843895cfd020275fb..ce6ca6cfe4d783617ccdff6b91cb56d5ef2a09a4 100644
+--- a/chrome/common/importer/profile_import.mojom
++++ b/chrome/common/importer/profile_import.mojom
+@@ -57,6 +57,20 @@ struct ImportedPasswordForm {
+ // These are messages sent from the profile import process to the browser.
+ // These messages send information about the status of the import and individual
+ // import tasks.
++// Thoron (ROADMAP P3.14): what an import of a Chromium-family profile brought
++// over and left out, for its local report. Counts only, never a value.
++struct ThoronImportReport {
++  int32 bookmarks;
++  int32 history;
++  int32 search_engines;
++  int32 autofill;
++  int32 passwords;
++  int32 passwords_skipped_app_bound;
++  int32 passwords_skipped_other;
++  int32 passwords_failed;
++  int32 databases_refused;
++};
++
+ interface ProfileImportObserver {
+   OnImportStart();
+   OnImportFinished(bool succeeded, string error_msg);
+@@ -83,6 +97,10 @@ interface ProfileImportObserver {
+   OnAutofillFormDataImportStart(uint32 total_autofill_form_data_entry_count);
+   OnAutofillFormDataImportGroup(
+       array<ImporterAutofillFormDataEntry> autofill_form_data_entry_group);
++
++  // Thoron (ROADMAP P3.14): sent once by the Chromium-family importer, before
++  // OnImportFinished.
++  OnThoronImportReport(ThoronImportReport report);
+ };
+ 
+ // This interface is used to control the import process.
+diff --git a/chrome/common/importer/importer_bridge.h b/chrome/common/importer/importer_bridge.h
+index 1738a3baff3e4a2f45de8c8c54c64e34156d1a1b..70e7d69d7908f4fd838290f98f778a932a136165 100644
+--- a/chrome/common/importer/importer_bridge.h
++++ b/chrome/common/importer/importer_bridge.h
+@@ -21,6 +21,20 @@ namespace user_data_importer {
+ struct ImportedBookmarkEntry;
+ }  // namespace user_data_importer
+ 
++// Thoron (ROADMAP P3.14): what an import brought over and left out, for its
++// local report. Counts only, never a value.
++struct ThoronImportCounts {
++  int bookmarks = 0;
++  int history = 0;
++  int search_engines = 0;
++  int autofill = 0;
++  int passwords = 0;
++  int passwords_skipped_app_bound = 0;
++  int passwords_skipped_other = 0;
++  int passwords_failed = 0;
++  int databases_refused = 0;
++};
++
+ class ImporterBridge : public base::RefCountedThreadSafe<ImporterBridge> {
+  public:
+   ImporterBridge();
+@@ -71,6 +85,10 @@ class ImporterBridge : public base::RefCountedThreadSafe<ImporterBridge> {
+   // external import process, since the importer only needs a few strings.
+   virtual std::u16string GetLocalizedString(int message_id) = 0;
+ 
++  // Thoron (ROADMAP P3.14): the counts of an import for its local report; only
++  // the Chromium-family importer sends them.
++  virtual void ReportThoronImport(const ThoronImportCounts& counts) {}
++
+  protected:
+   friend class base::RefCountedThreadSafe<ImporterBridge>;
+ 
+diff --git a/chrome/utility/importer/external_process_importer_bridge.h b/chrome/utility/importer/external_process_importer_bridge.h
+index 2f36e248431a347761704a2020f0d2c7949526dd..ab39b2edafb5851d1d4225ef89555200c7b53ab9 100644
+--- a/chrome/utility/importer/external_process_importer_bridge.h
++++ b/chrome/utility/importer/external_process_importer_bridge.h
+@@ -71,6 +71,8 @@ class ExternalProcessImporterBridge : public ImporterBridge {
+   void NotifyEnded() override;
+ 
+   std::u16string GetLocalizedString(int message_id) override;
++  // Thoron (ROADMAP P3.14):
++  void ReportThoronImport(const ThoronImportCounts& counts) override;
+   // End ImporterBridge implementation.
+ 
+  private:
+diff --git a/chrome/utility/importer/external_process_importer_bridge.cc b/chrome/utility/importer/external_process_importer_bridge.cc
+index 67092331c3801deddd2848162f5e4f3d41bff257..349b71661510926e1b48b8c806467b909e1338a0 100644
+--- a/chrome/utility/importer/external_process_importer_bridge.cc
++++ b/chrome/utility/importer/external_process_importer_bridge.cc
+@@ -149,6 +149,22 @@ void ExternalProcessImporterBridge::NotifyItemEnded(
+   observer_->OnImportItemFinished(item);
+ }
+ 
++// Thoron (ROADMAP P3.14): the counts for the browser's import report.
++void ExternalProcessImporterBridge::ReportThoronImport(
++    const ThoronImportCounts& counts) {
++  auto report = chrome::mojom::ThoronImportReport::New();
++  report->bookmarks = counts.bookmarks;
++  report->history = counts.history;
++  report->search_engines = counts.search_engines;
++  report->autofill = counts.autofill;
++  report->passwords = counts.passwords;
++  report->passwords_skipped_app_bound = counts.passwords_skipped_app_bound;
++  report->passwords_skipped_other = counts.passwords_skipped_other;
++  report->passwords_failed = counts.passwords_failed;
++  report->databases_refused = counts.databases_refused;
++  observer_->OnThoronImportReport(std::move(report));
++}
++
+ void ExternalProcessImporterBridge::NotifyEnded() {
+   observer_->OnImportFinished(true, std::string());
+ }
+diff --git a/chrome/browser/importer/external_process_importer_client.h b/chrome/browser/importer/external_process_importer_client.h
+index 42b466d3ce66beb8cbd6af2ac11d52b4e03507d5..1fe466bb9ef8b286ea59d15b8c0c46f1b57a3075 100644
+--- a/chrome/browser/importer/external_process_importer_client.h
++++ b/chrome/browser/importer/external_process_importer_client.h
+@@ -78,6 +78,8 @@ class ExternalProcessImporterClient
+       bool unique_on_host_and_path) override;
+   void OnAutofillFormDataImportStart(
+       uint32_t total_autofill_form_data_entry_count) override;
++  // Thoron (ROADMAP P3.14): the counts for the import's local report.
++  void OnThoronImportReport(chrome::mojom::ThoronImportReportPtr report) override;
+   void OnAutofillFormDataImportGroup(
+       const std::vector<ImporterAutofillFormDataEntry>&
+           autofill_form_data_entry_group) override;
 diff --git a/chrome/utility/BUILD.gn b/chrome/utility/BUILD.gn
 index e5b851a44d644dfd5144ea8e661b546d8c8149a0..b713239073143341dcdd79c88bf0be1db8a4fa89 100644
 --- a/chrome/utility/BUILD.gn
@@ -27977,10 +28200,10 @@ index 0000000000000000000000000000000000000000..05d9b3c2fe8f46afc5448b3c22d7568b
 +#endif  // CHROME_BROWSER_UI_WEBUI_THORON_WELCOME_UI_H_
 diff --git a/chrome/utility/importer/chromium_family_importer_win.cc b/chrome/utility/importer/chromium_family_importer_win.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..cdf87f9baf1ac11b2548222121f20d63f1efed1a
+index 0000000000000000000000000000000000000000..e846326434499e9e1b960710ae1a75722421facb
 --- /dev/null
 +++ b/chrome/utility/importer/chromium_family_importer_win.cc
-@@ -0,0 +1,127 @@
+@@ -0,0 +1,140 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -28097,15 +28320,28 @@ index 0000000000000000000000000000000000000000..cdf87f9baf1ac11b2548222121f20d63
 +      user_data_importer::HISTORY, user_data_importer::FAVORITES,
 +      user_data_importer::SEARCH_ENGINES,
 +      user_data_importer::AUTOFILL_FORM_DATA, user_data_importer::PASSWORDS};
++  cf::ChromiumFamilyReader::Stats stats;
 +  for (user_data_importer::ImportItem item : kOrder) {
 +    if (!(items & item) || cancelled()) {
 +      continue;
 +    }
 +    bridge_->NotifyItemStarted(item);
-+    reader.Import(item, &adapter);
++    stats = reader.Import(item, &adapter);  // the counts so far
 +    bridge_->NotifyItemEnded(item);
 +  }
 +
++  // The local report of the import (counts only), written by the browser.
++  ThoronImportCounts counts;
++  counts.bookmarks = stats.bookmarks;
++  counts.history = stats.history;
++  counts.search_engines = stats.search_engines;
++  counts.autofill = stats.autofill;
++  counts.passwords = stats.passwords;
++  counts.passwords_skipped_app_bound = stats.passwords_skipped_app_bound;
++  counts.passwords_skipped_other = stats.passwords_skipped_other;
++  counts.passwords_failed = stats.passwords_failed;
++  counts.databases_refused = stats.databases_refused;
++  bridge_->ReportThoronImport(counts);
 +  bridge_->NotifyEnded();
 +}
 diff --git a/chrome/utility/importer/chromium_family_importer_win.h b/chrome/utility/importer/chromium_family_importer_win.h

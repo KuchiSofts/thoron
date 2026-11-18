@@ -21,6 +21,9 @@ pressing it by its element ids, never by its words:
     the cookie       a persistent cookie Thorium set for example.org (secure, HTTP only) is in Thoron's cookie
                      jar with its value, read through DevTools (Thorium encrypted it in its store as it does
                      every cookie; the import decrypts it with Thorium's key, which this Windows account owns)
+    the start        the home page and startup pages Thorium was given in its own Settings (a web page as the
+                     home page, its button shown, a startup page of its own) are Thoron's, read back from
+                     Thoron's Settings
     the report       the profile holds `Thoron import report.json`: from Thorium, at least the bookmark, the
                      history entry and the cookie counted, what was left out counted, and no address or other
                      value
@@ -101,6 +104,11 @@ function Cdp($tab, $method, $params) {
   $ws.Dispose()
   return $text
 }
+function EvaluateAsync($tab, $expression) {
+  # Runtime.evaluate of an expression that gives a promise, and the value it settles with
+  $text = Cdp $tab 'Runtime.evaluate' @{ expression = $expression; returnByValue = $true; awaitPromise = $true }
+  try { return (($text | ConvertFrom-Json).result.result.value) } catch { return $text }
+}
 function Evaluate($tab, $expression) {
   $ws = New-Object System.Net.WebSockets.ClientWebSocket
   $none = [Threading.CancellationToken]::None
@@ -144,6 +152,13 @@ try {
   $expires = [int]([DateTimeOffset]::UtcNow.ToUnixTimeSeconds() + 30 * 86400)
   if ($page) {
     $r.cookie_set = Cdp $page 'Network.setCookie' @{ name = 'thoron_import'; value = 'came-along'; domain = 'example.org'; path = '/'; secure = $true; httpOnly = $true; expires = $expires }
+    # a navigation the browser makes, as when a person types the address (a page may not open chrome://)
+    $r.thorium_navigate = (Cdp $page 'Page.navigate' @{ url = 'chrome://settings/' })
+    Start-Sleep -Seconds 6
+    $settings = @((Invoke-RestMethod 'http://127.0.0.1:9335/json/list' -TimeoutSec 10) | Where-Object { $_.url -like 'chrome://settings*' }) | Select-Object -First 1
+    if ($settings) {
+      $r.home_set = EvaluateAsync $settings "(async () => { const s = chrome.settingsPrivate; await s.setPref('homepage', 'https://example.org/thoron-home', ''); await s.setPref('homepage_is_newtabpage', false, ''); await s.setPref('browser.show_home_button', true, ''); await s.setPref('session.restore_on_startup', 4, ''); await s.setPref('session.startup_urls', ['https://example.org/thoron-start'], ''); return 'set'; })()"
+    }
   }
   Thoriums | ForEach-Object { $q = Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue; if ($q -and $q.MainWindowHandle -ne 0) { try { [void]$q.CloseMainWindow() } catch {} } }
   $end = (Get-Date).AddSeconds(30); while ((Thoriums) -and (Get-Date) -lt $end) { Start-Sleep -Seconds 1 }
@@ -195,6 +210,7 @@ try {
   }
   Mark 'the data'
   if ($tab) {
+    $r.thoron_settings = EvaluateAsync $tab "(async () => { const g = n => chrome.settingsPrivate.getPref(n).then(p => p.value); return JSON.stringify({ home: await g('homepage'), ntp: await g('homepage_is_newtabpage'), button: await g('browser.show_home_button'), startup: await g('session.restore_on_startup'), pages: await g('session.startup_urls') }); })()"
     $jar = Cdp $tab 'Network.getAllCookies' @{}
     $r.cookie_in_thoron = ($jar -match '"name":"thoron_import"') -and ($jar -match '"value":"came-along"')
   }
@@ -268,6 +284,11 @@ def problems(r: dict) -> dict[str, list[str]]:
     check("the report", "example.org" not in str(r.get("report")) and "came-along" not in str(r.get("report")),
           "the report holds an address or a value")
     check("the cookie", bool(r.get("cookie_in_thoron")), "the cookie Thorium set is not in Thoron's cookie jar")
+    start = _flags(r.get("thoron_settings"))
+    check("the start", start.get("home") == "https://example.org/thoron-home" and start.get("ntp") is False
+          and start.get("button") is True and start.get("startup") == 4
+          and start.get("pages") == ["https://example.org/thoron-start"],
+          f"Thoron's home page and startup pages are not Thorium's: {r.get('thoron_settings')!r}")
     if imported:                              # a missing report is the report's own finding
         check("the cookie", imported.get("cookies", 0) >= 1, "the report counts no cookie")
     return out

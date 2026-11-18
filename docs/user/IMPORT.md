@@ -12,7 +12,7 @@ were, so that browser keeps working and stays your backup.
 
 | From | What comes over | Section |
 |---|---|---|
-| Thorium, Chrome, Edge, Brave, Vivaldi, Opera, Opera GX, Chromium | Bookmarks, history, saved passwords and cookies (not those Chrome locks to itself), search engines, form entries, in Thoron's Settings | [1a](#1a-in-thorons-settings) |
+| Thorium, Chrome, Edge, Brave, Vivaldi, Opera, Opera GX, Chromium | Bookmarks, history, saved passwords and cookies (not those Chrome locks to itself), search engines, form entries, the home page and startup pages, in Thoron's Settings | [1a](#1a-in-thorons-settings) |
 | Thorium, same Windows account | Everything: bookmarks, history, saved passwords, cookies (you stay signed in), extensions, settings, open tabs and tab groups | [2](#2-thorium-the-whole-profile) |
 | Chrome, Thorium, Thoron | Open windows, tabs and tab groups (names, colours, collapsed or not), pinned tabs, each tab's back and forward history | [3](#3-open-tabs-and-tab-groups) |
 | Firefox | The same: open windows, tabs and tab groups, pinned tabs, each tab's history | [3](#from-firefox) |
@@ -25,7 +25,7 @@ were, so that browser keeps working and stays your backup.
 the tricks that do are what password-stealing programs use. Passwords come over through Chrome's own
 export (section 4). For cookies there is no such way, so sign in to your sites again in Thoron.
 
-Not yet: extensions and settings from Chrome, Edge, Brave, Vivaldi and Opera (section 6).
+Not yet: extensions from Chrome, Edge, Brave, Vivaldi and Opera (section 6).
 
 ## 1a. In Thoron's Settings
 
@@ -48,12 +48,18 @@ The bookmarks go into a folder of their own, "Imported from" and the browser's n
 cookies (**Cookies and site sign-ins**) come over when they belong to your Windows account; those that
 Chrome locks to itself (app-bound encryption) are left out and never forced. Cookies that end when the
 other browser closes, and expired ones, are left out; a cookie Thoron already has for the same site, name
-and path is replaced by the imported one. Open tabs, extensions and settings do not come over this way
-(sections 2 and 3 for Thorium's whole profile and for tabs).
+and path is replaced by the imported one. **Home page and startup pages** brings the home page (and
+whether the home button shows) and what the browser opens at its start: its last session, the New Tab
+page, or pages of its own, which then become Thoron's startup pages. Only web pages come over, never a
+script or a browser's internal page, and a setting that your organization's policy decides stays as the
+policy says. Check them afterwards in Thoron's Settings, **On startup** and **Appearance**: they are set
+exactly as the other browser had them. Open tabs and extensions do not come over this way (sections 2 and
+3 for Thorium's whole profile and for tabs).
 
 **The report.** Each import writes `Thoron import report.json` into the Thoron profile's folder (for an
 installed Thoron, `%LOCALAPPDATA%\Thoron\User Data\Default`), replacing the one before: when, from which
-browser, how many bookmarks, history entries, saved passwords, search engines and form entries came over,
+browser, how many bookmarks, history entries, saved passwords, cookies, search engines and form entries came over,
+whether a home page did and how many startup pages,
 and how many were left out and why (passwords and cookies locked by Chrome, in no format Thoron knows, or
 that did not decrypt; a damaged database). It holds counts and the browser's name only, never an address, a name, a
 password or any other value.
@@ -270,7 +276,7 @@ lists, own filters, trusted sites and switches with the file's. Thoron's own phi
 | What | Stage |
 |---|---|
 | An import screen in the installer | P3.13 |
-| Settings and extensions from Chrome, Edge, Brave, Vivaldi and Opera | P3.14 |
+| Extensions from Chrome, Edge, Brave, Vivaldi and Opera | P3.14 |
 | Tabs from Edge, Brave, Vivaldi and Opera, checked | P3.15 |
 | Taking over an upstream Thorium portable folder | P4.10 |
 | Linux: passwords imported from Thorium readable | P3.16 |

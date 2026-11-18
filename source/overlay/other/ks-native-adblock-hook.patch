@@ -676,16 +676,20 @@ index 02dbc0a2c2cf70d2bb15307f15f4b35ccd488b04..d5cf9f7efb61475b2673f3a843bc9ce2
          <message name="IDS_IMPORTER_LOCK_OK" desc="In Title Case: Text for OK button (to try importing again) on importer lock dialog">
            Try Again
 diff --git a/chrome/app/settings_strings.grdp b/chrome/app/settings_strings.grdp
-index 09348181debdd833c4c1aae1bfea68f08f799f3a..24a961aee8a3023c5ed1bb652f142f3520d9cbd3 100644
+index 09348181debdd833c4c1aae1bfea68f08f799f3a..7084c32695d6f03a808163ce9e8a467de2a0052e 100644
 --- a/chrome/app/settings_strings.grdp
 +++ b/chrome/app/settings_strings.grdp
-@@ -3721,6 +3721,10 @@
+@@ -3721,6 +3721,14 @@
        <message name="IDS_SETTINGS_IMPORT_AUTOFILL_FORM_DATA_CHECKBOX" desc="Checkbox for importing form data for autofill">
          Autofill form data
        </message>
 +      <!-- Thoron (ROADMAP P3.14): checkbox for importing cookies. -->
 +      <message name="IDS_SETTINGS_IMPORT_COOKIES_CHECKBOX" desc="Checkbox for importing cookies and signed-in sessions from another browser">
 +        Cookies and site sign-ins
++      </message>
++      <!-- Thoron (ROADMAP P3.14): checkbox for importing the home page and startup pages. -->
++      <message name="IDS_SETTINGS_IMPORT_STARTUP_CHECKBOX" desc="Checkbox for importing another browser's home page and the pages it opens at its start">
++        Home page and startup pages
 +      </message>
  
        <message name="IDS_SETTINGS_IMPORT_CHOOSE_FILE" desc="Text for the Choose File on dialog">
@@ -849,7 +853,7 @@ index ab3c100b747f5ec6244fa719272e29427f723280..0e3f94013c68b992b10e28345a196074
 +  </message>
  </grit-part>
 diff --git a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
-index a14e54eed88c57f7f0b4ebd6a6f4c352e94b7edd..801646b958a6cdaceea4d56fc6cfef849168641c 100644
+index a14e54eed88c57f7f0b4ebd6a6f4c352e94b7edd..75dbb8e6101f3eae7e03d459d05f38fa7ce9d433 100644
 --- a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
 +++ b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
 @@ -113,6 +113,7 @@
@@ -860,16 +864,18 @@ index a14e54eed88c57f7f0b4ebd6a6f4c352e94b7edd..801646b958a6cdaceea4d56fc6cfef84
  #include "components/subresource_filter/core/browser/subresource_filter_features.h"
  #include "components/subscription_eligibility/subscription_eligibility_service.h"
  #include "components/supervised_user/core/common/features.h"
-@@ -1300,6 +1301,8 @@ void AddImportDataStrings(content::WebUIDataSource* html_source) {
+@@ -1300,6 +1301,10 @@ void AddImportDataStrings(content::WebUIDataSource* html_source) {
        {"importSearch", IDS_SETTINGS_IMPORT_SEARCH_ENGINES_CHECKBOX},
        {"importAutofillFormData",
         IDS_SETTINGS_IMPORT_AUTOFILL_FORM_DATA_CHECKBOX},
 +      // Thoron (ROADMAP P3.14): cookies and site sign-ins.
 +      {"importCookies", IDS_SETTINGS_IMPORT_COOKIES_CHECKBOX},
++      // Thoron (ROADMAP P3.14): the home page and startup pages.
++      {"importStartup", IDS_SETTINGS_IMPORT_STARTUP_CHECKBOX},
        {"importChooseFile", IDS_SETTINGS_IMPORT_CHOOSE_FILE},
        {"importCommit", IDS_SETTINGS_IMPORT_COMMIT},
        {"noProfileFound", IDS_SETTINGS_IMPORT_NO_PROFILE_FOUND},
-@@ -4314,6 +4317,33 @@ void AddSiteSettingsStrings(content::WebUIDataSource* html_source,
+@@ -4314,6 +4319,33 @@ void AddSiteSettingsStrings(content::WebUIDataSource* html_source,
    // The exception placeholder should not be translated. See
    // crbug.com/40700443.
    html_source->AddString("addSiteExceptionPlaceholder", "[*.]example.com");
@@ -2442,19 +2448,21 @@ index b57d6384773d0cb86893859066b219dec90c6d70..79f4f51a573f145e90604d3ee56549a7
        base::FeatureList::IsEnabled(ntp_features::kNtpAnimatedDoodles) &&
        !gfx::Animation::PrefersReducedMotion();
 diff --git a/chrome/browser/ui/webui/settings/settings_ui.cc b/chrome/browser/ui/webui/settings/settings_ui.cc
-index 90f8e1a51584d6030950ff5627242e3fd6659874..858a536e2e1650a73407dedcbab7dc2dea304d8c 100644
+index 90f8e1a51584d6030950ff5627242e3fd6659874..343ca8bca1fa0661a76539d42a6afc7086e0d29f 100644
 --- a/chrome/browser/ui/webui/settings/settings_ui.cc
 +++ b/chrome/browser/ui/webui/settings/settings_ui.cc
-@@ -256,6 +256,8 @@ void SettingsUI::RegisterProfilePrefs(
+@@ -256,6 +256,10 @@ void SettingsUI::RegisterProfilePrefs(
    registry->RegisterBooleanPref(prefs::kImportDialogHistory, true);
    registry->RegisterBooleanPref(prefs::kImportDialogSavedPasswords, true);
    registry->RegisterBooleanPref(prefs::kImportDialogSearchEngine, true);
 +  // Thoron (ROADMAP P3.14): the "Cookies and site sign-ins" choice.
 +  registry->RegisterBooleanPref(prefs::kImportDialogCookies, true);
++  // Thoron (ROADMAP P3.14): the "Home page and startup pages" choice.
++  registry->RegisterBooleanPref(prefs::kImportDialogStartup, true);
    registry->RegisterDictionaryPref(prefs::kDeviceTabVisibilityHiddenSessions);
  }
  
-@@ -688,9 +690,13 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
+@@ -688,9 +692,13 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
    // Within the AI subpage are separate sections for Glic, for GEIC, and for all
    // other AI features. The visibility of these is separately controlled, but
    // we want to show the subpage if any of them are enabled.
@@ -27324,7 +27332,7 @@ index 6f0957d48299e596d4e4e79054f76aec52f77124..5e0736777d0a9c2606f6cb5d077eab12
    "+components/user_data_importer/mojom",
  ]
 diff --git a/chrome/browser/importer/external_process_importer_client.cc b/chrome/browser/importer/external_process_importer_client.cc
-index cf319714e5c89d052477e42686a5ccdcdfdf9f5f..a8826d2d7fb489b5bf84647d805746b5f4c065b9 100644
+index cf319714e5c89d052477e42686a5ccdcdfdf9f5f..4eace83a60613f83e628fa8db0eae028e480d81c 100644
 --- a/chrome/browser/importer/external_process_importer_client.cc
 +++ b/chrome/browser/importer/external_process_importer_client.cc
 @@ -9,6 +9,7 @@
@@ -27358,7 +27366,7 @@ index cf319714e5c89d052477e42686a5ccdcdfdf9f5f..a8826d2d7fb489b5bf84647d805746b5
  
    mojo::PendingRemote<user_data_importer::mojom::BookmarkHtmlParser>
        bookmark_html_parser;
-@@ -126,6 +136,33 @@ void ExternalProcessImporterClient::OnImportFinished(
+@@ -126,6 +136,35 @@ void ExternalProcessImporterClient::OnImportFinished(
    Cleanup();
  }
  
@@ -27382,6 +27390,8 @@ index cf319714e5c89d052477e42686a5ccdcdfdf9f5f..a8826d2d7fb489b5bf84647d805746b5
 +  left_out.Set("passwords_that_did_not_decrypt", report->passwords_failed);
 +  left_out.Set("cookies_locked_by_chrome", report->cookies_skipped_app_bound);
 +  left_out.Set("cookies_that_did_not_decrypt", report->cookies_failed);
++  imported.Set("home_page", report->home_page);
++  imported.Set("startup_pages", report->startup_pages);
 +  left_out.Set("damaged_databases", report->databases_refused);
 +  base::DictValue counts;
 +  counts.Set("imported", std::move(imported));
@@ -27392,7 +27402,7 @@ index cf319714e5c89d052477e42686a5ccdcdfdf9f5f..a8826d2d7fb489b5bf84647d805746b5
  void ExternalProcessImporterClient::OnImportItemStart(
      user_data_importer::ImportItem import_item) {
    if (cancelled_)
-@@ -257,6 +294,27 @@ void ExternalProcessImporterClient::OnAutofillFormDataImportGroup(
+@@ -257,6 +296,42 @@ void ExternalProcessImporterClient::OnAutofillFormDataImportGroup(
      bridge_->SetAutofillFormData(autofill_form_data_);
  }
  
@@ -27415,6 +27425,21 @@ index cf319714e5c89d052477e42686a5ccdcdfdf9f5f..a8826d2d7fb489b5bf84647d805746b5
 +  if (cookies_.size() >= total_cookies_count_) {
 +    bridge_->SetCookies(cookies_);
 +  }
++}
++
++// Thoron (ROADMAP P3.14): the home page and the startup choice and pages.
++void ExternalProcessImporterClient::OnThoronStartupImportReady(
++    const GURL& home_page,
++    bool home_page_is_new_tab_page,
++    int32_t show_home_button,
++    int32_t restore_on_startup,
++    const std::vector<GURL>& startup_pages) {
++  if (cancelled_) {
++    return;
++  }
++  bridge_->SetThoronStartup(home_page, home_page_is_new_tab_page,
++                            show_home_button, restore_on_startup,
++                            startup_pages);
 +}
 +
  ExternalProcessImporterClient::~ExternalProcessImporterClient() = default;
@@ -27717,7 +27742,7 @@ index d50675a79eb60f86b0278934884add02407a725a..85b761549bd1e0132eb0809d5e8cdae4
      case user_data_importer::TYPE_FIREFOX:
        metrics_type = IMPORTER_METRICS_FIREFOX3;
 diff --git a/chrome/browser/importer/in_process_importer_bridge.cc b/chrome/browser/importer/in_process_importer_bridge.cc
-index da614f0e7db5628e258f07fe0d7f2967dc1207f1..9a0c374c722852655d9c21c4daeeb27534da585a 100644
+index da614f0e7db5628e258f07fe0d7f2967dc1207f1..2627a46b712872419633e4367e50717f87acfc87 100644
 --- a/chrome/browser/importer/in_process_importer_bridge.cc
 +++ b/chrome/browser/importer/in_process_importer_bridge.cc
 @@ -53,6 +53,9 @@ history::VisitSource ConvertImporterVisitSourceToHistoryVisitSource(
@@ -27730,10 +27755,23 @@ index da614f0e7db5628e258f07fe0d7f2967dc1207f1..9a0c374c722852655d9c21c4daeeb275
    }
    NOTREACHED();
  }
-@@ -172,6 +175,12 @@ void InProcessImporterBridge::SetAutofillFormData(
+@@ -172,6 +175,25 @@ void InProcessImporterBridge::SetAutofillFormData(
    writer_->AddAutocompleteFormDataEntries(autocomplete_entries);
  }
  
++// Thoron (ROADMAP P3.14): the home page and the startup choice and pages, for the
++// profile's settings.
++void InProcessImporterBridge::SetThoronStartup(
++    const GURL& home_page,
++    bool home_page_is_new_tab_page,
++    int show_home_button,
++    int restore_on_startup,
++    const std::vector<GURL>& startup_pages) {
++  writer_->SetThoronStartup(home_page, home_page_is_new_tab_page,
++                            show_home_button, restore_on_startup,
++                            startup_pages);
++}
++
 +// Thoron (ROADMAP P3.14): hand the cookies to the profile's cookie store.
 +void InProcessImporterBridge::SetCookies(
 +    const std::vector<net::CanonicalCookie>& cookies) {
@@ -27786,7 +27824,7 @@ index b19a5aa8cee272d0c37e227e163f2481ac33b5f6..35d802902bc0bcc909d602e76ac802b4
  IPC_ENUM_TRAITS_MIN_MAX_VALUE(user_data_importer::ImporterType,
                                user_data_importer::TYPE_UNKNOWN,
 diff --git a/chrome/common/importer/profile_import.mojom b/chrome/common/importer/profile_import.mojom
-index 815b91161f772d93e6114b0843895cfd020275fb..41420d550bd5f1a8e6858c5527c0b0353c1fa035 100644
+index 815b91161f772d93e6114b0843895cfd020275fb..d1365e694ba8798b2a3f610ee9b4092fde612bfe 100644
 --- a/chrome/common/importer/profile_import.mojom
 +++ b/chrome/common/importer/profile_import.mojom
 @@ -7,6 +7,8 @@ module chrome.mojom;
@@ -27798,7 +27836,7 @@ index 815b91161f772d93e6114b0843895cfd020275fb..41420d550bd5f1a8e6858c5527c0b035
  import "url/mojom/url.mojom";
  
  [Native]
-@@ -57,6 +59,23 @@ struct ImportedPasswordForm {
+@@ -57,6 +59,25 @@ struct ImportedPasswordForm {
  // These are messages sent from the profile import process to the browser.
  // These messages send information about the status of the import and individual
  // import tasks.
@@ -27816,13 +27854,15 @@ index 815b91161f772d93e6114b0843895cfd020275fb..41420d550bd5f1a8e6858c5527c0b035
 +  int32 cookies;
 +  int32 cookies_skipped_app_bound;
 +  int32 cookies_failed;
++  int32 home_page;
++  int32 startup_pages;
 +  int32 databases_refused;
 +};
 +
  interface ProfileImportObserver {
    OnImportStart();
    OnImportFinished(bool succeeded, string error_msg);
-@@ -83,6 +102,14 @@ interface ProfileImportObserver {
+@@ -83,6 +104,21 @@ interface ProfileImportObserver {
    OnAutofillFormDataImportStart(uint32 total_autofill_form_data_entry_count);
    OnAutofillFormDataImportGroup(
        array<ImporterAutofillFormDataEntry> autofill_form_data_entry_group);
@@ -27831,6 +27871,13 @@ index 815b91161f772d93e6114b0843895cfd020275fb..41420d550bd5f1a8e6858c5527c0b035
 +  OnCookiesImportStart(uint32 total_cookies_count);
 +  OnCookiesImportGroup(array<network.mojom.CanonicalCookie> cookies_group);
 +
++  // Thoron (ROADMAP P3.14): the home page and the startup choice and pages.
++  OnThoronStartupImportReady(url.mojom.Url home_page,
++                             bool home_page_is_new_tab_page,
++                             int32 show_home_button,
++                             int32 restore_on_startup,
++                             array<url.mojom.Url> startup_pages);
++
 +  // Thoron (ROADMAP P3.14): sent once by the Chromium-family importer, before
 +  // OnImportFinished.
 +  OnThoronImportReport(ThoronImportReport report);
@@ -27838,10 +27885,10 @@ index 815b91161f772d93e6114b0843895cfd020275fb..41420d550bd5f1a8e6858c5527c0b035
  
  // This interface is used to control the import process.
 diff --git a/chrome/common/importer/importer_bridge.h b/chrome/common/importer/importer_bridge.h
-index 1738a3baff3e4a2f45de8c8c54c64e34156d1a1b..4cac9c43c5964349a3572297e1097591261f7b7a 100644
+index 1738a3baff3e4a2f45de8c8c54c64e34156d1a1b..f23e0534d7bf38d3cdad938c4610814a6a02fdad 100644
 --- a/chrome/common/importer/importer_bridge.h
 +++ b/chrome/common/importer/importer_bridge.h
-@@ -17,10 +17,31 @@
+@@ -17,10 +17,33 @@
  class GURL;
  struct ImporterAutofillFormDataEntry;
  
@@ -27867,13 +27914,15 @@ index 1738a3baff3e4a2f45de8c8c54c64e34156d1a1b..4cac9c43c5964349a3572297e1097591
 +  int cookies = 0;
 +  int cookies_skipped_app_bound = 0;
 +  int cookies_failed = 0;
++  int home_page = 0;
++  int startup_pages = 0;
 +  int databases_refused = 0;
 +};
 +
  class ImporterBridge : public base::RefCountedThreadSafe<ImporterBridge> {
   public:
    ImporterBridge();
-@@ -51,6 +72,11 @@ class ImporterBridge : public base::RefCountedThreadSafe<ImporterBridge> {
+@@ -51,6 +74,20 @@ class ImporterBridge : public base::RefCountedThreadSafe<ImporterBridge> {
    virtual void SetAutofillFormData(
        const std::vector<ImporterAutofillFormDataEntry>& entries) = 0;
  
@@ -27882,10 +27931,19 @@ index 1738a3baff3e4a2f45de8c8c54c64e34156d1a1b..4cac9c43c5964349a3572297e1097591
 +  // implement it.
 +  virtual void SetCookies(const std::vector<net::CanonicalCookie>& cookies) {}
 +
++  // Thoron (ROADMAP P3.14): the home page and what the browser opens at its
++  // start, from a Chromium-family profile: `restore_on_startup` -1 when the
++  // profile does not set it, `show_home_button` -1 likewise.
++  virtual void SetThoronStartup(const GURL& home_page,
++                                bool home_page_is_new_tab_page,
++                                int show_home_button,
++                                int restore_on_startup,
++                                const std::vector<GURL>& startup_pages) {}
++
    // Notifies the coordinator that the import operation has begun.
    virtual void NotifyStarted() = 0;
  
-@@ -71,6 +97,10 @@ class ImporterBridge : public base::RefCountedThreadSafe<ImporterBridge> {
+@@ -71,6 +108,10 @@ class ImporterBridge : public base::RefCountedThreadSafe<ImporterBridge> {
    // external import process, since the importer only needs a few strings.
    virtual std::u16string GetLocalizedString(int message_id) = 0;
  
@@ -27897,15 +27955,21 @@ index 1738a3baff3e4a2f45de8c8c54c64e34156d1a1b..4cac9c43c5964349a3572297e1097591
    friend class base::RefCountedThreadSafe<ImporterBridge>;
  
 diff --git a/chrome/utility/importer/external_process_importer_bridge.h b/chrome/utility/importer/external_process_importer_bridge.h
-index 2f36e248431a347761704a2020f0d2c7949526dd..f5b3ebdb490b3d5270b78f2164aca85b67ce035c 100644
+index 2f36e248431a347761704a2020f0d2c7949526dd..b82f391b124a4955404187033736744caf4bb696 100644
 --- a/chrome/utility/importer/external_process_importer_bridge.h
 +++ b/chrome/utility/importer/external_process_importer_bridge.h
-@@ -65,12 +65,17 @@ class ExternalProcessImporterBridge : public ImporterBridge {
+@@ -65,12 +65,23 @@ class ExternalProcessImporterBridge : public ImporterBridge {
    void SetAutofillFormData(
        const std::vector<ImporterAutofillFormDataEntry>& entries) override;
  
 +  // Thoron (ROADMAP P3.14): cookies and site sign-ins.
 +  void SetCookies(const std::vector<net::CanonicalCookie>& cookies) override;
++  // Thoron (ROADMAP P3.14): the home page and the startup choice and pages.
++  void SetThoronStartup(const GURL& home_page,
++                        bool home_page_is_new_tab_page,
++                        int show_home_button,
++                        int restore_on_startup,
++                        const std::vector<GURL>& startup_pages) override;
 +
    void NotifyStarted() override;
    void NotifyItemStarted(user_data_importer::ImportItem item) override;
@@ -27919,7 +27983,7 @@ index 2f36e248431a347761704a2020f0d2c7949526dd..f5b3ebdb490b3d5270b78f2164aca85b
  
   private:
 diff --git a/chrome/utility/importer/external_process_importer_bridge.cc b/chrome/utility/importer/external_process_importer_bridge.cc
-index 67092331c3801deddd2848162f5e4f3d41bff257..ffc0025161df3012078b9b3a646ecc39a3dc075c 100644
+index 67092331c3801deddd2848162f5e4f3d41bff257..6842180c228d3bf843bd1bc5d472357c6919594c 100644
 --- a/chrome/utility/importer/external_process_importer_bridge.cc
 +++ b/chrome/utility/importer/external_process_importer_bridge.cc
 @@ -17,6 +17,8 @@
@@ -27940,7 +28004,7 @@ index 67092331c3801deddd2848162f5e4f3d41bff257..ffc0025161df3012078b9b3a646ecc39
  
  } // namespace
  
-@@ -135,6 +139,25 @@ void ExternalProcessImporterBridge::SetAutofillFormData(
+@@ -135,6 +139,37 @@ void ExternalProcessImporterBridge::SetAutofillFormData(
    DCHECK_EQ(0, autofill_form_data_entries_left);
  }
  
@@ -27963,10 +28027,22 @@ index 67092331c3801deddd2848162f5e4f3d41bff257..ffc0025161df3012078b9b3a646ecc39
 +  DCHECK_EQ(0, cookies_left);
 +}
 +
++// Thoron (ROADMAP P3.14): the home page and the startup choice and pages.
++void ExternalProcessImporterBridge::SetThoronStartup(
++    const GURL& home_page,
++    bool home_page_is_new_tab_page,
++    int show_home_button,
++    int restore_on_startup,
++    const std::vector<GURL>& startup_pages) {
++  observer_->OnThoronStartupImportReady(home_page, home_page_is_new_tab_page,
++                                        show_home_button, restore_on_startup,
++                                        startup_pages);
++}
++
  void ExternalProcessImporterBridge::NotifyStarted() {
    observer_->OnImportStart();
  }
-@@ -149,6 +172,25 @@ void ExternalProcessImporterBridge::NotifyItemEnded(
+@@ -149,6 +184,27 @@ void ExternalProcessImporterBridge::NotifyItemEnded(
    observer_->OnImportItemFinished(item);
  }
  
@@ -27985,6 +28061,8 @@ index 67092331c3801deddd2848162f5e4f3d41bff257..ffc0025161df3012078b9b3a646ecc39
 +  report->cookies = counts.cookies;
 +  report->cookies_skipped_app_bound = counts.cookies_skipped_app_bound;
 +  report->cookies_failed = counts.cookies_failed;
++  report->home_page = counts.home_page;
++  report->startup_pages = counts.startup_pages;
 +  report->databases_refused = counts.databases_refused;
 +  observer_->OnThoronImportReport(std::move(report));
 +}
@@ -27993,10 +28071,10 @@ index 67092331c3801deddd2848162f5e4f3d41bff257..ffc0025161df3012078b9b3a646ecc39
    observer_->OnImportFinished(true, std::string());
  }
 diff --git a/chrome/browser/importer/external_process_importer_client.h b/chrome/browser/importer/external_process_importer_client.h
-index 42b466d3ce66beb8cbd6af2ac11d52b4e03507d5..c46575a7f16b2a05ab74a8e6bb8de8839243bf65 100644
+index 42b466d3ce66beb8cbd6af2ac11d52b4e03507d5..de808491ff6c4e1edcf8f7dd4e930d18f21765ca 100644
 --- a/chrome/browser/importer/external_process_importer_client.h
 +++ b/chrome/browser/importer/external_process_importer_client.h
-@@ -78,6 +78,12 @@ class ExternalProcessImporterClient
+@@ -78,6 +78,18 @@ class ExternalProcessImporterClient
        bool unique_on_host_and_path) override;
    void OnAutofillFormDataImportStart(
        uint32_t total_autofill_form_data_entry_count) override;
@@ -28004,12 +28082,18 @@ index 42b466d3ce66beb8cbd6af2ac11d52b4e03507d5..c46575a7f16b2a05ab74a8e6bb8de883
 +  void OnCookiesImportStart(uint32_t total_cookies_count) override;
 +  void OnCookiesImportGroup(
 +      const std::vector<net::CanonicalCookie>& cookies_group) override;
++  // Thoron (ROADMAP P3.14): the home page and the startup choice and pages.
++  void OnThoronStartupImportReady(const GURL& home_page,
++                                  bool home_page_is_new_tab_page,
++                                  int32_t show_home_button,
++                                  int32_t restore_on_startup,
++                                  const std::vector<GURL>& startup_pages) override;
 +  // Thoron (ROADMAP P3.14): the counts for the import's local report.
 +  void OnThoronImportReport(chrome::mojom::ThoronImportReportPtr report) override;
    void OnAutofillFormDataImportGroup(
        const std::vector<ImporterAutofillFormDataEntry>&
            autofill_form_data_entry_group) override;
-@@ -105,6 +111,8 @@ class ExternalProcessImporterClient
+@@ -105,6 +117,8 @@ class ExternalProcessImporterClient
    std::vector<user_data_importer::ImportedBookmarkEntry> bookmarks_;
    favicon_base::FaviconUsageDataList favicons_;
    std::vector<ImporterAutofillFormDataEntry> autofill_form_data_;
@@ -28018,7 +28102,7 @@ index 42b466d3ce66beb8cbd6af2ac11d52b4e03507d5..c46575a7f16b2a05ab74a8e6bb8de883
  
    // Usually some variation on IDS_BOOKMARK_GROUP_...; the name of the folder
    // under which imported bookmarks will be placed.
-@@ -122,6 +130,9 @@ class ExternalProcessImporterClient
+@@ -122,6 +136,9 @@ class ExternalProcessImporterClient
    // Total number of autofill form data entries to import.
    size_t total_autofill_form_data_entry_count_;
  
@@ -28043,21 +28127,27 @@ index 9aecb7847e3f707853bdc2db0fd05bc41223a0b0..cb43492c09c6a2777bc282364e3bb64f
    ]
  
 diff --git a/chrome/browser/importer/in_process_importer_bridge.h b/chrome/browser/importer/in_process_importer_bridge.h
-index 61190844025f04ef83bcfe2c056f9f61661ca132..943a8e0405c43dd38417415cba066d61a33442f0 100644
+index 61190844025f04ef83bcfe2c056f9f61661ca132..bf1ddebce6dcd2fc2a64fccf6e1e4abb60e461a2 100644
 --- a/chrome/browser/importer/in_process_importer_bridge.h
 +++ b/chrome/browser/importer/in_process_importer_bridge.h
-@@ -52,6 +52,9 @@ class InProcessImporterBridge : public ImporterBridge {
+@@ -52,6 +52,15 @@ class InProcessImporterBridge : public ImporterBridge {
    void SetAutofillFormData(
        const std::vector<ImporterAutofillFormDataEntry>& entries) override;
  
 +  // Thoron (ROADMAP P3.14): cookies and site sign-ins.
 +  void SetCookies(const std::vector<net::CanonicalCookie>& cookies) override;
++  // Thoron (ROADMAP P3.14): the home page and the startup choice and pages.
++  void SetThoronStartup(const GURL& home_page,
++                        bool home_page_is_new_tab_page,
++                        int show_home_button,
++                        int restore_on_startup,
++                        const std::vector<GURL>& startup_pages) override;
 +
    void NotifyStarted() override;
    void NotifyItemStarted(user_data_importer::ImportItem item) override;
    void NotifyItemEnded(user_data_importer::ImportItem item) override;
 diff --git a/chrome/browser/importer/profile_writer.h b/chrome/browser/importer/profile_writer.h
-index f609d99dde302a8226a246c9b51870c8f27ffab7..c02cf6dabd18f55daa5cac4e6a2f4d22cab45e1b 100644
+index f609d99dde302a8226a246c9b51870c8f27ffab7..c4b16aebfda183b49251930ba7c3fd03237ce7bf 100644
 --- a/chrome/browser/importer/profile_writer.h
 +++ b/chrome/browser/importer/profile_writer.h
 @@ -22,6 +22,10 @@ namespace autofill {
@@ -28071,7 +28161,7 @@ index f609d99dde302a8226a246c9b51870c8f27ffab7..c02cf6dabd18f55daa5cac4e6a2f4d22
  namespace password_manager {
  struct PasswordForm;
  }  // namespace password_manager
-@@ -92,6 +96,10 @@ class ProfileWriter : public base::RefCountedThreadSafe<ProfileWriter> {
+@@ -92,6 +96,18 @@ class ProfileWriter : public base::RefCountedThreadSafe<ProfileWriter> {
    virtual void AddAutocompleteFormDataEntries(
        const std::vector<autofill::AutocompleteEntry>& autocomplete_entries);
  
@@ -28079,11 +28169,19 @@ index f609d99dde302a8226a246c9b51870c8f27ffab7..c02cf6dabd18f55daa5cac4e6a2f4d22
 +  // default network context cookie manager.
 +  virtual void AddCookies(const std::vector<net::CanonicalCookie>& cookies);
 +
++  // Thoron (ROADMAP P3.14): sets the home page, the home button and what the
++  // browser opens at its start, each only when no policy decides it.
++  virtual void SetThoronStartup(const GURL& home_page,
++                                bool home_page_is_new_tab_page,
++                                int show_home_button,
++                                int restore_on_startup,
++                                const std::vector<GURL>& startup_pages);
++
   protected:
    friend class base::RefCountedThreadSafe<ProfileWriter>;
  
 diff --git a/chrome/browser/importer/profile_writer.cc b/chrome/browser/importer/profile_writer.cc
-index a29027ec2b250d2214cc0742d018a6bec414dae0..139999ee3d3a4704cb7d273ff11624ef8161afc6 100644
+index a29027ec2b250d2214cc0742d018a6bec414dae0..c7c7586ad59052687ed0bd1c0ac91f0953206971 100644
 --- a/chrome/browser/importer/profile_writer.cc
 +++ b/chrome/browser/importer/profile_writer.cc
 @@ -11,6 +11,7 @@
@@ -28107,7 +28205,7 @@ index a29027ec2b250d2214cc0742d018a6bec414dae0..139999ee3d3a4704cb7d273ff11624ef
  #include "components/autofill/core/browser/webdata/autofill_webdata_service.h"
  #include "components/bookmarks/browser/bookmark_model.h"
  #include "components/bookmarks/browser/bookmark_node.h"
-@@ -338,4 +345,32 @@ void ProfileWriter::AddAutocompleteFormDataEntries(
+@@ -338,4 +345,68 @@ void ProfileWriter::AddAutocompleteFormDataEntries(
      web_data_service->UpdateAutocompleteEntries(autocomplete_entries);
  }
  
@@ -28115,6 +28213,42 @@ index a29027ec2b250d2214cc0742d018a6bec414dae0..139999ee3d3a4704cb7d273ff11624ef
 +// default network context. SetCanonicalCookie replaces a cookie with the same
 +// name, domain and path, so an existing cookie Thoron already holds for the
 +// same key is overwritten; see the import notes.
++// Thoron (ROADMAP P3.14): the imported home page and startup choice; a setting
++// a policy decides, or one the profile did not set, stays as it is. The
++// startup pages are only set with the choice to open them.
++void ProfileWriter::SetThoronStartup(const GURL& home_page,
++                                     bool home_page_is_new_tab_page,
++                                     int show_home_button,
++                                     int restore_on_startup,
++                                     const std::vector<GURL>& startup_pages) {
++  CHECK(profile_, base::NotFatalUntil::M161);
++  PrefService* prefs = profile_->GetPrefs();
++  auto free = [prefs](const char* name) {
++    const PrefService::Preference* pref = prefs->FindPreference(name);
++    return pref && pref->IsUserModifiable();
++  };
++  if (home_page.is_valid() && free(prefs::kHomePage) &&
++      free(prefs::kHomePageIsNewTabPage)) {
++    prefs->SetString(prefs::kHomePage, home_page.spec());
++    prefs->SetBoolean(prefs::kHomePageIsNewTabPage, home_page_is_new_tab_page);
++  }
++  if (show_home_button >= 0 && free(prefs::kShowHomeButton)) {
++    prefs->SetBoolean(prefs::kShowHomeButton, show_home_button == 1);
++  }
++  if (restore_on_startup >= 0 && free(prefs::kRestoreOnStartup) &&
++      (restore_on_startup != 4 ||
++       (!startup_pages.empty() && free(prefs::kURLsToRestoreOnStartup)))) {
++    if (restore_on_startup == 4) {
++      base::ListValue pages;
++      for (const GURL& page : startup_pages) {
++        pages.Append(page.spec());
++      }
++      prefs->SetList(prefs::kURLsToRestoreOnStartup, std::move(pages));
++    }
++    prefs->SetInteger(prefs::kRestoreOnStartup, restore_on_startup);
++  }
++}
++
 +void ProfileWriter::AddCookies(
 +    const std::vector<net::CanonicalCookie>& cookies) {
 +  CHECK(profile_);
@@ -28141,37 +28275,42 @@ index a29027ec2b250d2214cc0742d018a6bec414dae0..139999ee3d3a4704cb7d273ff11624ef
 +
  ProfileWriter::~ProfileWriter() = default;
 diff --git a/chrome/common/pref_names.h b/chrome/common/pref_names.h
-index 980cb7353f1faf7f597b29868a0116267877c13e..4eb4ec46c126b969bc2468294c507152b93f04cf 100644
+index 980cb7353f1faf7f597b29868a0116267877c13e..4c266ab7c2c3dbd8aa95c1bee20c1aee87c9bc69 100644
 --- a/chrome/common/pref_names.h
 +++ b/chrome/common/pref_names.h
-@@ -916,6 +916,8 @@ inline constexpr char kImportDialogSavedPasswords[] =
+@@ -916,6 +916,10 @@ inline constexpr char kImportDialogSavedPasswords[] =
      "import_dialog_saved_passwords";
  inline constexpr char kImportDialogSearchEngine[] =
      "import_dialog_search_engine";
 +// Thoron (ROADMAP P3.14): remembers the "Cookies and site sign-ins" choice.
 +inline constexpr char kImportDialogCookies[] = "import_dialog_cookies";
++// Thoron (ROADMAP P3.14): remembers the "Home page and startup pages" choice.
++inline constexpr char kImportDialogStartup[] = "import_dialog_startup";
  
  // A dictionary mapping foreign session tags (see
  // `sync_sessions::SyncedSession::GetSessionTag()`) to `true` for synced devices
 diff --git a/chrome/browser/extensions/api/settings_private/prefs_util.cc b/chrome/browser/extensions/api/settings_private/prefs_util.cc
-index 98d7b6df1cd57d393e0d146f62ab58580edffd90..9166eebf66734a9f9b40d26e53551468e2677e5d 100644
+index 98d7b6df1cd57d393e0d146f62ab58580edffd90..2131ca05c4fa5f46fc5e1447f2b777d4c7bd73aa 100644
 --- a/chrome/browser/extensions/api/settings_private/prefs_util.cc
 +++ b/chrome/browser/extensions/api/settings_private/prefs_util.cc
-@@ -1258,6 +1258,9 @@ const PrefsUtil::TypedPrefMap& PrefsUtil::GetAllowlistedKeys() {
+@@ -1258,6 +1258,12 @@ const PrefsUtil::TypedPrefMap& PrefsUtil::GetAllowlistedKeys() {
        settings_api::PrefType::kBoolean;
    (*s_allowlist)[::prefs::kImportDialogSearchEngine] =
        settings_api::PrefType::kBoolean;
 +  // Thoron (ROADMAP P3.14): the "Cookies and site sign-ins" choice.
++  // Thoron (ROADMAP P3.14): the "Home page and startup pages" choice.
++  (*s_allowlist)[::prefs::kImportDialogStartup] =
++      settings_api::PrefType::kBoolean;
 +  (*s_allowlist)[::prefs::kImportDialogCookies] =
 +      settings_api::PrefType::kBoolean;
  #endif  // BUILDFLAG(IS_CHROMEOS)
  
    // Supervised Users.  This setting is queried in our Tast tests (b/241943380).
 diff --git a/chrome/browser/ui/webui/settings/import_data_handler.cc b/chrome/browser/ui/webui/settings/import_data_handler.cc
-index 9e8523ea452d31c56e1109ef18818e210889e5ee..8ca7018f1a68036e6f56d0f26c25f85a6f559c51 100644
+index 9e8523ea452d31c56e1109ef18818e210889e5ee..fe54ff3828b0e18ca11eaa51768e8f2495bb4951 100644
 --- a/chrome/browser/ui/webui/settings/import_data_handler.cc
 +++ b/chrome/browser/ui/webui/settings/import_data_handler.cc
-@@ -150,6 +150,10 @@ void ImportDataHandler::HandleImportData(const base::ListValue& args) {
+@@ -150,6 +150,14 @@ void ImportDataHandler::HandleImportData(const base::ListValue& args) {
    if (*type_dict.FindBool(prefs::kImportDialogSearchEngine)) {
      selected_items |= user_data_importer::SEARCH_ENGINES;
    }
@@ -28179,50 +28318,61 @@ index 9e8523ea452d31c56e1109ef18818e210889e5ee..8ca7018f1a68036e6f56d0f26c25f85a
 +  if (type_dict.FindBool(prefs::kImportDialogCookies).value_or(false)) {
 +    selected_items |= user_data_importer::COOKIES;
 +  }
++  // Thoron (ROADMAP P3.14): the home page and startup pages.
++  if (type_dict.FindBool(prefs::kImportDialogStartup).value_or(false)) {
++    selected_items |= user_data_importer::HOME_PAGE;
++  }
  
    const user_data_importer::SourceProfile& source_profile =
        importer_list_->GetSourceProfileAt(browser_index);
-@@ -231,6 +235,9 @@ void ImportDataHandler::SendBrowserProfileData(const std::string& callback_id) {
+@@ -231,6 +239,12 @@ void ImportDataHandler::SendBrowserProfileData(const std::string& callback_id) {
      browser_profile.Set(
          "autofillFormData",
          (browser_services & user_data_importer::AUTOFILL_FORM_DATA) != 0);
 +    // Thoron (ROADMAP P3.14): cookies and site sign-ins.
 +    browser_profile.Set(
 +        "cookies", (browser_services & user_data_importer::COOKIES) != 0);
++    // Thoron (ROADMAP P3.14): the home page and startup pages.
++    browser_profile.Set(
++        "startup", (browser_services & user_data_importer::HOME_PAGE) != 0);
  
      browser_profiles.Append(std::move(browser_profile));
    }
 diff --git a/chrome/browser/resources/settings/people_page/import_data_browser_proxy.ts b/chrome/browser/resources/settings/people_page/import_data_browser_proxy.ts
-index ca628e702953f73b9fbebcdc716b845c7978f1ba..dad0005b2b462a22df281ceee2ed497b013df32e 100644
+index ca628e702953f73b9fbebcdc716b845c7978f1ba..58f3c31c9e9ff18073debfd6fe638e6b0ac23063 100644
 --- a/chrome/browser/resources/settings/people_page/import_data_browser_proxy.ts
 +++ b/chrome/browser/resources/settings/people_page/import_data_browser_proxy.ts
-@@ -19,6 +19,8 @@ export interface BrowserProfile {
+@@ -19,6 +19,10 @@ export interface BrowserProfile {
    passwords: boolean;
    search: boolean;
    autofillFormData: boolean;
 +  // Thoron (ROADMAP P3.14): cookies and site sign-ins.
 +  cookies: boolean;
++  // Thoron (ROADMAP P3.14): the home page and startup pages.
++  startup: boolean;
  }
  
  /**
 diff --git a/chrome/browser/resources/settings/people_page/import_data_dialog.ts b/chrome/browser/resources/settings/people_page/import_data_dialog.ts
-index 43d7734a9a015c630c9aae7c62169cb48299cbaf..139ac1231d5688c5456e84d6b5fd2f9ca9ac1315 100644
+index 43d7734a9a015c630c9aae7c62169cb48299cbaf..e6fdff2ca7e1575ae1c1d062bd4aeb023c81654f 100644
 --- a/chrome/browser/resources/settings/people_page/import_data_dialog.ts
 +++ b/chrome/browser/resources/settings/people_page/import_data_dialog.ts
-@@ -78,6 +78,8 @@ export class SettingsImportDataDialogElement extends
+@@ -78,6 +78,10 @@ export class SettingsImportDataDialogElement extends
      passwords: false,
      search: false,
      autofillFormData: false,
 +    // Thoron (ROADMAP P3.14): cookies and site sign-ins.
 +    cookies: false,
++    // Thoron (ROADMAP P3.14): the home page and startup pages.
++    startup: false,
    };
    protected accessor noImportDataTypeSelected_: boolean = false;
    protected accessor importStatus_: ImportDataStatus = ImportDataStatus.INITIAL;
 diff --git a/chrome/browser/resources/settings/people_page/import_data_dialog.html.ts b/chrome/browser/resources/settings/people_page/import_data_dialog.html.ts
-index 89321068222f0387855a126a3fd8ea2deca1a4bf..725da496739da3cfc67f59c9c4b446635ce27f83 100644
+index 89321068222f0387855a126a3fd8ea2deca1a4bf..38af6077c7312c9872d4c0d56ca7a67ae65f6d17 100644
 --- a/chrome/browser/resources/settings/people_page/import_data_dialog.html.ts
 +++ b/chrome/browser/resources/settings/people_page/import_data_dialog.html.ts
-@@ -70,6 +70,12 @@ export function getHtml(this: SettingsImportDataDialogElement) {
+@@ -70,6 +70,18 @@ export function getHtml(this: SettingsImportDataDialogElement) {
                  pref-key="import_dialog_autofill_form_data"
                  label="$i18n{importAutofillFormData}" no-set-pref>
              </settings-checkbox>
@@ -28231,6 +28381,12 @@ index 89321068222f0387855a126a3fd8ea2deca1a4bf..725da496739da3cfc67f59c9c4b44663
 +                ?hidden="${!this.selected_.cookies}"
 +                pref-key="import_dialog_cookies"
 +                label="$i18n{importCookies}" no-set-pref>
++            </settings-checkbox>
++            <!-- Thoron (ROADMAP P3.14): the home page and startup pages. -->
++            <settings-checkbox id="importDialogStartup"
++                ?hidden="${!this.selected_.startup}"
++                pref-key="import_dialog_startup"
++                label="$i18n{importStartup}" no-set-pref>
 +            </settings-checkbox>
            </div>
          </div>
@@ -28638,10 +28794,10 @@ index 0000000000000000000000000000000000000000..05d9b3c2fe8f46afc5448b3c22d7568b
 +#endif  // CHROME_BROWSER_UI_WEBUI_THORON_WELCOME_UI_H_
 diff --git a/chrome/utility/importer/chromium_family_importer_win.cc b/chrome/utility/importer/chromium_family_importer_win.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..3880d31206a60b4a0436da60f56a781aa27357de
+index 0000000000000000000000000000000000000000..0a52ef92b0043517bebb926862da8ececdd29d06
 --- /dev/null
 +++ b/chrome/utility/importer/chromium_family_importer_win.cc
-@@ -0,0 +1,225 @@
+@@ -0,0 +1,235 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -28776,6 +28932,14 @@ index 0000000000000000000000000000000000000000..3880d31206a60b4a0436da60f56a781a
 +    }
 +  }
 +
++  void SetStartupSettings(const cf::ImportedStartupSettings& settings) override {
++    bridge_->SetThoronStartup(settings.home_page,
++                              settings.home_page_is_new_tab_page,
++                              settings.show_home_button,
++                              settings.restore_on_startup,
++                              settings.startup_pages);
++  }
++
 +  void SetCookies(const std::vector<cf::ImportedCookie>& cookies) override {
 +    std::vector<net::CanonicalCookie> converted;
 +    converted.reserve(cookies.size());
@@ -28839,7 +29003,7 @@ index 0000000000000000000000000000000000000000..3880d31206a60b4a0436da60f56a781a
 +      user_data_importer::HISTORY, user_data_importer::FAVORITES,
 +      user_data_importer::SEARCH_ENGINES,
 +      user_data_importer::AUTOFILL_FORM_DATA, user_data_importer::PASSWORDS,
-+      user_data_importer::COOKIES};
++      user_data_importer::COOKIES, user_data_importer::HOME_PAGE};
 +  cf::ChromiumFamilyReader::Stats stats;
 +  for (user_data_importer::ImportItem item : kOrder) {
 +    if (!(items & item) || cancelled()) {
@@ -28863,6 +29027,8 @@ index 0000000000000000000000000000000000000000..3880d31206a60b4a0436da60f56a781a
 +  counts.cookies = stats.cookies;
 +  counts.cookies_skipped_app_bound = stats.cookies_skipped_app_bound;
 +  counts.cookies_failed = stats.cookies_failed;
++  counts.home_page = stats.home_page;
++  counts.startup_pages = stats.startup_pages;
 +  counts.databases_refused = stats.databases_refused;
 +  bridge_->ReportThoronImport(counts);
 +  bridge_->NotifyEnded();
@@ -28980,7 +29146,7 @@ index 0000000000000000000000000000000000000000..fc6697a3c130475f0f6791cbad053645
 +]
 diff --git a/components/user_data_importer/chromium_family/browser_detection.cc b/components/user_data_importer/chromium_family/browser_detection.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..b9bd3010ea28a58acce129d815004352256cf8e1
+index 0000000000000000000000000000000000000000..acda963f25a283e14283dcceb7a091ce5feb432e
 --- /dev/null
 +++ b/components/user_data_importer/chromium_family/browser_detection.cc
 @@ -0,0 +1,207 @@
@@ -29177,7 +29343,7 @@ index 0000000000000000000000000000000000000000..b9bd3010ea28a58acce129d815004352
 +
 +uint16_t SupportedItems() {
 +  return FAVORITES | HISTORY | PASSWORDS | SEARCH_ENGINES |
-+         AUTOFILL_FORM_DATA | COOKIES;
++         AUTOFILL_FORM_DATA | COOKIES | HOME_PAGE;
 +}
 +
 +bool IsBrowserRunning(const base::FilePath& user_data) {
@@ -29463,10 +29629,10 @@ index 0000000000000000000000000000000000000000..215cfb4d69abb60ca927e50f84428e45
 +}  // namespace user_data_importer::chromium_family
 diff --git a/components/user_data_importer/chromium_family/chromium_family_import_bridge.h b/components/user_data_importer/chromium_family/chromium_family_import_bridge.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..104891f666b37f22a60ba5da80c710e698ba3b8f
+index 0000000000000000000000000000000000000000..4b4d3619413fe5d2fb3fcca610cd6c49922e31e1
 --- /dev/null
 +++ b/components/user_data_importer/chromium_family/chromium_family_import_bridge.h
-@@ -0,0 +1,82 @@
+@@ -0,0 +1,103 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -29475,6 +29641,8 @@ index 0000000000000000000000000000000000000000..104891f666b37f22a60ba5da80c710e6
 +
 +#include <string>
 +#include <vector>
++
++#include "url/gurl.h"
 +
 +#include "base/time/time.h"
 +#include "components/user_data_importer/common/imported_bookmark_entry.h"
@@ -29499,6 +29667,23 @@ index 0000000000000000000000000000000000000000..104891f666b37f22a60ba5da80c710e6
 +// //net; the importer glue builds the CanonicalCookie. The enum-like fields
 +// carry the browser's on-disk integer values (the same the cookie database
 +// stores), which the glue maps to net's enums.
++// The home page and what the browser opens at its start. Only web pages
++// (http, https, file); a value the profile does not set stays empty or -1.
++struct ImportedStartupSettings {
++  ImportedStartupSettings();
++  ImportedStartupSettings(const ImportedStartupSettings&);
++  ~ImportedStartupSettings();
++
++  GURL home_page;
++  bool home_page_is_new_tab_page = true;
++  // -1: not set in the profile, else 0 or 1.
++  int show_home_button = -1;
++  // session.restore_on_startup: 1 the last session, 4 the pages below, 5 the
++  // new tab page; -1 not set.
++  int restore_on_startup = -1;
++  std::vector<GURL> startup_pages;
++};
++
 +struct ImportedCookie {
 +  std::string name;
 +  std::string value;
@@ -29544,6 +29729,8 @@ index 0000000000000000000000000000000000000000..104891f666b37f22a60ba5da80c710e6
 +      const std::vector<ImportedAutofillEntry>& entries) = 0;
 +
 +  virtual void SetCookies(const std::vector<ImportedCookie>& cookies) = 0;
++
++  virtual void SetStartupSettings(const ImportedStartupSettings& settings) = 0;
 +};
 +
 +}  // namespace user_data_importer::chromium_family
@@ -29551,10 +29738,10 @@ index 0000000000000000000000000000000000000000..104891f666b37f22a60ba5da80c710e6
 +#endif  // COMPONENTS_USER_DATA_IMPORTER_CHROMIUM_FAMILY_CHROMIUM_FAMILY_IMPORT_BRIDGE_H_
 diff --git a/components/user_data_importer/chromium_family/chromium_family_reader.cc b/components/user_data_importer/chromium_family/chromium_family_reader.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..f8a71d1b985429e5c22759ec814b52ad82298e08
+index 0000000000000000000000000000000000000000..edbe2e6513831fb4acd22ee396075d1aea2bac27
 --- /dev/null
 +++ b/components/user_data_importer/chromium_family/chromium_family_reader.cc
-@@ -0,0 +1,578 @@
+@@ -0,0 +1,659 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -29570,6 +29757,7 @@ index 0000000000000000000000000000000000000000..f8a71d1b985429e5c22759ec814b52ad
 +#include "base/strings/utf_string_conversions.h"
 +#include "base/time/time.h"
 +#include "base/values.h"
++#include <optional>
 +#include "crypto/hash.h"
 +#include "sql/database.h"
 +#include "sql/statement.h"
@@ -29592,6 +29780,12 @@ index 0000000000000000000000000000000000000000..f8a71d1b985429e5c22759ec814b52ad
 +constexpr base::FilePath::CharType kLocalStateFile[] = L"Local State";
 +constexpr base::FilePath::CharType kNetworkDir[] = L"Network";
 +constexpr base::FilePath::CharType kCookiesFile[] = L"Cookies";
++
++// The home page and startup pages: web pages only (http, https, file); a
++// script or an internal page is never set as one.
++bool IsWebPage(const GURL& url) {
++  return url.is_valid() && (url.SchemeIsHTTPOrHTTPS() || url.SchemeIsFile());
++}
 +
 +// A URL is worth importing only if it parses and is not an internal page.
 +bool CanImportURL(const GURL& url) {
@@ -29775,7 +29969,81 @@ index 0000000000000000000000000000000000000000..f8a71d1b985429e5c22759ec814b52ad
 +  if (items & COOKIES) {
 +    ImportCookies(bridge);
 +  }
++  if (items & HOME_PAGE) {
++    ImportStartup(bridge);
++  }
 +  return stats_;
++}
++
++ImportedStartupSettings::ImportedStartupSettings() = default;
++ImportedStartupSettings::ImportedStartupSettings(const ImportedStartupSettings&) =
++    default;
++ImportedStartupSettings::~ImportedStartupSettings() = default;
++
++// The home page and the startup choice, from a copy of the profile's
++// Preferences (and Secure Preferences, where some browsers keep them). Nothing
++// else is read from those files.
++void ChromiumFamilyReader::ImportStartup(ChromiumFamilyImportBridge* bridge) {
++  ImportedStartupSettings settings;
++  bool found = false;
++  for (const char* name : {"Preferences", "Secure Preferences"}) {
++    const base::FilePath copy =
++        CopyForReading(options_.profile_path.AppendASCII(name));
++    std::string text;
++    if (copy.empty() ||
++        !base::ReadFileToStringWithMaxSize(copy, &text, 32 * 1024 * 1024)) {
++      continue;
++    }
++    std::optional<base::Value> read = base::JSONReader::Read(
++        text, base::JSON_PARSE_RFC);
++    const base::DictValue* prefs = read ? read->GetIfDict() : nullptr;
++    if (!prefs) {
++      continue;
++    }
++    if (const std::string* home = prefs->FindString("homepage")) {
++      const GURL url(*home);
++      if (IsWebPage(url)) {
++        settings.home_page = url;
++        found = true;
++      }
++    }
++    if (std::optional<bool> ntp = prefs->FindBool("homepage_is_newtabpage")) {
++      settings.home_page_is_new_tab_page = *ntp;
++    }
++    if (std::optional<bool> button =
++            prefs->FindBoolByDottedPath("browser.show_home_button")) {
++      settings.show_home_button = *button ? 1 : 0;
++      found = true;
++    }
++    if (std::optional<int> restore =
++            prefs->FindIntByDottedPath("session.restore_on_startup")) {
++      if (*restore == 1 || *restore == 4 || *restore == 5) {
++        settings.restore_on_startup = *restore;
++        found = true;
++      }
++    }
++    if (const base::ListValue* pages =
++            prefs->FindListByDottedPath("session.startup_urls")) {
++      std::vector<GURL> kept;
++      for (const base::Value& page : *pages) {
++        const GURL url(page.is_string() ? page.GetString() : std::string());
++        if (IsWebPage(url)) {
++          kept.push_back(url);
++        }
++      }
++      if (!kept.empty()) {
++        settings.startup_pages = std::move(kept);
++      }
++    }
++  }
++  if (!found && settings.startup_pages.empty()) {
++    return;
++  }
++  stats_.home_page = settings.home_page.is_valid() ? 1 : 0;
++  stats_.startup_pages = settings.restore_on_startup == 4
++                             ? static_cast<int>(settings.startup_pages.size())
++                             : 0;
++  bridge->SetStartupSettings(settings);
 +}
 +
 +void ChromiumFamilyReader::ImportBookmarks(ChromiumFamilyImportBridge* bridge) {
@@ -30135,10 +30403,10 @@ index 0000000000000000000000000000000000000000..f8a71d1b985429e5c22759ec814b52ad
 +}  // namespace user_data_importer::chromium_family
 diff --git a/components/user_data_importer/chromium_family/chromium_family_reader.h b/components/user_data_importer/chromium_family/chromium_family_reader.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..171467f3ffeb8631468a1ae3b52eaace65bcdef7
+index 0000000000000000000000000000000000000000..a43734382509d310641f36702160699072001b45
 --- /dev/null
 +++ b/components/user_data_importer/chromium_family/chromium_family_reader.h
-@@ -0,0 +1,110 @@
+@@ -0,0 +1,114 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -30200,6 +30468,9 @@ index 0000000000000000000000000000000000000000..171467f3ffeb8631468a1ae3b52eaace
 +    int cookies_skipped_app_bound = 0;
 +    // Cookie values that could not be decrypted or read.
 +    int cookies_failed = 0;
++    // The home page and startup pages (settings) of the profile.
++    int home_page = 0;  // 0 or 1
++    int startup_pages = 0;
 +    // A SQLite file whose copy failed PRAGMA quick_check, so its type was
 +    // skipped.
 +    int databases_refused = 0;
@@ -30237,6 +30508,7 @@ index 0000000000000000000000000000000000000000..171467f3ffeb8631468a1ae3b52eaace
 +  void ImportAutofill(ChromiumFamilyImportBridge* bridge);
 +  void ImportPasswords(ChromiumFamilyImportBridge* bridge);
 +  void ImportCookies(ChromiumFamilyImportBridge* bridge);
++  void ImportStartup(ChromiumFamilyImportBridge* bridge);
 +
 +  const Options options_;
 +  base::ScopedTempDir temp_dir_;
@@ -30251,10 +30523,10 @@ index 0000000000000000000000000000000000000000..171467f3ffeb8631468a1ae3b52eaace
 +#endif  // COMPONENTS_USER_DATA_IMPORTER_CHROMIUM_FAMILY_CHROMIUM_FAMILY_READER_H_
 diff --git a/components/user_data_importer/chromium_family/chromium_family_reader_unittest.cc b/components/user_data_importer/chromium_family/chromium_family_reader_unittest.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..39af22b036e41e3987b7d5339db29c9ee97de4da
+index 0000000000000000000000000000000000000000..d8a69c39bc4c987fe4d3ef72e89e12fdfcc1a9fc
 --- /dev/null
 +++ b/components/user_data_importer/chromium_family/chromium_family_reader_unittest.cc
-@@ -0,0 +1,611 @@
+@@ -0,0 +1,677 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -30314,6 +30586,10 @@ index 0000000000000000000000000000000000000000..39af22b036e41e3987b7d5339db29c9e
 +  void SetCookies(const std::vector<ImportedCookie>& entries) override {
 +    cookies = entries;
 +  }
++  void SetStartupSettings(const ImportedStartupSettings& s) override {
++    startup = s;
++    ++startup_calls;
++  }
 +
 +  std::vector<ImportedBookmarkEntry> bookmarks;
 +  std::u16string bookmark_folder;
@@ -30322,6 +30598,8 @@ index 0000000000000000000000000000000000000000..39af22b036e41e3987b7d5339db29c9e
 +  std::vector<ImportedPasswordForm> passwords;
 +  std::vector<ImportedAutofillEntry> autofill;
 +  std::vector<ImportedCookie> cookies;
++  ImportedStartupSettings startup;
++  int startup_calls = 0;
 +};
 +
 +std::array<uint8_t, 32> MakeKey() {
@@ -30806,6 +31084,66 @@ index 0000000000000000000000000000000000000000..39af22b036e41e3987b7d5339db29c9e
 +  ASSERT_TRUE(base::ReadFileToString(profile_.Append(L"History"), &source_after));
 +  EXPECT_EQ(source_before, source_after);
 +  EXPECT_TRUE(base::PathExists(profile_.Append(L"History-wal")));
++}
++
++// The home page and the three startup choices (ROADMAP P3.14).
++TEST_F(ChromiumFamilyReaderTest, HomePageAndStartupPages) {
++  struct Case {
++    const char* json;
++    int restore;
++    size_t pages;
++  };
++  const Case cases[] = {
++      // the pages of its own, a web home page shown with its button
++      {R"json({"homepage": "https://example.org/home", "homepage_is_newtabpage": false,
++           "browser": {"show_home_button": true},
++           "session": {"restore_on_startup": 4,
++                       "startup_urls": ["https://example.org/a", "chrome://settings/",
++                                        "javascript:alert(1)", "https://example.org/b"]}})json",
++       4, 2},
++      // the last session
++      {R"json({"session": {"restore_on_startup": 1}})json", 1, 0},
++      // the new tab page
++      {R"json({"session": {"restore_on_startup": 5}, "homepage_is_newtabpage": true})json", 5, 0},
++  };
++  for (const Case& c : cases) {
++    SCOPED_TRACE(c.json);
++    Write(profile_.Append(L"Preferences"), c.json);
++    FakeBridge bridge;
++    ChromiumFamilyReader reader(Options());
++    const ChromiumFamilyReader::Stats stats = reader.Import(HOME_PAGE, &bridge);
++    ASSERT_EQ(bridge.startup_calls, 1);
++    EXPECT_EQ(bridge.startup.restore_on_startup, c.restore);
++    EXPECT_EQ(bridge.startup.startup_pages.size(), c.pages);
++    EXPECT_EQ(stats.startup_pages, static_cast<int>(c.restore == 4 ? c.pages : 0));
++  }
++  // The first case in detail: only web pages, the home page and its button.
++  Write(profile_.Append(L"Preferences"), cases[0].json);
++  FakeBridge bridge;
++  ChromiumFamilyReader reader(Options());
++  const ChromiumFamilyReader::Stats stats = reader.Import(HOME_PAGE, &bridge);
++  EXPECT_EQ(bridge.startup.home_page.spec(), "https://example.org/home");
++  EXPECT_FALSE(bridge.startup.home_page_is_new_tab_page);
++  EXPECT_EQ(bridge.startup.show_home_button, 1);
++  ASSERT_EQ(bridge.startup.startup_pages.size(), 2u);
++  EXPECT_EQ(bridge.startup.startup_pages[1].spec(), "https://example.org/b");
++  EXPECT_EQ(stats.home_page, 1);
++}
++
++// A home page that is not a web page is left out; a profile that sets none of
++// these settings sends nothing.
++TEST_F(ChromiumFamilyReaderTest, NoWebHomePageNoStartupSettings) {
++  Write(profile_.Append(L"Preferences"), R"json({"homepage": "chrome://newtab/"})json");
++  FakeBridge bridge;
++  ChromiumFamilyReader reader(Options());
++  const ChromiumFamilyReader::Stats stats = reader.Import(HOME_PAGE, &bridge);
++  EXPECT_EQ(bridge.startup_calls, 0);
++  EXPECT_EQ(stats.home_page, 0);
++  Write(profile_.Append(L"Preferences"), "not json");
++  FakeBridge bridge2;
++  ChromiumFamilyReader reader2(Options());
++  reader2.Import(HOME_PAGE, &bridge2);
++  EXPECT_EQ(bridge2.startup_calls, 0);
 +}
 +
 +TEST_F(ChromiumFamilyReaderTest, OnlyRequestedItems) {

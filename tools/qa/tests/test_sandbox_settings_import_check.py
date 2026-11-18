@@ -11,6 +11,8 @@ GOOD = {"installed": True, "thorium_before": BOTH, "settings_open": True,
         "windows_before": 1, "windows_with_request": 2, "status_while_running": "inProgress",
         "thorium_still_runs": True, "thorium_closed": True, "status": "succeeded",
         "thoron_after": BOTH, "thorium_after": BOTH, "done": True, "cookie_in_thoron": True,
+        "thoron_settings": '{"home": "https://example.org/thoron-home", "ntp": false, "button": true, "startup": 4, '
+                           '"pages": ["https://example.org/thoron-start"]}',
         "report": '{"format": 1, "source": "Thorium", "time": "2026-11-18T05:00:00.000Z", '
                   '"imported": {"bookmarks": 1, "history": 1, "passwords": 0, "cookies": 1}, '
                   '"left_out": {"passwords_locked_by_chrome": 0}}'}
@@ -42,6 +44,9 @@ class ProblemsTests(unittest.TestCase):
             ({"report": GOOD_REPORT.replace('"Thorium"', '"Thorium https://example.org/x"')}, "the report"),
             ({"report": GOOD_REPORT.replace('"Thorium"', '"Thorium came-along"')}, "the report"),
             ({"cookie_in_thoron": False}, "the cookie"),
+            ({"thoron_settings": GOOD["thoron_settings"].replace('"startup": 4', '"startup": 5')}, "the start"),
+            ({"thoron_settings": GOOD["thoron_settings"].replace("thoron-home", "other")}, "the start"),
+            ({"thoron_settings": None}, "the start"),
             ({"report": GOOD_REPORT.replace('"cookies": 1', '"cookies": 0')}, "the cookie"),
         ]
         for change, step in cases:

@@ -17,8 +17,13 @@ with the stage of the [roadmap](../../ROADMAP.md) that brings it (an ID such as 
 The Windows steps of [Install](INSTALL.md) (the installer, the portable package, removing both) and the
 update mode of [Updates](UPDATES.md) are followed on a clean Windows for each build, clicks included:
 `tools/qa/sandbox_guides_check.py` runs them in Windows Sandbox and checks that each step shows what the
-guide says. What it cannot follow yet: downloading from GitHub and the minisign check (there is no release
-and no published key yet), and the warning "Windows protected your PC" for a downloaded file.
+guide says. Sections 1 and 2 of [Import](IMPORT.md) (finding the browsers, bringing a whole Thorium profile
+over, and each refusal: while Thorium runs, right after it closed, into a Thoron that has a profile) are
+followed the same way by `tools/qa/sandbox_import_guide_check.py`, with a Thorium profile made in the
+Sandbox. What they cannot follow yet: downloading from GitHub and the minisign check (there is no release
+and no published key yet), installing Python from python.org (the Sandbox has no network: it gets the
+interpreter and its standard library from the PC), the warning "Windows protected your PC" for a
+downloaded file, and the sections of Import that need Chrome or Firefox installed.
 
 ## How to read the guides
 

@@ -675,6 +675,21 @@ index 02dbc0a2c2cf70d2bb15307f15f4b35ccd488b04..d5cf9f7efb61475b2673f3a843bc9ce2
        <if expr="use_titlecase">
          <message name="IDS_IMPORTER_LOCK_OK" desc="In Title Case: Text for OK button (to try importing again) on importer lock dialog">
            Try Again
+diff --git a/chrome/app/settings_strings.grdp b/chrome/app/settings_strings.grdp
+index 09348181debdd833c4c1aae1bfea68f08f799f3a..24a961aee8a3023c5ed1bb652f142f3520d9cbd3 100644
+--- a/chrome/app/settings_strings.grdp
++++ b/chrome/app/settings_strings.grdp
+@@ -3721,6 +3721,10 @@
+       <message name="IDS_SETTINGS_IMPORT_AUTOFILL_FORM_DATA_CHECKBOX" desc="Checkbox for importing form data for autofill">
+         Autofill form data
+       </message>
++      <!-- Thoron (ROADMAP P3.14): checkbox for importing cookies. -->
++      <message name="IDS_SETTINGS_IMPORT_COOKIES_CHECKBOX" desc="Checkbox for importing cookies and signed-in sessions from another browser">
++        Cookies and site sign-ins
++      </message>
+ 
+       <message name="IDS_SETTINGS_IMPORT_CHOOSE_FILE" desc="Text for the Choose File on dialog">
+         Choose File
 diff --git a/components/page_info/BUILD.gn b/components/page_info/BUILD.gn
 index a248f84b52164a4731b74bec11f31c2abdcf700d..94dff65fd333283f0d4e88e6c1d071944fadc080 100644
 --- a/components/page_info/BUILD.gn
@@ -834,7 +849,7 @@ index ab3c100b747f5ec6244fa719272e29427f723280..0e3f94013c68b992b10e28345a196074
 +  </message>
  </grit-part>
 diff --git a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
-index a14e54eed88c57f7f0b4ebd6a6f4c352e94b7edd..dba79e15f60c31713758841d5b646ae5f5ce72c0 100644
+index a14e54eed88c57f7f0b4ebd6a6f4c352e94b7edd..801646b958a6cdaceea4d56fc6cfef849168641c 100644
 --- a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
 +++ b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
 @@ -113,6 +113,7 @@
@@ -845,7 +860,16 @@ index a14e54eed88c57f7f0b4ebd6a6f4c352e94b7edd..dba79e15f60c31713758841d5b646ae5
  #include "components/subresource_filter/core/browser/subresource_filter_features.h"
  #include "components/subscription_eligibility/subscription_eligibility_service.h"
  #include "components/supervised_user/core/common/features.h"
-@@ -4314,6 +4315,33 @@ void AddSiteSettingsStrings(content::WebUIDataSource* html_source,
+@@ -1300,6 +1301,8 @@ void AddImportDataStrings(content::WebUIDataSource* html_source) {
+       {"importSearch", IDS_SETTINGS_IMPORT_SEARCH_ENGINES_CHECKBOX},
+       {"importAutofillFormData",
+        IDS_SETTINGS_IMPORT_AUTOFILL_FORM_DATA_CHECKBOX},
++      // Thoron (ROADMAP P3.14): cookies and site sign-ins.
++      {"importCookies", IDS_SETTINGS_IMPORT_COOKIES_CHECKBOX},
+       {"importChooseFile", IDS_SETTINGS_IMPORT_CHOOSE_FILE},
+       {"importCommit", IDS_SETTINGS_IMPORT_COMMIT},
+       {"noProfileFound", IDS_SETTINGS_IMPORT_NO_PROFILE_FOUND},
+@@ -4314,6 +4317,33 @@ void AddSiteSettingsStrings(content::WebUIDataSource* html_source,
    // The exception placeholder should not be translated. See
    // crbug.com/40700443.
    html_source->AddString("addSiteExceptionPlaceholder", "[*.]example.com");
@@ -2418,10 +2442,19 @@ index b57d6384773d0cb86893859066b219dec90c6d70..79f4f51a573f145e90604d3ee56549a7
        base::FeatureList::IsEnabled(ntp_features::kNtpAnimatedDoodles) &&
        !gfx::Animation::PrefersReducedMotion();
 diff --git a/chrome/browser/ui/webui/settings/settings_ui.cc b/chrome/browser/ui/webui/settings/settings_ui.cc
-index 90f8e1a51584d6030950ff5627242e3fd6659874..7998cc11454d8beea1cebe6cb25c0d367ddca813 100644
+index 90f8e1a51584d6030950ff5627242e3fd6659874..858a536e2e1650a73407dedcbab7dc2dea304d8c 100644
 --- a/chrome/browser/ui/webui/settings/settings_ui.cc
 +++ b/chrome/browser/ui/webui/settings/settings_ui.cc
-@@ -688,9 +688,13 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
+@@ -256,6 +256,8 @@ void SettingsUI::RegisterProfilePrefs(
+   registry->RegisterBooleanPref(prefs::kImportDialogHistory, true);
+   registry->RegisterBooleanPref(prefs::kImportDialogSavedPasswords, true);
+   registry->RegisterBooleanPref(prefs::kImportDialogSearchEngine, true);
++  // Thoron (ROADMAP P3.14): the "Cookies and site sign-ins" choice.
++  registry->RegisterBooleanPref(prefs::kImportDialogCookies, true);
+   registry->RegisterDictionaryPref(prefs::kDeviceTabVisibilityHiddenSessions);
+ }
+ 
+@@ -688,9 +690,13 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
    // Within the AI subpage are separate sections for Glic, for GEIC, and for all
    // other AI features. The visibility of these is separately controlled, but
    // we want to show the subpage if any of them are enabled.
@@ -27246,10 +27279,28 @@ index c56cb13d3c6b6dfaee4a006a1c5b8f1f4cf79000..68ddb4dc67afcb9ea7c565d382776f00
  chrome/app/vr_strings.grdp
  chrome/app/whats_new_strings.grdp
 diff --git a/chrome/browser/importer/BUILD.gn b/chrome/browser/importer/BUILD.gn
-index ed8e8bf048399ccab50b1f44498ef40dd73e8921..dce663b3d76b13dd782e06481bb5a05ceeb3dd22 100644
+index ed8e8bf048399ccab50b1f44498ef40dd73e8921..a789b3ca0631d918ec00be755e7f44a8e2dcc7c1 100644
 --- a/chrome/browser/importer/BUILD.gn
 +++ b/chrome/browser/importer/BUILD.gn
-@@ -65,6 +65,12 @@ source_set("impl") {
+@@ -28,6 +28,9 @@ source_set("importer") {
+     "//components/search_engines",
+     "//components/user_data_importer/common",
+     "//mojo/public/cpp/bindings",
++    # Thoron (ROADMAP P3.14): net::CanonicalCookie appears in the cookie import
++    # bridge interfaces.
++    "//net",
+     "//ui/gfx",
+     "//url",
+   ]
+@@ -61,10 +64,20 @@ source_set("impl") {
+     "//components/favicon/core",
+     "//components/password_manager/core/browser:password_form",
+     "//components/password_manager/core/browser/password_store:password_store_interface",
++    # Thoron (ROADMAP P3.14): set imported cookies through the network context.
++    "//content/public/browser",
++    "//net",
++    "//services/network/public/mojom",
+   ]
  
    if (is_win) {
      sources += [ "firefox_profile_lock_win.cc" ]
@@ -27273,7 +27324,7 @@ index 6f0957d48299e596d4e4e79054f76aec52f77124..5e0736777d0a9c2606f6cb5d077eab12
    "+components/user_data_importer/mojom",
  ]
 diff --git a/chrome/browser/importer/external_process_importer_client.cc b/chrome/browser/importer/external_process_importer_client.cc
-index cf319714e5c89d052477e42686a5ccdcdfdf9f5f..d719658adf7fb7ae32339766040e982b2f40e0d8 100644
+index cf319714e5c89d052477e42686a5ccdcdfdf9f5f..a8826d2d7fb489b5bf84647d805746b5f4c065b9 100644
 --- a/chrome/browser/importer/external_process_importer_client.cc
 +++ b/chrome/browser/importer/external_process_importer_client.cc
 @@ -9,6 +9,7 @@
@@ -27284,7 +27335,16 @@ index cf319714e5c89d052477e42686a5ccdcdfdf9f5f..d719658adf7fb7ae32339766040e982b
  #include "chrome/browser/importer/external_process_importer_host.h"
  #include "chrome/browser/importer/in_process_importer_bridge.h"
  #include "chrome/common/importer/firefox_importer_utils.h"
-@@ -69,6 +70,13 @@ void ExternalProcessImporterClient::Start() {
+@@ -17,6 +18,8 @@
+ #include "components/strings/grit/components_strings.h"
+ #include "components/user_data_importer/common/imported_bookmark_entry.h"
+ #include "components/user_data_importer/mojom/bookmark_html_parser.mojom.h"
++// Thoron (ROADMAP P3.14): net::CanonicalCookie for the cookie import.
++#include "net/cookies/canonical_cookie.h"
+ #include "content/public/browser/service_process_host.h"
+ #include "ui/base/l10n/l10n_util.h"
+ 
+@@ -69,6 +72,13 @@ void ExternalProcessImporterClient::Start() {
    localized_strings.try_emplace(
        IDS_BOOKMARK_BAR_FOLDER_NAME,
        l10n_util::GetStringUTF8(IDS_BOOKMARK_BAR_FOLDER_NAME));
@@ -27298,7 +27358,7 @@ index cf319714e5c89d052477e42686a5ccdcdfdf9f5f..d719658adf7fb7ae32339766040e982b
  
    mojo::PendingRemote<user_data_importer::mojom::BookmarkHtmlParser>
        bookmark_html_parser;
-@@ -126,6 +134,30 @@ void ExternalProcessImporterClient::OnImportFinished(
+@@ -126,6 +136,33 @@ void ExternalProcessImporterClient::OnImportFinished(
    Cleanup();
  }
  
@@ -27315,10 +27375,13 @@ index cf319714e5c89d052477e42686a5ccdcdfdf9f5f..d719658adf7fb7ae32339766040e982b
 +  imported.Set("search_engines", report->search_engines);
 +  imported.Set("autofill", report->autofill);
 +  imported.Set("passwords", report->passwords);
++  imported.Set("cookies", report->cookies);
 +  base::DictValue left_out;
 +  left_out.Set("passwords_locked_by_chrome", report->passwords_skipped_app_bound);
 +  left_out.Set("passwords_in_no_known_format", report->passwords_skipped_other);
 +  left_out.Set("passwords_that_did_not_decrypt", report->passwords_failed);
++  left_out.Set("cookies_locked_by_chrome", report->cookies_skipped_app_bound);
++  left_out.Set("cookies_that_did_not_decrypt", report->cookies_failed);
 +  left_out.Set("damaged_databases", report->databases_refused);
 +  base::DictValue counts;
 +  counts.Set("imported", std::move(imported));
@@ -27329,6 +27392,34 @@ index cf319714e5c89d052477e42686a5ccdcdfdf9f5f..d719658adf7fb7ae32339766040e982b
  void ExternalProcessImporterClient::OnImportItemStart(
      user_data_importer::ImportItem import_item) {
    if (cancelled_)
+@@ -257,6 +294,27 @@ void ExternalProcessImporterClient::OnAutofillFormDataImportGroup(
+     bridge_->SetAutofillFormData(autofill_form_data_);
+ }
+ 
++// Thoron (ROADMAP P3.14): cookies and site sign-ins, collected in groups.
++void ExternalProcessImporterClient::OnCookiesImportStart(
++    uint32_t total_cookies_count) {
++  if (cancelled_) {
++    return;
++  }
++  total_cookies_count_ = total_cookies_count;
++  cookies_.reserve(total_cookies_count);
++}
++
++void ExternalProcessImporterClient::OnCookiesImportGroup(
++    const std::vector<net::CanonicalCookie>& cookies_group) {
++  if (cancelled_) {
++    return;
++  }
++  cookies_.insert(cookies_.end(), cookies_group.begin(), cookies_group.end());
++  if (cookies_.size() >= total_cookies_count_) {
++    bridge_->SetCookies(cookies_);
++  }
++}
++
+ ExternalProcessImporterClient::~ExternalProcessImporterClient() = default;
+ 
+ void ExternalProcessImporterClient::Cleanup() {
 diff --git a/chrome/browser/importer/external_process_importer_host.cc b/chrome/browser/importer/external_process_importer_host.cc
 index 051ffd1259dd1373470c56e8a49dd21ad8e57170..255fac7185e700aa3fa5bab6aef56b6ec72a1f12 100644
 --- a/chrome/browser/importer/external_process_importer_host.cc
@@ -27626,7 +27717,7 @@ index d50675a79eb60f86b0278934884add02407a725a..85b761549bd1e0132eb0809d5e8cdae4
      case user_data_importer::TYPE_FIREFOX:
        metrics_type = IMPORTER_METRICS_FIREFOX3;
 diff --git a/chrome/browser/importer/in_process_importer_bridge.cc b/chrome/browser/importer/in_process_importer_bridge.cc
-index da614f0e7db5628e258f07fe0d7f2967dc1207f1..4735f6ab1d962524ed24ce78c0e069575a393465 100644
+index da614f0e7db5628e258f07fe0d7f2967dc1207f1..9a0c374c722852655d9c21c4daeeb27534da585a 100644
 --- a/chrome/browser/importer/in_process_importer_bridge.cc
 +++ b/chrome/browser/importer/in_process_importer_bridge.cc
 @@ -53,6 +53,9 @@ history::VisitSource ConvertImporterVisitSourceToHistoryVisitSource(
@@ -27638,6 +27729,19 @@ index da614f0e7db5628e258f07fe0d7f2967dc1207f1..4735f6ab1d962524ed24ce78c0e06957
 +      return history::SOURCE_OS_MIGRATION_IMPORTED;
    }
    NOTREACHED();
+ }
+@@ -172,6 +175,12 @@ void InProcessImporterBridge::SetAutofillFormData(
+   writer_->AddAutocompleteFormDataEntries(autocomplete_entries);
+ }
+ 
++// Thoron (ROADMAP P3.14): hand the cookies to the profile's cookie store.
++void InProcessImporterBridge::SetCookies(
++    const std::vector<net::CanonicalCookie>& cookies) {
++  writer_->AddCookies(cookies);
++}
++
+ void InProcessImporterBridge::NotifyStarted() {
+   host_->NotifyImportStarted();
  }
 diff --git a/chrome/browser/ui/startup/startup_tab_provider.cc b/chrome/browser/ui/startup/startup_tab_provider.cc
 index 5aba18070560ae1fa55cc62299bd643e0a814560..08061992a9ffa57e268ad62166d3d61e9b8ab06b 100644
@@ -27682,10 +27786,19 @@ index b19a5aa8cee272d0c37e227e163f2481ac33b5f6..35d802902bc0bcc909d602e76ac802b4
  IPC_ENUM_TRAITS_MIN_MAX_VALUE(user_data_importer::ImporterType,
                                user_data_importer::TYPE_UNKNOWN,
 diff --git a/chrome/common/importer/profile_import.mojom b/chrome/common/importer/profile_import.mojom
-index 815b91161f772d93e6114b0843895cfd020275fb..ce6ca6cfe4d783617ccdff6b91cb56d5ef2a09a4 100644
+index 815b91161f772d93e6114b0843895cfd020275fb..41420d550bd5f1a8e6858c5527c0b0353c1fa035 100644
 --- a/chrome/common/importer/profile_import.mojom
 +++ b/chrome/common/importer/profile_import.mojom
-@@ -57,6 +57,20 @@ struct ImportedPasswordForm {
+@@ -7,6 +7,8 @@ module chrome.mojom;
+ import "components/user_data_importer/mojom/bookmark_html_parser.mojom";
+ import "mojo/public/mojom/base/string16.mojom";
+ import "sandbox/policy/mojom/sandbox.mojom";
++// Thoron (ROADMAP P3.14): network.mojom.CanonicalCookie for the cookie import.
++import "services/network/public/mojom/cookie_manager.mojom";
+ import "url/mojom/url.mojom";
+ 
+ [Native]
+@@ -57,6 +59,23 @@ struct ImportedPasswordForm {
  // These are messages sent from the profile import process to the browser.
  // These messages send information about the status of the import and individual
  // import tasks.
@@ -27700,16 +27813,23 @@ index 815b91161f772d93e6114b0843895cfd020275fb..ce6ca6cfe4d783617ccdff6b91cb56d5
 +  int32 passwords_skipped_app_bound;
 +  int32 passwords_skipped_other;
 +  int32 passwords_failed;
++  int32 cookies;
++  int32 cookies_skipped_app_bound;
++  int32 cookies_failed;
 +  int32 databases_refused;
 +};
 +
  interface ProfileImportObserver {
    OnImportStart();
    OnImportFinished(bool succeeded, string error_msg);
-@@ -83,6 +97,10 @@ interface ProfileImportObserver {
+@@ -83,6 +102,14 @@ interface ProfileImportObserver {
    OnAutofillFormDataImportStart(uint32 total_autofill_form_data_entry_count);
    OnAutofillFormDataImportGroup(
        array<ImporterAutofillFormDataEntry> autofill_form_data_entry_group);
++
++  // Thoron (ROADMAP P3.14): cookies and site sign-ins, sent in groups.
++  OnCookiesImportStart(uint32 total_cookies_count);
++  OnCookiesImportGroup(array<network.mojom.CanonicalCookie> cookies_group);
 +
 +  // Thoron (ROADMAP P3.14): sent once by the Chromium-family importer, before
 +  // OnImportFinished.
@@ -27718,10 +27838,18 @@ index 815b91161f772d93e6114b0843895cfd020275fb..ce6ca6cfe4d783617ccdff6b91cb56d5
  
  // This interface is used to control the import process.
 diff --git a/chrome/common/importer/importer_bridge.h b/chrome/common/importer/importer_bridge.h
-index 1738a3baff3e4a2f45de8c8c54c64e34156d1a1b..70e7d69d7908f4fd838290f98f778a932a136165 100644
+index 1738a3baff3e4a2f45de8c8c54c64e34156d1a1b..4cac9c43c5964349a3572297e1097591261f7b7a 100644
 --- a/chrome/common/importer/importer_bridge.h
 +++ b/chrome/common/importer/importer_bridge.h
-@@ -21,6 +21,20 @@ namespace user_data_importer {
+@@ -17,10 +17,31 @@
+ class GURL;
+ struct ImporterAutofillFormDataEntry;
+ 
++namespace net {
++class CanonicalCookie;
++}  // namespace net
++
+ namespace user_data_importer {
  struct ImportedBookmarkEntry;
  }  // namespace user_data_importer
  
@@ -27736,13 +27864,28 @@ index 1738a3baff3e4a2f45de8c8c54c64e34156d1a1b..70e7d69d7908f4fd838290f98f778a93
 +  int passwords_skipped_app_bound = 0;
 +  int passwords_skipped_other = 0;
 +  int passwords_failed = 0;
++  int cookies = 0;
++  int cookies_skipped_app_bound = 0;
++  int cookies_failed = 0;
 +  int databases_refused = 0;
 +};
 +
  class ImporterBridge : public base::RefCountedThreadSafe<ImporterBridge> {
   public:
    ImporterBridge();
-@@ -71,6 +85,10 @@ class ImporterBridge : public base::RefCountedThreadSafe<ImporterBridge> {
+@@ -51,6 +72,11 @@ class ImporterBridge : public base::RefCountedThreadSafe<ImporterBridge> {
+   virtual void SetAutofillFormData(
+       const std::vector<ImporterAutofillFormDataEntry>& entries) = 0;
+ 
++  // Thoron (ROADMAP P3.14): cookies and site sign-ins from a Chromium-family
++  // profile. A default no-op, so only the two bridges on the import path
++  // implement it.
++  virtual void SetCookies(const std::vector<net::CanonicalCookie>& cookies) {}
++
+   // Notifies the coordinator that the import operation has begun.
+   virtual void NotifyStarted() = 0;
+ 
+@@ -71,6 +97,10 @@ class ImporterBridge : public base::RefCountedThreadSafe<ImporterBridge> {
    // external import process, since the importer only needs a few strings.
    virtual std::u16string GetLocalizedString(int message_id) = 0;
  
@@ -27754,10 +27897,19 @@ index 1738a3baff3e4a2f45de8c8c54c64e34156d1a1b..70e7d69d7908f4fd838290f98f778a93
    friend class base::RefCountedThreadSafe<ImporterBridge>;
  
 diff --git a/chrome/utility/importer/external_process_importer_bridge.h b/chrome/utility/importer/external_process_importer_bridge.h
-index 2f36e248431a347761704a2020f0d2c7949526dd..ab39b2edafb5851d1d4225ef89555200c7b53ab9 100644
+index 2f36e248431a347761704a2020f0d2c7949526dd..f5b3ebdb490b3d5270b78f2164aca85b67ce035c 100644
 --- a/chrome/utility/importer/external_process_importer_bridge.h
 +++ b/chrome/utility/importer/external_process_importer_bridge.h
-@@ -71,6 +71,8 @@ class ExternalProcessImporterBridge : public ImporterBridge {
+@@ -65,12 +65,17 @@ class ExternalProcessImporterBridge : public ImporterBridge {
+   void SetAutofillFormData(
+       const std::vector<ImporterAutofillFormDataEntry>& entries) override;
+ 
++  // Thoron (ROADMAP P3.14): cookies and site sign-ins.
++  void SetCookies(const std::vector<net::CanonicalCookie>& cookies) override;
++
+   void NotifyStarted() override;
+   void NotifyItemStarted(user_data_importer::ImportItem item) override;
+   void NotifyItemEnded(user_data_importer::ImportItem item) override;
    void NotifyEnded() override;
  
    std::u16string GetLocalizedString(int message_id) override;
@@ -27767,10 +27919,54 @@ index 2f36e248431a347761704a2020f0d2c7949526dd..ab39b2edafb5851d1d4225ef89555200
  
   private:
 diff --git a/chrome/utility/importer/external_process_importer_bridge.cc b/chrome/utility/importer/external_process_importer_bridge.cc
-index 67092331c3801deddd2848162f5e4f3d41bff257..349b71661510926e1b48b8c806467b909e1338a0 100644
+index 67092331c3801deddd2848162f5e4f3d41bff257..ffc0025161df3012078b9b3a646ecc39a3dc075c 100644
 --- a/chrome/utility/importer/external_process_importer_bridge.cc
 +++ b/chrome/utility/importer/external_process_importer_bridge.cc
-@@ -149,6 +149,22 @@ void ExternalProcessImporterBridge::NotifyItemEnded(
+@@ -17,6 +17,8 @@
+ #include "chrome/common/importer/importer_autofill_form_data_entry.h"
+ #include "components/user_data_importer/common/imported_bookmark_entry.h"
+ #include "components/user_data_importer/common/importer_data_types.h"
++// Thoron (ROADMAP P3.14): net::CanonicalCookie for the cookie import.
++#include "net/cookies/canonical_cookie.h"
+ 
+ namespace {
+ 
+@@ -27,6 +29,8 @@ const int kNumBookmarksToSend = 100;
+ const int kNumHistoryRowsToSend = 100;
+ const int kNumFaviconsToSend = 100;
+ const int kNumAutofillFormDataToSend = 100;
++// Thoron (ROADMAP P3.14):
++const int kNumCookiesToSend = 100;
+ 
+ } // namespace
+ 
+@@ -135,6 +139,25 @@ void ExternalProcessImporterBridge::SetAutofillFormData(
+   DCHECK_EQ(0, autofill_form_data_entries_left);
+ }
+ 
++// Thoron (ROADMAP P3.14): cookies and site sign-ins, sent in groups like the
++// other large collections.
++void ExternalProcessImporterBridge::SetCookies(
++    const std::vector<net::CanonicalCookie>& cookies) {
++  observer_->OnCookiesImportStart(cookies.size());
++
++  int cookies_left = cookies.end() - cookies.begin();
++  for (auto it = cookies.begin(); it < cookies.end();) {
++    std::vector<net::CanonicalCookie> cookies_group;
++    auto end_group = it + std::min(cookies_left, kNumCookiesToSend);
++    cookies_group.assign(it, end_group);
++
++    observer_->OnCookiesImportGroup(cookies_group);
++    cookies_left -= end_group - it;
++    it = end_group;
++  }
++  DCHECK_EQ(0, cookies_left);
++}
++
+ void ExternalProcessImporterBridge::NotifyStarted() {
+   observer_->OnImportStart();
+ }
+@@ -149,6 +172,25 @@ void ExternalProcessImporterBridge::NotifyItemEnded(
    observer_->OnImportItemFinished(item);
  }
  
@@ -27786,6 +27982,9 @@ index 67092331c3801deddd2848162f5e4f3d41bff257..349b71661510926e1b48b8c806467b90
 +  report->passwords_skipped_app_bound = counts.passwords_skipped_app_bound;
 +  report->passwords_skipped_other = counts.passwords_skipped_other;
 +  report->passwords_failed = counts.passwords_failed;
++  report->cookies = counts.cookies;
++  report->cookies_skipped_app_bound = counts.cookies_skipped_app_bound;
++  report->cookies_failed = counts.cookies_failed;
 +  report->databases_refused = counts.databases_refused;
 +  observer_->OnThoronImportReport(std::move(report));
 +}
@@ -27794,20 +27993,250 @@ index 67092331c3801deddd2848162f5e4f3d41bff257..349b71661510926e1b48b8c806467b90
    observer_->OnImportFinished(true, std::string());
  }
 diff --git a/chrome/browser/importer/external_process_importer_client.h b/chrome/browser/importer/external_process_importer_client.h
-index 42b466d3ce66beb8cbd6af2ac11d52b4e03507d5..1fe466bb9ef8b286ea59d15b8c0c46f1b57a3075 100644
+index 42b466d3ce66beb8cbd6af2ac11d52b4e03507d5..c46575a7f16b2a05ab74a8e6bb8de8839243bf65 100644
 --- a/chrome/browser/importer/external_process_importer_client.h
 +++ b/chrome/browser/importer/external_process_importer_client.h
-@@ -78,6 +78,8 @@ class ExternalProcessImporterClient
+@@ -78,6 +78,12 @@ class ExternalProcessImporterClient
        bool unique_on_host_and_path) override;
    void OnAutofillFormDataImportStart(
        uint32_t total_autofill_form_data_entry_count) override;
++  // Thoron (ROADMAP P3.14): cookies and site sign-ins.
++  void OnCookiesImportStart(uint32_t total_cookies_count) override;
++  void OnCookiesImportGroup(
++      const std::vector<net::CanonicalCookie>& cookies_group) override;
 +  // Thoron (ROADMAP P3.14): the counts for the import's local report.
 +  void OnThoronImportReport(chrome::mojom::ThoronImportReportPtr report) override;
    void OnAutofillFormDataImportGroup(
        const std::vector<ImporterAutofillFormDataEntry>&
            autofill_form_data_entry_group) override;
+@@ -105,6 +111,8 @@ class ExternalProcessImporterClient
+   std::vector<user_data_importer::ImportedBookmarkEntry> bookmarks_;
+   favicon_base::FaviconUsageDataList favicons_;
+   std::vector<ImporterAutofillFormDataEntry> autofill_form_data_;
++  // Thoron (ROADMAP P3.14): cookies collected until the whole group is in.
++  std::vector<net::CanonicalCookie> cookies_;
+ 
+   // Usually some variation on IDS_BOOKMARK_GROUP_...; the name of the folder
+   // under which imported bookmarks will be placed.
+@@ -122,6 +130,9 @@ class ExternalProcessImporterClient
+   // Total number of autofill form data entries to import.
+   size_t total_autofill_form_data_entry_count_;
+ 
++  // Thoron (ROADMAP P3.14): total number of cookies to import.
++  size_t total_cookies_count_ = 0;
++
+   // Notifications received from the ProfileImportProcessHost are passed back
+   // to process_importer_host_, which calls the ProfileWriter to record the
+   // import data.  When the import process is done, process_importer_host_
+diff --git a/chrome/common/importer/BUILD.gn b/chrome/common/importer/BUILD.gn
+index 9aecb7847e3f707853bdc2db0fd05bc41223a0b0..cb43492c09c6a2777bc282364e3bb64f31bc98f0 100644
+--- a/chrome/common/importer/BUILD.gn
++++ b/chrome/common/importer/BUILD.gn
+@@ -13,6 +13,9 @@ mojom("interfaces") {
+     "//components/user_data_importer/mojom",
+     "//mojo/public/mojom/base",
+     "//sandbox/policy/mojom",
++    # Thoron (ROADMAP P3.14): network.mojom.CanonicalCookie for the cookie
++    # import.
++    "//services/network/public/mojom:cookies_mojom",
+     "//url/mojom:url_mojom_gurl",
+   ]
+ 
+diff --git a/chrome/browser/importer/in_process_importer_bridge.h b/chrome/browser/importer/in_process_importer_bridge.h
+index 61190844025f04ef83bcfe2c056f9f61661ca132..943a8e0405c43dd38417415cba066d61a33442f0 100644
+--- a/chrome/browser/importer/in_process_importer_bridge.h
++++ b/chrome/browser/importer/in_process_importer_bridge.h
+@@ -52,6 +52,9 @@ class InProcessImporterBridge : public ImporterBridge {
+   void SetAutofillFormData(
+       const std::vector<ImporterAutofillFormDataEntry>& entries) override;
+ 
++  // Thoron (ROADMAP P3.14): cookies and site sign-ins.
++  void SetCookies(const std::vector<net::CanonicalCookie>& cookies) override;
++
+   void NotifyStarted() override;
+   void NotifyItemStarted(user_data_importer::ImportItem item) override;
+   void NotifyItemEnded(user_data_importer::ImportItem item) override;
+diff --git a/chrome/browser/importer/profile_writer.h b/chrome/browser/importer/profile_writer.h
+index f609d99dde302a8226a246c9b51870c8f27ffab7..c02cf6dabd18f55daa5cac4e6a2f4d22cab45e1b 100644
+--- a/chrome/browser/importer/profile_writer.h
++++ b/chrome/browser/importer/profile_writer.h
+@@ -22,6 +22,10 @@ namespace autofill {
+ class AutocompleteEntry;
+ }
+ 
++namespace net {
++class CanonicalCookie;
++}  // namespace net
++
+ namespace password_manager {
+ struct PasswordForm;
+ }  // namespace password_manager
+@@ -92,6 +96,10 @@ class ProfileWriter : public base::RefCountedThreadSafe<ProfileWriter> {
+   virtual void AddAutocompleteFormDataEntries(
+       const std::vector<autofill::AutocompleteEntry>& autocomplete_entries);
+ 
++  // Thoron (ROADMAP P3.14): sets the imported cookies through the profile's
++  // default network context cookie manager.
++  virtual void AddCookies(const std::vector<net::CanonicalCookie>& cookies);
++
+  protected:
+   friend class base::RefCountedThreadSafe<ProfileWriter>;
+ 
+diff --git a/chrome/browser/importer/profile_writer.cc b/chrome/browser/importer/profile_writer.cc
+index a29027ec2b250d2214cc0742d018a6bec414dae0..139999ee3d3a4704cb7d273ff11624ef8161afc6 100644
+--- a/chrome/browser/importer/profile_writer.cc
++++ b/chrome/browser/importer/profile_writer.cc
+@@ -11,6 +11,7 @@
+ #include <set>
+ #include <string>
+ 
++#include "base/functional/callback_helpers.h"
+ #include "base/strings/string_number_conversions.h"
+ #include "base/strings/string_util.h"
+ #include "base/strings/utf_string_conversions.h"
+@@ -24,6 +25,12 @@
+ #include "chrome/browser/search_engines/template_url_service_factory.h"
+ #include "chrome/browser/webdata_services/web_data_service_factory.h"
+ #include "chrome/common/pref_names.h"
++// Thoron (ROADMAP P3.14): set imported cookies through the network context.
++#include "content/public/browser/storage_partition.h"
++#include "net/cookies/canonical_cookie.h"
++#include "net/cookies/cookie_options.h"
++#include "net/cookies/cookie_util.h"
++#include "services/network/public/mojom/cookie_manager.mojom.h"
+ #include "components/autofill/core/browser/webdata/autofill_webdata_service.h"
+ #include "components/bookmarks/browser/bookmark_model.h"
+ #include "components/bookmarks/browser/bookmark_node.h"
+@@ -338,4 +345,32 @@ void ProfileWriter::AddAutocompleteFormDataEntries(
+     web_data_service->UpdateAutocompleteEntries(autocomplete_entries);
+ }
+ 
++// Thoron (ROADMAP P3.14): set each imported cookie through the profile's
++// default network context. SetCanonicalCookie replaces a cookie with the same
++// name, domain and path, so an existing cookie Thoron already holds for the
++// same key is overwritten; see the import notes.
++void ProfileWriter::AddCookies(
++    const std::vector<net::CanonicalCookie>& cookies) {
++  CHECK(profile_);
++  if (cookies.empty()) {
++    return;
++  }
++  network::mojom::CookieManager* cookie_manager =
++      profile_->GetDefaultStoragePartition()
++          ->GetCookieManagerForBrowserProcess();
++  if (!cookie_manager) {
++    return;
++  }
++  net::CookieOptions options = net::CookieOptions::MakeAllInclusive();
++  for (const net::CanonicalCookie& cookie : cookies) {
++    GURL source = net::cookie_util::SimulatedCookieSource(
++        cookie, cookie.SecureAttribute() ? "https" : "http");
++    if (!source.is_valid()) {
++      continue;
++    }
++    cookie_manager->SetCanonicalCookie(cookie, source, options,
++                                       base::DoNothing());
++  }
++}
++
+ ProfileWriter::~ProfileWriter() = default;
+diff --git a/chrome/common/pref_names.h b/chrome/common/pref_names.h
+index 980cb7353f1faf7f597b29868a0116267877c13e..4eb4ec46c126b969bc2468294c507152b93f04cf 100644
+--- a/chrome/common/pref_names.h
++++ b/chrome/common/pref_names.h
+@@ -916,6 +916,8 @@ inline constexpr char kImportDialogSavedPasswords[] =
+     "import_dialog_saved_passwords";
+ inline constexpr char kImportDialogSearchEngine[] =
+     "import_dialog_search_engine";
++// Thoron (ROADMAP P3.14): remembers the "Cookies and site sign-ins" choice.
++inline constexpr char kImportDialogCookies[] = "import_dialog_cookies";
+ 
+ // A dictionary mapping foreign session tags (see
+ // `sync_sessions::SyncedSession::GetSessionTag()`) to `true` for synced devices
+diff --git a/chrome/browser/extensions/api/settings_private/prefs_util.cc b/chrome/browser/extensions/api/settings_private/prefs_util.cc
+index 98d7b6df1cd57d393e0d146f62ab58580edffd90..9166eebf66734a9f9b40d26e53551468e2677e5d 100644
+--- a/chrome/browser/extensions/api/settings_private/prefs_util.cc
++++ b/chrome/browser/extensions/api/settings_private/prefs_util.cc
+@@ -1258,6 +1258,9 @@ const PrefsUtil::TypedPrefMap& PrefsUtil::GetAllowlistedKeys() {
+       settings_api::PrefType::kBoolean;
+   (*s_allowlist)[::prefs::kImportDialogSearchEngine] =
+       settings_api::PrefType::kBoolean;
++  // Thoron (ROADMAP P3.14): the "Cookies and site sign-ins" choice.
++  (*s_allowlist)[::prefs::kImportDialogCookies] =
++      settings_api::PrefType::kBoolean;
+ #endif  // BUILDFLAG(IS_CHROMEOS)
+ 
+   // Supervised Users.  This setting is queried in our Tast tests (b/241943380).
+diff --git a/chrome/browser/ui/webui/settings/import_data_handler.cc b/chrome/browser/ui/webui/settings/import_data_handler.cc
+index 9e8523ea452d31c56e1109ef18818e210889e5ee..8ca7018f1a68036e6f56d0f26c25f85a6f559c51 100644
+--- a/chrome/browser/ui/webui/settings/import_data_handler.cc
++++ b/chrome/browser/ui/webui/settings/import_data_handler.cc
+@@ -150,6 +150,10 @@ void ImportDataHandler::HandleImportData(const base::ListValue& args) {
+   if (*type_dict.FindBool(prefs::kImportDialogSearchEngine)) {
+     selected_items |= user_data_importer::SEARCH_ENGINES;
+   }
++  // Thoron (ROADMAP P3.14): cookies and site sign-ins.
++  if (type_dict.FindBool(prefs::kImportDialogCookies).value_or(false)) {
++    selected_items |= user_data_importer::COOKIES;
++  }
+ 
+   const user_data_importer::SourceProfile& source_profile =
+       importer_list_->GetSourceProfileAt(browser_index);
+@@ -231,6 +235,9 @@ void ImportDataHandler::SendBrowserProfileData(const std::string& callback_id) {
+     browser_profile.Set(
+         "autofillFormData",
+         (browser_services & user_data_importer::AUTOFILL_FORM_DATA) != 0);
++    // Thoron (ROADMAP P3.14): cookies and site sign-ins.
++    browser_profile.Set(
++        "cookies", (browser_services & user_data_importer::COOKIES) != 0);
+ 
+     browser_profiles.Append(std::move(browser_profile));
+   }
+diff --git a/chrome/browser/resources/settings/people_page/import_data_browser_proxy.ts b/chrome/browser/resources/settings/people_page/import_data_browser_proxy.ts
+index ca628e702953f73b9fbebcdc716b845c7978f1ba..dad0005b2b462a22df281ceee2ed497b013df32e 100644
+--- a/chrome/browser/resources/settings/people_page/import_data_browser_proxy.ts
++++ b/chrome/browser/resources/settings/people_page/import_data_browser_proxy.ts
+@@ -19,6 +19,8 @@ export interface BrowserProfile {
+   passwords: boolean;
+   search: boolean;
+   autofillFormData: boolean;
++  // Thoron (ROADMAP P3.14): cookies and site sign-ins.
++  cookies: boolean;
+ }
+ 
+ /**
+diff --git a/chrome/browser/resources/settings/people_page/import_data_dialog.ts b/chrome/browser/resources/settings/people_page/import_data_dialog.ts
+index 43d7734a9a015c630c9aae7c62169cb48299cbaf..139ac1231d5688c5456e84d6b5fd2f9ca9ac1315 100644
+--- a/chrome/browser/resources/settings/people_page/import_data_dialog.ts
++++ b/chrome/browser/resources/settings/people_page/import_data_dialog.ts
+@@ -78,6 +78,8 @@ export class SettingsImportDataDialogElement extends
+     passwords: false,
+     search: false,
+     autofillFormData: false,
++    // Thoron (ROADMAP P3.14): cookies and site sign-ins.
++    cookies: false,
+   };
+   protected accessor noImportDataTypeSelected_: boolean = false;
+   protected accessor importStatus_: ImportDataStatus = ImportDataStatus.INITIAL;
+diff --git a/chrome/browser/resources/settings/people_page/import_data_dialog.html.ts b/chrome/browser/resources/settings/people_page/import_data_dialog.html.ts
+index 89321068222f0387855a126a3fd8ea2deca1a4bf..725da496739da3cfc67f59c9c4b446635ce27f83 100644
+--- a/chrome/browser/resources/settings/people_page/import_data_dialog.html.ts
++++ b/chrome/browser/resources/settings/people_page/import_data_dialog.html.ts
+@@ -70,6 +70,12 @@ export function getHtml(this: SettingsImportDataDialogElement) {
+                 pref-key="import_dialog_autofill_form_data"
+                 label="$i18n{importAutofillFormData}" no-set-pref>
+             </settings-checkbox>
++            <!-- Thoron (ROADMAP P3.14): cookies and site sign-ins. -->
++            <settings-checkbox id="importDialogCookies"
++                ?hidden="${!this.selected_.cookies}"
++                pref-key="import_dialog_cookies"
++                label="$i18n{importCookies}" no-set-pref>
++            </settings-checkbox>
+           </div>
+         </div>
+       </div>
 diff --git a/chrome/utility/BUILD.gn b/chrome/utility/BUILD.gn
-index e5b851a44d644dfd5144ea8e661b546d8c8149a0..b713239073143341dcdd79c88bf0be1db8a4fa89 100644
+index e5b851a44d644dfd5144ea8e661b546d8c8149a0..285891697314428a1ebc8f011bf3c06111e255de 100644
 --- a/chrome/utility/BUILD.gn
 +++ b/chrome/utility/BUILD.gn
 @@ -129,6 +129,9 @@ static_library("utility") {
@@ -27833,6 +28262,15 @@ index e5b851a44d644dfd5144ea8e661b546d8c8149a0..b713239073143341dcdd79c88bf0be1d
      }
      deps += [
        "//chrome/common:mojo_bindings",
+@@ -149,6 +156,8 @@ static_library("utility") {
+       "//components/user_data_importer/common",
+       "//components/user_data_importer/content",
+       "//components/user_data_importer/utility:bookmarks",
++      # Thoron (ROADMAP P3.14): build net::CanonicalCookie for the cookie import.
++      "//net",
+       "//services/proxy_resolver:lib",
+       "//services/screen_ai",
+     ]
 diff --git a/chrome/utility/importer/DEPS b/chrome/utility/importer/DEPS
 index 6daab6abc938eedd90b9ba4cce01ab6291a37dc1..f3e13103462901cc0c289afbd41e62de1ebb44fd 100644
 --- a/chrome/utility/importer/DEPS
@@ -28200,15 +28638,16 @@ index 0000000000000000000000000000000000000000..05d9b3c2fe8f46afc5448b3c22d7568b
 +#endif  // CHROME_BROWSER_UI_WEBUI_THORON_WELCOME_UI_H_
 diff --git a/chrome/utility/importer/chromium_family_importer_win.cc b/chrome/utility/importer/chromium_family_importer_win.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..e846326434499e9e1b960710ae1a75722421facb
+index 0000000000000000000000000000000000000000..3880d31206a60b4a0436da60f56a781aa27357de
 --- /dev/null
 +++ b/chrome/utility/importer/chromium_family_importer_win.cc
-@@ -0,0 +1,140 @@
+@@ -0,0 +1,225 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
 +#include "chrome/utility/importer/chromium_family_importer_win.h"
 +
++#include <memory>
 +#include <utility>
 +#include <vector>
 +
@@ -28221,10 +28660,62 @@ index 0000000000000000000000000000000000000000..e846326434499e9e1b960710ae1a7572
 +#include "components/user_data_importer/chromium_family/chromium_family_import_bridge.h"
 +#include "components/user_data_importer/chromium_family/chromium_family_reader.h"
 +#include "components/user_data_importer/common/importer_data_types.h"
++#include "net/cookies/canonical_cookie.h"
++#include "net/cookies/cookie_constants.h"
++#include "net/cookies/cookie_partition_key.h"
 +
 +namespace {
 +
 +namespace cf = user_data_importer::chromium_family;
++
++// The browser's on-disk cookie integers (see ImportedCookie) mapped to net's
++// enums, matching net/extras/sqlite/sqlite_persistent_cookie_store.cc.
++net::CookieSameSite ToSameSite(int db_value) {
++  switch (db_value) {
++    case 0:
++      return net::CookieSameSite::NO_RESTRICTION;
++    case 1:
++      return net::CookieSameSite::LAX_MODE;
++    case 2:
++      return net::CookieSameSite::STRICT_MODE;
++    default:
++      return net::CookieSameSite::UNSPECIFIED;
++  }
++}
++
++net::CookiePriority ToPriority(int db_value) {
++  switch (db_value) {
++    case 0:
++      return net::COOKIE_PRIORITY_LOW;
++    case 2:
++      return net::COOKIE_PRIORITY_HIGH;
++    default:
++      return net::COOKIE_PRIORITY_MEDIUM;
++  }
++}
++
++net::CookieSourceScheme ToSourceScheme(int db_value) {
++  switch (db_value) {
++    case 1:
++      return net::CookieSourceScheme::kNonSecure;
++    case 2:
++      return net::CookieSourceScheme::kSecure;
++    default:
++      return net::CookieSourceScheme::kUnset;
++  }
++}
++
++net::CookieSourceType ToSourceType(int db_value) {
++  switch (db_value) {
++    case 1:
++      return net::CookieSourceType::kHTTP;
++    case 2:
++      return net::CookieSourceType::kScript;
++    default:
++      // The database's "unknown" (0) maps to "other", as Chromium does.
++      return net::CookieSourceType::kOther;
++  }
++}
 +
 +// "Brave (Work)" -> "Brave". The browser name never contains " (", so the
 +// first one is the separator the detector added.
@@ -28285,6 +28776,34 @@ index 0000000000000000000000000000000000000000..e846326434499e9e1b960710ae1a7572
 +    }
 +  }
 +
++  void SetCookies(const std::vector<cf::ImportedCookie>& cookies) override {
++    std::vector<net::CanonicalCookie> converted;
++    converted.reserve(cookies.size());
++    for (const cf::ImportedCookie& c : cookies) {
++      // The partition key for a partitioned cookie; empty means unpartitioned.
++      base::expected<std::optional<net::CookiePartitionKey>, std::string>
++          partition_key = net::CookiePartitionKey::FromStorage(
++              c.top_frame_site_key, c.has_cross_site_ancestor);
++      if (!partition_key.has_value()) {
++        continue;
++      }
++      std::unique_ptr<net::CanonicalCookie> cc =
++          net::CanonicalCookie::FromStorage(
++              c.name, c.value, c.domain, c.path, c.creation, c.expiration,
++              c.last_access, c.last_update, c.secure, c.httponly,
++              ToSameSite(c.same_site), ToPriority(c.priority),
++              std::move(partition_key.value()), ToSourceScheme(c.source_scheme),
++              c.source_port, ToSourceType(c.source_type),
++              net::CanonicalCookieFromStorageCallSite::kCookieManager);
++      if (cc) {
++        converted.push_back(std::move(*cc));
++      }
++    }
++    if (!converted.empty()) {
++      bridge_->SetCookies(converted);
++    }
++  }
++
 + private:
 +  raw_ptr<ImporterBridge> bridge_;
 +};
@@ -28319,7 +28838,8 @@ index 0000000000000000000000000000000000000000..e846326434499e9e1b960710ae1a7572
 +  static constexpr user_data_importer::ImportItem kOrder[] = {
 +      user_data_importer::HISTORY, user_data_importer::FAVORITES,
 +      user_data_importer::SEARCH_ENGINES,
-+      user_data_importer::AUTOFILL_FORM_DATA, user_data_importer::PASSWORDS};
++      user_data_importer::AUTOFILL_FORM_DATA, user_data_importer::PASSWORDS,
++      user_data_importer::COOKIES};
 +  cf::ChromiumFamilyReader::Stats stats;
 +  for (user_data_importer::ImportItem item : kOrder) {
 +    if (!(items & item) || cancelled()) {
@@ -28340,6 +28860,9 @@ index 0000000000000000000000000000000000000000..e846326434499e9e1b960710ae1a7572
 +  counts.passwords_skipped_app_bound = stats.passwords_skipped_app_bound;
 +  counts.passwords_skipped_other = stats.passwords_skipped_other;
 +  counts.passwords_failed = stats.passwords_failed;
++  counts.cookies = stats.cookies;
++  counts.cookies_skipped_app_bound = stats.cookies_skipped_app_bound;
++  counts.cookies_failed = stats.cookies_failed;
 +  counts.databases_refused = stats.databases_refused;
 +  bridge_->ReportThoronImport(counts);
 +  bridge_->NotifyEnded();
@@ -28457,10 +28980,10 @@ index 0000000000000000000000000000000000000000..fc6697a3c130475f0f6791cbad053645
 +]
 diff --git a/components/user_data_importer/chromium_family/browser_detection.cc b/components/user_data_importer/chromium_family/browser_detection.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..9cd75aaec9b81a0abdd2da01462ce1a79c11ec3d
+index 0000000000000000000000000000000000000000..b9bd3010ea28a58acce129d815004352256cf8e1
 --- /dev/null
 +++ b/components/user_data_importer/chromium_family/browser_detection.cc
-@@ -0,0 +1,206 @@
+@@ -0,0 +1,207 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -28653,7 +29176,8 @@ index 0000000000000000000000000000000000000000..9cd75aaec9b81a0abdd2da01462ce1a7
 +}
 +
 +uint16_t SupportedItems() {
-+  return FAVORITES | HISTORY | PASSWORDS | SEARCH_ENGINES | AUTOFILL_FORM_DATA;
++  return FAVORITES | HISTORY | PASSWORDS | SEARCH_ENGINES |
++         AUTOFILL_FORM_DATA | COOKIES;
 +}
 +
 +bool IsBrowserRunning(const base::FilePath& user_data) {
@@ -28939,10 +29463,10 @@ index 0000000000000000000000000000000000000000..215cfb4d69abb60ca927e50f84428e45
 +}  // namespace user_data_importer::chromium_family
 diff --git a/components/user_data_importer/chromium_family/chromium_family_import_bridge.h b/components/user_data_importer/chromium_family/chromium_family_import_bridge.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..78e83ac1ea5968956af7aae4a2b72a14d4d2ec9c
+index 0000000000000000000000000000000000000000..104891f666b37f22a60ba5da80c710e698ba3b8f
 --- /dev/null
 +++ b/components/user_data_importer/chromium_family/chromium_family_import_bridge.h
-@@ -0,0 +1,53 @@
+@@ -0,0 +1,82 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -28970,6 +29494,33 @@ index 0000000000000000000000000000000000000000..78e83ac1ea5968956af7aae4a2b72a14
 +  base::Time date_last_used;
 +};
 +
++// One decrypted cookie, with every field needed to rebuild a
++// net::CanonicalCookie. Kept here so the reader library needs nothing from
++// //net; the importer glue builds the CanonicalCookie. The enum-like fields
++// carry the browser's on-disk integer values (the same the cookie database
++// stores), which the glue maps to net's enums.
++struct ImportedCookie {
++  std::string name;
++  std::string value;
++  std::string domain;  // host_key, e.g. ".example.com"
++  std::string path;
++  base::Time creation;
++  base::Time expiration;
++  base::Time last_access;
++  base::Time last_update;
++  bool secure = false;
++  bool httponly = false;
++  int same_site = -1;      // DBCookieSameSite (-1 unspecified .. 2 strict)
++  int priority = 1;        // DBCookiePriority (0 low, 1 medium, 2 high)
++  int source_scheme = 0;   // CookieSourceScheme (0 unset, 1 non-secure, 2 sec.)
++  int source_port = -1;
++  int source_type = 0;     // DBCookieSourceType (0 unknown .. 3 other)
++  // Partitioned-cookie key, as the database stores it. Empty when the cookie is
++  // not partitioned.
++  std::string top_frame_site_key;
++  bool has_cross_site_ancestor = false;
++};
++
 +// Receives what the reader extracts from a source profile. The importer in
 +// chrome/utility/importer implements this over Chromium's ImporterBridge; unit
 +// tests implement a recording fake. Each method is called at most once per
@@ -28991,6 +29542,8 @@ index 0000000000000000000000000000000000000000..78e83ac1ea5968956af7aae4a2b72a14
 +
 +  virtual void SetAutofillEntries(
 +      const std::vector<ImportedAutofillEntry>& entries) = 0;
++
++  virtual void SetCookies(const std::vector<ImportedCookie>& cookies) = 0;
 +};
 +
 +}  // namespace user_data_importer::chromium_family
@@ -28998,10 +29551,10 @@ index 0000000000000000000000000000000000000000..78e83ac1ea5968956af7aae4a2b72a14
 +#endif  // COMPONENTS_USER_DATA_IMPORTER_CHROMIUM_FAMILY_CHROMIUM_FAMILY_IMPORT_BRIDGE_H_
 diff --git a/components/user_data_importer/chromium_family/chromium_family_reader.cc b/components/user_data_importer/chromium_family/chromium_family_reader.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..4e43575ad48bb11d1f1156d1921166cb71f918fc
+index 0000000000000000000000000000000000000000..f926b50e4423d539774654516a400e0a01d5c131
 --- /dev/null
 +++ b/components/user_data_importer/chromium_family/chromium_family_reader.cc
-@@ -0,0 +1,430 @@
+@@ -0,0 +1,563 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -29013,8 +29566,11 @@ index 0000000000000000000000000000000000000000..4e43575ad48bb11d1f1156d1921166cb
 +#include "base/files/file_util.h"
 +#include "base/json/json_reader.h"
 +#include "base/strings/string_number_conversions.h"
++#include "base/strings/string_util.h"
 +#include "base/strings/utf_string_conversions.h"
++#include "base/time/time.h"
 +#include "base/values.h"
++#include "crypto/hash.h"
 +#include "sql/database.h"
 +#include "sql/statement.h"
 +#include "url/gurl.h"
@@ -29034,6 +29590,8 @@ index 0000000000000000000000000000000000000000..4e43575ad48bb11d1f1156d1921166cb
 +constexpr base::FilePath::CharType kLoginDataFile[] = L"Login Data";
 +constexpr base::FilePath::CharType kWebDataFile[] = L"Web Data";
 +constexpr base::FilePath::CharType kLocalStateFile[] = L"Local State";
++constexpr base::FilePath::CharType kNetworkDir[] = L"Network";
++constexpr base::FilePath::CharType kCookiesFile[] = L"Cookies";
 +
 +// A URL is worth importing only if it parses and is not an internal page.
 +bool CanImportURL(const GURL& url) {
@@ -29198,6 +29756,9 @@ index 0000000000000000000000000000000000000000..4e43575ad48bb11d1f1156d1921166cb
 +  }
 +  if (items & PASSWORDS) {
 +    ImportPasswords(bridge);
++  }
++  if (items & COOKIES) {
++    ImportCookies(bridge);
 +  }
 +  return stats_;
 +}
@@ -29431,13 +29992,138 @@ index 0000000000000000000000000000000000000000..4e43575ad48bb11d1f1156d1921166cb
 +#endif  // BUILDFLAG(IS_WIN)
 +}
 +
++void ChromiumFamilyReader::ImportCookies(ChromiumFamilyImportBridge* bridge) {
++#if BUILDFLAG(IS_WIN)
++  // The current layout keeps cookies in Network\Cookies; older profiles kept
++  // them in the profile folder itself.
++  std::unique_ptr<sql::Database> db = OpenCopiedDatabase(
++      options_.profile_path.Append(kNetworkDir).Append(kCookiesFile));
++  if (!db) {
++    db = OpenCopiedDatabase(options_.profile_path.Append(kCookiesFile));
++  }
++  if (!db) {
++    return;
++  }
++
++  // Cookie databases at meta version 24 and later prefix each decrypted value
++  // with the SHA-256 of the cookie's host_key.
++  int cookie_db_version = 0;
++  {
++    sql::Statement v(
++        db->GetUniqueStatement("SELECT value FROM meta WHERE key='version'"));
++    if (v.is_valid() && v.Step()) {
++      cookie_db_version = v.ColumnInt(0);
++    }
++  }
++  const bool has_host_hash_prefix = cookie_db_version >= 24;
++
++  std::string local_state;
++  base::FilePath local_state_copy =
++      CopyForReading(options_.user_data_path.Append(kLocalStateFile));
++  std::optional<PasswordKey> key;
++  if (!local_state_copy.empty() &&
++      base::ReadFileToString(local_state_copy, &local_state)) {
++    key = PasswordKey::FromLocalState(local_state);
++  }
++  PasswordKey empty_key;
++
++  sql::Statement s(db->GetUniqueStatement(
++      "SELECT creation_utc, host_key, top_frame_site_key, name, value, path, "
++      "expires_utc, is_secure, is_httponly, last_access_utc, has_expires, "
++      "is_persistent, priority, encrypted_value, samesite, source_scheme, "
++      "source_port, last_update_utc, source_type, has_cross_site_ancestor "
++      "FROM cookies"));
++  if (!s.is_valid()) {
++    return;
++  }
++
++  const base::Time now = base::Time::Now();
++  std::vector<ImportedCookie> cookies;
++  while (s.Step()) {
++    const std::string host_key = s.ColumnString(1);
++    const bool is_persistent = s.ColumnInt(11) != 0;
++    const bool has_expires = s.ColumnInt(10) != 0;
++    const base::Time expiration = s.ColumnTime(6);
++
++    // Session cookies (not persistent) and already-expired cookies are not
++    // imported. They are not failures, so they are not counted.
++    if (!is_persistent) {
++      continue;
++    }
++    if (has_expires && expiration <= now) {
++      continue;
++    }
++
++    std::string value = s.ColumnString(4);
++    base::span<const uint8_t> encrypted = s.ColumnBlob(13);
++    if (!encrypted.empty()) {
++      std::string decrypted;
++      switch (DecryptPasswordValue(key ? *key : empty_key, encrypted,
++                                   &decrypted)) {
++        case DecryptResult::kSkippedV20:
++          ++stats_.cookies_skipped_app_bound;
++          continue;
++        case DecryptResult::kSkippedOther:
++        case DecryptResult::kError:
++          ++stats_.cookies_failed;
++          continue;
++        case DecryptResult::kOk:
++          break;
++      }
++      if (has_host_hash_prefix) {
++        const auto hash = crypto::hash::Sha256(host_key);
++        std::string_view prefix(reinterpret_cast<const char*>(hash.data()),
++                                hash.size());
++        if (!base::StartsWith(decrypted, prefix,
++                              base::CompareCase::SENSITIVE)) {
++          // The expected per-host hash is missing; treat the value as
++          // unreadable rather than import a wrong value.
++          ++stats_.cookies_failed;
++          continue;
++        }
++        decrypted = decrypted.substr(prefix.size());
++      }
++      value = std::move(decrypted);
++    }
++
++    ImportedCookie cookie;
++    cookie.creation = s.ColumnTime(0);
++    cookie.domain = host_key;
++    cookie.top_frame_site_key = s.ColumnString(2);
++    cookie.name = s.ColumnString(3);
++    cookie.value = std::move(value);
++    cookie.path = s.ColumnString(5);
++    cookie.expiration = expiration;
++    cookie.secure = s.ColumnInt(7) != 0;
++    cookie.httponly = s.ColumnInt(8) != 0;
++    cookie.last_access = s.ColumnTime(9);
++    cookie.priority = s.ColumnInt(12);
++    cookie.same_site = s.ColumnInt(14);
++    cookie.source_scheme = s.ColumnInt(15);
++    cookie.source_port = s.ColumnInt(16);
++    cookie.last_update = s.ColumnTime(17);
++    cookie.source_type = s.ColumnInt(18);
++    cookie.has_cross_site_ancestor = s.ColumnInt(19) != 0;
++    cookies.push_back(std::move(cookie));
++  }
++
++  stats_.cookies = static_cast<int>(cookies.size());
++  if (!cookies.empty()) {
++    bridge->SetCookies(cookies);
++  }
++  if (key) {
++    key->Clear();
++  }
++#endif  // BUILDFLAG(IS_WIN)
++}
++
 +}  // namespace user_data_importer::chromium_family
 diff --git a/components/user_data_importer/chromium_family/chromium_family_reader.h b/components/user_data_importer/chromium_family/chromium_family_reader.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..fadf5e87dc46e9ecf55228faa3225a668acf5866
+index 0000000000000000000000000000000000000000..171467f3ffeb8631468a1ae3b52eaace65bcdef7
 --- /dev/null
 +++ b/components/user_data_importer/chromium_family/chromium_family_reader.h
-@@ -0,0 +1,104 @@
+@@ -0,0 +1,110 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -29494,6 +30180,11 @@ index 0000000000000000000000000000000000000000..fadf5e87dc46e9ecf55228faa3225a66
 +    int passwords_skipped_other = 0;
 +    // Recognised values that failed to decrypt.
 +    int passwords_failed = 0;
++    int cookies = 0;
++    // "v20" app-bound cookie values, left alone on purpose.
++    int cookies_skipped_app_bound = 0;
++    // Cookie values that could not be decrypted or read.
++    int cookies_failed = 0;
 +    // A SQLite file whose copy failed PRAGMA quick_check, so its type was
 +    // skipped.
 +    int databases_refused = 0;
@@ -29530,6 +30221,7 @@ index 0000000000000000000000000000000000000000..fadf5e87dc46e9ecf55228faa3225a66
 +  void ImportSearchEngines(ChromiumFamilyImportBridge* bridge);
 +  void ImportAutofill(ChromiumFamilyImportBridge* bridge);
 +  void ImportPasswords(ChromiumFamilyImportBridge* bridge);
++  void ImportCookies(ChromiumFamilyImportBridge* bridge);
 +
 +  const Options options_;
 +  base::ScopedTempDir temp_dir_;
@@ -29544,10 +30236,10 @@ index 0000000000000000000000000000000000000000..fadf5e87dc46e9ecf55228faa3225a66
 +#endif  // COMPONENTS_USER_DATA_IMPORTER_CHROMIUM_FAMILY_CHROMIUM_FAMILY_READER_H_
 diff --git a/components/user_data_importer/chromium_family/chromium_family_reader_unittest.cc b/components/user_data_importer/chromium_family/chromium_family_reader_unittest.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..79b51bde452d010795196d738ab884e064936c72
+index 0000000000000000000000000000000000000000..e33236946c71b2b6a991a8d2377d2edb8b486023
 --- /dev/null
 +++ b/components/user_data_importer/chromium_family/chromium_family_reader_unittest.cc
-@@ -0,0 +1,430 @@
+@@ -0,0 +1,567 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -29575,6 +30267,7 @@ index 0000000000000000000000000000000000000000..79b51bde452d010795196d738ab884e0
 +#include "components/user_data_importer/chromium_family/chromium_family_import_bridge.h"
 +#include "crypto/aead.h"
 +#include "crypto/random.h"
++#include "crypto/sha2.h"
 +#include "sql/database.h"
 +#include "sql/statement.h"
 +#include "testing/gtest/include/gtest/gtest.h"
@@ -29603,6 +30296,9 @@ index 0000000000000000000000000000000000000000..79b51bde452d010795196d738ab884e0
 +      const std::vector<ImportedAutofillEntry>& entries) override {
 +    autofill = entries;
 +  }
++  void SetCookies(const std::vector<ImportedCookie>& entries) override {
++    cookies = entries;
++  }
 +
 +  std::vector<ImportedBookmarkEntry> bookmarks;
 +  std::u16string bookmark_folder;
@@ -29610,6 +30306,7 @@ index 0000000000000000000000000000000000000000..79b51bde452d010795196d738ab884e0
 +  std::vector<SearchEngineInfo> keywords;
 +  std::vector<ImportedPasswordForm> passwords;
 +  std::vector<ImportedAutofillEntry> autofill;
++  std::vector<ImportedCookie> cookies;
 +};
 +
 +std::array<uint8_t, 32> MakeKey() {
@@ -29748,6 +30445,59 @@ index 0000000000000000000000000000000000000000..79b51bde452d010795196d738ab884e0
 +    insert("https://app.example.com/", u"person2", v20);
 +  }
 +
++  // A Cookies database at `db_path` with meta `version`. `encrypted` stores the
++  // encrypted_value blob (empty means use the plaintext `value` column).
++  struct CookieRow {
++    std::string host_key;
++    std::string name;
++    std::string value;              // plaintext column
++    std::vector<uint8_t> encrypted;  // encrypted_value column
++    bool is_persistent = true;
++    bool has_expires = false;
++    base::Time expires;
++  };
++  void MakeCookies(const base::FilePath& db_path,
++                   int version,
++                   const std::vector<CookieRow>& rows) {
++    ASSERT_TRUE(base::CreateDirectory(db_path.DirName()));
++    sql::Database db(sql::Database::Tag("Test"));
++    ASSERT_TRUE(db.Open(db_path));
++    ASSERT_TRUE(db.Execute(
++        "CREATE TABLE meta(key LONGVARCHAR NOT NULL UNIQUE PRIMARY KEY, "
++        "value LONGVARCHAR)"));
++    sql::Statement m(db.GetUniqueStatement(
++        "INSERT INTO meta(key, value) VALUES('version', ?)"));
++    m.BindInt(0, version);
++    ASSERT_TRUE(m.Run());
++    ASSERT_TRUE(db.Execute(
++        "CREATE TABLE cookies(creation_utc INTEGER, host_key TEXT, "
++        "top_frame_site_key TEXT, name TEXT, value TEXT, path TEXT, "
++        "expires_utc INTEGER, is_secure INTEGER, is_httponly INTEGER, "
++        "last_access_utc INTEGER, has_expires INTEGER, is_persistent INTEGER, "
++        "priority INTEGER, encrypted_value BLOB, samesite INTEGER, "
++        "source_scheme INTEGER, source_port INTEGER, last_update_utc INTEGER, "
++        "source_type INTEGER, has_cross_site_ancestor INTEGER)"));
++    int64_t creation = 100;
++    for (const CookieRow& r : rows) {
++      sql::Statement s(db.GetUniqueStatement(
++          "INSERT INTO cookies(creation_utc, host_key, top_frame_site_key, "
++          "name, value, path, expires_utc, is_secure, is_httponly, "
++          "last_access_utc, has_expires, is_persistent, priority, "
++          "encrypted_value, samesite, source_scheme, source_port, "
++          "last_update_utc, source_type, has_cross_site_ancestor) "
++          "VALUES(?,?,'',?,?,'/',?,1,0,0,?,?,1,?,0,2,443,0,1,0)"));
++      s.BindInt64(0, creation++);
++      s.BindString(1, r.host_key);
++      s.BindString(2, r.name);
++      s.BindString(3, r.value);
++      s.BindInt64(4, r.expires.ToDeltaSinceWindowsEpoch().InMicroseconds());
++      s.BindInt(5, r.has_expires ? 1 : 0);
++      s.BindInt(6, r.is_persistent ? 1 : 0);
++      s.BindBlob(7, r.encrypted);
++      ASSERT_TRUE(s.Run());
++    }
++  }
++
 +  // A Local State whose os_crypt.encrypted_key wraps `raw_key`.
 +  void MakeLocalState(base::span<const uint8_t> raw_key) {
 +    std::vector<uint8_t> prefixed = {'D', 'P', 'A', 'P', 'I'};
@@ -29876,6 +30626,85 @@ index 0000000000000000000000000000000000000000..79b51bde452d010795196d738ab884e0
 +  EXPECT_EQ(u"topsecret", bridge.passwords[0].password_value);
 +  EXPECT_EQ(1, stats.passwords);
 +  EXPECT_EQ(1, stats.passwords_skipped_app_bound);
++}
++
++TEST_F(ChromiumFamilyReaderTest, ImportsCookiesV24WithHostHashPrefix) {
++  std::array<uint8_t, 32> raw_key = MakeKey();
++  MakeLocalState(raw_key);
++
++  const std::string host = "example.com";
++  const std::string host_hash = crypto::SHA256HashString(host);
++  const base::Time future = base::Time::Now() + base::Days(30);
++  const base::Time past = base::Time::Now() - base::Days(1);
++
++  std::vector<CookieRow> rows;
++  // v10 cookie, meta version 24: plaintext is SHA-256(host_key) + the value.
++  rows.push_back({host, "sid",
++                  /*value=*/"",
++                  MakeV10Value(raw_key, host_hash + "secret-session"),
++                  /*is_persistent=*/true, /*has_expires=*/true, future});
++  // v20 app-bound cookie: skipped and counted, never read.
++  rows.push_back({host, "appbound", "", {'v', '2', '0', 1, 2, 3},
++                  true, true, future});
++  // Expired cookie: not imported, not counted.
++  rows.push_back({host, "stale", "",
++                  MakeV10Value(raw_key, host_hash + "old"), true, true, past});
++  // Session cookie (not persistent): not imported, not counted.
++  rows.push_back({host, "temp", "",
++                  MakeV10Value(raw_key, host_hash + "temp"), false, false,
++                  base::Time()});
++  // Plain-value cookie (no encrypted_value): imported as-is.
++  rows.push_back({host, "plain", "plainvalue", {}, true, true, future});
++
++  MakeCookies(profile_.Append(L"Network").Append(L"Cookies"), /*version=*/24,
++              rows);
++
++  FakeBridge bridge;
++  ChromiumFamilyReader reader(Options());
++  ChromiumFamilyReader::Stats stats = reader.Import(user_data_importer::COOKIES,
++                                                    &bridge);
++
++  EXPECT_EQ(2, stats.cookies);
++  EXPECT_EQ(1, stats.cookies_skipped_app_bound);
++  EXPECT_EQ(0, stats.cookies_failed);
++  ASSERT_EQ(2u, bridge.cookies.size());
++  bool saw_sid = false;
++  bool saw_plain = false;
++  for (const auto& c : bridge.cookies) {
++    if (c.name == "sid") {
++      // The per-host hash prefix is stripped from the value.
++      EXPECT_EQ("secret-session", c.value);
++      saw_sid = true;
++    } else if (c.name == "plain") {
++      EXPECT_EQ("plainvalue", c.value);
++      saw_plain = true;
++    }
++  }
++  EXPECT_TRUE(saw_sid);
++  EXPECT_TRUE(saw_plain);
++}
++
++TEST_F(ChromiumFamilyReaderTest, ImportsCookiesOlderLayoutNoHostHash) {
++  std::array<uint8_t, 32> raw_key = MakeKey();
++  MakeLocalState(raw_key);
++  const base::Time future = base::Time::Now() + base::Days(10);
++
++  // Meta version 23 (< 24): the decrypted value has no host-hash prefix. The
++  // older layout keeps Cookies in the profile folder itself.
++  std::vector<CookieRow> rows = {
++      {"old.example.com", "legacy", "", MakeV10Value(raw_key, "legacy-value"),
++       true, true, future}};
++  MakeCookies(profile_.Append(L"Cookies"), /*version=*/23, rows);
++
++  FakeBridge bridge;
++  ChromiumFamilyReader reader(Options());
++  ChromiumFamilyReader::Stats stats = reader.Import(user_data_importer::COOKIES,
++                                                    &bridge);
++
++  EXPECT_EQ(1, stats.cookies);
++  ASSERT_EQ(1u, bridge.cookies.size());
++  EXPECT_EQ("legacy", bridge.cookies[0].name);
++  EXPECT_EQ("legacy-value", bridge.cookies[0].value);
 +}
 +
 +TEST_F(ChromiumFamilyReaderTest, SourceUntouchedAndCopiesDeleted) {

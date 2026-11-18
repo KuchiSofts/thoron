@@ -18,8 +18,12 @@ pressing it by its element ids, never by its words:
                      with success
     the data         after Thoron is closed, its profile holds the bookmark (in a folder of its own) and the
                      history entry; Thorium's profile still holds both, unchanged
-    the report       the profile holds `Thoron import report.json`: from Thorium, at least the bookmark and
-                     the history entry counted, what was left out counted, and no address or other value
+    the cookie       a persistent cookie Thorium set for example.org (secure, HTTP only) is in Thoron's cookie
+                     jar with its value, read through DevTools (Thorium encrypted it in its store as it does
+                     every cookie; the import decrypts it with Thorium's key, which this Windows account owns)
+    the report       the profile holds `Thoron import report.json`: from Thorium, at least the bookmark, the
+                     history entry and the cookie counted, what was left out counted, and no address or other
+                     value
 
     py -3 -I tools/qa/sandbox_settings_import_check.py --installer <thoron_AVX2_mini_installer.exe> --work <scratch>
 """
@@ -82,6 +86,21 @@ function Mark($step) { $r.reached = $step; Save; Trace "step: $step" }
 $python = 'C:\ThoronTest\in\python\python.exe'
 $port = 9334
 function Tabs { try { @((Invoke-RestMethod "http://127.0.0.1:$port/json/list" -TimeoutSec 10) | Where-Object { $_.type -eq 'page' }) } catch { @() } }
+function Cdp($tab, $method, $params) {
+  # one DevTools call in a tab, and its answer as text
+  $ws = New-Object System.Net.WebSockets.ClientWebSocket
+  $none = [Threading.CancellationToken]::None
+  [void]$ws.ConnectAsync([Uri]$tab.webSocketDebuggerUrl, $none).Wait(10000)
+  $msg = @{ id = 1; method = $method; params = $params } | ConvertTo-Json -Compress -Depth 6
+  $bytes = [Text.Encoding]::UTF8.GetBytes($msg)
+  [void]$ws.SendAsync((New-Object 'ArraySegment[byte]' (,$bytes)), 'Text', $true, $none).Wait(10000)
+  $buffer = New-Object byte[] 1048576
+  $got = $ws.ReceiveAsync((New-Object 'ArraySegment[byte]' (,$buffer)), $none)
+  [void]$got.Wait(15000)
+  $text = [Text.Encoding]::UTF8.GetString($buffer, 0, $got.Result.Count)
+  $ws.Dispose()
+  return $text
+}
 function Evaluate($tab, $expression) {
   $ws = New-Object System.Net.WebSockets.ClientWebSocket
   $none = [Threading.CancellationToken]::None
@@ -118,9 +137,14 @@ try {
   $null = $p.WaitForExit(300000)
   $r.installed = Test-Path (Join-Path $app 'thoron.exe')
 
-  Mark 'a Thorium profile with a bookmark and a history entry'
-  Start-Process (Join-Path $app 'thoron.exe') -ArgumentList "--user-data-dir=`"$thorium`"", '--no-first-run', 'about:blank' | Out-Null
+  Mark 'a Thorium profile with a bookmark, a history entry and a cookie'
+  Start-Process (Join-Path $app 'thoron.exe') -ArgumentList "--user-data-dir=`"$thorium`"", '--no-first-run', '--remote-debugging-port=9335', 'about:blank' | Out-Null
   Start-Sleep -Seconds 20
+  $page = @((Invoke-RestMethod 'http://127.0.0.1:9335/json/list' -TimeoutSec 10) | Where-Object { $_.type -eq 'page' }) | Select-Object -First 1
+  $expires = [int]([DateTimeOffset]::UtcNow.ToUnixTimeSeconds() + 30 * 86400)
+  if ($page) {
+    $r.cookie_set = Cdp $page 'Network.setCookie' @{ name = 'thoron_import'; value = 'came-along'; domain = 'example.org'; path = '/'; secure = $true; httpOnly = $true; expires = $expires }
+  }
   Thoriums | ForEach-Object { $q = Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue; if ($q -and $q.MainWindowHandle -ne 0) { try { [void]$q.CloseMainWindow() } catch {} } }
   $end = (Get-Date).AddSeconds(30); while ((Thoriums) -and (Get-Date) -lt $end) { Start-Sleep -Seconds 1 }
   Start-Sleep -Seconds 3
@@ -143,6 +167,7 @@ try {
     $r.listed = Evaluate $tab "(() => { $dialog if (!d) return 'no dialog'; const s = d.shadowRoot.getElementById('browserSelect'); return JSON.stringify(Array.from(s.options).map(o => o.textContent.trim())); })()"
     $r.chosen = Evaluate $tab "(() => { $dialog const s = d.shadowRoot.getElementById('browserSelect'); const i = Array.from(s.options).findIndex(o => o.textContent.trim().startsWith('Thorium')); if (i < 0) return -1; s.selectedIndex = i; s.dispatchEvent(new Event('change')); return i; })()"
     Start-Sleep -Seconds 2
+    $r.boxes = Evaluate $tab "(() => { $dialog const boxes = Array.from(d.shadowRoot.querySelectorAll('settings-checkbox')).filter(c => !c.hidden); boxes.forEach(c => c.checked = true); return JSON.stringify(boxes.map(c => c.id)); })()"
     $ours = @(Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'thoron.exe' -and $_.CommandLine -like '*Import test*' } | ForEach-Object { [int]$_.ProcessId })
     $r.windows_before = @(TopWindows $ours).Count
     $r.import_pressed = Evaluate $tab "(() => { $dialog d.shadowRoot.getElementById('import').click(); return 'pressed'; })()"
@@ -169,6 +194,10 @@ try {
     $r.status = $status
   }
   Mark 'the data'
+  if ($tab) {
+    $jar = Cdp $tab 'Network.getAllCookies' @{}
+    $r.cookie_in_thoron = ($jar -match '"name":"thoron_import"') -and ($jar -match '"value":"came-along"')
+  }
   Get-Process thoron -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 } | ForEach-Object { try { [void]$_.CloseMainWindow() } catch {} }
   $end = (Get-Date).AddSeconds(30); while ((Get-Process thoron -ErrorAction SilentlyContinue) -and (Get-Date) -lt $end) { Start-Sleep -Seconds 1 }
   Get-Process thoron -ErrorAction SilentlyContinue | Stop-Process -Force
@@ -236,7 +265,11 @@ def problems(r: dict) -> dict[str, list[str]]:
           and imported.get("bookmarks", 0) >= 1 and imported.get("history", 0) >= 1
           and isinstance(report.get("left_out"), dict),
           f"no report with the counts of the import: {str(r.get('report'))[:200]!r}")
-    check("the report", "example.org" not in str(r.get("report")), "the report holds an address")
+    check("the report", "example.org" not in str(r.get("report")) and "came-along" not in str(r.get("report")),
+          "the report holds an address or a value")
+    check("the cookie", bool(r.get("cookie_in_thoron")), "the cookie Thorium set is not in Thoron's cookie jar")
+    if imported:                              # a missing report is the report's own finding
+        check("the cookie", imported.get("cookies", 0) >= 1, "the report counts no cookie")
     return out
 
 

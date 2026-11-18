@@ -10,9 +10,9 @@ GOOD = {"installed": True, "thorium_before": BOTH, "settings_open": True,
         "listed": '["Microsoft Edge", "Thorium", "Bookmarks HTML File"]', "chosen": 1,
         "windows_before": 1, "windows_with_request": 2, "status_while_running": "inProgress",
         "thorium_still_runs": True, "thorium_closed": True, "status": "succeeded",
-        "thoron_after": BOTH, "thorium_after": BOTH, "done": True,
+        "thoron_after": BOTH, "thorium_after": BOTH, "done": True, "cookie_in_thoron": True,
         "report": '{"format": 1, "source": "Thorium", "time": "2026-11-18T05:00:00.000Z", '
-                  '"imported": {"bookmarks": 1, "history": 1, "passwords": 0}, '
+                  '"imported": {"bookmarks": 1, "history": 1, "passwords": 0, "cookies": 1}, '
                   '"left_out": {"passwords_locked_by_chrome": 0}}'}
 
 
@@ -37,9 +37,12 @@ class ProblemsTests(unittest.TestCase):
             ({"thoron_after": '{"bookmark": true, "history": false}'}, "the data"),
             ({"thorium_after": '{"bookmark": false, "history": true}'}, "the data"),
             ({"report": ""}, "the report"),
-            ({"report": '{"format": 1, "source": "Thorium", "imported": {"bookmarks": 0, "history": 1}, "left_out": {}}'},
+            ({"report": '{"format": 1, "source": "Thorium", "imported": {"bookmarks": 0, "history": 1, "cookies": 1}, "left_out": {}}'},
              "the report"),
             ({"report": GOOD_REPORT.replace('"Thorium"', '"Thorium https://example.org/x"')}, "the report"),
+            ({"report": GOOD_REPORT.replace('"Thorium"', '"Thorium came-along"')}, "the report"),
+            ({"cookie_in_thoron": False}, "the cookie"),
+            ({"report": GOOD_REPORT.replace('"cookies": 1', '"cookies": 0')}, "the cookie"),
         ]
         for change, step in cases:
             with self.subTest(change=change):

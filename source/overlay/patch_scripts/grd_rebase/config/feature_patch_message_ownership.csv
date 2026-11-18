@@ -59,3 +59,4 @@
 "other/ks-native-adblock-hook.patch","chrome/app/thoron_welcome_strings.grdp","IDS_THORON_WELCOME_DEFAULT_BUTTON","feature_patch","keep_in_feature_patch","xtb_additions_complete","Thoron P3.21: the welcome page of the first start"
 "other/ks-native-adblock-hook.patch","chrome/app/thoron_welcome_strings.grdp","IDS_THORON_WELCOME_ALREADY_DEFAULT","feature_patch","keep_in_feature_patch","xtb_additions_complete","Thoron P3.21: the welcome page of the first start"
 "other/ks-native-adblock-hook.patch","chrome/app/thoron_welcome_strings.grdp","IDS_THORON_WELCOME_LATER","feature_patch","keep_in_feature_patch","xtb_additions_complete","Thoron P3.21: the welcome page of the first start"
+"other/ks-native-adblock-hook.patch","chrome/app/settings_strings.grdp","IDS_SETTINGS_IMPORT_COOKIES_CHECKBOX","feature_patch","keep_in_feature_patch","xtb_additions_complete","Thoron P3.14: checkbox for importing cookies and site sign-ins"

@@ -164,7 +164,7 @@ Explanations live in the design docs under `docs/design/`.
 - **Mail:** put Thoron M-Notifier's accounts in your own order: drag them, or use their arrows (Alt and an arrow key). The menu follows it, and the backup keeps it.
 - **Mail:** edit a mailbox (address, password, server) and an account of your list (address, name, password); an empty password keeps the one there is, and a new one is signed in to before it is kept.
 - **QA tools:** `mail_manage_check.py` checks the M-Notifier's order, its editing and the backup saved into a file, offline.
-- **Mail:** Thoron M-Notifier's own page has tabs (Accounts, Alerts and sounds, Counting, Display, Backup) and one list of every account, each shown once with its counts; the menu's Settings button opens it.
+- **Mail:** Thoron M-Notifier's own page has tabs (Accounts, Alerts and sounds, Counting, Display, Backup) and one list of every account, each shown once with its counts; the menu's Settings button opens it, and the menu shows an account by the name your list gives it.
 - **Mail:** ten new sounds for new mail, made by Thoron itself (no recordings, nothing to license), beside Windows' own: hear each before choosing, set the volume, and give an account its own sound or none.
 - **Mail:** smart quiet: no sound while a full-screen program, a game or a presentation runs, none while that inbox is the tab in front of you, and quiet hours that hold notices too.
 - **QA tools:** `mail_settings_check.py` checks the M-Notifier's tabs, its Settings button, the one list of accounts, the sounds and the quiet rules, offline.

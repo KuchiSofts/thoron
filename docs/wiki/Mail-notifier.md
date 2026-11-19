@@ -25,7 +25,8 @@ account you are signed in to in Thoron (Gmail and Google Workspace).
 
 - **The envelope:** in the browser's own colour, with the count in its corner while there is new mail (next to
   it in the address bar). Click it for the menu:
-  - each account with its new and unread mail; click an account to open its inbox (and reset its count);
+  - each account with its new and unread mail, by the name your list gives it (from X-notifier, say) or its
+    address; click an account to open its inbox (and reset its count);
   - **Check now**, **Add an account**, and **Settings** (the gear), which opens Thoron M-Notifier's own page in a
     tab.
 - **Move it with the mouse:** drag the envelope to another place of the toolbar, or past Thoron adblock's

@@ -11916,10 +11916,10 @@ index 0000000000000000000000000000000000000000..4c249e10c731f7b7fc3e2bf12a29b82e
 +#endif  // COMPONENTS_THORON_MAIL_MAIL_FEED_H_
 diff --git a/components/thoron_mail/mail_page.cc b/components/thoron_mail/mail_page.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..3d44a07b9634c63ddc1e6ecd450eb01eda410904
+index 0000000000000000000000000000000000000000..7fe619eabdb28320639373323767c4bb7395b630
 --- /dev/null
 +++ b/components/thoron_mail/mail_page.cc
-@@ -0,0 +1,2081 @@
+@@ -0,0 +1,2086 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -12843,14 +12843,19 @@ index 0000000000000000000000000000000000000000..3d44a07b9634c63ddc1e6ecd450eb01e
 +  }
 +  // only the accounts and their counts, as X-notifier, unless the messages are asked for
 +  const listed = next.choices.messages === 'on';
++  // P5.82: the name the person gave an account (their list) stands for its address; the address is the tooltip
++  const names = new Map((next.wanted || []).filter((item) => item.alias).map((item) => [canonical(item.email),
++                                                                                      item.alias]));
 +  for (const account of next.accounts) {
 +    const card = make('section', account.watched ? 'account' : 'account off');
 +    // the account opens its inbox, and its new mail is counted from then
 +    const row = make('button', 'row');
 +    row.type = 'button';
-+    row.title = t('Open the inbox (the new mail is counted from then)');
++    const name = names.get(canonical(account.email));
++    row.title = `${name ? `${account.email}\n` : ''}${t('Open the inbox (the new mail is counted from then)')}`;
 +    row.addEventListener('click', () => chrome.send('openInbox', [account.index]));
-+    row.append(make('span', 'face', (account.email || '?').slice(0, 1)), make('span', 'email', account.email));
++    row.append(make('span', 'face', (name || account.email || '?').slice(0, 1)),
++               make('span', 'email', name || account.email));
 +    if (account.problem) {
 +      // a mailbox the last look could not read
 +      const warn = make('span', 'warn', '!');

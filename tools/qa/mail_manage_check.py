@@ -225,15 +225,18 @@ class Page:
             time.sleep(0.25)
 
     def arrow(self, email: str, by: int) -> None:
-        """The page's own arrow of an account pressed."""
-        self.run(f"document.querySelector('#watch .watch-row[data-email={json.dumps(email)}] "
-                 f"button.move[data-move=\"{by}\"]').click(); 1")
+        """The account opened in the page's list, and its own "Move up" (-1) or "Move down" (1) pressed."""
+        item = f"#list .item[data-email={json.dumps(email)}]"
+        self.run(f"(() => {{ const open = document.querySelector('{item} button.open'); "
+                 "if (open.getAttribute('aria-expanded') !== 'true') { open.click(); } return 1; })()")
+        time.sleep(0.5)
+        self.run(f"document.querySelector('{item} .details button[data-move=\"{by}\"]').click(); 1")
         time.sleep(0.8)
 
     def drag(self, moved: str, onto: str) -> None:
         """An account dragged onto the upper half of another, as with the mouse."""
         self.run(f"""(() => {{
-            const rows = [...document.querySelectorAll('#watch .watch-row')];
+            const rows = [...document.querySelectorAll('#list .item')];
             const from = rows.find((r) => r.dataset.email === {json.dumps(moved)});
             const to = rows.find((r) => r.dataset.email === {json.dumps(onto)});
             const data = new DataTransfer();

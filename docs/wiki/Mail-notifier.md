@@ -26,19 +26,39 @@ account you are signed in to in Thoron (Gmail and Google Workspace).
 - **The envelope:** in the browser's own colour, with the count in its corner while there is new mail (next to
   it in the address bar). Click it for the menu:
   - each account with its new and unread mail; click an account to open its inbox (and reset its count);
-  - **Check now**, **Add an account**.
+  - **Check now**, **Add an account**, and **Settings** (the gear), which opens Thoron M-Notifier's own page in a
+    tab.
 - **Move it with the mouse:** drag the envelope to another place of the toolbar, or past Thoron adblock's
   shield to change their order.
-- **Settings** (the gear in the menu):
-  - **Show it** next to the address bar, in the address bar, or in both; and where: right after the address bar,
-    after the extensions or next to the menu; with the address bar's other icons, before them or at the far end;
-  - **The icon counts** new mail since you looked, or all unread mail;
-  - **Look every** 1 to 30 minutes;
-  - **Play a sound for new mail** (on), **Show a notice for new mail** (off) and **List the messages in this
-    menu** (off): as it comes, it only counts and makes a sound;
-  - **Open mail in** the account's open Gmail tab, or a new tab;
-  - **Accounts to watch**: one you untick is still listed but not counted, and you are not told of its mail.
 - To turn it off entirely, set "Thoron M-Notifier" to **Disabled** on `chrome://flags/#thoron-mail-notifier`.
+
+## Its page
+
+The page has five tabs, and keeps the one you chose in its address (a link to `#manage/alerts` opens Alerts):
+
+- **Accounts:** every account in one list, each once: its name or address, what kind it is, its new and unread
+  mail, and a switch to count it or not (one switched off is still listed, but not counted, and you are not told
+  of its mail). Open an account (its name, or the arrow at its end) to give it its own sound, move it, edit it
+  or remove it. With more than six accounts, **Find an account** narrows the list as you type.
+- **Alerts and sounds:** the sound (see below), **Show a notice for new mail** and **List the messages in this
+  menu**.
+- **Counting:** **The icon counts** new mail since you looked, or all unread mail; **Look every** 1 to 30
+  minutes; **Of Gmail, count** the whole inbox, only the Primary tab, or the inbox and spam.
+- **Display:** **Show it** next to the address bar, in the address bar, or in both, and where; **Open mail in**
+  the account's open Gmail tab, or a new tab.
+- **Backup:** see below.
+
+## Sounds
+
+- **Sound:** Windows' own new-mail sound, or one of ten that Thoron makes itself: Chime, Bell, Marimba, Pop,
+  Water drops, Bright, Soft, Knock, Ding and Double beep. **Play** lets you hear it first. Thoron's sounds have a
+  **Volume** of their own; Windows' sound plays at the system's volume.
+- **An account's own sound:** open the account under Accounts and choose **Its sound**: the sound for all
+  accounts, another one, or **No sound** (its mail is still counted).
+- **Stay quiet:** while a full-screen program, a game or a presentation runs (as Windows tells it); while that
+  inbox is the tab in front of you (you are already looking at it); and in **Quiet hours** you set (from 22:00 to
+  07:00, say), which hold the notices too.
+- No recording is used: each of Thoron's sounds is made from tones when it plays, so none is anyone else's work.
 
 ## Mailboxes by address and password
 
@@ -53,33 +73,33 @@ You are not limited to the Google accounts Thoron is signed in to. In the menu c
   make one in your Google Account under Security, 2-Step Verification, App passwords.
 - **Outlook, Hotmail and Live** cannot be added this way: Microsoft no longer lets mail programs sign in with a
   password. **Proton Mail** needs its Bridge app, which Thoron does not use yet.
-- To change a mailbox (a new password, another address or server): **Edit**, next to it under "Accounts to
-  watch" on Thoron M-Notifier's page (**Accounts and backup...** in its menu). Leave the password empty to keep the one it has. A new password, address or server is signed in to
-  first and kept only when that works, so a typo changes nothing. Only its mail page is kept at once.
-- To take a mailbox out again: **Remove**, next to it.
+- To change a mailbox (a new password, another address or server): open it under Accounts and choose **Edit**.
+  Leave the password empty to keep the one it has. A new password, address or server is signed in to first and
+  kept only when that works, so a typo changes nothing. Only its mail page is kept at once.
+- To take a mailbox out again: open it and choose **Remove** (twice: the first press asks).
 
 ## Your order
 
-Under **Accounts to watch**, drag an account to where you want it, or use its arrows (▲ ▼; with the keyboard,
-Alt and an arrow key). The menu lists the accounts in that order, it stays after a restart, and it is in the
-backup.
+Under Accounts, drag an account to where you want it, or open it and use **Move up** and **Move down** (with the
+keyboard, Alt and an arrow key). The menu lists the accounts in that order, it stays after a restart, and it is in
+the backup.
 
 ## What is counted
 
-Under **Counting**, "Of Gmail, count": the whole inbox, only the Primary tab, or the inbox and spam. Spam is
+On the Counting tab, "Of Gmail, count": the whole inbox, only the Primary tab, or the inbox and spam. Spam is
 never counted unless you choose that.
 
 ## Coming from X-notifier
 
 X-notifier can save its accounts to a file with a passphrase (its Export). Thoron M-Notifier reads that file:
 
-1. Open Thoron M-Notifier's page (**Accounts and backup...** in its menu).
-2. Under **Backup**, type the file's passphrase and choose **Read a file of X-notifier...**.
-3. Your Google accounts appear under **Google accounts of your list**, each with its name and its password
-   kept encrypted. One that Thoron is signed in to at Google says **Counted**. For the others, **Sign in**
+1. Open Thoron M-Notifier's page (**Settings**, the gear in its menu).
+2. On the Backup tab, type the file's passphrase and choose **Read a file of X-notifier...**.
+3. Your Google accounts appear under Accounts, each with its name and its password kept encrypted. One
+   that Thoron is signed in to at Google shows its mail. For the others, **Sign in**
    opens Google's page with the address filled in, and **Copy password** puts its password on the clipboard
    to paste there. You do this once for an account; Google keeps the sign-in.
-4. **Edit** next to an account changes its address, its name or its password (left empty, the password stays).
+4. Open an account and choose **Edit**: it changes its address, its name or its password (left empty, the password stays).
    An *app password* typed there also lets Thoron read the account's mail as a mailbox.
 
 Thoron M-Notifier does not sign in to Google by itself the way X-notifier does: that is what signs people
@@ -87,7 +107,7 @@ out. Up to 30 Google accounts are counted. Entries of X-notifier that are not ma
 
 ## Backup
 
-On Thoron M-Notifier's page, under **Backup**:
+On Thoron M-Notifier's page, on the Backup tab:
 
 - **Save a backup...** writes your mailboxes, your list, your order and your settings to a file you choose in
   Windows' own Save dialog (named with the day, so older backups stay beside it; the next one starts in the same

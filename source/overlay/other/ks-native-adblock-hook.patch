@@ -2115,7 +2115,7 @@ index af9b6f1dc58174281ec64b74c578a3639888ce86..198ab30e882fb2fd51c0b88e79088925
                            /*edge_padding=*/trailing_decorations_edge_padding);
  
 diff --git a/chrome/browser/prefs/browser_prefs.cc b/chrome/browser/prefs/browser_prefs.cc
-index fdd05fad32252be538eef299e830625a6a3c96ba..83daf1c80fbb0d7aa01928a62d8391390fb933a8 100644
+index fdd05fad32252be538eef299e830625a6a3c96ba..95e1ec9972ab61d891f0c57cc9070dba70e5929f 100644
 --- a/chrome/browser/prefs/browser_prefs.cc
 +++ b/chrome/browser/prefs/browser_prefs.cc
 @@ -3,6 +3,7 @@
@@ -2136,7 +2136,7 @@ index fdd05fad32252be538eef299e830625a6a3c96ba..83daf1c80fbb0d7aa01928a62d839139
    // Call outs to individual subsystems that register Local State (browser-wide)
    // prefs en masse. See RegisterProfilePrefs for per-profile prefs. Please
    // keep this list alphabetized.
-@@ -2049,6 +2053,40 @@ void RegisterLocalState(PrefRegistrySimple* registry) {
+@@ -2049,6 +2053,50 @@ void RegisterLocalState(PrefRegistrySimple* registry) {
  void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry,
                            const std::string& locale) {
    TRACE_EVENT0("browser", "chrome::RegisterProfilePrefs");
@@ -2170,6 +2170,16 @@ index fdd05fad32252be538eef299e830625a6a3c96ba..83daf1c80fbb0d7aa01928a62d839139
 +  registry->RegisterListPref("thoron_mail.order");
 +  registry->RegisterFilePathPref("thoron_mail.backup_folder",
 +                                 base::FilePath());
++  // P5.82: the sound of new mail ("" is Windows' own), its volume, when it
++  // stays quiet (full screen, the inbox in front, quiet hours in minutes of
++  // the day, -1 for none), and each account's own sound.
++  registry->RegisterStringPref("thoron_mail.sound_name", std::string());
++  registry->RegisterIntegerPref("thoron_mail.sound_volume", 70);
++  registry->RegisterBooleanPref("thoron_mail.quiet_fullscreen", true);
++  registry->RegisterBooleanPref("thoron_mail.quiet_in_front", true);
++  registry->RegisterIntegerPref("thoron_mail.quiet_from", -1);
++  registry->RegisterIntegerPref("thoron_mail.quiet_to", -1);
++  registry->RegisterDictionaryPref("thoron_mail.account_sounds");
 +  // Thoron's own toolbar buttons (P5.78): their order, left to right, where
 +  // they are next to each other ("mail,adblock"; "" is that default). A
 +  // person changes it by moving a button with the mouse.
@@ -7359,10 +7369,10 @@ index 0000000000000000000000000000000000000000..d0fafbafa75adc4e08b11c75f203035c
 +#endif  // CHROME_BROWSER_UI_WEBUI_THORON_ADBLOCK_UI_H_
 diff --git a/chrome/browser/ui/webui/thoron_mail_ui.cc b/chrome/browser/ui/webui/thoron_mail_ui.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..e1d7155ad22515b6223a70b8a6dda484ac45853b
+index 0000000000000000000000000000000000000000..46ea28316ffa01599a665b4a91c12b512c9981ad
 --- /dev/null
 +++ b/chrome/browser/ui/webui/thoron_mail_ui.cc
-@@ -0,0 +1,1879 @@
+@@ -0,0 +1,2186 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -7444,8 +7454,10 @@ index 0000000000000000000000000000000000000000..e1d7155ad22515b6223a70b8a6dda484
 +#include <windows.h>
 +
 +#include <mmsystem.h>
++#include <shellapi.h>
 +#pragma comment(lib, "winmm.lib")
 +#endif
++#include "components/thoron_mail/mail_sounds.h"
 +#if BUILDFLAG(IS_CHROMEOS)
 +#include "ash/constants/notifier_catalogs.h"
 +#endif
@@ -7557,6 +7569,10 @@ index 0000000000000000000000000000000000000000..e1d7155ad22515b6223a70b8a6dda484
 +    Register("editImapAccount", &MailHandler::EditImapAccount);
 +    Register("editGoogleAccount", &MailHandler::EditGoogleAccount);
 +    Register("setOrder", &MailHandler::SetOrder);
++    Register("setSound", &MailHandler::SetSound);
++    Register("setQuiet", &MailHandler::SetQuiet);
++    Register("setAccountSound", &MailHandler::SetAccountSound);
++    Register("previewSound", &MailHandler::PreviewSound);
 +    Register("importGoogleAccounts", &MailHandler::ImportGoogleAccounts);
 +    Register("removeGoogleAccount", &MailHandler::RemoveGoogleAccount);
 +    Register("signInGoogle", &MailHandler::SignInGoogle);
@@ -7671,8 +7687,33 @@ index 0000000000000000000000000000000000000000..e1d7155ad22515b6223a70b8a6dda484
 +          "toolbar-position", "address-position"}) {
 +      choices.Set(name, service.Choice(name));
 +    }
++    // P5.82: the sound, its volume, the quiet rules and each account's own
++    const ThoronMailCenter::SoundSettings settings = Center().sound_settings();
++    base::ListValue names;
++    for (const std::string& made : thoron_mail::MadeSoundNames()) {
++      names.Append(made);
++    }
++    base::DictValue sound = base::DictValue()
++                                .Set("name", settings.name)
++                                .Set("volume", settings.volume)
++                                .Set("names", std::move(names))
++                                .Set("quietFullscreen", settings.quiet_fullscreen)
++                                .Set("quietInFront", settings.quiet_in_front)
++                                .Set("quietFrom", settings.quiet_from)
++                                .Set("quietTo", settings.quiet_to)
++                                .Set("accounts", Center().AccountSounds())
++                                .Set("last", Center().last_sound())
++                                .Set("held", Center().sounds_held())
++                                .Set("lastQuiet", Center().last_quiet());
++    // P5.81: the person's order, for the page's one list of every account
++    base::ListValue account_order;
++    for (const std::string& name : service.Order()) {
++      account_order.Append(name);
++    }
 +    ResolveJavascriptCallback(
 +        args[0], base::DictValue()
++                     .Set("sound", std::move(sound))
++                     .Set("order", std::move(account_order))
 +                     .Set("accounts", std::move(accounts))
 +                     .Set("wanted", std::move(wanted))
 +                     .Set("choices", std::move(choices))
@@ -7905,6 +7946,45 @@ index 0000000000000000000000000000000000000000..e1d7155ad22515b6223a70b8a6dda484
 +    ResolveJavascriptCallback(
 +        args[0],
 +        base::Value(Center().EditGoogleAccount(*before, std::move(account))));
++  }
++
++  // P5.82: [name, volume]: the sound for all accounts and its volume
++  void SetSound(const base::ListValue& args) {
++    if (args.size() >= 2 && args[0].is_string() && args[1].is_int()) {
++      Center().SetSoundName(args[0].GetString());
++      Center().SetSoundVolume(args[1].GetInt());
++      OnMailChanged();
++    }
++  }
++
++  // P5.82: [{fullscreen, front, from, to}] (from and to in minutes of the
++  // day, -1 for no quiet hours)
++  void SetQuiet(const base::ListValue& args) {
++    const base::DictValue* given = args.empty() ? nullptr : args[0].GetIfDict();
++    if (!given) {
++      return;
++    }
++    Center().SetQuiet(given->FindBool("fullscreen").value_or(true),
++                      given->FindBool("front").value_or(true),
++                      given->FindInt("from").value_or(-1),
++                      given->FindInt("to").value_or(-1));
++    OnMailChanged();
++  }
++
++  // P5.82: [address, name]: "" the sound for all, "off", or a sound's name
++  void SetAccountSound(const base::ListValue& args) {
++    if (args.size() >= 2 && args[0].is_string() && args[1].is_string()) {
++      Center().SetAccountSound(args[0].GetString(), args[1].GetString());
++      OnMailChanged();
++    }
++  }
++
++  // P5.82: [name, volume]: heard now, to choose it
++  void PreviewSound(const base::ListValue& args) {
++    if (args.size() >= 2 && args[0].is_string() && args[1].is_int()) {
++      Center().PreviewSound(args[0].GetString(), args[1].GetInt());
++      OnMailChanged();
++    }
 +  }
 +
 +  // P5.81: [[addresses, first to last]]
@@ -8179,6 +8259,12 @@ index 0000000000000000000000000000000000000000..e1d7155ad22515b6223a70b8a6dda484
 +
 +ThoronMailCenter::~ThoronMailCenter() {
 +  service_->RemoveObserver(this);
++#if BUILDFLAG(IS_WIN)
++  // a made sound still playing reads `playing_`, which goes now
++  if (!playing_.empty()) {
++    ::PlaySoundW(nullptr, nullptr, 0);
++  }
++#endif
 +}
 +
 +void ThoronMailCenter::OpenGmail(const GURL& url, int index) {
@@ -8875,6 +8961,9 @@ index 0000000000000000000000000000000000000000..e1d7155ad22515b6223a70b8a6dda484
 +                             (add ? "#manage-add" : "#manage")),
 +                        ui::PAGE_TRANSITION_AUTO_BOOKMARK);
 +  params.disposition = WindowOpenDisposition::kSingletonTab;
++  // P5.82: a page that is open already is brought forward at the part asked
++  // for (its settings, or the form to add a mailbox), not left where it was
++  params.path_behavior = NavigateParams::IGNORE_AND_NAVIGATE;
 +  params.window_action = NavigateParams::WindowAction::kShowWindow;
 +  Navigate(&params);
 +}
@@ -8925,7 +9014,19 @@ index 0000000000000000000000000000000000000000..e1d7155ad22515b6223a70b8a6dda484
 +               .Set("choices", std::move(choices))
 +               .Set("ignored", prefs->GetList("thoron_mail.ignored").Clone())
 +               .Set("order", prefs->GetString("thoron.toolbar_order"))
-+               .Set("accountOrder", std::move(order)))
++               .Set("accountOrder", std::move(order))
++               .Set("sound", [&] {
++                 // P5.82: the sound, the quiet rules, each account's own
++                 const SoundSettings sound = sound_settings();
++                 return base::DictValue()
++                     .Set("name", sound.name)
++                     .Set("volume", sound.volume)
++                     .Set("quietFullscreen", sound.quiet_fullscreen)
++                     .Set("quietInFront", sound.quiet_in_front)
++                     .Set("quietFrom", sound.quiet_from)
++                     .Set("quietTo", sound.quiet_to)
++                     .Set("accounts", AccountSounds());
++               }()))
 +      .Set("accounts", std::move(accounts))
 +      .Set("google", std::move(google));
 +}
@@ -9029,6 +9130,27 @@ index 0000000000000000000000000000000000000000..e1d7155ad22515b6223a70b8a6dda484
 +      }
 +      service_->SetOrder(emails);
 +    }
++    // P5.82: each value checked as when the person sets it
++    if (const base::DictValue* sound = settings->FindDict("sound")) {
++      if (const std::string* name = sound->FindString("name")) {
++        SetSoundName(*name);
++      }
++      if (std::optional<int> volume = sound->FindInt("volume")) {
++        SetSoundVolume(*volume);
++      }
++      const SoundSettings now = sound_settings();
++      SetQuiet(sound->FindBool("quietFullscreen").value_or(now.quiet_fullscreen),
++               sound->FindBool("quietInFront").value_or(now.quiet_in_front),
++               sound->FindInt("quietFrom").value_or(now.quiet_from),
++               sound->FindInt("quietTo").value_or(now.quiet_to));
++      if (const base::DictValue* own = sound->FindDict("accounts")) {
++        for (const auto [email, value] : *own) {
++          if (value.is_string()) {
++            SetAccountSound(email, value.GetString());
++          }
++        }
++      }
++    }
 +  }
 +  // P5.80: the Google accounts of the person's list. One the backup names
 +  // without its password keeps the password it has here.
@@ -9111,20 +9233,205 @@ index 0000000000000000000000000000000000000000..e1d7155ad22515b6223a70b8a6dda484
 +  std::move(done).Run(std::string(), static_cast<int>(accounts.size()));
 +}
 +
-+void ThoronMailCenter::PlayNewMailSound() {
++namespace {
++
++// P5.82: the sound settings of the profile.
++constexpr char kSoundNamePref[] = "thoron_mail.sound_name";
++constexpr char kSoundVolumePref[] = "thoron_mail.sound_volume";
++constexpr char kQuietFullscreenPref[] = "thoron_mail.quiet_fullscreen";
++constexpr char kQuietInFrontPref[] = "thoron_mail.quiet_in_front";
++constexpr char kQuietFromPref[] = "thoron_mail.quiet_from";
++constexpr char kQuietToPref[] = "thoron_mail.quiet_to";
++constexpr char kAccountSoundsPref[] = "thoron_mail.account_sounds";
++constexpr size_t kMostAccountSounds = 60;
++
++bool ForOfflineChecks() {
++  return base::CommandLine::ForCurrentProcess()->HasSwitch(
++      "thoron-mail-feeds-for-testing");
++}
++
++int MinuteOrOff(int minute) {
++  return minute >= 0 && minute < 24 * 60 ? minute : -1;
++}
++
++}  // namespace
++
++ThoronMailCenter::SoundSettings ThoronMailCenter::sound_settings() const {
++  const PrefService* prefs = profile_->GetPrefs();
++  SoundSettings settings;
++  settings.name = prefs->GetString(kSoundNamePref);
++  if (!thoron_mail::IsKnownSound(settings.name)) {
++    settings.name = thoron_mail::kSystemSound;
++  }
++  settings.volume = std::clamp(prefs->GetInteger(kSoundVolumePref), 0, 100);
++  settings.quiet_fullscreen = prefs->GetBoolean(kQuietFullscreenPref);
++  settings.quiet_in_front = prefs->GetBoolean(kQuietInFrontPref);
++  settings.quiet_from = MinuteOrOff(prefs->GetInteger(kQuietFromPref));
++  settings.quiet_to = MinuteOrOff(prefs->GetInteger(kQuietToPref));
++  return settings;
++}
++
++void ThoronMailCenter::SetSoundName(const std::string& name) {
++  if (thoron_mail::IsKnownSound(name)) {
++    profile_->GetPrefs()->SetString(kSoundNamePref, name);
++  }
++}
++
++void ThoronMailCenter::SetSoundVolume(int volume) {
++  profile_->GetPrefs()->SetInteger(kSoundVolumePref, std::clamp(volume, 0, 100));
++}
++
++void ThoronMailCenter::SetQuiet(bool fullscreen, bool in_front, int from, int to) {
++  PrefService* prefs = profile_->GetPrefs();
++  prefs->SetBoolean(kQuietFullscreenPref, fullscreen);
++  prefs->SetBoolean(kQuietInFrontPref, in_front);
++  from = MinuteOrOff(from);
++  to = MinuteOrOff(to);
++  // both, or no quiet hours
++  if (from < 0 || to < 0 || from == to) {
++    from = to = -1;
++  }
++  prefs->SetInteger(kQuietFromPref, from);
++  prefs->SetInteger(kQuietToPref, to);
++}
++
++std::string ThoronMailCenter::AccountSound(const std::string& email) const {
++  const std::string* name = profile_->GetPrefs()
++                                ->GetDict(kAccountSoundsPref)
++                                .FindString(thoron_mail::CanonicalAddress(email));
++  return name && (*name == "off" || thoron_mail::IsKnownSound(*name))
++             ? *name
++             : std::string();
++}
++
++void ThoronMailCenter::SetAccountSound(const std::string& email,
++                                       const std::string& name) {
++  if (!IsAddress(email) ||
++      !(name.empty() || name == "off" || thoron_mail::IsKnownSound(name))) {
++    return;
++  }
++  base::DictValue sounds =
++      profile_->GetPrefs()->GetDict(kAccountSoundsPref).Clone();
++  const std::string key = thoron_mail::CanonicalAddress(email);
++  if (name.empty()) {
++    sounds.Remove(key);
++  } else if (sounds.contains(key) || sounds.size() < kMostAccountSounds) {
++    sounds.Set(key, name);
++  }
++  profile_->GetPrefs()->SetDict(kAccountSoundsPref, std::move(sounds));
++}
++
++base::DictValue ThoronMailCenter::AccountSounds() const {
++  base::DictValue out;
++  for (const auto [key, value] :
++       profile_->GetPrefs()->GetDict(kAccountSoundsPref)) {
++    if (value.is_string() &&
++        (value.GetString() == "off" || thoron_mail::IsKnownSound(value.GetString()))) {
++      out.Set(key, value.GetString());
++    }
++  }
++  return out;
++}
++
++void ThoronMailCenter::PreviewSound(const std::string& name, int volume) {
++  if (thoron_mail::IsKnownSound(name)) {
++    PlayMailSound(name, std::clamp(volume, 0, 100));
++  }
++}
++
++bool ThoronMailCenter::InFront(const thoron_mail::MailAccount& account) const {
++  bool in_front = false;
++  ForEachCurrentBrowserWindowInterfaceOrderedByActivation(
++      [&](BrowserWindowInterface* browser) {
++        // only the window the person uses last, when it is the active one
++        if (browser->GetProfile() != profile_) {
++          return true;
++        }
++        if (!browser->GetWindow() || !browser->GetWindow()->IsActive()) {
++          return false;
++        }
++        content::WebContents* tab =
++            browser->GetTabStripModel()->GetActiveWebContents();
++        const GURL url = tab ? tab->GetLastCommittedURL() : GURL();
++        if (account.imap) {
++          const GURL webmail(account.webmail);
++          in_front = webmail.is_valid() && url.host() == webmail.host();
++        } else {
++          const std::string inbox =
++              "/mail/u/" + base::NumberToString(account.index);
++          in_front = url.host() == "mail.google.com" &&
++                     (url.path() == inbox ||
++                      base::StartsWith(url.path(), inbox + "/") ||
++                      (account.index == 0 && url.path() == "/mail/"));
++        }
++        return false;
++      });
++  return in_front;
++}
++
++std::string ThoronMailCenter::QuietReason(
++    const thoron_mail::MailAccount& account) const {
++  if (AccountSound(account.email) == "off") {
++    return "account";
++  }
++  const SoundSettings settings = sound_settings();
++  if (settings.quiet_from >= 0 && settings.quiet_to >= 0) {
++    base::Time::Exploded now;
++    base::Time::Now().LocalExplode(&now);
++    const int minute = now.hour * 60 + now.minute;
++    // hours that go past midnight (22:00 to 07:00) as well as those that do not
++    const bool inside =
++        settings.quiet_from < settings.quiet_to
++            ? minute >= settings.quiet_from && minute < settings.quiet_to
++            : minute >= settings.quiet_from || minute < settings.quiet_to;
++    if (inside) {
++      return "hours";
++    }
++  }
++  if (settings.quiet_in_front && InFront(account)) {
++    return "front";
++  }
++#if BUILDFLAG(IS_WIN)
++  // Windows' own word: a full-screen program, a game (Direct3D full screen),
++  // a presentation, or an app in full screen. The offline checks run beside
++  // whatever the PC shows, so they do not ask.
++  QUERY_USER_NOTIFICATION_STATE state = QUNS_ACCEPTS_NOTIFICATIONS;
++  if (settings.quiet_fullscreen && !ForOfflineChecks() &&
++      SUCCEEDED(::SHQueryUserNotificationState(&state)) &&
++      (state == QUNS_BUSY || state == QUNS_RUNNING_D3D_FULL_SCREEN ||
++       state == QUNS_PRESENTATION_MODE || state == QUNS_APP)) {
++    return "fullscreen";
++  }
++#endif
++  return std::string();
++}
++
++void ThoronMailCenter::PlayMailSound(const std::string& name, int volume) {
++  last_sound_ = name;
 +  // The offline checks (a local server stands in for Gmail) count the sound
 +  // and do not make it.
-+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
-+          "thoron-mail-feeds-for-testing")) {
++  if (ForOfflineChecks()) {
 +    return;
 +  }
 +#if BUILDFLAG(IS_WIN)
-+  // Windows' own sound for new mail (the person's sound scheme), else its
-+  // plain notice sound. Not waited for.
-+  if (!::PlaySoundW(L"MailBeep", nullptr,
-+                    SND_ALIAS | SND_ASYNC | SND_NODEFAULT)) {
-+    ::MessageBeep(MB_ICONASTERISK);
++  std::string wav = name == thoron_mail::kSystemSound
++                        ? std::string()
++                        : thoron_mail::MakeSoundWav(name, volume);
++  if (wav.empty()) {
++    // Windows' own sound for new mail (the person's sound scheme), else its
++    // plain notice sound. Not waited for.
++    if (!::PlaySoundW(L"MailBeep", nullptr,
++                      SND_ALIAS | SND_ASYNC | SND_NODEFAULT)) {
++      ::MessageBeep(MB_ICONASTERISK);
++    }
++    return;
 +  }
++  // Windows reads a sound from memory while it plays: the one playing is
++  // stopped before its memory is given to the next.
++  ::PlaySoundW(nullptr, nullptr, 0);
++  playing_ = std::move(wav);
++  ::PlaySoundW(reinterpret_cast<LPCWSTR>(playing_.data()), nullptr,
++               SND_MEMORY | SND_ASYNC | SND_NODEFAULT);
 +#endif
 +}
 +
@@ -9147,14 +9454,24 @@ index 0000000000000000000000000000000000000000..e1d7155ad22515b6223a70b8a6dda484
 +    return;
 +  }
 +  // The sound is the M-Notifier's own, so it comes with or without a notice
-+  // (P5.78); a notice is then silent, or there would be two.
++  // (P5.78); a notice is then silent, or there would be two. P5.82: the
++  // account's own sound or the one for all, unless it is to stay quiet now.
++  const std::string quiet = QuietReason(account);
 +  if (service_->Choice("sound") == "on") {
-+    PlayNewMailSound();
-+    ++sounds_played_;
++    if (quiet.empty()) {
++      const std::string own = AccountSound(account.email);
++      const SoundSettings settings = sound_settings();
++      PlayMailSound(own.empty() ? settings.name : own, settings.volume);
++      ++sounds_played_;
++    } else {
++      last_quiet_ = quiet;
++      ++sounds_held_;
++    }
 +  }
 +  NotificationDisplayService* display =
 +      NotificationDisplayServiceFactory::GetForProfile(profile_);
-+  if (!service_->notify() || !display) {
++  // quiet hours hold the notices too: the person asked not to be disturbed
++  if (!service_->notify() || !display || quiet == "hours") {
 +    return;
 +  }
 +  auto notice = [&](const std::string& id, const std::u16string& title,
@@ -9244,10 +9561,10 @@ index 0000000000000000000000000000000000000000..e1d7155ad22515b6223a70b8a6dda484
 +WEB_UI_CONTROLLER_TYPE_IMPL(ThoronMailMenuUI)
 diff --git a/chrome/browser/ui/webui/thoron_mail_ui.h b/chrome/browser/ui/webui/thoron_mail_ui.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..b30c77f360d9ce82e7ea83c8a032f660a3905f01
+index 0000000000000000000000000000000000000000..9fee128cfc84e0763ef421aa3eab11b16946fa07
 --- /dev/null
 +++ b/chrome/browser/ui/webui/thoron_mail_ui.h
-@@ -0,0 +1,219 @@
+@@ -0,0 +1,261 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -9379,6 +9696,37 @@ index 0000000000000000000000000000000000000000..b30c77f360d9ce82e7ea83c8a032f660
 +  using Imported = base::OnceCallback<void(std::string, int)>;
 +  void ImportBackup(std::string file, std::string passphrase, Imported done);
 +
++  // P5.82: the sound of new mail. `name` is "system" (Windows' own sound for
++  // new mail) or one Thoron makes (mail_sounds.h), at `volume` (0 to 100);
++  // an account may have its own, or "off". It stays quiet, for every account,
++  // in the person's quiet hours, while a full-screen program, a game or a
++  // presentation runs (as Windows says), and for an account whose mail is
++  // the tab in front of the person.
++  struct SoundSettings {
++    std::string name;
++    int volume = 70;
++    bool quiet_fullscreen = true;
++    bool quiet_in_front = true;
++    // minutes of the day; -1: no quiet hours
++    int quiet_from = -1;
++    int quiet_to = -1;
++  };
++  SoundSettings sound_settings() const;
++  void SetSoundName(const std::string& name);
++  void SetSoundVolume(int volume);
++  void SetQuiet(bool fullscreen, bool in_front, int from, int to);
++  // the account's own sound: "" (the one for all), "off", or a sound's name
++  std::string AccountSound(const std::string& email) const;
++  void SetAccountSound(const std::string& email, const std::string& name);
++  base::DictValue AccountSounds() const;
++  // Plays a sound now, for the person to hear it before choosing it.
++  void PreviewSound(const std::string& name, int volume);
++  // What was played last (heard or, in the offline checks, only counted), and
++  // why the last sound that was held back was not played.
++  const std::string& last_sound() const { return last_sound_; }
++  const std::string& last_quiet() const { return last_quiet_; }
++  int sounds_held() const { return sounds_held_; }
++
 +  // thoron_mail::MailService::Observer:
 +  void OnNewMail(const thoron_mail::MailAccount& account,
 +                 const std::vector<thoron_mail::MailMessage>& messages) override;
@@ -9386,7 +9734,13 @@ index 0000000000000000000000000000000000000000..b30c77f360d9ce82e7ea83c8a032f660
 + private:
 +  // The sound of new mail (P5.78): the M-Notifier's own, so it is heard
 +  // with or without a notice.
-+  void PlayNewMailSound();
++  void PlayMailSound(const std::string& name, int volume);
++  // "" when the sound for `account`'s new mail is to be played now, else why
++  // not: "account" (its sound is off), "hours", "front", "fullscreen".
++  std::string QuietReason(const thoron_mail::MailAccount& account) const;
++  // The account's mail is the tab in front: Gmail's inbox of its index, or its
++  // mail page, in the window the person is using.
++  bool InFront(const thoron_mail::MailAccount& account) const;
 +
 +  void OnEncryptor(scoped_refptr<os_crypt_async::Encryptor> encryptor);
 +  // Keeps the list of Google accounts in the profile.
@@ -9424,6 +9778,11 @@ index 0000000000000000000000000000000000000000..b30c77f360d9ce82e7ea83c8a032f660
 +  std::unique_ptr<GoogleSignIn> google_sign_in_;
 +  int sounds_played_ = 0;
 +  int notices_shown_ = 0;
++  int sounds_held_ = 0;
++  std::string last_sound_;
++  std::string last_quiet_;
++  // the made sound that is playing: Windows reads it from here while it plays
++  std::string playing_;
 +  scoped_refptr<os_crypt_async::Encryptor> encryptor_;
 +  // the sign-in to a mailbox that is being added
 +  std::unique_ptr<thoron_mail::ImapCheck> imap_test_;
@@ -9696,10 +10055,10 @@ index 0000000000000000000000000000000000000000..31302324f071b2ba170d45bd3d0c1b26
 +#endif  // CHROME_INSTALLER_SETUP_THORON_UPDATE_TASK_H_
 diff --git a/components/thoron_mail/BUILD.gn b/components/thoron_mail/BUILD.gn
 new file mode 100644
-index 0000000000000000000000000000000000000000..0e19c03df16da1a1cba840bfc79f35ced095757b
+index 0000000000000000000000000000000000000000..7d8314fdc15fb4fae293bec89c37c20a950b3a50
 --- /dev/null
 +++ b/components/thoron_mail/BUILD.gn
-@@ -0,0 +1,54 @@
+@@ -0,0 +1,56 @@
 +# Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +# found in the LICENSE file.
 +
@@ -9734,6 +10093,8 @@ index 0000000000000000000000000000000000000000..0e19c03df16da1a1cba840bfc79f35ce
 +    "mail_page.h",
 +    "mail_service.cc",
 +    "mail_service.h",
++    "mail_sounds.cc",
++    "mail_sounds.h",
 +  ]
 +  public_deps = [
 +    ":imap",
@@ -11555,10 +11916,10 @@ index 0000000000000000000000000000000000000000..4c249e10c731f7b7fc3e2bf12a29b82e
 +#endif  // COMPONENTS_THORON_MAIL_MAIL_FEED_H_
 diff --git a/components/thoron_mail/mail_page.cc b/components/thoron_mail/mail_page.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..c6e7259d90d572c2150fe05b9c764ed2c5e9d0f8
+index 0000000000000000000000000000000000000000..3d44a07b9634c63ddc1e6ecd450eb01eda410904
 --- /dev/null
 +++ b/components/thoron_mail/mail_page.cc
-@@ -0,0 +1,1523 @@
+@@ -0,0 +1,2081 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -11588,6 +11949,8 @@ index 0000000000000000000000000000000000000000..c6e7259d90d572c2150fe05b9c764ed2
 +          --on-accent: var(--color-sys-on-primary, #fff);
 +          --chip: var(--color-sys-tonal-container, color-mix(in srgb, var(--accent) 18%, transparent));
 +          --on-chip: var(--color-sys-on-tonal-container, var(--fg));
++          --card: color-mix(in srgb, var(--fg) 4%, var(--bg));
++          --warn: var(--color-sys-error, #d93025);
 +          --hover: var(--color-sys-state-hover-on-subtle, color-mix(in srgb, CanvasText 8%, transparent)); }
 +  body { margin: 0; inline-size: 360px; background: var(--bg); color: var(--fg); line-height: 20px; }
 +  header { display: flex; align-items: center; gap: 8px; padding: 12px 8px 10px 16px;
@@ -11602,26 +11965,28 @@ index 0000000000000000000000000000000000000000..c6e7259d90d572c2150fe05b9c764ed2
 +  button.main { background: var(--accent); color: var(--on-accent); border-color: transparent; font-weight: 500; }
 +  button.main:hover { background: color-mix(in srgb, var(--accent) 88%, var(--fg)); }
 +  button.icon { padding: 0; border: 0; border-radius: 50%; inline-size: 32px; block-size: 32px; display: grid;
-+                place-items: center; }
++                place-items: center; flex: none; }
 +  button.icon[aria-pressed=true] { background: var(--chip); color: var(--on-chip); }
 +  button.icon svg { inline-size: 18px; block-size: 18px; fill: none; stroke: currentColor; stroke-width: 1.8;
 +                    stroke-linecap: round; stroke-linejoin: round; }
++  button.small { padding: 3px 12px; }
 +  button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--accent);
 +                                                                     outline-offset: 2px; }
++  button:disabled { opacity: .5; cursor: default; }
 +  main { max-block-size: 480px; overflow-y: auto; padding: 4px 0; }
 +  .account { border-block-end: 1px solid var(--line); }
 +  .account:last-child { border-block-end: 0; }
 +  .account.off { opacity: .55; }
 +  .row { display: flex; align-items: center; gap: 12px; inline-size: 100%; box-sizing: border-box; border: 0;
 +         border-radius: 0; padding: 8px 16px; text-align: start; }
-+  .row .face { flex: none; inline-size: 28px; block-size: 28px; border-radius: 50%; background: var(--chip);
-+               color: var(--on-chip); display: grid; place-items: center; font-weight: 500;
-+               text-transform: uppercase; }
++  .face { flex: none; inline-size: 28px; block-size: 28px; border-radius: 50%; background: var(--chip);
++          color: var(--on-chip); display: grid; place-items: center; font-weight: 500; text-transform: uppercase; }
 +  .row .email { flex: 1; min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 +  .count { flex: none; min-inline-size: 22px; padding: 0 7px; border-radius: 100px; font-size: 12px;
 +           font-weight: 500; text-align: center; white-space: nowrap; box-sizing: border-box; }
 +  .count.new { background: var(--accent); color: var(--on-accent); }
 +  .count.unread { color: var(--soft); border: 1px solid var(--line); }
++  .count.bad { background: var(--warn); color: var(--color-sys-on-error, #fff); }
 +  .message { display: block; inline-size: 100%; box-sizing: border-box; text-align: start; border: 0;
 +             border-radius: 0; padding: 6px 16px 6px 56px; }
 +  .message .line { display: flex; gap: 8px; align-items: center; }
@@ -11637,55 +12002,100 @@ index 0000000000000000000000000000000000000000..c6e7259d90d572c2150fe05b9c764ed2
 +  footer { padding: 10px 16px 12px; display: flex; align-items: center; gap: 8px;
 +           border-block-start: 1px solid var(--line); }
 +  #state { color: var(--soft); font-size: 12px; margin-inline-start: auto; }
-+  #settings { padding: 4px 16px 12px; max-block-size: 480px; overflow-y: auto; }
-+  #settings h3 { font-size: 12px; font-weight: 500; color: var(--accent); margin: 14px 0 4px; }
-+  .setting { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 4px 0; }
-+  .setting select { max-inline-size: 200px; }
-+  label.check { display: flex; align-items: center; gap: 10px; padding: 5px 0; }
-+  input[type=checkbox] { accent-color: var(--accent); inline-size: 16px; block-size: 16px; margin: 0; flex: none; }
-+  select { font: inherit; padding: 4px 8px; border-radius: 8px; border: 1px solid var(--line);
-+           background: var(--bg); color: inherit; }
-+  .hint { color: var(--soft); font-size: 12px; margin: 2px 0 0; }
-+  .error { color: var(--color-sys-error, #d93025); font-size: 12px; margin: 6px 0 0; min-block-size: 0; }
++  .warn { flex: none; inline-size: 18px; block-size: 18px; border-radius: 50%; display: grid; place-items: center;
++          background: var(--warn); color: var(--color-sys-on-error, #fff); font-size: 12px; font-weight: 700; }
++  .tag { flex: none; font-size: 11px; padding: 0 6px; border-radius: 100px; border: 1px solid var(--line);
++         color: var(--soft); }
++  .hint { color: var(--soft); font-size: 12px; margin: 6px 0 0; }
++  .error { color: var(--warn); font-size: 12px; margin: 6px 0 0; }
 +  .field { display: block; padding: 5px 0; }
 +  .field span { display: block; font-size: 12px; color: var(--soft); margin-block-end: 3px; }
 +  .field input { font: inherit; inline-size: 100%; box-sizing: border-box; padding: 6px 10px; border-radius: 8px;
 +                 border: 1px solid var(--line); background: var(--bg); color: inherit; }
 +  .buttons { display: flex; gap: 8px; flex-wrap: wrap; padding-block-start: 8px; }
 +  button.wide { inline-size: 100%; }
-+  button:disabled { opacity: .5; cursor: default; }
 +  details summary { cursor: pointer; color: var(--soft); font-size: 12px; padding: 6px 0; }
-+  .warn { flex: none; inline-size: 18px; block-size: 18px; border-radius: 50%; display: grid; place-items: center;
-+          background: var(--color-sys-error, #d93025); color: var(--color-sys-on-error, #fff); font-size: 12px;
-+          font-weight: 700; }
-+  .tag { flex: none; font-size: 11px; padding: 0 6px; border-radius: 100px; border: 1px solid var(--line);
-+         color: var(--soft); }
-+  .watch-row { display: flex; align-items: center; gap: 8px; }
-+  .watch-row label { flex: 1; min-inline-size: 0; }
-+  .watch-row label span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-+  .watch-row .name { flex: 1; min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-+  .watch-row .state { flex: none; color: var(--soft, inherit); }
-+  /* P5.81: the accounts in the person's order (dragged, or moved with the arrows), and edited in place */
-+  .watch-row { border-radius: 8px; }
-+  .watch-row button { padding: 2px 10px; }
-+  .watch-row button.move { padding: 0; inline-size: 26px; block-size: 26px; border-radius: 50%; font-size: 10px;
-+                           flex: none; }
-+  .watch-row .grip { flex: none; cursor: grab; color: var(--soft); user-select: none; padding: 0 2px;
-+                     font-size: 16px; }
-+  .watch-row.dragging { opacity: .4; }
-+  .watch-row.drop-before { box-shadow: inset 0 2px 0 var(--accent); }
-+  .watch-row.drop-after { box-shadow: inset 0 -2px 0 var(--accent); }
-+  .edit-form { padding: 2px 0 10px 26px; border-block-end: 1px solid var(--line); margin-block-end: 6px; }
++  select { font: inherit; padding: 4px 8px; border-radius: 8px; border: 1px solid var(--line);
++           background: var(--bg); color: inherit; max-inline-size: 240px; }
++  input[type=checkbox] { accent-color: var(--accent); inline-size: 16px; block-size: 16px; margin: 0; flex: none; }
++  input[type=time] { font: inherit; padding: 3px 6px; border-radius: 8px; border: 1px solid var(--line);
++                     background: var(--bg); color: inherit; }
++  input[type=range] { accent-color: var(--accent); inline-size: 180px; }
 +  .password-box { display: flex; align-items: center; gap: 6px; }
 +  .password-box input { flex: 1; min-inline-size: 0; }
 +  #add-panel { padding: 4px 16px 12px; max-block-size: 480px; overflow-y: auto; }
 +  #add-panel h3 { font-size: 12px; font-weight: 500; color: var(--accent); margin: 14px 0 6px; }
-+  /* the M-Notifier's own page, in a tab: everything at once, in a column */
-+  body.page { inline-size: auto; max-inline-size: 640px; margin: 0 auto; padding: 8px 16px 32px; }
-+  body.page main, body.page #settings, body.page #add-panel { max-block-size: none; overflow: visible; }
-+  body.page #gear, body.page #backup-bubble { display: none; }
-+  body.page #settings, body.page #add-panel { border-block-start: 1px solid var(--line); margin-block-start: 8px; }
++  /* a switch: an on/off setting, as the browser's own settings show one */
++  .switch { position: relative; flex: none; inline-size: 34px; block-size: 20px; }
++  .switch input { position: absolute; inset: 0; opacity: 0; margin: 0; inline-size: 100%; block-size: 100%;
++                  cursor: pointer; }
++  .switch span { position: absolute; inset: 3px 0; border-radius: 100px; background: var(--line);
++                 transition: background .15s; pointer-events: none; }
++  .switch span::after { content: ''; position: absolute; inset-block-start: -3px; inset-inline-start: -2px;
++                        inline-size: 20px; block-size: 20px; border-radius: 50%; background: var(--soft);
++                        transition: transform .15s, background .15s; }
++  .switch input:checked + span { background: color-mix(in srgb, var(--accent) 45%, transparent); }
++  .switch input:checked + span::after { background: var(--accent); transform: translateX(18px); }
++  .switch input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 3px; }
++  .switch input:disabled + span { opacity: .5; }
++
++  /* the M-Notifier's own page, in a tab: settings in tabs, the accounts in one list */
++  body.page { inline-size: auto; max-inline-size: 960px; margin: 0 auto; padding: 0 24px 48px; }
++  body.page header { position: sticky; inset-block-start: 0; z-index: 3; background: var(--bg); padding: 16px 0 12px; }
++  body.page header .name { font-size: 18px; }
++  body.page main#accounts, body.page footer, body.page #gear { display: none; }
++  #page { display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 28px; padding-block-start: 16px; }
++  #tabs { display: flex; flex-direction: column; gap: 2px; position: sticky; inset-block-start: 72px;
++          align-self: start; }
++  #tabs button { border: 0; border-radius: 0 100px 100px 0; text-align: start; padding: 10px 16px;
++                 display: flex; align-items: center; gap: 12px; }
++  #tabs button svg { inline-size: 18px; block-size: 18px; fill: none; stroke: currentColor; stroke-width: 1.8;
++                     stroke-linecap: round; stroke-linejoin: round; flex: none; }
++  #tabs button[aria-selected=true] { background: var(--chip); color: var(--on-chip); font-weight: 500; }
++  .panel h2 { font-size: 16px; font-weight: 500; margin: 0 0 4px; }
++  .panel > .hint:first-of-type { margin-block-end: 14px; }
++  .panel h3 { font-size: 13px; font-weight: 500; color: var(--soft); margin: 20px 4px 8px; }
++  .card { background: var(--card); border-radius: 12px; padding: 0 16px; }
++  .card > .setting { display: flex; align-items: center; justify-content: space-between; gap: 16px;
++                     min-block-size: 48px; padding: 6px 0; }
++  .card > .setting + .setting { border-block-start: 1px solid var(--line); }
++  .card > .setting .label { flex: 1; min-inline-size: 0; }
++  .card > .setting .label small { display: block; color: var(--soft); font-size: 12px; line-height: 16px; }
++  .card > .setting .controls { display: flex; align-items: center; gap: 8px; flex: none; }
++  .card > .block { padding: 12px 0; }
++  .card > .block + .setting, .card > .setting + .block { border-block-start: 1px solid var(--line); }
++  .toolbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-block-end: 12px; }
++  .toolbar .summary { flex: 1; color: var(--soft); min-inline-size: 180px; }
++  .toolbar input[type=search] { font: inherit; padding: 6px 12px; border-radius: 100px;
++                                border: 1px solid var(--line); background: var(--bg); color: inherit;
++                                inline-size: 220px; }
++  /* one row a account: everything about it in one place */
++  .item { border-radius: 12px; background: var(--card); margin-block-end: 6px; }
++  .item.dragging { opacity: .4; }
++  .item.drop-before { box-shadow: inset 0 3px 0 var(--accent); }
++  .item.drop-after { box-shadow: inset 0 -3px 0 var(--accent); }
++  .item .line { display: flex; align-items: center; gap: 12px; padding: 8px 12px 8px 8px; min-block-size: 40px; }
++  .item .grip { flex: none; cursor: grab; color: var(--soft); user-select: none; font-size: 16px;
++                inline-size: 14px; text-align: center; }
++  .item .who { flex: 1; min-inline-size: 0; display: flex; flex-direction: column; cursor: pointer; }
++  .item .who .title, .item .who .sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
++  .item .who .sub { color: var(--soft); font-size: 12px; line-height: 16px; }
++  .item.off .face, .item.off .who { opacity: .55; }
++  .item .chips { display: flex; gap: 6px; flex: none; align-items: center; }
++  .item button.open svg { transition: transform .15s; }
++  .item button.open[aria-expanded=true] svg { transform: rotate(180deg); }
++  .item .details { padding: 4px 16px 14px 62px; border-block-start: 1px solid var(--line); }
++  .item .details .setting { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 6px 0; }
++  .item .details .setting > span { min-inline-size: 120px; color: var(--soft); }
++  .item .details .note { color: var(--soft); font-size: 12px; margin: 8px 0 0; }
++  .edit-form { padding-block: 6px 2px; max-inline-size: 460px; }
 +  [hidden] { display: none !important; }
++  @media (max-width: 760px) {
++    #page { grid-template-columns: minmax(0, 1fr); gap: 16px; }
++    #tabs { flex-direction: row; overflow-x: auto; position: static; }
++    #tabs button { border-radius: 100px; white-space: nowrap; }
++    .item .details { padding-inline-start: 16px; }
++  }
 +</style>
 +</head>
 +<body>
@@ -11696,82 +12106,10 @@ index 0000000000000000000000000000000000000000..c6e7259d90d572c2150fe05b9c764ed2
 +  <span class="total" id="total"></span>
 +  <button id="check" class="icon" type="button" title="Check now" aria-label="Check now">
 +    <svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></svg></button>
-+  <button id="gear" class="icon" type="button" title="Settings" aria-label="Settings" aria-pressed="false">
++  <button id="gear" class="icon" type="button" title="Settings" aria-label="Settings">
 +    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
 +</header>
 +<main id="accounts"></main>
-+<section id="settings" hidden>
-+  <h3 data-t>Alerts</h3>
-+  <label class="check"><input type="checkbox" id="sound"><span data-t>Play a sound for new mail</span></label>
-+  <label class="check"><input type="checkbox" id="notify"><span data-t>Show a notice for new mail</span></label>
-+  <label class="check"><input type="checkbox" id="messages"><span data-t>List the messages in this menu</span></label>
-+  <h3 data-t>Counting</h3>
-+  <div class="setting"><label for="count" data-t>The icon counts</label>
-+    <select id="count" data-choice="count">
-+      <option value="new">New mail since I looked</option>
-+      <option value="unread">All unread mail</option>
-+    </select></div>
-+  <div class="setting"><label for="interval" data-t>Look every</label><select id="interval"></select></div>
-+  <div class="setting"><label for="which" data-t>Of Gmail, count</label>
-+    <select id="which" data-choice="which">
-+      <option value="inbox">The whole inbox</option>
-+      <option value="primary">Only the Primary tab</option>
-+      <option value="all">The inbox and spam</option>
-+    </select></div>
-+  <p class="hint" data-t>A mailbox added by address and password counts its whole inbox.</p>
-+  <h3 data-t>Where</h3>
-+  <div class="setting"><label for="place" data-t>Show it</label>
-+    <select id="place" data-choice="place">
-+      <option value="toolbar">Next to the address bar</option>
-+      <option value="address">In the address bar</option>
-+      <option value="both">In both</option>
-+    </select></div>
-+  <div class="setting" id="toolbar-position-row"><label for="toolbar-position" data-t>In the toolbar</label>
-+    <select id="toolbar-position" data-choice="toolbar-position">
-+      <option value="address">Right after the address bar</option>
-+      <option value="extensions">After the extensions</option>
-+      <option value="menu">Next to the menu</option>
-+    </select></div>
-+  <div class="setting" id="address-position-row"><label for="address-position" data-t>In the address bar</label>
-+    <select id="address-position" data-choice="address-position">
-+      <option value="icons">With the other icons</option>
-+      <option value="start">Before the other icons</option>
-+      <option value="end">At the far end</option>
-+    </select></div>
-+  <p class="hint" data-t>You can also move the icon with the mouse.</p>
-+  <h3 data-t>Opening</h3>
-+  <div class="setting"><label for="open" data-t>Open mail in</label>
-+    <select id="open" data-choice="open">
-+      <option value="reuse">Its open Gmail tab</option>
-+      <option value="new">A new tab</option>
-+    </select></div>
-+  <h3 data-t>Accounts to watch</h3>
-+  <div id="watch"></div>
-+  <p class="hint" id="order-hint" data-t hidden>Drag an account, or use its arrows, to put the list in your order.</p>
-+  <p class="hint" id="edit-state" role="status"></p>
-+  <div id="wanted-box" hidden>
-+    <h3 data-t>Google accounts of your list</h3>
-+    <div id="wanted"></div>
-+    <p class="hint" data-t>An account is counted while Thoron is signed in to it at Google. "Sign in" opens the Google page with the address filled in.</p>
-+    <p class="hint" id="wanted-state" role="status"></p>
-+  </div>
-+  <h3 data-t>Backup</h3>
-+  <div id="backup-bubble"><button id="manage" type="button" data-t>Accounts and backup...</button></div>
-+  <div id="backup" hidden>
-+    <label class="field"><span data-t>Passphrase: seals the file, and keeps the passwords in it safe</span>
-+      <input id="backup-pass" type="password" autocomplete="new-password"></label>
-+    <label class="check"><input type="checkbox" id="backup-plain">
-+      <span data-t>Without a passphrase, put the passwords in the file as they are</span></label>
-+    <div class="buttons">
-+      <button id="export" type="button" class="main" data-t>Save a backup...</button>
-+      <button id="import" type="button" data-t>Read a backup...</button>
-+      <button id="import-xn" type="button" data-t>Read a file of X-notifier...</button>
-+    </div>
-+    <input id="import-file" type="file" accept=".json,.thoron,.xn,application/json" hidden>
-+    <p class="hint" data-t>Save it into your Google Drive folder, or any folder that is synced, to keep it in the cloud.</p>
-+    <p class="hint" id="backup-state" role="status"></p>
-+  </div>
-+</section>
 +<section id="add-panel" hidden>
 +  <h3 data-t>A Google account</h3>
 +  <button id="add-google" type="button" class="wide" data-t>Sign in with Google</button>
@@ -11806,6 +12144,143 @@ index 0000000000000000000000000000000000000000..c6e7259d90d572c2150fe05b9c764ed2
 +  <button id="add" type="button" data-t>Add an account</button>
 +  <span id="state"></span>
 +</footer>
++<div id="page" hidden>
++  <nav id="tabs" role="tablist" aria-label="Settings">
++    <button type="button" role="tab" data-tab="accounts" aria-controls="tab-accounts">
++      <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c.8-3.8 3.6-6 7-6s6.2 2.2 7 6"/></svg>
++      <span data-t>Accounts</span></button>
++    <button type="button" role="tab" data-tab="alerts" aria-controls="tab-alerts">
++      <svg viewBox="0 0 24 24"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/></svg>
++      <span data-t>Alerts and sounds</span></button>
++    <button type="button" role="tab" data-tab="counting" aria-controls="tab-counting">
++      <svg viewBox="0 0 24 24"><path d="M5 19V11M12 19V5M19 19v-6"/></svg>
++      <span data-t>Counting</span></button>
++    <button type="button" role="tab" data-tab="display" aria-controls="tab-display">
++      <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M3 9h18"/></svg>
++      <span data-t>Display</span></button>
++    <button type="button" role="tab" data-tab="backup" aria-controls="tab-backup">
++      <svg viewBox="0 0 24 24"><path d="M12 4v11M7.5 10.5L12 15l4.5-4.5"/><path d="M4 17v2.5h16V17"/></svg>
++      <span data-t>Backup</span></button>
++  </nav>
++  <div>
++    <section class="panel" id="tab-accounts" role="tabpanel">
++      <h2 data-t>Accounts</h2>
++      <p class="hint" data-t>Every account in one list: open one to change it, give it its own sound or move it.</p>
++      <div class="toolbar">
++        <span class="summary" id="summary"></span>
++        <input id="find" type="search" placeholder="Find an account" aria-label="Find an account" hidden>
++        <button id="page-add" type="button" class="main" data-t>Add an account</button>
++      </div>
++      <div id="list" role="list"></div>
++      <p class="hint" id="order-hint" data-t hidden>Drag an account, or use its arrows, to put the list in your order.</p>
++      <p class="hint" id="edit-state" role="status"></p>
++      <p class="hint" id="wanted-state" role="status"></p>
++    </section>
++    <section class="panel" id="tab-alerts" role="tabpanel" hidden>
++      <h2 data-t>Alerts and sounds</h2>
++      <p class="hint" data-t>Every sound is made by Thoron itself, from tones: no recordings, nothing under anyone else's copyright.</p>
++      <h3 data-t>Sound</h3>
++      <div class="card">
++        <div class="setting"><label class="label" for="sound" data-t>Play a sound for new mail</label>
++          <span class="controls"><span class="switch"><input type="checkbox" id="sound" role="switch"><span></span></span></span></div>
++        <div class="setting"><label class="label" for="sound-name" data-t>Sound</label>
++          <span class="controls"><select id="sound-name"></select>
++            <button id="sound-play" type="button" class="small" data-t>Play</button></span></div>
++        <div class="setting"><label class="label" for="sound-volume"><span data-t>Volume</span>
++            <small id="volume-hint" data-t>Windows' own sound plays at the system's volume.</small></label>
++          <span class="controls"><input id="sound-volume" type="range" min="0" max="100" step="5">
++            <span id="volume-value" class="tag"></span></span></div>
++      </div>
++      <p class="hint" data-t>Each account can have its own sound, or none: open it under Accounts.</p>
++      <h3 data-t>Stay quiet</h3>
++      <div class="card">
++        <div class="setting"><label class="label" for="quiet-fullscreen" data-t>While a full-screen program, a game or a presentation runs</label>
++          <span class="controls"><span class="switch"><input type="checkbox" id="quiet-fullscreen" role="switch"><span></span></span></span></div>
++        <div class="setting"><label class="label" for="quiet-front" data-t>While that inbox is the tab in front of you</label>
++          <span class="controls"><span class="switch"><input type="checkbox" id="quiet-front" role="switch"><span></span></span></span></div>
++        <div class="setting"><label class="label" for="quiet-hours"><span data-t>Quiet hours</span>
++            <small data-t>No sound and no notice in these hours.</small></label>
++          <span class="controls"><input id="quiet-from" type="time" aria-label="From" value="22:00">
++            <span data-t>to</span><input id="quiet-to" type="time" aria-label="To" value="07:00">
++            <span class="switch"><input type="checkbox" id="quiet-hours" role="switch"><span></span></span></span></div>
++      </div>
++      <h3 data-t>Notices and the menu</h3>
++      <div class="card">
++        <div class="setting"><label class="label" for="notify" data-t>Show a notice for new mail</label>
++          <span class="controls"><span class="switch"><input type="checkbox" id="notify" role="switch"><span></span></span></span></div>
++        <div class="setting"><label class="label" for="messages" data-t>List the messages in this menu</label>
++          <span class="controls"><span class="switch"><input type="checkbox" id="messages" role="switch"><span></span></span></span></div>
++      </div>
++    </section>
++    <section class="panel" id="tab-counting" role="tabpanel" hidden>
++      <h2 data-t>Counting</h2>
++      <p class="hint" data-t>A mailbox added by address and password counts its whole inbox.</p>
++      <div class="card">
++        <div class="setting"><label class="label" for="count" data-t>The icon counts</label>
++          <span class="controls"><select id="count" data-choice="count">
++            <option value="new">New mail since I looked</option>
++            <option value="unread">All unread mail</option>
++          </select></span></div>
++        <div class="setting"><label class="label" for="interval" data-t>Look every</label>
++          <span class="controls"><select id="interval"></select></span></div>
++        <div class="setting"><label class="label" for="which" data-t>Of Gmail, count</label>
++          <span class="controls"><select id="which" data-choice="which">
++            <option value="inbox">The whole inbox</option>
++            <option value="primary">Only the Primary tab</option>
++            <option value="all">The inbox and spam</option>
++          </select></span></div>
++      </div>
++    </section>
++    <section class="panel" id="tab-display" role="tabpanel" hidden>
++      <h2 data-t>Display</h2>
++      <p class="hint" data-t>You can also move the icon with the mouse.</p>
++      <div class="card">
++        <div class="setting"><label class="label" for="place" data-t>Show it</label>
++          <span class="controls"><select id="place" data-choice="place">
++            <option value="toolbar">Next to the address bar</option>
++            <option value="address">In the address bar</option>
++            <option value="both">In both</option>
++          </select></span></div>
++        <div class="setting" id="toolbar-position-row"><label class="label" for="toolbar-position" data-t>In the toolbar</label>
++          <span class="controls"><select id="toolbar-position" data-choice="toolbar-position">
++            <option value="address">Right after the address bar</option>
++            <option value="extensions">After the extensions</option>
++            <option value="menu">Next to the menu</option>
++          </select></span></div>
++        <div class="setting" id="address-position-row"><label class="label" for="address-position" data-t>In the address bar</label>
++          <span class="controls"><select id="address-position" data-choice="address-position">
++            <option value="icons">With the other icons</option>
++            <option value="start">Before the other icons</option>
++            <option value="end">At the far end</option>
++          </select></span></div>
++        <div class="setting"><label class="label" for="open" data-t>Open mail in</label>
++          <span class="controls"><select id="open" data-choice="open">
++            <option value="reuse">Its open Gmail tab</option>
++            <option value="new">A new tab</option>
++          </select></span></div>
++      </div>
++    </section>
++    <section class="panel" id="tab-backup" role="tabpanel" hidden>
++      <h2 data-t>Backup</h2>
++      <p class="hint" data-t>Save it into your Google Drive folder, or any folder that is synced, to keep it in the cloud.</p>
++      <div class="card">
++        <div class="block" id="backup">
++          <label class="field"><span data-t>Passphrase: seals the file, and keeps the passwords in it safe</span>
++            <input id="backup-pass" type="password" autocomplete="new-password"></label>
++          <label class="check" style="display:flex;gap:10px;align-items:center;padding:5px 0"><input type="checkbox" id="backup-plain">
++            <span data-t>Without a passphrase, put the passwords in the file as they are</span></label>
++          <div class="buttons">
++            <button id="export" type="button" class="main" data-t>Save a backup...</button>
++            <button id="import" type="button" data-t>Read a backup...</button>
++            <button id="import-xn" type="button" data-t>Read a file of X-notifier...</button>
++          </div>
++          <input id="import-file" type="file" accept=".json,.thoron,.xn,application/json" hidden>
++          <p class="hint" id="backup-state" role="status"></p>
++        </div>
++      </div>
++    </section>
++  </div>
++</div>
 +<script type="module" src="mail.js"></script>
 +</body>
 +</html>
@@ -12153,6 +12628,119 @@ index 0000000000000000000000000000000000000000..c6e7259d90d572c2150fe05b9c764ed2
 +  'The backup could not be made.': ['No se pudo hacer la copia.', "La sauvegarde n'a pas pu être faite.",
 +                                    'Die Sicherung konnte nicht erstellt werden.',
 +                                    'Não foi possível fazer o backup.', 'Не удалось сделать копию.'],
++  // P5.82: the page in tabs, one list of accounts, sounds
++  'Accounts': ['Cuentas', 'Comptes', 'Konten', 'Contas', 'Аккаунты'],
++  'Alerts and sounds': ['Avisos y sonidos', 'Alertes et sons', 'Hinweise und Töne', 'Alertas e sons',
++                        'Оповещения и звуки'],
++  'Display': ['Visualización', 'Affichage', 'Anzeige', 'Exibição', 'Отображение'],
++  'Every account in one list: open one to change it, give it its own sound or move it.': [
++    'Todas las cuentas en una lista: abre una para cambiarla, darle su propio sonido o moverla.',
++    'Tous les comptes dans une liste : ouvrez-en un pour le modifier, lui donner son propre son ou le déplacer.',
++    'Alle Konten in einer Liste: Öffnen Sie eines, um es zu ändern, ihm einen eigenen Ton zu geben oder es zu ' +
++        'verschieben.',
++    'Todas as contas numa lista: abra uma para alterá-la, dar-lhe um som próprio ou movê-la.',
++    'Все аккаунты в одном списке: откройте аккаунт, чтобы изменить его, задать ему свой звук или переместить.'],
++  "Every sound is made by Thoron itself, from tones: no recordings, nothing under anyone else's copyright.": [
++    'Thoron crea cada sonido a partir de tonos: sin grabaciones, nada con derechos de autor de terceros.',
++    "Chaque son est créé par Thoron à partir de tonalités : aucun enregistrement, rien qui soit sous le droit " +
++        "d'auteur d'un autre.",
++    'Jeder Ton wird von Thoron selbst aus Tönen erzeugt: keine Aufnahmen, nichts unter fremdem Urheberrecht.',
++    'Cada som é criado pelo próprio Thoron a partir de tons: sem gravações, nada com direitos autorais de outros.',
++    'Каждый звук Thoron создаёт сам из тонов: никаких записей и ничего, защищённого чужим авторским правом.'],
++  'Sound': ['Sonido', 'Son', 'Ton', 'Som', 'Звук'],
++  'Play': ['Reproducir', 'Écouter', 'Abspielen', 'Tocar', 'Прослушать'],
++  'Volume': ['Volumen', 'Volume', 'Lautstärke', 'Volume', 'Громкость'],
++  "Windows' own sound plays at the system's volume.": [
++    'El sonido propio de Windows suena al volumen del sistema.',
++    'Le son de Windows est joué au volume du système.',
++    'Der Windows-eigene Ton spielt in der Systemlautstärke.',
++    'O som do próprio Windows toca no volume do sistema.',
++    'Звук самой Windows играет с системной громкостью.'],
++  'Each account can have its own sound, or none: open it under Accounts.': [
++    'Cada cuenta puede tener su propio sonido, o ninguno: ábrela en Cuentas.',
++    'Chaque compte peut avoir son propre son, ou aucun : ouvrez-le sous Comptes.',
++    'Jedes Konto kann einen eigenen Ton haben oder keinen: Öffnen Sie es unter Konten.',
++    'Cada conta pode ter seu próprio som, ou nenhum: abra-a em Contas.',
++    'У каждого аккаунта может быть свой звук или никакого: откройте его в разделе «Аккаунты».'],
++  'Stay quiet': ['Silencio', 'Rester silencieux', 'Still bleiben', 'Ficar em silêncio', 'Без звука'],
++  'While a full-screen program, a game or a presentation runs': [
++    'Mientras haya un programa a pantalla completa, un juego o una presentación',
++    "Pendant un programme en plein écran, un jeu ou une présentation",
++    'Während ein Vollbildprogramm, ein Spiel oder eine Präsentation läuft',
++    'Enquanto um programa em tela cheia, um jogo ou uma apresentação estiver aberto',
++    'Пока работает полноэкранная программа, игра или презентация'],
++  'While that inbox is the tab in front of you': [
++    'Mientras esa bandeja sea la pestaña que tienes delante',
++    "Quand cette boîte est l'onglet devant vous",
++    'Wenn dieser Posteingang der Tab vor Ihnen ist',
++    'Enquanto essa caixa for a aba à sua frente',
++    'Пока эти входящие открыты на активной вкладке'],
++  'Quiet hours': ['Horas de silencio', 'Heures calmes', 'Ruhezeiten', 'Horas de silêncio', 'Тихие часы'],
++  'No sound and no notice in these hours.': ['Sin sonido ni aviso en estas horas.',
++                                             'Ni son ni notification pendant ces heures.',
++                                             'In diesen Stunden kein Ton und keine Benachrichtigung.',
++                                             'Sem som e sem aviso nessas horas.',
++                                             'В эти часы ни звука, ни уведомлений.'],
++  'to': ['a', 'à', 'bis', 'a', 'до'],
++  'Notices and the menu': ['Avisos y el menú', 'Notifications et menu', 'Benachrichtigungen und Menü',
++                           'Avisos e o menu', 'Уведомления и меню'],
++  "Windows' new-mail sound": ['Sonido de correo nuevo de Windows', 'Son de nouveau message de Windows',
++                              'Windows-Ton für neue E-Mails', 'Som de novo e-mail do Windows',
++                              'Звук новой почты Windows'],
++  'Chime': ['Carillón', 'Carillon', 'Glockenspiel', 'Carrilhão', 'Перезвон'],
++  'Bell': ['Campana', 'Cloche', 'Glocke', 'Sino', 'Колокол'],
++  'Marimba': ['Marimba', 'Marimba', 'Marimba', 'Marimba', 'Маримба'],
++  'Pop': ['Burbuja', 'Pop', 'Plopp', 'Estalo', 'Хлопок'],
++  'Water drops': ['Gotas de agua', "Gouttes d'eau", 'Wassertropfen', 'Gotas de água',
++                  'Капли воды'],
++  'Bright': ['Brillante', 'Lumineux', 'Hell', 'Brilhante', 'Яркий'],
++  'Soft': ['Suave', 'Doux', 'Sanft', 'Suave', 'Мягкий'],
++  'Knock': ['Golpe', 'Toc toc', 'Klopfen', 'Batida', 'Стук'],
++  'Ding': ['Ding', 'Ding', 'Ding', 'Ding', 'Динь'],
++  'Double beep': ['Doble pitido', 'Double bip', 'Doppelpiep', 'Bipe duplo', 'Двойной сигнал'],
++  'The sound for all accounts': ['El sonido de todas las cuentas', 'Le son de tous les comptes',
++                                 'Der Ton für alle Konten', 'O som de todas as contas', 'Звук для всех аккаунтов'],
++  'No sound': ['Sin sonido', 'Aucun son', 'Kein Ton', 'Sem som', 'Без звука'],
++  'Not signed in at Google, so not counted yet': [
++    'Sin sesión en Google, así que aún no se cuenta',
++    "Pas connecté chez Google, donc pas encore compté",
++    'Nicht bei Google angemeldet, daher noch nicht gezählt',
++    'Sem sessão no Google, por isso ainda não é contada',
++    'Вход в Google не выполнен, поэтому пока не считается'],
++  'Mailbox': ['Buzón', 'Boîte aux lettres', 'Postfach', 'Caixa de correio', 'Почтовый ящик'],
++  'Gmail, signed in at Google': ['Gmail, con sesión en Google', 'Gmail, connecté chez Google',
++                                 'Gmail, bei Google angemeldet', 'Gmail, com sessão no Google',
++                                 'Gmail, вход в Google выполнен'],
++  'Its sound': ['Su sonido', 'Son son', 'Sein Ton', 'Seu som', 'Его звук'],
++  'Place in the list': ['Lugar en la lista', 'Place dans la liste', 'Platz in der Liste', 'Lugar na lista',
++                        'Место в списке'],
++  'Remove it? Press again': ['¿Quitarla? Pulsa otra vez', 'Le retirer ? Appuyez de nouveau',
++                             'Entfernen? Noch einmal drücken', 'Remover? Pressione de novo',
++                             'Удалить? Нажмите ещё раз'],
++  'Signed in at Google in this browser. Switch it off to stop counting it; sign out of it at Google to take it away.': [
++    'Con sesión en Google en este navegador. Desactívala para dejar de contarla; cierra su sesión en Google ' +
++        'para quitarla.',
++    "Connecté chez Google dans ce navigateur. Désactivez-le pour ne plus le compter ; déconnectez-le chez " +
++        "Google pour le retirer.",
++    'In diesem Browser bei Google angemeldet. Schalten Sie es aus, um es nicht mehr zu zählen; melden Sie es ' +
++        'bei Google ab, um es zu entfernen.',
++    'Com sessão no Google neste navegador. Desative-a para deixar de contá-la; saia dela no Google para ' +
++        'removê-la.',
++    'Вход в Google в этом браузере выполнен. Выключите аккаунт, чтобы не считать его; выйдите из него в Google, ' +
++        'чтобы убрать.'],
++  'Password refused': ['Contraseña rechazada', 'Mot de passe refusé', 'Passwort abgelehnt', 'Senha recusada',
++                       'Пароль отклонён'],
++  'Not reached': ['Sin conexión', 'Injoignable', 'Nicht erreicht', 'Sem conexão', 'Недоступен'],
++  'Count this account': ['Contar esta cuenta', 'Compter ce compte', 'Dieses Konto zählen', 'Contar esta conta',
++                         'Считать этот аккаунт'],
++  'Details': ['Detalles', 'Détails', 'Details', 'Detalhes', 'Подробнее'],
++  'accounts': ['cuentas', 'comptes', 'Konten', 'contas', 'аккаунтов'],
++  'counted': ['contadas', 'comptés', 'gezählt', 'contadas', 'считаются'],
++  'No account yet: add one.': ['Aún no hay cuentas: añade una.', 'Aucun compte pour le moment : ajoutez-en un.',
++                               'Noch kein Konto: Fügen Sie eines hinzu.', 'Ainda não há contas: adicione uma.',
++                               'Аккаунтов пока нет: добавьте один.'],
++  'Find an account': ['Buscar una cuenta', 'Chercher un compte', 'Konto suchen', 'Procurar uma conta',
++                      'Найти аккаунт'],
 +  'Could not be reached at the last look.': ['No se pudo contactar en la última comprobación.',
 +                                             'Injoignable lors de la dernière vérification.',
 +                                             'Beim letzten Abruf nicht erreichbar.',
@@ -12308,117 +12896,145 @@ index 0000000000000000000000000000000000000000..c6e7259d90d572c2150fe05b9c764ed2
 +    }
 +  }
 +  interval.value = String(next.interval);
-+  const several = next.accounts.length > 1;
-+  $('order-hint').hidden = !several;
-+  // P5.80: the Google accounts of the person's list (X-notifier's file), on the M-Notifier's own page
-+  const wanted = next.wanted || [];
-+  $('wanted-box').hidden = !PAGE || !wanted.length;
-+  // P5.81: not drawn again while a form is open or a row is dragged: that would take them away
-+  if (editing || dragging) {
++  showSound(next);
++  showList(next);
++}
++
++// --- Sounds (P5.82) ---
++// Every sound but Windows' own is made by the browser from tones (mail_sounds.cc): nothing recorded.
++const SOUND_NAMES = {
++  system: "Windows' new-mail sound", chime: 'Chime', bell: 'Bell', marimba: 'Marimba', pop: 'Pop',
++  drops: 'Water drops', bright: 'Bright', soft: 'Soft', knock: 'Knock', ding: 'Ding', beeps: 'Double beep',
++};
++const soundLabel = (name) => t(SOUND_NAMES[name] || name);
++
++// The sounds of a select; an account's own select starts with "the sound for all accounts" and "no sound".
++function fillSounds(select, names, own) {
++  if (select.options.length) {
 +    return;
 +  }
-+  const watch = $('watch');
-+  watch.replaceChildren();
-+  next.accounts.forEach((account, index) => {
-+    const label = make('label', 'check');
-+    const box = make('input');
-+    box.type = 'checkbox';
-+    box.checked = account.watched;
-+    box.addEventListener('change', () => chrome.send('setWatched', [account.email, box.checked]));
-+    label.append(box, make('span', '', account.email));
-+    const row = make('div', 'watch-row');
-+    row.dataset.email = account.email;
-+    if (several) {
-+      orderControls(row, account, index, next.accounts.length);
-+    }
-+    row.append(label);
-+    if (several) {
-+      for (const [move, by, symbol] of [['Move up', -1, '▲'], ['Move down', 1, '▼']]) {
-+        const arrow = make('button', 'move', symbol);
-+        arrow.type = 'button';
-+        arrow.title = t(move);
-+        arrow.setAttribute('aria-label', `${t(move)}: ${account.email}`);
-+        arrow.dataset.move = String(by);
-+        arrow.disabled = by < 0 ? index === 0 : index === next.accounts.length - 1;
-+        arrow.addEventListener('click', () => shift(account.email, by));
-+        row.append(arrow);
-+      }
-+    }
-+    if (account.imap) {
-+      // A mailbox added by address and password can be changed (on the M-Notifier's own page: a menu closes
-+      // when another window is used, a password manager for one), or taken out again.
-+      if (PAGE) {
-+        const edit = make('button', '', t('Edit'));
-+        edit.type = 'button';
-+        edit.addEventListener('click', () => editMailbox(row, account));
-+        row.append(edit);
-+      }
-+      const remove = make('button', '', t('Remove'));
-+      remove.type = 'button';
-+      remove.addEventListener('click', () => chrome.send('removeImapAccount', [account.email]));
-+      row.append(remove);
-+    }
-+    watch.append(row);
-+  });
-+  const list = $('wanted');
-+  list.replaceChildren();
-+  for (const account of wanted) {
-+    const row = make('div', 'watch-row');
-+    row.dataset.email = account.email;
-+    row.append(make('span', 'name', account.alias ? `${account.alias} (${account.email})` : account.email));
-+    const edit = make('button', '', t('Edit'));
-+    edit.type = 'button';
-+    edit.addEventListener('click', () => editListed(row, account));
-+    row.append(edit);
-+    if (account.counted) {
-+      row.append(make('span', 'state', t('Counted')));
-+    } else {
-+      const signIn = make('button', '', t('Sign in'));
-+      signIn.type = 'button';
-+      signIn.addEventListener('click', () => chrome.send('signInGoogle', [account.email]));
-+      row.append(signIn);
-+    }
-+    if (account.password && !account.counted) {
-+      const copy = make('button', '', t('Copy password'));
-+      copy.type = 'button';
-+      copy.addEventListener('click', async () => {
-+        let done = false;
-+        try {
-+          done = await sendWithPromise('copyGooglePassword', account.email);
-+        } catch {
-+          return;
-+        }
-+        $('wanted-state').textContent = done ? t('The password is on the clipboard.') : '';
-+      });
-+      row.append(copy);
-+    }
-+    const remove = make('button', '', t('Remove'));
-+    remove.type = 'button';
-+    remove.addEventListener('click', () => {
-+      chrome.send('removeGoogleAccount', [account.email]);
-+      refresh();
-+    });
-+    row.append(remove);
-+    list.append(row);
++  const add = (value, label) => {
++    const option = make('option', '', label);
++    option.value = value;
++    select.append(option);
++  };
++  if (own) {
++    add('', t('The sound for all accounts'));
++    add('off', t('No sound'));
++  }
++  add('system', soundLabel('system'));
++  for (const name of names) {
++    add(name, soundLabel(name));
 +  }
 +}
 +
-+// --- The accounts' order, and editing a mailbox or an account of the list (P5.81) ---
-+// One form is open at a time. While it is open, or while a row is dragged, the lists are not drawn again.
++const minutesOf = (text) => {
++  const [hours, minutes] = (text || '').split(':').map(Number);
++  return Number.isInteger(hours) && Number.isInteger(minutes) ? hours * 60 + minutes : -1;
++};
++const clock = (value) => `${String(Math.floor(value / 60)).padStart(2, '0')}:${String(value % 60).padStart(2, '0')}`;
++
++function showSound(next) {
++  const sound = next.sound;
++  if (!sound || !PAGE) {
++    return;
++  }
++  fillSounds($('sound-name'), sound.names, false);
++  // what the person is changing right now is left as it is
++  const busy = $('tab-alerts').contains(document.activeElement);
++  if (!busy) {
++    $('sound-name').value = sound.name;
++    $('sound-volume').value = String(sound.volume);
++    $('quiet-fullscreen').checked = sound.quietFullscreen;
++    $('quiet-front').checked = sound.quietInFront;
++    const hours = sound.quietFrom >= 0 && sound.quietTo >= 0;
++    $('quiet-hours').checked = hours;
++    if (hours) {
++      $('quiet-from').value = clock(sound.quietFrom);
++      $('quiet-to').value = clock(sound.quietTo);
++    }
++  }
++  const system = $('sound-name').value === 'system';
++  $('volume-value').textContent = `${$('sound-volume').value}%`;
++  $('sound-volume').disabled = system;
++  $('volume-hint').hidden = !system;
++  const on = $('sound').checked;
++  for (const id of ['sound-name', 'sound-play']) {
++    $(id).disabled = !on;
++  }
++}
++
++function sendSound() {
++  chrome.send('setSound', [$('sound-name').value, Number($('sound-volume').value)]);
++}
++
++function sendQuiet() {
++  const on = $('quiet-hours').checked;
++  chrome.send('setQuiet', [{
++    fullscreen: $('quiet-fullscreen').checked,
++    front: $('quiet-front').checked,
++    from: on ? minutesOf($('quiet-from').value) : -1,
++    to: on ? minutesOf($('quiet-to').value) : -1,
++  }]);
++}
++
++// --- One list of every account (P5.81, P5.82) ---
++// The accounts counted and those of the person's list, each once, in the person's order. One is opened to
++// change it, give it its own sound or move it; while a form in it is open, or a row is dragged, the list is not
++// drawn again (that would take them away).
 +let editing = '';
 +let dragging = '';
++let opened = '';
++
++// An address as Gmail reads it: no dots, one domain (as the browser's CanonicalAddress).
++function canonical(email) {
++  const text = (email || '').trim().toLowerCase();
++  const at = text.lastIndexOf('@');
++  if (at < 0) {
++    return text;
++  }
++  let name = text.slice(0, at);
++  let domain = text.slice(at + 1);
++  if (domain === 'googlemail.com') {
++    domain = 'gmail.com';
++  }
++  if (domain === 'gmail.com') {
++    name = name.replaceAll('.', '');
++  }
++  return `${name}@${domain}`;
++}
++
++function entries(next) {
++  const all = new Map();
++  for (const account of next.accounts) {
++    all.set(canonical(account.email), {email: account.email, account, listed: null});
++  }
++  for (const listed of next.wanted || []) {
++    const key = canonical(listed.email);
++    if (all.has(key)) {
++      all.get(key).listed = listed;
++    } else {
++      all.set(key, {email: listed.email, account: null, listed});
++    }
++  }
++  const order = next.order || [];
++  const place = (item) => {
++    const at = order.indexOf(canonical(item.email));
++    return at < 0 ? Infinity : at;
++  };
++  return [...all.values()].sort((a, b) => place(a) - place(b));
++}
 +
 +// The order is kept by the browser; the page shows it at once.
 +function saveOrder(list) {
-+  const rest = (state.wanted || []).map((account) => account.email).filter((email) => !list.includes(email));
-+  state.accounts.sort((a, b) => list.indexOf(a.email) - list.indexOf(b.email));
-+  chrome.send('setOrder', [[...list, ...rest]]);
++  state.order = list.map(canonical);
++  chrome.send('setOrder', [list]);
 +  show(state);
 +}
 +
-+// An account moved up (-1) or down (1); the focus stays on the arrow that moved it.
++// An account moved up (-1) or down (1); the focus stays with it.
 +function shift(email, by) {
-+  const list = state.accounts.map((account) => account.email);
++  const list = entries(state).map((item) => item.email);
 +  const from = list.indexOf(email);
 +  const to = from + by;
 +  if (from < 0 || to < 0 || to >= list.length) {
@@ -12427,17 +13043,18 @@ index 0000000000000000000000000000000000000000..c6e7259d90d572c2150fe05b9c764ed2
 +  list.splice(from, 1);
 +  list.splice(to, 0, email);
 +  saveOrder(list);
-+  const row = [...$('watch').children].find((element) => element.dataset.email === email);
-+  const arrow = row && (row.querySelector(`button[data-move="${by}"]:not(:disabled)`) ||
-+                        row.querySelector('button.move:not(:disabled)'));
-+  if (arrow) {
-+    arrow.focus();
++  const element = [...$('list').children].find((child) => child.dataset.email === email);
++  const target = element && (element.querySelector(`button[data-move="${by}"]:not(:disabled)`) ||
++                             element.querySelector('button[data-move]:not(:disabled)') ||
++                             element.querySelector('button.open'));
++  if (target) {
++    target.focus();
 +  }
 +}
 +
 +// An account dropped before or after another.
 +function dropAt(moved, target, after) {
-+  const list = state.accounts.map((account) => account.email).filter((email) => email !== moved);
++  const list = entries(state).map((item) => item.email).filter((email) => email !== moved);
 +  let at = list.indexOf(target);
 +  if (at < 0 || moved === target) {
 +    return;
@@ -12449,50 +13066,291 @@ index 0000000000000000000000000000000000000000..c6e7259d90d572c2150fe05b9c764ed2
 +  saveOrder(list);
 +}
 +
-+function orderControls(row, account, index, count) {
-+  const grip = make('span', 'grip', '≡');
-+  grip.title = t('Drag an account, or use its arrows, to put the list in your order.');
-+  grip.setAttribute('aria-hidden', 'true');
-+  row.append(grip);
-+  row.draggable = true;
-+  row.addEventListener('dragstart', (event) => {
-+    dragging = account.email;
-+    row.classList.add('dragging');
++function dragControls(element, item) {
++  element.draggable = true;
++  element.addEventListener('dragstart', (event) => {
++    dragging = item.email;
++    element.classList.add('dragging');
 +    event.dataTransfer.effectAllowed = 'move';
-+    event.dataTransfer.setData('text/plain', account.email);
++    event.dataTransfer.setData('text/plain', item.email);
 +  });
-+  row.addEventListener('dragend', () => {
++  element.addEventListener('dragend', () => {
 +    dragging = '';
-+    for (const other of $('watch').children) {
++    for (const other of $('list').children) {
 +      other.classList.remove('dragging', 'drop-before', 'drop-after');
 +    }
 +    show(state);
 +  });
-+  row.addEventListener('dragover', (event) => {
-+    if (!dragging || dragging === account.email) {
++  element.addEventListener('dragover', (event) => {
++    if (!dragging || dragging === item.email) {
 +      return;
 +    }
 +    event.preventDefault();
-+    const box = row.getBoundingClientRect();
++    const box = element.getBoundingClientRect();
 +    const after = event.clientY > box.top + box.height / 2;
-+    row.classList.toggle('drop-before', !after);
-+    row.classList.toggle('drop-after', after);
++    element.classList.toggle('drop-before', !after);
++    element.classList.toggle('drop-after', after);
 +  });
-+  row.addEventListener('dragleave', () => row.classList.remove('drop-before', 'drop-after'));
-+  row.addEventListener('drop', (event) => {
++  element.addEventListener('dragleave', () => element.classList.remove('drop-before', 'drop-after'));
++  element.addEventListener('drop', (event) => {
 +    event.preventDefault();
 +    const moved = dragging;
-+    const after = row.classList.contains('drop-after');
++    const after = element.classList.contains('drop-after');
 +    dragging = '';
-+    dropAt(moved, account.email, after);
++    dropAt(moved, item.email, after);
 +  });
-+  // with the keyboard: Alt and an arrow
-+  row.addEventListener('keydown', (event) => {
-+    if (event.altKey && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
-+      event.preventDefault();
-+      shift(account.email, event.key === 'ArrowUp' ? -1 : 1);
++}
++
++function chevron() {
++  const ns = 'http://www.w3.org/2000/svg';
++  const svg = document.createElementNS(ns, 'svg');
++  svg.setAttribute('viewBox', '0 0 24 24');
++  const path = document.createElementNS(ns, 'path');
++  path.setAttribute('d', 'M6 9l6 6 6-6');
++  svg.append(path);
++  return svg;
++}
++
++// What kind of account it is, in a few words.
++function describe(item) {
++  const {account, listed} = item;
++  const alias = listed && listed.alias;
++  let kind = t('Not signed in at Google, so not counted yet');
++  if (account && account.imap) {
++    kind = `${t('Mailbox')} · ${(account.server && account.server.host) || ''}`;
++  } else if (account) {
++    kind = t('Gmail, signed in at Google');
++  }
++  return alias ? `${item.email} · ${kind}` : kind;
++}
++
++// A button that does what it says only when pressed twice: the first press asks.
++function twoStep(label, again, action) {
++  const button = make('button', 'small', t(label));
++  button.type = 'button';
++  let armed = 0;
++  button.addEventListener('click', () => {
++    if (armed) {
++      clearTimeout(armed);
++      action();
++      return;
++    }
++    button.textContent = t(again);
++    armed = setTimeout(() => {
++      armed = 0;
++      button.textContent = t(label);
++    }, 4000);
++  });
++  return button;
++}
++
++function details(item, index, count) {
++  const {account, listed} = item;
++  const key = canonical(item.email);
++  const box = make('div', 'details');
++  const sound = state.sound || {names: [], accounts: {}, name: 'system', volume: 70};
++  // its own sound
++  const soundRow = make('div', 'setting');
++  soundRow.append(make('span', '', t('Its sound')));
++  const select = make('select');
++  fillSounds(select, sound.names, true);
++  select.value = (sound.accounts || {})[key] || '';
++  select.setAttribute('aria-label', `${t('Its sound')}: ${item.email}`);
++  select.addEventListener('change', () => chrome.send('setAccountSound', [item.email, select.value]));
++  const play = make('button', 'small', t('Play'));
++  play.type = 'button';
++  play.addEventListener('click', () => {
++    const name = select.value || sound.name;
++    if (name !== 'off') {
++      chrome.send('previewSound', [name, sound.volume]);
 +    }
 +  });
++  soundRow.append(select, play);
++  box.append(soundRow);
++  // its place in the list
++  if (count > 1) {
++    const orderRow = make('div', 'setting');
++    orderRow.append(make('span', '', t('Place in the list')));
++    for (const [label, by] of [['Move up', -1], ['Move down', 1]]) {
++      const move = make('button', 'small', t(label));
++      move.type = 'button';
++      move.dataset.move = String(by);
++      move.disabled = by < 0 ? index === 0 : index === count - 1;
++      move.addEventListener('click', () => shift(item.email, by));
++      orderRow.append(move);
++    }
++    box.append(orderRow);
++  }
++  // what can be done with it
++  const actions = make('div', 'buttons');
++  if (account && account.imap) {
++    const edit = make('button', 'small', t('Edit'));
++    edit.type = 'button';
++    edit.addEventListener('click', () => editMailbox(box, account));
++    actions.append(edit);
++  } else if (listed) {
++    const edit = make('button', 'small', t('Edit'));
++    edit.type = 'button';
++    edit.addEventListener('click', () => editListed(box, listed));
++    actions.append(edit);
++  }
++  if (listed && !account) {
++    const signIn = make('button', 'small', t('Sign in'));
++    signIn.type = 'button';
++    signIn.addEventListener('click', () => chrome.send('signInGoogle', [listed.email]));
++    actions.append(signIn);
++    if (listed.password) {
++      const copy = make('button', 'small', t('Copy password'));
++      copy.type = 'button';
++      copy.addEventListener('click', async () => {
++        let done = false;
++        try {
++          done = await sendWithPromise('copyGooglePassword', listed.email);
++        } catch {
++          return;
++        }
++        $('wanted-state').textContent = done ? t('The password is on the clipboard.') : '';
++      });
++      actions.append(copy);
++    }
++  }
++  if ((account && account.imap) || listed) {
++    actions.append(twoStep('Remove', 'Remove it? Press again', () => {
++      if (account && account.imap) {
++        chrome.send('removeImapAccount', [account.email]);
++      }
++      if (listed) {
++        chrome.send('removeGoogleAccount', [listed.email]);
++      }
++      opened = '';
++      refresh();
++    }));
++  }
++  if (actions.children.length) {
++    box.append(actions);
++  }
++  if (account && !account.imap && !listed) {
++    box.append(make('p', 'note', t('Signed in at Google in this browser. Switch it off to stop counting it; ' +
++                                   'sign out of it at Google to take it away.')));
++  } else if (listed && !account) {
++    box.append(make('p', 'note', t('An account is counted while Thoron is signed in to it at Google. "Sign in" ' +
++                                   'opens the Google page with the address filled in.')));
++  }
++  return box;
++}
++
++function makeItem(item, index, count) {
++  const {account, listed} = item;
++  const key = canonical(item.email);
++  const element = make('div', account && !account.watched ? 'item off' : 'item');
++  element.setAttribute('role', 'listitem');
++  element.dataset.email = item.email;
++  const line = make('div', 'line');
++  if (count > 1) {
++    const grip = make('span', 'grip', '≡');
++    grip.title = t('Drag an account, or use its arrows, to put the list in your order.');
++    grip.setAttribute('aria-hidden', 'true');
++    line.append(grip);
++    dragControls(element, item);
++  }
++  const alias = listed && listed.alias;
++  line.append(make('span', 'face', (alias || item.email || '?').slice(0, 1)));
++  const toggleOpen = () => {
++    opened = opened === key ? '' : key;
++    closeEditor();
++    show(state);
++  };
++  const who = make('div', 'who');
++  who.append(make('span', 'title', alias || item.email), make('span', 'sub', describe(item)));
++  who.addEventListener('click', toggleOpen);
++  line.append(who);
++  const chips = make('span', 'chips');
++  const own = ((state.sound && state.sound.accounts) || {})[key];
++  if (own) {
++    chips.append(make('span', 'tag', own === 'off' ? t('No sound') : soundLabel(own)));
++  }
++  if (account) {
++    if (account.problem) {
++      const bad = make('span', 'count bad', t(account.problem === 'sign-in' ? 'Password refused' : 'Not reached'));
++      bad.title = t(account.problem === 'sign-in' ?
++          'Sign-in refused: its password may have changed. Edit it and give the new password.' :
++          'Could not be reached at the last look.');
++      chips.append(bad);
++    }
++    if (account.new) {
++      chips.append(make('span', 'count new', `${account.new} ${t('new')}`));
++    }
++    chips.append(make('span', 'count unread', `${account.unread} ${t('unread')}`));
++  } else {
++    const signIn = make('button', 'small', t('Sign in'));
++    signIn.type = 'button';
++    signIn.addEventListener('click', () => chrome.send('signInGoogle', [listed.email]));
++    chips.append(signIn);
++  }
++  line.append(chips);
++  if (account) {
++    const toggle = make('span', 'switch');
++    const input = make('input');
++    input.type = 'checkbox';
++    input.setAttribute('role', 'switch');
++    input.checked = account.watched;
++    input.title = t('Count this account');
++    input.setAttribute('aria-label', `${t('Count this account')}: ${item.email}`);
++    input.addEventListener('change', () => chrome.send('setWatched', [account.email, input.checked]));
++    toggle.append(input, make('span'));
++    line.append(toggle);
++  }
++  const open = make('button', 'icon open');
++  open.type = 'button';
++  open.append(chevron());
++  open.title = t('Details');
++  open.setAttribute('aria-label', `${t('Details')}: ${item.email}`);
++  open.setAttribute('aria-expanded', String(opened === key));
++  open.addEventListener('click', toggleOpen);
++  line.append(open);
++  element.append(line);
++  // with the keyboard: Alt and an arrow moves it
++  element.addEventListener('keydown', (event) => {
++    if (event.altKey && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
++      event.preventDefault();
++      shift(item.email, event.key === 'ArrowUp' ? -1 : 1);
++    }
++  });
++  if (opened === key) {
++    element.append(details(item, index, count));
++  }
++  return element;
++}
++
++function showList(next) {
++  if (!PAGE) {
++    return;
++  }
++  const items = entries(next);
++  const counted = items.filter((item) => item.account).length;
++  const parts = [`${items.length} ${t('accounts')}`, `${counted} ${t('counted')}`];
++  if (next.totalNew) {
++    parts.push(`${next.totalNew} ${t('new')}`);
++  }
++  parts.push(`${next.total} ${t('unread')}`);
++  $('summary').textContent = parts.join(' · ');
++  $('find').hidden = items.length < 7;
++  $('order-hint').hidden = items.length < 2;
++  if (editing || dragging) {
++    return;
++  }
++  const list = $('list');
++  list.replaceChildren();
++  const filter = $('find').hidden ? '' : $('find').value.trim().toLowerCase();
++  items.forEach((item, index) => {
++    const element = makeItem(item, index, items.length);
++    const words = `${item.email} ${(item.listed && item.listed.alias) || ''}`.toLowerCase();
++    element.hidden = !!filter && !words.includes(filter);
++    list.append(element);
++  });
++  if (!items.length) {
++    list.append(make('p', 'hint', t('No account yet: add one.')));
++  }
 +}
 +
 +function textField(label, value, type) {
@@ -12556,8 +13414,8 @@ index 0000000000000000000000000000000000000000..c6e7259d90d572c2150fe05b9c764ed2
 +  }
 +}
 +
-+// A form under `row`; `save` gives "" when it was changed, else the words to show.
-+function openEditor(row, key, fields, save, status) {
++// A form in `container` (an account's opened row); `save` gives "" when it was changed, else the words to show.
++function openEditor(container, key, fields, save, status) {
 +  closeEditor();
 +  editing = key;
 +  const form = make('div', 'edit-form');
@@ -12604,7 +13462,7 @@ index 0000000000000000000000000000000000000000..c6e7259d90d572c2150fe05b9c764ed2
 +  });
 +  buttons.append(ok, cancel);
 +  form.append(...fields.map((field) => field.field), error, buttons);
-+  row.after(form);
++  container.append(form);
 +  status.textContent = '';
 +  fields[0].input.focus();
 +}
@@ -12618,7 +13476,7 @@ index 0000000000000000000000000000000000000000..c6e7259d90d572c2150fe05b9c764ed2
 +
 +// A mailbox: its address, password and server. A new password, address or server is signed in to before it is
 +// kept, so a wrong one changes nothing.
-+function editMailbox(row, account) {
++function editMailbox(container, account) {
 +  const server = account.server || {};
 +  const email = textField('Email address', account.email, 'email');
 +  const password = passwordField();
@@ -12626,7 +13484,7 @@ index 0000000000000000000000000000000000000000..c6e7259d90d572c2150fe05b9c764ed2
 +  const port = textField('Port', String(server.port || 993), 'number');
 +  const user = textField('Sign-in name, if it is not the address', server.user === account.email ? '' : server.user);
 +  const webmail = textField('The page its mail is read on (https, optional)', server.webmail, 'url');
-+  openEditor(row, account.email, [email, password, host, port, user, webmail], async () => {
++  openEditor(container, account.email, [email, password, host, port, user, webmail], async () => {
 +    const answer = await sendWithPromise('editImapAccount', {
 +      before: account.email,
 +      email: email.input.value.trim(),
@@ -12649,11 +13507,11 @@ index 0000000000000000000000000000000000000000..c6e7259d90d572c2150fe05b9c764ed2
 +}
 +
 +// An account of the person's list: its address, name and password. A new app password reads its mail as well.
-+function editListed(row, account) {
++function editListed(container, account) {
 +  const email = textField('Email address', account.email, 'email');
 +  const alias = textField('Name', account.alias);
 +  const password = passwordField();
-+  openEditor(row, `list:${account.email}`, [email, alias, password], async () => {
++  openEditor(container, `list:${account.email}`, [email, alias, password], async () => {
 +    const answer = await sendWithPromise('editGoogleAccount', {
 +      before: account.email,
 +      email: email.input.value.trim(),
@@ -12772,20 +13630,37 @@ index 0000000000000000000000000000000000000000..c6e7259d90d572c2150fe05b9c764ed2
 +}
 +
 +// --- The M-Notifier's own page (a tab) and its backup (P5.77) ---
-+// In a tab the page shows everything at once; the menu shows one part at a time.
++// In a tab the page shows the settings in tabs and every account in one list; the menu shows the accounts and
++// their counts, and its Settings button opens the page.
 +const PAGE = location.hash.startsWith('#manage');
++const TABS = ['accounts', 'alerts', 'counting', 'display', 'backup'];
 +
 +function showAddPanel(open) {
 +  $('add-panel').hidden = !open;
 +  if (!PAGE) {
 +    $('accounts').hidden = open;
-+    $('settings').hidden = true;
-+    $('gear').setAttribute('aria-pressed', 'false');
 +  }
 +  $('imap-form').hidden = !PAGE;
 +  $('imap-bubble').hidden = PAGE;
 +  if (open && PAGE) {
++    selectTab('accounts', false);
 +    $('imap-email').focus();
++  }
++}
++
++// One tab of the page shown, kept in the address (#manage/alerts) so a reload or a link comes back to it.
++function selectTab(name, write = true) {
++  if (!TABS.includes(name)) {
++    name = 'accounts';
++  }
++  for (const tab of document.querySelectorAll('#tabs [role=tab]')) {
++    const on = tab.dataset.tab === name;
++    tab.setAttribute('aria-selected', String(on));
++    tab.tabIndex = on ? 0 : -1;
++    $(`tab-${tab.dataset.tab}`).hidden = !on;
++  }
++  if (write && location.hash !== `#manage/${name}`) {
++    history.replaceState(null, '', `#manage/${name}`);
 +  }
 +}
 +
@@ -13001,19 +13876,13 @@ index 0000000000000000000000000000000000000000..c6e7259d90d572c2150fe05b9c764ed2
 +}
 +
 +$('check').addEventListener('click', () => chrome.send('checkNow'));
-+$('gear').addEventListener('click', () => {
-+  const open = $('settings').hidden;
-+  $('settings').hidden = !open;
-+  $('accounts').hidden = open;
-+  $('add-panel').hidden = true;
-+  $('gear').setAttribute('aria-pressed', String(open));
-+});
++// Settings: the M-Notifier's own page, in a tab
++$('gear').addEventListener('click', () => chrome.send('openManage', [false]));
 +// "Add an account" opens the two ways to add one
 +$('add').addEventListener('click', () => showAddPanel($('add-panel').hidden));
 +$('add-google').addEventListener('click', () => chrome.send('addAccount'));
 +// the form is on the M-Notifier's own page: a menu closes when another window is used (a password manager)
 +$('add-mailbox').addEventListener('click', () => chrome.send('openManage', [true]));
-+$('manage').addEventListener('click', () => chrome.send('openManage', [false]));
 +$('imap-email').addEventListener('input', fillFromAddress);
 +for (const id of ['imap-host', 'imap-webmail']) {
 +  $(id).addEventListener('input', () => typed.add(id));
@@ -13037,13 +13906,57 @@ index 0000000000000000000000000000000000000000..c6e7259d90d572c2150fe05b9c764ed2
 +});
 +if (PAGE) {
 +  document.body.classList.add('page');
-+  $('settings').hidden = false;
-+  $('backup').hidden = false;
-+  showAddPanel(location.hash === '#manage-add');
-+  addEventListener('hashchange', () => showAddPanel(location.hash === '#manage-add'));
++  $('page').hidden = false;
++  // the ways to add an account, in the Accounts tab
++  $('tab-accounts').insertBefore($('add-panel'), $('list'));
++  $('find').placeholder = t('Find an account');
++  $('find').setAttribute('aria-label', t('Find an account'));
++  $('find').addEventListener('input', () => show(state));
++  $('page-add').addEventListener('click', () => showAddPanel($('add-panel').hidden));
++  const tabs = [...document.querySelectorAll('#tabs [role=tab]')];
++  tabs.forEach((tab, at) => {
++    tab.addEventListener('click', () => selectTab(tab.dataset.tab));
++    // the arrows move between the tabs, as in the browser's own settings
++    tab.addEventListener('keydown', (event) => {
++      const by = {ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1}[event.key];
++      if (by) {
++        event.preventDefault();
++        const next = tabs[(at + by + tabs.length) % tabs.length];
++        next.focus();
++        selectTab(next.dataset.tab);
++      }
++    });
++  });
++  const fromAddress = () => {
++    const hash = location.hash;
++    selectTab(hash.startsWith('#manage/') ? hash.slice('#manage/'.length) : 'accounts', false);
++    showAddPanel(hash === '#manage-add');
++  };
++  fromAddress();
++  addEventListener('hashchange', fromAddress);
++  // P5.82: the sound and when it stays quiet
++  $('sound-name').addEventListener('change', () => {
++    sendSound();
++    show(state);
++  });
++  $('sound-volume').addEventListener('input', () => {
++    $('volume-value').textContent = `${$('sound-volume').value}%`;
++  });
++  $('sound-volume').addEventListener('change', sendSound);
++  $('sound-play').addEventListener('click', () => {
++    chrome.send('previewSound', [$('sound-name').value, Number($('sound-volume').value)]);
++  });
++  for (const id of ['quiet-fullscreen', 'quiet-front', 'quiet-hours', 'quiet-from', 'quiet-to']) {
++    $(id).addEventListener('change', sendQuiet);
++  }
 +}
 +$('notify').addEventListener('change', () => chrome.send('setNotify', [$('notify').checked]));
-+$('sound').addEventListener('change', () => chrome.send('setChoice', ['sound', $('sound').checked ? 'on' : 'off']));
++$('sound').addEventListener('change', () => {
++  chrome.send('setChoice', ['sound', $('sound').checked ? 'on' : 'off']);
++  if (state) {
++    showSound(state);
++  }
++});
 +$('messages').addEventListener(
 +    'change', () => chrome.send('setChoice', ['messages', $('messages').checked ? 'on' : 'off']));
 +$('interval').addEventListener('change', () => chrome.send('setInterval', [Number($('interval').value)]));
@@ -13053,6 +13966,12 @@ index 0000000000000000000000000000000000000000..c6e7259d90d572c2150fe05b9c764ed2
 +document.addEventListener('keydown', (event) => {
 +  if (event.key === 'Escape') {
 +    chrome.send('closeMenu');
++  }
++});
++// the menu's own page sent to the settings (#manage...): it loads again as the page
++addEventListener('hashchange', () => {
++  if (!PAGE && location.hash.startsWith('#manage')) {
++    location.reload();
 +  }
 +});
 +addWebUiListener('mail-changed', refresh);
@@ -14048,6 +14967,259 @@ index 0000000000000000000000000000000000000000..fdfcfc775038811b0fd94927c78d1d8e
 +}  // namespace thoron_mail
 +
 +#endif  // COMPONENTS_THORON_MAIL_MAIL_SERVICE_H_
+diff --git a/components/thoron_mail/mail_sounds.cc b/components/thoron_mail/mail_sounds.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..8424b529d823823318c6a134272c85161c2fa54f
+--- /dev/null
++++ b/components/thoron_mail/mail_sounds.cc
+@@ -0,0 +1,209 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "components/thoron_mail/mail_sounds.h"
++
++#include <algorithm>
++#include <cmath>
++#include <cstdint>
++
++#include "base/no_destructor.h"
++
++namespace thoron_mail {
++
++namespace {
++
++constexpr int kRate = 44100;
++constexpr double kTwoPi = 6.283185307179586;
++// every tone fades out over its last 15 ms, so no sound ends in a click
++constexpr double kRelease = 0.015;
++
++// An overtone: its pitch as a multiple of the tone's, and how loud it is.
++struct Partial {
++  double ratio;
++  double level;
++};
++
++// One struck or sung note of a sound.
++struct Tone {
++  double start;     // seconds from the sound's start
++  double freq;      // Hz
++  double freq_end;  // Hz at the end of the glide; 0: no glide
++  double glide;     // seconds the pitch takes to move to `freq_end`
++  double decay;     // seconds for the note to fall to a third (1/e)
++  double length;    // seconds it lasts
++  double level;     // 0 to 1
++};
++
++struct Design {
++  const char* name;
++  double attack;  // seconds to full strength
++  std::vector<Partial> partials;
++  std::vector<Tone> tones;
++};
++
++// The sounds, made of tones whose pitches are those of the equal-tempered
++// scale (C6 = 1046.50 Hz). Bell-like sounds take overtones that are not whole
++// multiples, as a struck bell's are.
++const std::vector<Design>& Designs() {
++  static const base::NoDestructor<std::vector<Design>> designs([] {
++    return std::vector<Design>{
++      {"chime",
++       0.004,
++       {{1, 1}, {2, 0.35}, {3, 0.12}, {4.2, 0.06}},
++       {{0, 1046.50, 0, 0, 0.35, 0.9, 0.8}, {0.13, 1318.51, 0, 0, 0.45, 1.1, 0.9}}},
++      {"bell",
++       0.002,
++       {{1, 1}, {2.76, 0.45}, {5.40, 0.25}, {8.93, 0.12}},
++       {{0, 783.99, 0, 0, 0.7, 1.6, 1}}},
++      {"marimba",
++       0.002,
++       {{1, 1}, {3.93, 0.3}, {10.0, 0.05}},
++       {{0, 1046.50, 0, 0, 0.14, 0.45, 0.9},
++        {0.09, 1318.51, 0, 0, 0.14, 0.45, 0.9},
++        {0.18, 1567.98, 0, 0, 0.16, 0.5, 1}}},
++      {"pop",
++       0.002,
++       {{1, 1}, {2, 0.15}},
++       {{0, 420, 980, 0.05, 0.05, 0.16, 1}, {0.11, 520, 1180, 0.05, 0.05, 0.16, 0.8}}},
++      {"drops",
++       0.001,
++       {{1, 1}},
++       {{0, 1900, 1100, 0.07, 0.06, 0.14, 1},
++        {0.12, 1600, 900, 0.07, 0.06, 0.14, 0.85},
++        {0.22, 2100, 1250, 0.06, 0.05, 0.12, 0.7}}},
++      {"bright",
++       0.003,
++       {{1, 1}, {2, 0.25}, {3, 0.1}},
++       {{0, 1046.50, 0, 0, 0.2, 0.55, 0.8},
++        {0.07, 1318.51, 0, 0, 0.2, 0.55, 0.8},
++        {0.14, 1567.98, 0, 0, 0.2, 0.55, 0.8},
++        {0.21, 2093.00, 0, 0, 0.3, 0.7, 0.9}}},
++      {"soft",
++       0.03,
++       {{1, 1}, {2, 0.08}},
++       {{0, 523.25, 0, 0, 0.5, 1.0, 0.7}, {0.18, 659.26, 0, 0, 0.6, 1.1, 0.7}}},
++      {"knock",
++       0.001,
++       {{1, 1}, {2.3, 0.3}},
++       {{0, 190, 150, 0.04, 0.045, 0.12, 1}, {0.16, 190, 150, 0.04, 0.045, 0.12, 0.9}}},
++      {"ding", 0.003, {{1, 1}, {2, 0.2}, {3, 0.05}}, {{0, 1567.98, 0, 0, 0.5, 1.0, 1}}},
++      {"beeps",
++       0.003,
++       {{1, 1}, {3, 0.33}, {5, 0.2}},
++       {{0, 1318.51, 0, 0, 1, 0.09, 0.8}, {0.14, 1318.51, 0, 0, 1, 0.09, 0.8}}},
++    };
++  }());
++  return *designs;
++}
++
++const Design* FindDesign(std::string_view name) {
++  for (const Design& design : Designs()) {
++    if (name == design.name) {
++      return &design;
++    }
++  }
++  return nullptr;
++}
++
++void Append16(std::string& out, uint16_t value) {
++  out.push_back(static_cast<char>(value & 0xff));
++  out.push_back(static_cast<char>(value >> 8));
++}
++
++void Append32(std::string& out, uint32_t value) {
++  Append16(out, static_cast<uint16_t>(value & 0xffff));
++  Append16(out, static_cast<uint16_t>(value >> 16));
++}
++
++}  // namespace
++
++const std::vector<std::string>& MadeSoundNames() {
++  static const base::NoDestructor<std::vector<std::string>> names([] {
++    std::vector<std::string> out;
++    for (const Design& design : Designs()) {
++      out.emplace_back(design.name);
++    }
++    return out;
++  }());
++  return *names;
++}
++
++bool IsKnownSound(std::string_view name) {
++  return name == kSystemSound || FindDesign(name);
++}
++
++std::string MakeSoundWav(std::string_view name, int volume) {
++  const Design* design = FindDesign(name);
++  if (!design) {
++    return std::string();
++  }
++  volume = std::clamp(volume, 0, 100);
++  double total = 0;
++  for (const Tone& tone : design->tones) {
++    total = std::max(total, tone.start + tone.length);
++  }
++  const size_t count = static_cast<size_t>((total + 0.02) * kRate);
++  std::vector<double> mix(count, 0.0);
++  for (const Tone& tone : design->tones) {
++    const size_t first = static_cast<size_t>(tone.start * kRate);
++    const size_t length = static_cast<size_t>(tone.length * kRate);
++    std::vector<double> phase(design->partials.size(), 0.0);
++    for (size_t i = 0; i < length && first + i < count; ++i) {
++      const double t = static_cast<double>(i) / kRate;
++      double freq = tone.freq;
++      if (tone.freq_end > 0 && tone.glide > 0) {
++        freq = t < tone.glide
++                   ? tone.freq + (tone.freq_end - tone.freq) * (t / tone.glide)
++                   : tone.freq_end;
++      }
++      const double rise = design->attack > 0 ? std::min(1.0, t / design->attack) : 1.0;
++      const double fall = std::min(1.0, (tone.length - t) / kRelease);
++      const double envelope = rise * std::exp(-t / tone.decay) * std::max(0.0, fall);
++      double sample = 0;
++      for (size_t p = 0; p < design->partials.size(); ++p) {
++        const Partial& partial = design->partials[p];
++        // an overtone above what the file can hold is left out
++        if (freq * partial.ratio >= kRate / 2.0) {
++          continue;
++        }
++        phase[p] += kTwoPi * freq * partial.ratio / kRate;
++        sample += partial.level * std::sin(phase[p]);
++      }
++      mix[first + i] += tone.level * envelope * sample;
++    }
++  }
++  double peak = 0;
++  for (double value : mix) {
++    peak = std::max(peak, std::abs(value));
++  }
++  // loudness follows the slider the way ears hear it: half way is clearly
++  // quieter, not a little; the loudest sample stays below the volume's share
++  const double share = std::pow(volume / 100.0, 1.5) * 0.95;
++  const double gain = peak > 0 ? share / peak : 0;
++  std::string data;
++  data.reserve(count * 2);
++  for (double value : mix) {
++    const long sample =
++        std::lround(std::clamp(value * gain, -1.0, 1.0) * 32767.0);
++    Append16(data, static_cast<uint16_t>(static_cast<int16_t>(sample)));
++  }
++  std::string wav;
++  wav.reserve(44 + data.size());
++  wav += "RIFF";
++  Append32(wav, static_cast<uint32_t>(36 + data.size()));
++  wav += "WAVEfmt ";
++  Append32(wav, 16);         // the size of the format block
++  Append16(wav, 1);          // PCM
++  Append16(wav, 1);          // one channel
++  Append32(wav, kRate);
++  Append32(wav, kRate * 2);  // bytes a second
++  Append16(wav, 2);          // bytes a sample
++  Append16(wav, 16);         // bits a sample
++  wav += "data";
++  Append32(wav, static_cast<uint32_t>(data.size()));
++  wav += data;
++  return wav;
++}
++
++}  // namespace thoron_mail
+diff --git a/components/thoron_mail/mail_sounds.h b/components/thoron_mail/mail_sounds.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..439b57ba15ac7add9eaad2d691ad9cf92a909c6e
+--- /dev/null
++++ b/components/thoron_mail/mail_sounds.h
+@@ -0,0 +1,32 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef COMPONENTS_THORON_MAIL_MAIL_SOUNDS_H_
++#define COMPONENTS_THORON_MAIL_MAIL_SOUNDS_H_
++
++#include <string>
++#include <string_view>
++#include <vector>
++
++namespace thoron_mail {
++
++// The sounds of Thoron M-Notifier (P5.82). Each is made here, from tones, when
++// it is played: no recording, no sample of anyone's, nothing to credit. The
++// names are what the profile keeps. "system" is not one of them: it is
++// Windows' own sound for new mail, from the person's sound scheme, and is
++// played by name, never copied.
++inline constexpr char kSystemSound[] = "system";
++
++// The sounds Thoron makes, in the order they are offered.
++const std::vector<std::string>& MadeSoundNames();
++// True for "system" and for every made sound.
++bool IsKnownSound(std::string_view name);
++
++// The sound `name` as a WAV file (PCM, 16 bits, one channel, 44.1 kHz) at
++// `volume` (0 to 100), or "" for a name that is not a made sound. The loudest
++// sample is the volume's share of full scale, never above it.
++std::string MakeSoundWav(std::string_view name, int volume);
++
++}  // namespace thoron_mail
++
++#endif  // COMPONENTS_THORON_MAIL_MAIL_SOUNDS_H_
 diff --git a/components/thoron_update/BUILD.gn b/components/thoron_update/BUILD.gn
 new file mode 100644
 index 0000000000000000000000000000000000000000..53564a8a038b525d6b3b9cf7311261d015c673fe

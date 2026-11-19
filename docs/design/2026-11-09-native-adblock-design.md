@@ -2397,6 +2397,34 @@ response's body. Thoron is the browser, so it does it for every page:
   which already reaches the profile.
 - **Checked:** `mail_manage_check.py`, offline with a stand-in mail server.
 
+### 12.76 The page in tabs, one list of accounts, sounds (P5.82, 2026-11-19)
+
+- **The owner's asks:** the page showed every address three times (the menu's list, "Accounts to watch", the
+  list of Google accounts); the menu's gear should open the settings page; more sounds and smart sounds, free or
+  credited, nothing under copyright.
+- **One list:** the accounts counted and those of the person's list are merged by address (as Gmail reads it)
+  and shown once, in the person's order. A row has what is needed at a glance (name, kind, new and unread mail, a
+  switch to count it); the rest is in its opened part (its own sound, its place, edit, remove). The menu's list
+  is the menu's alone: the page hides it. Removing takes two presses, without a dialog that would block the
+  page.
+- **Tabs:** Accounts, Alerts and sounds, Counting, Display, Backup, in the browser's own settings style (a
+  column of tabs, cards of settings, switches for on and off); the tab is kept in the address. The menu's gear
+  opens the page instead of a panel squeezed into the menu.
+- **Sounds without copyright:** the browser makes each sound from tones when it plays it (`mail_sounds.cc`: a
+  note is a pitch with overtones, a short rise, a fall and a fade at its end; bell-like sounds take overtones
+  that are not whole multiples, as a struck bell's are). No file is shipped and no recording is used, so there
+  is nothing to license or credit beyond our own (CREDITS.md says so). Windows' new-mail sound stays the
+  default: it is the person's own sound scheme, played by name. The volume follows the ear (a power curve), and
+  the loudest sample never passes the volume's share. A sound plays from memory; the one playing is stopped
+  before its memory is reused.
+- **Smart quiet, in order:** an account set to no sound; quiet hours (they hold the notices too, as "do not
+  disturb" does); the account's own inbox or mail page as the active tab of the active window (the person is
+  looking at it); and Windows' own answer to "may I disturb now" (`SHQueryUserNotificationState`: a full-screen
+  program, a Direct3D game, presentation mode, a full-screen app). The offline checks do not ask Windows, so a
+  full-screen window on the PC cannot change their result.
+- **Checked:** `mail_settings_check.py` (tabs, the Settings button, one list, every sound, an account's own
+  sound, quiet hours, the backup) and `mail_manage_check.py` again on the new list.
+
 ## 13. Credits
 
 The procedural operators and the rest of the filter syntax are uBlock Origin's (with forms from Adblock

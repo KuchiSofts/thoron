@@ -78,7 +78,7 @@ changed in each version is in the [changelog](CHANGELOG.md), one line per change
 Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always current.
 
 <!-- roadmap:start -->
-**Overall:** `██████████████░░░░░░` 151 of 210 tasks done (72%) · roadmap updated 2026-11-19
+**Overall:** `██████████████░░░░░░` 151 of 211 tasks done (72%) · roadmap updated 2026-11-19
 
 | Area | Progress | Done | Status |
 |---|---|---|---|
@@ -88,7 +88,7 @@ Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always curre
 | [P2b - ARM64](ROADMAP.md#p2b---arm64) | `░░░░░░░░░░░░░░░░░░░░` | 0/5 | 🔄 In progress · ⛔ blocked item |
 | [P3 - Updater v1 + Import](ROADMAP.md#p3---updater-v1--import) | `██████████░░░░░░░░░░` | 11/21 | 🔄 In progress |
 | [P4 - Updater v2](ROADMAP.md#p4---updater-v2) | `███████████████░░░░░` | 8/11 | 🔄 In progress |
-| [P5 - Quality](ROADMAP.md#p5---quality) | `██████████████████░░` | 72/81 | 🔄 In progress |
+| [P5 - Quality](ROADMAP.md#p5---quality) | `██████████████████░░` | 72/82 | 🔄 In progress |
 | [Security (S)](ROADMAP.md#security-s) | `██████████████░░░░░░` | 11/16 | 🔄 In progress |
 | [Quality & performance (Q)](ROADMAP.md#quality--performance-q) | `███████████░░░░░░░░░` | 4/7 | 🔄 In progress |
 | [Docs (D)](ROADMAP.md#docs-d) | `████████████░░░░░░░░` | 6/10 | 🔄 In progress |
@@ -290,6 +290,7 @@ Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always curre
 - [x] **P5.79** `chrome://adblock` as a dashboard in the browser's own design: a header that stays (the shield, on / paused / off, one search over settings, lists, countries and sites), eight tabs kept in the address (Overview, Settings, Filter lists, My filters, My rules, Sites, Logger, Backup) with counts, cards and switches as the browser's settings have them, the browser theme's colours with the page's own behind them (a person's theme and accent still win), marks for unsaved changes, empty states that say what to do; the menu of the shield in the same look
 - [x] **P5.80** Thoron M-Notifier reads X-notifier's file of accounts (`chrome.xn`, sealed with a passphrase) and keeps a list of the Google accounts a person wants counted: the address, the name it had and its password, encrypted by the system; each is shown as counted while Thoron is signed in to it at Google, with "Sign in" (Google's page, the address filled in) and "Copy password" when it is not; an account whose password is an app password is read as a mailbox as well; the list is part of the M-Notifier's backup; up to 30 Google accounts are counted (it stopped after 10), and a Gmail address written another way is the same account
 - [ ] **P5.81** Thoron M-Notifier's accounts in the person's order (dragged, moved with arrows or Alt and an arrow key; the menu follows it, it stays after a restart and is in the backup), mailboxes and accounts of the list edited (address, password, server; address, name, password; an empty password keeps the one there is, never shown), and the backup saved by the browser itself (the owner's report: "Save a backup..." left an empty file)
+- [ ] **P5.82** Thoron M-Notifier's page organised and its sounds (the owner's ask: the page showed the addresses three times; "press settings in it will open the settings page"; "add more sounds and smart sounds, only free sounds or add credits, no copyright"): tabs (Accounts, Alerts and sounds, Counting, Display, Backup) kept in the address, one list where every account shows once with its counts, a switch and an opened part (its own sound, its place, edit, remove), a search with more than six accounts; the menu's Settings button opens the page; ten sounds the browser makes from tones (no recording, nothing to license; `components/thoron_mail/mail_sounds.cc`) beside Windows' own, heard before choosing, with a volume; an account's own sound or none; quiet while a full-screen program, a game or a presentation runs (Windows' own word), while that inbox is the tab in front, and in quiet hours (notices held too)
 - [ ] **P5.77** Thoron M-Notifier for Outlook/Hotmail, Yahoo and Proton Mail, with the person's own sign-in where the service allows it
 - [x] **P5.30** Native ad blocking, a page in Settings that a person can work with: one switch for the blocker; the filter lists with a checkbox each; add a list by its address and remove it again; "My filters", the person's own rules in the syntax of the lists; the sites where blocking is off
 

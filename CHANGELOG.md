@@ -161,6 +161,9 @@ Explanations live in the design docs under `docs/design/`.
 - **Mail:** Thoron M-Notifier reads X-notifier's file of accounts (`chrome.xn`, with its passphrase) and keeps the Google accounts in a list, their passwords encrypted by the system.
 - **Mail:** the list shows which Google accounts are counted; "Sign in" opens Google's page with the address filled in, "Copy password" puts the kept password on the clipboard.
 - **Mail:** the M-Notifier's backup holds the list of Google accounts.
+- **Mail:** put Thoron M-Notifier's accounts in your own order: drag them, or use their arrows (Alt and an arrow key). The menu follows it, and the backup keeps it.
+- **Mail:** edit a mailbox (address, password, server) and an account of your list (address, name, password); an empty password keeps the one there is, and a new one is signed in to before it is kept.
+- **QA tools:** `mail_manage_check.py` checks the M-Notifier's order, its editing and the backup saved into a file, offline.
 - **QA tools:** `mail_xn_check.py` and `xn_file.py` check the reading of X-notifier's file with made-up accounts.
 - **Updates:** the core of Thoron's own updater: it checks a signed update manifest before reading it and refuses a forged, older, expired or malformed one (`components/thoron_update`, tested against the reference tool).
 - **Updates:** a downloaded package is used only when its size and SHA-256 are the manifest's; a smaller delta is tried first and the full package is the fallback.
@@ -299,6 +302,7 @@ Explanations live in the design docs under `docs/design/`.
 - **Repository:** every push runs the tests and linters and verifies the browser source against upstream.
 
 ### Fixed
+- **Mail:** "Save a backup..." of Thoron M-Notifier could leave an empty file; the browser now writes the backup itself and reads it back, and says so when a folder does not take it.
 - **Name:** the build on Chromium 158.0.8127.65 called itself Chromium in most menus and pages, including "Chromium is up to date" on the About page; it is named Thoron again, and a release is refused when its strings do not name Thoron.
 
 - **Tools:** the release script finds 7-Zip in the Chromium tree by itself and names a program it cannot find.

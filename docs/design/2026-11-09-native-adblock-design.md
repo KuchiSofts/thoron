@@ -2370,6 +2370,33 @@ response's body. Thoron is the browser, so it does it for every page:
   only mentions the host stays open) and `adblock_hosts_check.py` end to end, with the server not asked
   for a stopped page.
 
+### 12.75 The accounts' order, editing, and a backup the browser writes (P5.81, 2026-11-19)
+
+- **The owner's asks:** reorder the list, edit the addresses and passwords of the list, and "Save a backup..."
+  saved an empty file.
+- **The empty file:** the page wrote the file itself (the File System Access API). Its Save picker makes the
+  file at once, empty; the text is written beside it and put in its place only when the page closes the file.
+  When that last step failed, the empty file stayed, and the page took the error for the dialog being closed
+  and said nothing. Now the browser asks for the file with the system's own Save dialog, writes
+  the backup next to it, reads it back, and puts it in its place; where a folder takes no such move, it is
+  written in place and read back. Anything short of the whole backup is told to the person, and an empty file
+  it made is removed. The file is named with the day and the next save starts in the last folder.
+- **The order:** a list of addresses (as Gmail sees them: no dots, one domain) in the profile. Accounts it
+  does not name come after, as they were found, so a new account never pushes others aside. Dragged, moved with
+  arrows, or with Alt and an arrow key; part of the backup.
+- **Editing:** the password is never shown; an empty field keeps it. What a mailbox signs in with (address,
+  sign-in name, server, port, password) is signed in to before it is kept, as when it is added, so a typo
+  changes nothing; its mail page alone is kept at once. A new address takes the order, the watched setting and
+  the last look along. On the list, a new app password makes the account a mailbox, or gives its mailbox the
+  password, so the two never disagree.
+- **Security:** no new network use. The file is written by the browser process to the path the person picked in
+  the system's dialog (`ChromeSelectFilePolicy`, so a policy that forbids file dialogs is followed); what it holds
+  is what the backup held before (passwords only sealed, or when the person ticks it). The checks' switch
+  `--thoron-mail-backup-file-for-testing` names the file instead of the dialog, as `--thoron-mail-feeds-for-testing`
+  stands in for Gmail: it changes only where a backup the person asked for goes, and needs the command line,
+  which already reaches the profile.
+- **Checked:** `mail_manage_check.py`, offline with a stand-in mail server.
+
 ## 13. Credits
 
 The procedural operators and the rest of the filter syntax are uBlock Origin's (with forms from Adblock

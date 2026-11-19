@@ -2115,7 +2115,7 @@ index af9b6f1dc58174281ec64b74c578a3639888ce86..198ab30e882fb2fd51c0b88e79088925
                            /*edge_padding=*/trailing_decorations_edge_padding);
  
 diff --git a/chrome/browser/prefs/browser_prefs.cc b/chrome/browser/prefs/browser_prefs.cc
-index fdd05fad32252be538eef299e830625a6a3c96ba..94d131f1214549b4462c23e215cb5e5bb94b965c 100644
+index fdd05fad32252be538eef299e830625a6a3c96ba..83daf1c80fbb0d7aa01928a62d8391390fb933a8 100644
 --- a/chrome/browser/prefs/browser_prefs.cc
 +++ b/chrome/browser/prefs/browser_prefs.cc
 @@ -3,6 +3,7 @@
@@ -2136,7 +2136,7 @@ index fdd05fad32252be538eef299e830625a6a3c96ba..94d131f1214549b4462c23e215cb5e5b
    // Call outs to individual subsystems that register Local State (browser-wide)
    // prefs en masse. See RegisterProfilePrefs for per-profile prefs. Please
    // keep this list alphabetized.
-@@ -2049,6 +2053,35 @@ void RegisterLocalState(PrefRegistrySimple* registry) {
+@@ -2049,6 +2053,40 @@ void RegisterLocalState(PrefRegistrySimple* registry) {
  void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry,
                            const std::string& locale) {
    TRACE_EVENT0("browser", "chrome::RegisterProfilePrefs");
@@ -2165,6 +2165,11 @@ index fdd05fad32252be538eef299e830625a6a3c96ba..94d131f1214549b4462c23e215cb5e5b
 +  // P5.80: the Google accounts a person wants counted (X-notifier's list),
 +  // each password encrypted by the system.
 +  registry->RegisterListPref("thoron_mail.google_accounts");
++  // P5.81: the order the person put the accounts in (their addresses), and
++  // the folder the last backup was saved into (the next one starts there).
++  registry->RegisterListPref("thoron_mail.order");
++  registry->RegisterFilePathPref("thoron_mail.backup_folder",
++                                 base::FilePath());
 +  // Thoron's own toolbar buttons (P5.78): their order, left to right, where
 +  // they are next to each other ("mail,adblock"; "" is that default). A
 +  // person changes it by moving a button with the mouse.
@@ -7354,10 +7359,10 @@ index 0000000000000000000000000000000000000000..d0fafbafa75adc4e08b11c75f203035c
 +#endif  // CHROME_BROWSER_UI_WEBUI_THORON_ADBLOCK_UI_H_
 diff --git a/chrome/browser/ui/webui/thoron_mail_ui.cc b/chrome/browser/ui/webui/thoron_mail_ui.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..cebae34cd06dbc0d969628be42e1bc2ac00a80db
+index 0000000000000000000000000000000000000000..e1d7155ad22515b6223a70b8a6dda484ac45853b
 --- /dev/null
 +++ b/chrome/browser/ui/webui/thoron_mail_ui.cc
-@@ -0,0 +1,1417 @@
+@@ -0,0 +1,1879 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -7397,6 +7402,14 @@ index 0000000000000000000000000000000000000000..cebae34cd06dbc0d969628be42e1bc2a
 +#include "chrome/browser/ui/tabs/tab_strip_model.h"
 +#include "chrome/browser/ui/webui/theme_source.h"
 +#include "base/base64.h"
++#include "base/files/file_path.h"
++#include "base/files/file_util.h"
++#include "base/strings/stringprintf.h"
++#include "base/time/time.h"
++#include "chrome/browser/download/download_prefs.h"
++#include "chrome/browser/ui/select_file_policy/chrome_select_file_policy.h"
++#include "ui/shell_dialogs/select_file_dialog.h"
++#include "ui/shell_dialogs/selected_file_info.h"
 +#include "base/json/json_reader.h"
 +#include "base/json/json_writer.h"
 +#include "base/task/sequenced_task_runner.h"
@@ -7477,14 +7490,52 @@ index 0000000000000000000000000000000000000000..cebae34cd06dbc0d969628be42e1bc2a
 +  return time.is_null() ? 0 : time.InMillisecondsFSinceUnixEpoch();
 +}
 +
++// P5.81: the backup written into the file the person chose, then read back:
++// "" when the file holds exactly the backup, else "write" or "verify". It is
++// written next to the file first and put in its place, so a file that is there
++// already is only replaced by a whole backup; where a folder takes no such
++// move (some synced folders), it is written in place and read back.
++std::string WriteBackupFile(base::FilePath path, std::string text) {
++  auto holds = [&text](const base::FilePath& file) {
++    std::string back;
++    return base::ReadFileToStringWithMaxSize(file, &back, text.size() + 1) &&
++           back == text;
++  };
++  const bool existed = base::PathExists(path);
++  const base::FilePath part = path.AddExtensionASCII("part");
++  if (base::WriteFile(part, text) && holds(part) &&
++      base::ReplaceFile(part, path, nullptr) && holds(path)) {
++    return std::string();
++  }
++  base::DeleteFile(part);
++  if (!base::WriteFile(path, text)) {
++    if (!existed) {
++      base::DeleteFile(path);
++    }
++    return "write";
++  }
++  if (!holds(path)) {
++    if (!existed) {
++      base::DeleteFile(path);
++    }
++    return "verify";
++  }
++  return std::string();
++}
++
 +class MailHandler : public content::WebUIMessageHandler,
-+                    public thoron_mail::MailService::Observer {
++                    public thoron_mail::MailService::Observer,
++                    public ui::SelectFileDialog::Listener {
 + public:
 +  explicit MailHandler(ThoronMailMenuUI* controller)
 +      : controller_(controller) {}
 +  MailHandler(const MailHandler&) = delete;
 +  MailHandler& operator=(const MailHandler&) = delete;
-+  ~MailHandler() override = default;
++  ~MailHandler() override {
++    if (select_file_dialog_) {
++      select_file_dialog_->ListenerDestroyed();
++    }
++  }
 +
 +  // content::WebUIMessageHandler:
 +  void RegisterMessages() override {
@@ -7501,7 +7552,11 @@ index 0000000000000000000000000000000000000000..cebae34cd06dbc0d969628be42e1bc2a
 +    Register("addImapAccount", &MailHandler::AddImapAccount);
 +    Register("removeImapAccount", &MailHandler::RemoveImapAccount);
 +    Register("exportBackup", &MailHandler::ExportBackup);
++    Register("saveBackup", &MailHandler::SaveBackup);
 +    Register("importBackup", &MailHandler::ImportBackup);
++    Register("editImapAccount", &MailHandler::EditImapAccount);
++    Register("editGoogleAccount", &MailHandler::EditGoogleAccount);
++    Register("setOrder", &MailHandler::SetOrder);
 +    Register("importGoogleAccounts", &MailHandler::ImportGoogleAccounts);
 +    Register("removeGoogleAccount", &MailHandler::RemoveGoogleAccount);
 +    Register("signInGoogle", &MailHandler::SignInGoogle);
@@ -7543,6 +7598,19 @@ index 0000000000000000000000000000000000000000..cebae34cd06dbc0d969628be42e1bc2a
 +    const thoron_mail::MailService& service = Center().service();
 +    base::ListValue accounts;
 +    for (const thoron_mail::MailAccount& account : service.accounts()) {
++      // P5.81: a mailbox's details, for the person to edit (not its password)
++      base::DictValue server;
++      if (account.imap) {
++        for (const thoron_mail::ImapAccount& box : service.imap_accounts()) {
++          if (box.email == account.email) {
++            server = base::DictValue()
++                         .Set("host", box.host)
++                         .Set("port", box.port)
++                         .Set("user", box.user)
++                         .Set("webmail", box.webmail);
++          }
++        }
++      }
 +      base::ListValue latest;
 +      for (const thoron_mail::MailMessage& message : account.latest) {
 +        latest.Append(base::DictValue()
@@ -7564,6 +7632,7 @@ index 0000000000000000000000000000000000000000..cebae34cd06dbc0d969628be42e1bc2a
 +                          // a mailbox added by address and password, and
 +                          // why the last look at it failed ("" when not)
 +                          .Set("imap", account.imap)
++                          .Set("server", std::move(server))
 +                          .Set("problem", account.problem)
 +                          .Set("latest", std::move(latest)));
 +    }
@@ -7571,8 +7640,15 @@ index 0000000000000000000000000000000000000000..cebae34cd06dbc0d969628be42e1bc2a
 +    // counted (found at Google, or read as a mailbox) and whether a password
 +    // is kept for it. The password itself is not sent.
 +    base::ListValue wanted;
-+    for (const ThoronMailCenter::GoogleAccount& account :
-+         Center().KeptGoogleAccounts()) {
++    // in the person's order too (P5.81)
++    std::vector<ThoronMailCenter::GoogleAccount> listed =
++        Center().KeptGoogleAccounts();
++    const std::vector<std::string> order = service.Order();
++    std::ranges::stable_sort(
++        listed, {}, [&order](const ThoronMailCenter::GoogleAccount& account) {
++          return thoron_mail::PlaceInOrder(order, account.email);
++        });
++    for (const ThoronMailCenter::GoogleAccount& account : listed) {
 +      const std::string name = thoron_mail::CanonicalAddress(account.email);
 +      const bool counted = std::ranges::any_of(
 +          service.accounts(), [&](const thoron_mail::MailAccount& found) {
@@ -7671,6 +7747,178 @@ index 0000000000000000000000000000000000000000..cebae34cd06dbc0d969628be42e1bc2a
 +        args[1].GetBool(), args[2].GetString(),
 +        base::BindOnce(&MailHandler::Answer, weak_factory_.GetWeakPtr(),
 +                       args[0].GetString()));
++  }
++
++  // P5.81: a backup saved into a file the person chooses with the system's
++  // own Save dialog: [with passwords, passphrase] gives {error, name}. The
++  // browser writes the file and reads it back (WriteBackupFile), so a file
++  // that could not be written whole is told, never left empty. "error" is
++  // "" when it was saved, else "cancelled", "busy", "bad", "write" or
++  // "verify".
++  void SaveBackup(const base::ListValue& args) {
++    AllowJavascript();
++    if (args.size() < 3 || !args[0].is_string() || !args[1].is_bool() ||
++        !args[2].is_string()) {
++      return;
++    }
++    if (select_file_dialog_ || !save_id_.empty()) {
++      AnswerSaved(args[0].GetString(), "busy", base::FilePath());
++      return;
++    }
++    save_id_ = args[0].GetString();
++    save_sealed_ = !args[2].GetString().empty();
++    Center().ExportBackup(args[1].GetBool(), args[2].GetString(),
++                          base::BindOnce(&MailHandler::OnBackupMade,
++                                         weak_factory_.GetWeakPtr()));
++  }
++
++  void OnBackupMade(std::string text) {
++    if (text.empty()) {
++      AnswerSaved(std::exchange(save_id_, std::string()), "bad",
++                  base::FilePath());
++      return;
++    }
++    save_text_ = std::move(text);
++    // The offline checks give the file; nobody is there to choose one.
++    const base::CommandLine& command = *base::CommandLine::ForCurrentProcess();
++    if (command.HasSwitch("thoron-mail-backup-file-for-testing")) {
++      Write(command.GetSwitchValuePath("thoron-mail-backup-file-for-testing"));
++      return;
++    }
++    PrefService* prefs = Profile::FromWebUI(web_ui())->GetPrefs();
++    base::FilePath folder = prefs->GetFilePath("thoron_mail.backup_folder");
++    if (folder.empty()) {
++      folder = DownloadPrefs::FromBrowserContext(
++                   web_ui()->GetWebContents()->GetBrowserContext())
++                   ->DownloadPath();
++    }
++    // the day in the name: backups made on other days are kept beside it
++    const base::Time::Exploded now = [] {
++      base::Time::Exploded exploded;
++      base::Time::Now().LocalExplode(&exploded);
++      return exploded;
++    }();
++    const std::string extension = save_sealed_ ? "thoron" : "json";
++    const std::string name = base::StringPrintf(
++        "thoron-m-notifier-backup-%04d-%02d-%02d.%s", now.year, now.month,
++        now.day_of_month, extension.c_str());
++    content::WebContents* contents = web_ui()->GetWebContents();
++    select_file_dialog_ = ui::SelectFileDialog::Create(
++        this, std::make_unique<ChromeSelectFilePolicy>(contents));
++    const base::FilePath::StringType suffix =
++        base::FilePath::FromASCII(extension).value();
++    ui::SelectFileDialog::FileTypeInfo types{{suffix}};
++    select_file_dialog_->SelectFile(
++        ui::SelectFileDialog::SELECT_SAVEAS_FILE, std::u16string(),
++        folder.AppendASCII(name), &types, 0, suffix,
++        contents->GetTopLevelNativeWindow());
++  }
++
++  // ui::SelectFileDialog::Listener:
++  void FileSelected(const ui::SelectedFileInfo& file, int index) override {
++    // resetting the dialog may delete `file`: what is needed is taken first
++    const base::FilePath path = file.path();
++    select_file_dialog_ = nullptr;
++    Profile::FromWebUI(web_ui())->GetPrefs()->SetFilePath(
++        "thoron_mail.backup_folder", path.DirName());
++    Write(path);
++  }
++  void FileSelectionCanceled() override {
++    select_file_dialog_ = nullptr;
++    save_text_.clear();
++    AnswerSaved(std::exchange(save_id_, std::string()), "cancelled",
++                base::FilePath());
++  }
++
++  void Write(const base::FilePath& path) {
++    base::ThreadPool::PostTaskAndReplyWithResult(
++        FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
++        base::BindOnce(&WriteBackupFile, path,
++                       std::exchange(save_text_, std::string())),
++        base::BindOnce(&MailHandler::OnWritten, weak_factory_.GetWeakPtr(),
++                       path));
++  }
++
++  void OnWritten(base::FilePath path, std::string error) {
++    AnswerSaved(std::exchange(save_id_, std::string()), std::move(error),
++                path);
++  }
++
++  void AnswerSaved(const std::string& id,
++                   std::string error,
++                   const base::FilePath& path) {
++    if (!id.empty() && IsJavascriptAllowed()) {
++      ResolveJavascriptCallback(
++          base::Value(id),
++          base::DictValue()
++              .Set("error", std::move(error))
++              .Set("name", path.BaseName().AsUTF8Unsafe()));
++    }
++  }
++
++  // P5.81: [{before, email, password, host, port, user, webmail}] gives ""
++  // or why it was not changed. An empty password keeps the one it has.
++  void EditImapAccount(const base::ListValue& args) {
++    AllowJavascript();
++    const base::DictValue* given =
++        args.size() >= 2 && args[0].is_string() ? args[1].GetIfDict() : nullptr;
++    const std::string* before = given ? given->FindString("before") : nullptr;
++    if (!before) {
++      return;
++    }
++    thoron_mail::ImapAccount account;
++    auto text = [given](const char* name) {
++      const std::string* value = given->FindString(name);
++      return value ? *value : std::string();
++    };
++    account.email = text("email");
++    account.password = text("password");
++    account.host = text("host");
++    account.user = text("user");
++    account.webmail = text("webmail");
++    account.port = given->FindInt("port").value_or(993);
++    Center().EditImapAccount(
++        *before, std::move(account),
++        base::BindOnce(&MailHandler::Answer, weak_factory_.GetWeakPtr(),
++                       args[0].GetString()));
++  }
++
++  // P5.81: [{before, email, alias, password}] gives "" or why not.
++  void EditGoogleAccount(const base::ListValue& args) {
++    AllowJavascript();
++    const base::DictValue* given =
++        args.size() >= 2 && args[0].is_string() ? args[1].GetIfDict() : nullptr;
++    const std::string* before = given ? given->FindString("before") : nullptr;
++    if (!before) {
++      return;
++    }
++    ThoronMailCenter::GoogleAccount account;
++    if (const std::string* email = given->FindString("email")) {
++      account.email = *email;
++    }
++    if (const std::string* alias = given->FindString("alias")) {
++      account.alias = *alias;
++    }
++    if (const std::string* password = given->FindString("password")) {
++      account.password = *password;
++    }
++    ResolveJavascriptCallback(
++        args[0],
++        base::Value(Center().EditGoogleAccount(*before, std::move(account))));
++  }
++
++  // P5.81: [[addresses, first to last]]
++  void SetOrder(const base::ListValue& args) {
++    if (args.empty() || !args[0].is_list()) {
++      return;
++    }
++    std::vector<std::string> emails;
++    for (const base::Value& value : args[0].GetList()) {
++      if (value.is_string()) {
++        emails.push_back(value.GetString());
++      }
++    }
++    Center().service().SetOrder(emails);
 +  }
 +
 +  // A backup read: [the file's text, passphrase] gives {error, accounts}.
@@ -7824,6 +8072,12 @@ index 0000000000000000000000000000000000000000..cebae34cd06dbc0d969628be42e1bc2a
 +  }
 +
 +  const raw_ptr<ThoronMailMenuUI> controller_;
++  // P5.81: a backup being saved: the page's answer, whether it is sealed, its
++  // text until it is written, and the Save dialog while it is open.
++  std::string save_id_;
++  bool save_sealed_ = false;
++  std::string save_text_;
++  scoped_refptr<ui::SelectFileDialog> select_file_dialog_;
 +  base::ScopedObservation<thoron_mail::MailService,
 +                          thoron_mail::MailService::Observer>
 +      observation_{this};
@@ -8184,6 +8438,104 @@ index 0000000000000000000000000000000000000000..cebae34cd06dbc0d969628be42e1bc2a
 +  }
 +}
 +
++void ThoronMailCenter::EditImapAccount(const std::string& before,
++                                       thoron_mail::ImapAccount account,
++                                       Told told) {
++  if (!encryptor_) {
++    std::move(told).Run("locked");
++    return;
++  }
++  const std::vector<thoron_mail::ImapAccount>& known =
++      service_->imap_accounts();
++  const auto old = std::ranges::find_if(
++      known, [&](const thoron_mail::ImapAccount& kept) {
++        return kept.email == before;
++      });
++  if (old == known.end()) {
++    std::move(told).Run("missing");
++    return;
++  }
++  // an empty password keeps the one it has: it is never shown to be edited
++  if (account.password.empty()) {
++    account.password = old->password;
++  }
++  std::optional<thoron_mail::ImapAccount> checked =
++      CheckedAccount(std::move(account));
++  if (!checked) {
++    std::move(told).Run("bad");
++    return;
++  }
++  if (std::ranges::any_of(known, [&](const thoron_mail::ImapAccount& other) {
++        return other.email != before &&
++               base::EqualsCaseInsensitiveASCII(other.email, checked->email);
++      })) {
++    std::move(told).Run("exists");
++    return;
++  }
++  const bool same_sign_in =
++      checked->email == old->email && checked->user == old->user &&
++      checked->host == old->host && checked->port == old->port &&
++      checked->password == old->password;
++  if (same_sign_in) {
++    // only its mail page changed: nothing to sign in to again
++    std::move(told).Run(ReplaceImapAccount(before, std::move(*checked)));
++    return;
++  }
++  if (imap_test_) {
++    std::move(told).Run("busy");
++    return;
++  }
++  // Signed in to once before it is kept: a wrong password is told at once, and
++  // the mailbox stays as it was.
++  thoron_mail::ImapAccount to_test = *checked;
++  imap_test_ = std::make_unique<thoron_mail::ImapCheck>(
++      profile_->GetDefaultStoragePartition()->GetNetworkContext(), to_test,
++      base::BindOnce(&ThoronMailCenter::OnImapEditTested,
++                     weak_factory_.GetWeakPtr(), before, std::move(*checked),
++                     std::move(told)));
++}
++
++void ThoronMailCenter::OnImapEditTested(std::string before,
++                                        thoron_mail::ImapAccount account,
++                                        Told told,
++                                        thoron_mail::ImapCheck::Result result) {
++  // this runs from inside the test
++  base::SequencedTaskRunner::GetCurrentDefault()->DeleteSoon(
++      FROM_HERE, std::move(imap_test_));
++  if (!result.problem.empty()) {
++    std::move(told).Run(result.problem);
++    return;
++  }
++  std::move(told).Run(ReplaceImapAccount(before, std::move(account)));
++}
++
++std::string ThoronMailCenter::ReplaceImapAccount(
++    const std::string& before,
++    thoron_mail::ImapAccount account) {
++  // looked up again: the list may have changed while it was signed in to
++  std::vector<thoron_mail::ImapAccount> accounts = service_->imap_accounts();
++  const auto at = std::ranges::find_if(
++      accounts, [&](const thoron_mail::ImapAccount& kept) {
++        return kept.email == before;
++      });
++  if (at == accounts.end()) {
++    return "missing";
++  }
++  if (std::ranges::any_of(accounts, [&](const thoron_mail::ImapAccount& other) {
++        return other.email != before &&
++               base::EqualsCaseInsensitiveASCII(other.email, account.email);
++      })) {
++    return "exists";
++  }
++  const std::string after = account.email;
++  *at = std::move(account);
++  if (!KeepImapAccounts(accounts)) {
++    return "locked";
++  }
++  service_->Renamed(before, after);
++  return std::string();
++}
++
 +std::vector<ThoronMailCenter::GoogleAccount>
 +ThoronMailCenter::KeptGoogleAccounts() const {
 +  std::vector<GoogleAccount> accounts;
@@ -8333,6 +8685,106 @@ index 0000000000000000000000000000000000000000..cebae34cd06dbc0d969628be42e1bc2a
 +  }
 +}
 +
++std::string ThoronMailCenter::EditGoogleAccount(const std::string& before,
++                                                GoogleAccount account) {
++  if (!encryptor_) {
++    return "locked";
++  }
++  std::vector<GoogleAccount> accounts = KeptGoogleAccounts();
++  const auto at = std::ranges::find_if(
++      accounts, [&](const GoogleAccount& kept) { return kept.email == before; });
++  if (at == accounts.end()) {
++    return "missing";
++  }
++  account.email =
++      std::string(base::TrimWhitespaceASCII(account.email, base::TRIM_ALL));
++  account.alias =
++      std::string(base::TrimWhitespaceASCII(account.alias, base::TRIM_ALL));
++  if (!IsAddress(account.email) || account.password.size() > 1024 ||
++      account.alias.size() > 200 || !base::IsStringUTF8(account.alias) ||
++      !base::IsStringUTF8(account.password)) {
++    return "bad";
++  }
++  const std::string old_name = thoron_mail::CanonicalAddress(before);
++  const std::string new_name = thoron_mail::CanonicalAddress(account.email);
++  if (std::ranges::any_of(accounts, [&](const GoogleAccount& other) {
++        return other.email != before &&
++               thoron_mail::CanonicalAddress(other.email) == new_name;
++      })) {
++    return "exists";
++  }
++  const bool new_password = !account.password.empty();
++  at->email = account.email;
++  at->alias = account.alias;
++  if (new_password) {
++    at->password = account.password;
++    at->secret.clear();
++  }
++  // The mailbox of the account, when an app password reads its mail, follows
++  // the change; a new app password makes one.
++  std::vector<thoron_mail::ImapAccount> mailboxes = service_->imap_accounts();
++  const auto box = std::ranges::find_if(
++      mailboxes, [&](const thoron_mail::ImapAccount& kept) {
++        return thoron_mail::CanonicalAddress(kept.email) == old_name &&
++               kept.host == "imap.gmail.com";
++      });
++  std::string app_password;
++  if (new_password && LooksLikeAppPassword(account.password)) {
++    base::RemoveChars(account.password, " ", &app_password);
++  }
++  bool boxes_changed = false;
++  std::string box_before;
++  if (box != mailboxes.end()) {
++    if (std::ranges::any_of(mailboxes,
++                            [&](const thoron_mail::ImapAccount& other) {
++                              return &other != &*box &&
++                                     thoron_mail::CanonicalAddress(
++                                         other.email) == new_name;
++                            })) {
++      return "exists";
++    }
++    box_before = box->email;
++    if (box->email != account.email) {
++      if (box->user == box->email) {
++        box->user = account.email;
++      }
++      box->email = account.email;
++      boxes_changed = true;
++    }
++    if (!app_password.empty() && box->password != app_password) {
++      box->password = app_password;
++      boxes_changed = true;
++    }
++  } else if (!app_password.empty() &&
++             mailboxes.size() < thoron_mail::MailService::kMostImapAccounts &&
++             std::ranges::none_of(mailboxes,
++                                  [&](const thoron_mail::ImapAccount& other) {
++                                    return thoron_mail::CanonicalAddress(
++                                               other.email) == new_name;
++                                  })) {
++    thoron_mail::ImapAccount mailbox;
++    mailbox.email = account.email;
++    mailbox.host = "imap.gmail.com";
++    mailbox.user = account.email;
++    mailbox.password = app_password;
++    mailbox.webmail = "https://mail.google.com/mail/";
++    if (std::optional<thoron_mail::ImapAccount> checked =
++            CheckedAccount(std::move(mailbox))) {
++      mailboxes.push_back(std::move(*checked));
++      boxes_changed = true;
++    }
++  }
++  if (!KeepGoogleAccounts(accounts) ||
++      (boxes_changed && !KeepImapAccounts(mailboxes))) {
++    return "locked";
++  }
++  service_->Renamed(before, account.email);
++  if (!box_before.empty() && box_before != before) {
++    service_->Renamed(box_before, account.email);
++  }
++  return std::string();
++}
++
 +void ThoronMailCenter::SignInGoogle(const std::string& email) {
 +  // only for an address of the list: a page cannot have any address opened
 +  const std::vector<GoogleAccount> accounts = KeptGoogleAccounts();
@@ -8457,6 +8909,11 @@ index 0000000000000000000000000000000000000000..cebae34cd06dbc0d969628be42e1bc2a
 +    google.Append(std::move(entry));
 +  }
 +  PrefService* prefs = profile_->GetPrefs();
++  // P5.81: the order the person put the accounts in
++  base::ListValue order;
++  for (const std::string& name : service_->Order()) {
++    order.Append(name);
++  }
 +  return base::DictValue()
 +      .Set("format", thoron_mail::kBackupFormat)
 +      .Set("version", 1)
@@ -8467,7 +8924,8 @@ index 0000000000000000000000000000000000000000..cebae34cd06dbc0d969628be42e1bc2a
 +               .Set("interval", service_->interval_minutes())
 +               .Set("choices", std::move(choices))
 +               .Set("ignored", prefs->GetList("thoron_mail.ignored").Clone())
-+               .Set("order", prefs->GetString("thoron.toolbar_order")))
++               .Set("order", prefs->GetString("thoron.toolbar_order"))
++               .Set("accountOrder", std::move(order)))
 +      .Set("accounts", std::move(accounts))
 +      .Set("google", std::move(google));
 +}
@@ -8561,6 +9019,15 @@ index 0000000000000000000000000000000000000000..cebae34cd06dbc0d969628be42e1bc2a
 +    if (const std::string* order = settings->FindString("order");
 +        order && (*order == "mail,adblock" || *order == "adblock,mail")) {
 +      prefs->SetString("thoron.toolbar_order", *order);
++    }
++    if (const base::ListValue* order = settings->FindList("accountOrder")) {
++      std::vector<std::string> emails;
++      for (const base::Value& value : *order) {
++        if (value.is_string() && IsAddress(value.GetString())) {
++          emails.push_back(value.GetString());
++        }
++      }
++      service_->SetOrder(emails);
 +    }
 +  }
 +  // P5.80: the Google accounts of the person's list. One the backup names
@@ -8777,10 +9244,10 @@ index 0000000000000000000000000000000000000000..cebae34cd06dbc0d969628be42e1bc2a
 +WEB_UI_CONTROLLER_TYPE_IMPL(ThoronMailMenuUI)
 diff --git a/chrome/browser/ui/webui/thoron_mail_ui.h b/chrome/browser/ui/webui/thoron_mail_ui.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..71237049bdd05890afff06c7c984b6eb8aaeb690
+index 0000000000000000000000000000000000000000..b30c77f360d9ce82e7ea83c8a032f660a3905f01
 --- /dev/null
 +++ b/chrome/browser/ui/webui/thoron_mail_ui.h
-@@ -0,0 +1,196 @@
+@@ -0,0 +1,219 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -8846,6 +9313,14 @@ index 0000000000000000000000000000000000000000..71237049bdd05890afff06c7c984b6eb
 +  using Told = base::OnceCallback<void(std::string)>;
 +  void AddImapAccount(thoron_mail::ImapAccount account, Told told);
 +  void RemoveImapAccount(const std::string& email);
++  // P5.81: changes the mailbox kept as `before` to `account`. An empty
++  // password keeps the one it has. When what it signs in with changes (the
++  // address, the sign-in name, the server, the port or the password), it is
++  // signed in to once first and kept only when that works, as when it is
++  // added; `told` as for AddImapAccount, or "missing": no such mailbox.
++  void EditImapAccount(const std::string& before,
++                       thoron_mail::ImapAccount account,
++                       Told told);
 +  // True once passwords can be kept (the system's encryption is there).
 +  bool can_keep_passwords() const { return !!encryptor_; }
 +
@@ -8872,6 +9347,13 @@ index 0000000000000000000000000000000000000000..71237049bdd05890afff06c7c984b6eb
 +  GoogleImported ImportGoogleAccounts(std::vector<GoogleAccount> accounts);
 +  std::vector<GoogleAccount> KeptGoogleAccounts() const;
 +  void RemoveGoogleAccount(const std::string& email);
++  // P5.81: changes the account of the list kept as `before`: its address,
++  // name and password (an empty one keeps the password it has). Its mailbox
++  // (one an app password reads) follows: a new address, a new app password,
++  // or a mailbox made when the new password is an app password. "" when it
++  // was changed, else "bad", "exists", "missing" or "locked".
++  std::string EditGoogleAccount(const std::string& before,
++                                GoogleAccount account);
 +  // Opens Google's page to sign in to an account of the list, the address
 +  // filled in.
 +  void SignInGoogle(const std::string& email);
@@ -8919,6 +9401,14 @@ index 0000000000000000000000000000000000000000..71237049bdd05890afff06c7c984b6eb
 +  void OnImapTested(thoron_mail::ImapAccount account,
 +                    Told told,
 +                    thoron_mail::ImapCheck::Result result);
++  void OnImapEditTested(std::string before,
++                        thoron_mail::ImapAccount account,
++                        Told told,
++                        thoron_mail::ImapCheck::Result result);
++  // Puts `account` in the place of the mailbox kept as `before`: "" or
++  // "missing", "exists" or "locked".
++  std::string ReplaceImapAccount(const std::string& before,
++                                 thoron_mail::ImapAccount account);
 +  // A backup as a dictionary (ExportBackup), and one taken in (ImportBackup).
 +  base::DictValue BackupDict(bool with_passwords) const;
 +  void ApplyBackup(Imported done, std::optional<std::string> backup);
@@ -11065,10 +11555,10 @@ index 0000000000000000000000000000000000000000..4c249e10c731f7b7fc3e2bf12a29b82e
 +#endif  // COMPONENTS_THORON_MAIL_MAIL_FEED_H_
 diff --git a/components/thoron_mail/mail_page.cc b/components/thoron_mail/mail_page.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..4f0d237c681b492df1b07cea202345f7ca119bdf
+index 0000000000000000000000000000000000000000..c6e7259d90d572c2150fe05b9c764ed2c5e9d0f8
 --- /dev/null
 +++ b/components/thoron_mail/mail_page.cc
-@@ -0,0 +1,1152 @@
+@@ -0,0 +1,1523 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -11175,6 +11665,19 @@ index 0000000000000000000000000000000000000000..4f0d237c681b492df1b07cea202345f7
 +  .watch-row label span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 +  .watch-row .name { flex: 1; min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 +  .watch-row .state { flex: none; color: var(--soft, inherit); }
++  /* P5.81: the accounts in the person's order (dragged, or moved with the arrows), and edited in place */
++  .watch-row { border-radius: 8px; }
++  .watch-row button { padding: 2px 10px; }
++  .watch-row button.move { padding: 0; inline-size: 26px; block-size: 26px; border-radius: 50%; font-size: 10px;
++                           flex: none; }
++  .watch-row .grip { flex: none; cursor: grab; color: var(--soft); user-select: none; padding: 0 2px;
++                     font-size: 16px; }
++  .watch-row.dragging { opacity: .4; }
++  .watch-row.drop-before { box-shadow: inset 0 2px 0 var(--accent); }
++  .watch-row.drop-after { box-shadow: inset 0 -2px 0 var(--accent); }
++  .edit-form { padding: 2px 0 10px 26px; border-block-end: 1px solid var(--line); margin-block-end: 6px; }
++  .password-box { display: flex; align-items: center; gap: 6px; }
++  .password-box input { flex: 1; min-inline-size: 0; }
 +  #add-panel { padding: 4px 16px 12px; max-block-size: 480px; overflow-y: auto; }
 +  #add-panel h3 { font-size: 12px; font-weight: 500; color: var(--accent); margin: 14px 0 6px; }
 +  /* the M-Notifier's own page, in a tab: everything at once, in a column */
@@ -11244,6 +11747,8 @@ index 0000000000000000000000000000000000000000..4f0d237c681b492df1b07cea202345f7
 +    </select></div>
 +  <h3 data-t>Accounts to watch</h3>
 +  <div id="watch"></div>
++  <p class="hint" id="order-hint" data-t hidden>Drag an account, or use its arrows, to put the list in your order.</p>
++  <p class="hint" id="edit-state" role="status"></p>
 +  <div id="wanted-box" hidden>
 +    <h3 data-t>Google accounts of your list</h3>
 +    <div id="wanted"></div>
@@ -11587,12 +12092,67 @@ index 0000000000000000000000000000000000000000..4f0d237c681b492df1b07cea202345f7
 +    'Passwörter können noch nicht gespeichert werden. Versuchen Sie es gleich noch einmal.',
 +    'Ainda não é possível guardar senhas. Tente de novo em instantes.',
 +    'Пароли пока нельзя сохранить. Повторите попытку чуть позже.'],
-+  'Sign-in refused: its password may have changed. Remove it and add it again.': [
-+    'Inicio de sesión rechazado: puede que su contraseña haya cambiado. Quítalo y añádelo de nuevo.',
-+    'Connexion refusée : son mot de passe a peut-être changé. Retirez-la et ajoutez-la de nouveau.',
-+    'Anmeldung abgelehnt: Das Passwort wurde vielleicht geändert. Entfernen Sie es und fügen Sie es neu hinzu.',
-+    'Acesso recusado: a senha pode ter mudado. Remova e adicione de novo.',
-+    'Вход отклонён: возможно, пароль изменился. Удалите ящик и добавьте его снова.'],
++  'Sign-in refused: its password may have changed. Edit it and give the new password.': [
++    'Inicio de sesión rechazado: puede que su contraseña haya cambiado. Edítalo y escribe la nueva contraseña.',
++    'Connexion refusée : son mot de passe a peut-être changé. Modifiez-la et saisissez le nouveau mot de passe.',
++    'Anmeldung abgelehnt: Das Passwort wurde vielleicht geändert. Bearbeiten Sie es und geben Sie das neue ' +
++        'Passwort ein.',
++    'Acesso recusado: a senha pode ter mudado. Edite e digite a nova senha.',
++    'Вход отклонён: возможно, пароль изменился. Измените ящик и введите новый пароль.'],
++  // P5.81: the order, editing, and the backup saved by the browser
++  'Move up': ['Subir', 'Monter', 'Nach oben', 'Mover para cima', 'Переместить вверх'],
++  'Move down': ['Bajar', 'Descendre', 'Nach unten', 'Mover para baixo', 'Переместить вниз'],
++  'Drag an account, or use its arrows, to put the list in your order.': [
++    'Arrastra una cuenta, o usa sus flechas, para ordenar la lista a tu gusto.',
++    'Faites glisser un compte, ou utilisez ses flèches, pour ranger la liste dans votre ordre.',
++    'Ziehen Sie ein Konto oder nutzen Sie seine Pfeile, um die Liste in Ihre Reihenfolge zu bringen.',
++    'Arraste uma conta, ou use as setas dela, para pôr a lista na sua ordem.',
++    'Перетащите аккаунт или используйте его стрелки, чтобы расставить список в нужном порядке.'],
++  'Edit': ['Editar', 'Modifier', 'Bearbeiten', 'Editar', 'Изменить'],
++  'Save': ['Guardar', 'Enregistrer', 'Speichern', 'Salvar', 'Сохранить'],
++  'Name': ['Nombre', 'Nom', 'Name', 'Nome', 'Имя'],
++  'Leave it empty to keep the password.': ['Déjala vacía para conservar la contraseña.',
++                                           'Laissez vide pour garder le mot de passe.',
++                                           'Leer lassen, um das Passwort zu behalten.',
++                                           'Deixe vazio para manter a senha.',
++                                           'Оставьте пустым, чтобы сохранить пароль.'],
++  'Show the password': ['Mostrar la contraseña', 'Afficher le mot de passe', 'Passwort anzeigen', 'Mostrar a senha',
++                        'Показать пароль'],
++  'Hide the password': ['Ocultar la contraseña', 'Masquer le mot de passe', 'Passwort verbergen', 'Ocultar a senha',
++                        'Скрыть пароль'],
++  'Changed.': ['Cambiado.', 'Modifié.', 'Geändert.', 'Alterado.', 'Изменено.'],
++  'This account is no longer there.': ['Esta cuenta ya no está.', "Ce compte n'existe plus.",
++                                       'Dieses Konto ist nicht mehr vorhanden.', 'Esta conta não está mais aí.',
++                                       'Этого аккаунта больше нет.'],
++  'This address is already in the list.': ['Esta dirección ya está en la lista.',
++                                           'Cette adresse est déjà dans la liste.',
++                                           'Diese Adresse ist schon in der Liste.', 'Este endereço já está na lista.',
++                                           'Этот адрес уже есть в списке.'],
++  'Check the address.': ['Revisa la dirección.', "Vérifiez l'adresse.", 'Prüfen Sie die Adresse.',
++                         'Verifique o endereço.', 'Проверьте адрес.'],
++  'File:': ['Archivo:', 'Fichier :', 'Datei:', 'Arquivo:', 'Файл:'],
++  'Mailboxes:': ['Buzones:', 'Boîtes :', 'Postfächer:', 'Caixas:', 'Ящиков:'],
++  'Google accounts:': ['Cuentas de Google:', 'Comptes Google :', 'Google-Konten:', 'Contas Google:',
++                       'Аккаунтов Google:'],
++  'The file could not be written there. Choose another folder.': [
++    'No se pudo escribir el archivo ahí. Elige otra carpeta.',
++    "Le fichier n'a pas pu être écrit à cet endroit. Choisissez un autre dossier.",
++    'Die Datei konnte dort nicht geschrieben werden. Wählen Sie einen anderen Ordner.',
++    'Não foi possível gravar o arquivo aí. Escolha outra pasta.',
++    'Не удалось записать файл туда. Выберите другую папку.'],
++  'Reading the file back did not give the backup. Choose another folder and save again.': [
++    'Al volver a leer el archivo no salió la copia. Elige otra carpeta y guarda de nuevo.',
++    'Relu, le fichier ne contenait pas la sauvegarde. Choisissez un autre dossier et enregistrez de nouveau.',
++    'Beim Zurücklesen enthielt die Datei nicht die Sicherung. Wählen Sie einen anderen Ordner und speichern Sie ' +
++        'erneut.',
++    'Ao ler o arquivo de volta, o backup não estava lá. Escolha outra pasta e salve de novo.',
++    'При повторном чтении файл не содержал копию. Выберите другую папку и сохраните снова.'],
++  'A backup is being saved already.': ['Ya se está guardando una copia.', 'Une sauvegarde est déjà en cours.',
++                                       'Es wird bereits eine Sicherung gespeichert.', 'Um backup já está sendo salvo.',
++                                       'Копия уже сохраняется.'],
++  'The backup could not be made.': ['No se pudo hacer la copia.', "La sauvegarde n'a pas pu être faite.",
++                                    'Die Sicherung konnte nicht erstellt werden.',
++                                    'Não foi possível fazer o backup.', 'Не удалось сделать копию.'],
 +  'Could not be reached at the last look.': ['No se pudo contactar en la última comprobación.',
 +                                             'Injoignable lors de la dernière vérification.',
 +                                             'Beim letzten Abruf nicht erreichbar.',
@@ -11707,7 +12267,7 @@ index 0000000000000000000000000000000000000000..4f0d237c681b492df1b07cea202345f7
 +      // a mailbox the last look could not read
 +      const warn = make('span', 'warn', '!');
 +      warn.title = t(account.problem === 'sign-in' ?
-+          'Sign-in refused: its password may have changed. Remove it and add it again.' :
++          'Sign-in refused: its password may have changed. Edit it and give the new password.' :
 +          'Could not be reached at the last look.');
 +      row.append(warn);
 +    }
@@ -11748,9 +12308,18 @@ index 0000000000000000000000000000000000000000..4f0d237c681b492df1b07cea202345f7
 +    }
 +  }
 +  interval.value = String(next.interval);
++  const several = next.accounts.length > 1;
++  $('order-hint').hidden = !several;
++  // P5.80: the Google accounts of the person's list (X-notifier's file), on the M-Notifier's own page
++  const wanted = next.wanted || [];
++  $('wanted-box').hidden = !PAGE || !wanted.length;
++  // P5.81: not drawn again while a form is open or a row is dragged: that would take them away
++  if (editing || dragging) {
++    return;
++  }
 +  const watch = $('watch');
 +  watch.replaceChildren();
-+  for (const account of next.accounts) {
++  next.accounts.forEach((account, index) => {
 +    const label = make('label', 'check');
 +    const box = make('input');
 +    box.type = 'checkbox';
@@ -11758,25 +12327,49 @@ index 0000000000000000000000000000000000000000..4f0d237c681b492df1b07cea202345f7
 +    box.addEventListener('change', () => chrome.send('setWatched', [account.email, box.checked]));
 +    label.append(box, make('span', '', account.email));
 +    const row = make('div', 'watch-row');
++    row.dataset.email = account.email;
++    if (several) {
++      orderControls(row, account, index, next.accounts.length);
++    }
 +    row.append(label);
++    if (several) {
++      for (const [move, by, symbol] of [['Move up', -1, '▲'], ['Move down', 1, '▼']]) {
++        const arrow = make('button', 'move', symbol);
++        arrow.type = 'button';
++        arrow.title = t(move);
++        arrow.setAttribute('aria-label', `${t(move)}: ${account.email}`);
++        arrow.dataset.move = String(by);
++        arrow.disabled = by < 0 ? index === 0 : index === next.accounts.length - 1;
++        arrow.addEventListener('click', () => shift(account.email, by));
++        row.append(arrow);
++      }
++    }
 +    if (account.imap) {
-+      // a mailbox added by address and password can be taken out again
++      // A mailbox added by address and password can be changed (on the M-Notifier's own page: a menu closes
++      // when another window is used, a password manager for one), or taken out again.
++      if (PAGE) {
++        const edit = make('button', '', t('Edit'));
++        edit.type = 'button';
++        edit.addEventListener('click', () => editMailbox(row, account));
++        row.append(edit);
++      }
 +      const remove = make('button', '', t('Remove'));
 +      remove.type = 'button';
 +      remove.addEventListener('click', () => chrome.send('removeImapAccount', [account.email]));
 +      row.append(remove);
 +    }
 +    watch.append(row);
-+  }
-+  // P5.80: the Google accounts of the person's list (X-notifier's file), on the M-Notifier's own page
-+  const wanted = next.wanted || [];
-+  $('wanted-box').hidden = !PAGE || !wanted.length;
++  });
 +  const list = $('wanted');
 +  list.replaceChildren();
 +  for (const account of wanted) {
 +    const row = make('div', 'watch-row');
 +    row.dataset.email = account.email;
 +    row.append(make('span', 'name', account.alias ? `${account.alias} (${account.email})` : account.email));
++    const edit = make('button', '', t('Edit'));
++    edit.type = 'button';
++    edit.addEventListener('click', () => editListed(row, account));
++    row.append(edit);
 +    if (account.counted) {
 +      row.append(make('span', 'state', t('Counted')));
 +    } else {
@@ -11808,6 +12401,270 @@ index 0000000000000000000000000000000000000000..4f0d237c681b492df1b07cea202345f7
 +    row.append(remove);
 +    list.append(row);
 +  }
++}
++
++// --- The accounts' order, and editing a mailbox or an account of the list (P5.81) ---
++// One form is open at a time. While it is open, or while a row is dragged, the lists are not drawn again.
++let editing = '';
++let dragging = '';
++
++// The order is kept by the browser; the page shows it at once.
++function saveOrder(list) {
++  const rest = (state.wanted || []).map((account) => account.email).filter((email) => !list.includes(email));
++  state.accounts.sort((a, b) => list.indexOf(a.email) - list.indexOf(b.email));
++  chrome.send('setOrder', [[...list, ...rest]]);
++  show(state);
++}
++
++// An account moved up (-1) or down (1); the focus stays on the arrow that moved it.
++function shift(email, by) {
++  const list = state.accounts.map((account) => account.email);
++  const from = list.indexOf(email);
++  const to = from + by;
++  if (from < 0 || to < 0 || to >= list.length) {
++    return;
++  }
++  list.splice(from, 1);
++  list.splice(to, 0, email);
++  saveOrder(list);
++  const row = [...$('watch').children].find((element) => element.dataset.email === email);
++  const arrow = row && (row.querySelector(`button[data-move="${by}"]:not(:disabled)`) ||
++                        row.querySelector('button.move:not(:disabled)'));
++  if (arrow) {
++    arrow.focus();
++  }
++}
++
++// An account dropped before or after another.
++function dropAt(moved, target, after) {
++  const list = state.accounts.map((account) => account.email).filter((email) => email !== moved);
++  let at = list.indexOf(target);
++  if (at < 0 || moved === target) {
++    return;
++  }
++  if (after) {
++    at++;
++  }
++  list.splice(at, 0, moved);
++  saveOrder(list);
++}
++
++function orderControls(row, account, index, count) {
++  const grip = make('span', 'grip', '≡');
++  grip.title = t('Drag an account, or use its arrows, to put the list in your order.');
++  grip.setAttribute('aria-hidden', 'true');
++  row.append(grip);
++  row.draggable = true;
++  row.addEventListener('dragstart', (event) => {
++    dragging = account.email;
++    row.classList.add('dragging');
++    event.dataTransfer.effectAllowed = 'move';
++    event.dataTransfer.setData('text/plain', account.email);
++  });
++  row.addEventListener('dragend', () => {
++    dragging = '';
++    for (const other of $('watch').children) {
++      other.classList.remove('dragging', 'drop-before', 'drop-after');
++    }
++    show(state);
++  });
++  row.addEventListener('dragover', (event) => {
++    if (!dragging || dragging === account.email) {
++      return;
++    }
++    event.preventDefault();
++    const box = row.getBoundingClientRect();
++    const after = event.clientY > box.top + box.height / 2;
++    row.classList.toggle('drop-before', !after);
++    row.classList.toggle('drop-after', after);
++  });
++  row.addEventListener('dragleave', () => row.classList.remove('drop-before', 'drop-after'));
++  row.addEventListener('drop', (event) => {
++    event.preventDefault();
++    const moved = dragging;
++    const after = row.classList.contains('drop-after');
++    dragging = '';
++    dropAt(moved, account.email, after);
++  });
++  // with the keyboard: Alt and an arrow
++  row.addEventListener('keydown', (event) => {
++    if (event.altKey && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
++      event.preventDefault();
++      shift(account.email, event.key === 'ArrowUp' ? -1 : 1);
++    }
++  });
++}
++
++function textField(label, value, type) {
++  const field = make('label', 'field');
++  const input = make('input');
++  input.type = type || 'text';
++  input.value = value || '';
++  input.spellcheck = false;
++  input.autocomplete = 'off';
++  field.append(make('span', '', t(label)), input);
++  return {field, input};
++}
++
++function eyeIcon() {
++  const ns = 'http://www.w3.org/2000/svg';
++  const svg = document.createElementNS(ns, 'svg');
++  svg.setAttribute('viewBox', '0 0 24 24');
++  const path = document.createElementNS(ns, 'path');
++  path.setAttribute('d', 'M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z');
++  const circle = document.createElementNS(ns, 'circle');
++  for (const [name, value] of [['cx', '12'], ['cy', '12'], ['r', '3']]) {
++    circle.setAttribute(name, value);
++  }
++  svg.append(path, circle);
++  return svg;
++}
++
++// A new password: the one there is is never shown, so an empty field keeps it.
++function passwordField() {
++  const field = make('label', 'field');
++  const box = make('div', 'password-box');
++  const input = make('input');
++  input.type = 'password';
++  input.autocomplete = 'new-password';
++  input.placeholder = t('Leave it empty to keep the password.');
++  const eye = make('button', 'icon');
++  eye.type = 'button';
++  eye.append(eyeIcon());
++  const label = () => {
++    const shown = input.type === 'text';
++    eye.title = t(shown ? 'Hide the password' : 'Show the password');
++    eye.setAttribute('aria-label', eye.title);
++    eye.setAttribute('aria-pressed', String(shown));
++  };
++  eye.addEventListener('click', (event) => {
++    event.preventDefault();
++    input.type = input.type === 'password' ? 'text' : 'password';
++    label();
++    input.focus();
++  });
++  label();
++  box.append(input, eye);
++  field.append(make('span', '', t('Password')), box);
++  return {field, input};
++}
++
++function closeEditor() {
++  editing = '';
++  for (const form of document.querySelectorAll('.edit-form')) {
++    form.remove();
++  }
++}
++
++// A form under `row`; `save` gives "" when it was changed, else the words to show.
++function openEditor(row, key, fields, save, status) {
++  closeEditor();
++  editing = key;
++  const form = make('div', 'edit-form');
++  const error = make('p', 'error');
++  error.setAttribute('role', 'alert');
++  const buttons = make('div', 'buttons');
++  const ok = make('button', 'main', t('Save'));
++  ok.type = 'button';
++  const cancel = make('button', '', t('Cancel'));
++  cancel.type = 'button';
++  const done = () => {
++    closeEditor();
++    show(state);
++  };
++  cancel.addEventListener('click', done);
++  ok.addEventListener('click', async () => {
++    error.textContent = '';
++    ok.disabled = true;
++    ok.textContent = t('Checking...');
++    let problem = '';
++    try {
++      problem = await save();
++    } catch {
++      return;
++    }
++    ok.disabled = false;
++    ok.textContent = t('Save');
++    if (problem) {
++      error.textContent = problem;
++      return;
++    }
++    done();
++    status.textContent = t('Changed.');
++    refresh();
++  });
++  form.addEventListener('keydown', (event) => {
++    if (event.key === 'Enter' && event.target.tagName === 'INPUT' && !ok.disabled) {
++      ok.click();
++    } else if (event.key === 'Escape') {
++      // the form closes, not the menu
++      event.stopPropagation();
++      done();
++    }
++  });
++  buttons.append(ok, cancel);
++  form.append(...fields.map((field) => field.field), error, buttons);
++  row.after(form);
++  status.textContent = '';
++  fields[0].input.focus();
++}
++
++const EDIT_ERRORS = {
++  missing: 'This account is no longer there.',
++  exists: 'This address is already in the list.',
++  bad: 'Check the address.',
++  locked: 'Passwords cannot be kept yet. Try again in a moment.',
++};
++
++// A mailbox: its address, password and server. A new password, address or server is signed in to before it is
++// kept, so a wrong one changes nothing.
++function editMailbox(row, account) {
++  const server = account.server || {};
++  const email = textField('Email address', account.email, 'email');
++  const password = passwordField();
++  const host = textField('IMAP server', server.host);
++  const port = textField('Port', String(server.port || 993), 'number');
++  const user = textField('Sign-in name, if it is not the address', server.user === account.email ? '' : server.user);
++  const webmail = textField('The page its mail is read on (https, optional)', server.webmail, 'url');
++  openEditor(row, account.email, [email, password, host, port, user, webmail], async () => {
++    const answer = await sendWithPromise('editImapAccount', {
++      before: account.email,
++      email: email.input.value.trim(),
++      password: password.input.value,
++      host: host.input.value.trim(),
++      port: Number(port.input.value) || 993,
++      user: user.input.value.trim(),
++      webmail: webmail.input.value.trim(),
++    });
++    if (!answer) {
++      password.input.value = '';
++      return '';
++    }
++    if (answer === 'sign-in') {
++      const service = serviceOf(email.input.value);
++      return t(ADD_ERRORS[answer]) + (service && service.hint ? ` ${t(HINTS[service.hint])}` : '');
++    }
++    return t(answer === 'missing' ? EDIT_ERRORS.missing : ADD_ERRORS[answer] || ADD_ERRORS.bad);
++  }, $('edit-state'));
++}
++
++// An account of the person's list: its address, name and password. A new app password reads its mail as well.
++function editListed(row, account) {
++  const email = textField('Email address', account.email, 'email');
++  const alias = textField('Name', account.alias);
++  const password = passwordField();
++  openEditor(row, `list:${account.email}`, [email, alias, password], async () => {
++    const answer = await sendWithPromise('editGoogleAccount', {
++      before: account.email,
++      email: email.input.value.trim(),
++      alias: alias.input.value.trim(),
++      password: password.input.value,
++    });
++    if (!answer) {
++      password.input.value = '';
++    }
++    return answer ? t(EDIT_ERRORS[answer] || EDIT_ERRORS.bad) : '';
++  }, $('wanted-state'));
 +}
 +
 +// --- A mailbox by address and password (P5.77) ---
@@ -11932,39 +12789,43 @@ index 0000000000000000000000000000000000000000..4f0d237c681b492df1b07cea202345f7
 +  }
 +}
 +
++// P5.81: the browser writes the backup into the file the person chooses with the system's Save dialog (their
++// Google Drive folder, for one), and reads it back: a file that could not be written whole is told, never left
++// empty. (Written by the page itself, the file stayed empty in some folders and nothing was said.)
++const SAVE_ERRORS = {
++  write: 'The file could not be written there. Choose another folder.',
++  verify: 'Reading the file back did not give the backup. Choose another folder and save again.',
++  busy: 'A backup is being saved already.',
++  bad: 'The backup could not be made.',
++};
++
 +async function saveBackup() {
 +  const pass = $('backup-pass').value;
 +  const plain = $('backup-plain').checked;
-+  let text = '';
++  const say = (words) => {
++    $('backup-state').textContent = words;
++  };
++  say('');
++  $('export').disabled = true;
++  let answer = null;
 +  try {
-+    text = await sendWithPromise('exportBackup', plain, pass);
++    answer = await sendWithPromise('saveBackup', plain, pass);
 +  } catch {
++    // the window went away
++  }
++  $('export').disabled = false;
++  if (!answer || answer.error === 'cancelled') {
 +    return;
 +  }
-+  if (!text) {
++  if (answer.error) {
++    say(t(SAVE_ERRORS[answer.error] || SAVE_ERRORS.write));
 +    return;
 +  }
-+  const name = pass ? 'thoron-m-notifier-backup.thoron' : 'thoron-m-notifier-backup.json';
 +  const said = pass ? 'Saved, with the passwords sealed.' :
 +      plain ? 'Saved, with the passwords as they are: keep this file safe.' : 'Saved, without the passwords.';
-+  try {
-+    if (window.showSaveFilePicker) {
-+      // the person chooses where: their Google Drive folder, for one
-+      const handle = await window.showSaveFilePicker({suggestedName: name});
-+      const file = await handle.createWritable();
-+      await file.write(text);
-+      await file.close();
-+    } else {
-+      const link = make('a');
-+      link.href = URL.createObjectURL(new Blob([text], {type: 'application/json'}));
-+      link.download = name;
-+      link.click();
-+      setTimeout(() => URL.revokeObjectURL(link.href), 10000);
-+    }
-+    $('backup-state').textContent = t(said);
-+  } catch {
-+    // the person closed the dialog
-+  }
++  const boxes = state ? state.accounts.filter((account) => account.imap).length : 0;
++  const google = state ? (state.wanted || []).length : 0;
++  say(`${t(said)} ${t('File:')} ${answer.name}. ${t('Mailboxes:')} ${boxes}; ${t('Google accounts:')} ${google}.`);
 +}
 +
 +// --- X-notifier's file of accounts (P5.80) ---
@@ -12247,10 +13108,10 @@ index 0000000000000000000000000000000000000000..529372e73e8bc78edd93e438e343ad21
 +#endif  // COMPONENTS_THORON_MAIL_MAIL_PAGE_H_
 diff --git a/components/thoron_mail/mail_service.cc b/components/thoron_mail/mail_service.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..4f9509e26062794c57e5f5a695ff3b46cca99fd5
+index 0000000000000000000000000000000000000000..9394ab70f9057ef215a5276d941904e4c32e594d
 --- /dev/null
 +++ b/components/thoron_mail/mail_service.cc
-@@ -0,0 +1,618 @@
+@@ -0,0 +1,711 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -12288,6 +13149,8 @@ index 0000000000000000000000000000000000000000..4f9509e26062794c57e5f5a695ff3b46
 +// not watched.
 +constexpr char kLookedPref[] = "thoron_mail.looked";
 +constexpr char kIgnoredPref[] = "thoron_mail.ignored";
++// P5.81: the accounts' order, as addresses (CanonicalAddress), first to last.
++constexpr char kOrderPref[] = "thoron_mail.order";
 +// the most accounts remembered as looked at: a few more than are ever shown
 +constexpr size_t kMostLooked = 50;
 +
@@ -12367,6 +13230,13 @@ index 0000000000000000000000000000000000000000..4f9509e26062794c57e5f5a695ff3b46
 +    std::erase(name, '.');
 +  }
 +  return name + "@" + domain;
++}
++
++size_t PlaceInOrder(const std::vector<std::string>& order,
++                    std::string_view email) {
++  const std::string name = CanonicalAddress(email);
++  const auto at = std::ranges::find(order, name);
++  return static_cast<size_t>(at - order.begin());
 +}
 +
 +MailService::MailService(PrefService* prefs, FactoryGetter factory)
@@ -12453,6 +13323,85 @@ index 0000000000000000000000000000000000000000..4f9509e26062794c57e5f5a695ff3b46
 +    looked = std::move(kept);
 +  }
 +  looked.Set(email, base::Time::Now().InMillisecondsFSinceUnixEpoch());
++  prefs_->SetDict(kLookedPref, std::move(looked));
++  observers_.Notify(&Observer::OnMailChanged);
++}
++
++std::vector<std::string> MailService::Order() const {
++  std::vector<std::string> order;
++  if (!prefs_) {
++    return order;
++  }
++  for (const base::Value& value : prefs_->GetList(kOrderPref)) {
++    if (value.is_string() && order.size() < kMostOrdered) {
++      std::string name = CanonicalAddress(value.GetString());
++      if (name.find('@') != std::string::npos && name.size() <= 254 &&
++          !std::ranges::contains(order, name)) {
++        order.push_back(std::move(name));
++      }
++    }
++  }
++  return order;
++}
++
++void MailService::SetOrder(const std::vector<std::string>& emails) {
++  if (!prefs_) {
++    return;
++  }
++  base::ListValue kept;
++  std::vector<std::string> names;
++  for (const std::string& email : emails) {
++    std::string name = CanonicalAddress(email);
++    if (name.find('@') == std::string::npos || name.size() > 254 ||
++        !base::IsStringASCII(name) || std::ranges::contains(names, name) ||
++        names.size() >= kMostOrdered) {
++      continue;
++    }
++    names.push_back(name);
++    kept.Append(std::move(name));
++  }
++  prefs_->SetList(kOrderPref, std::move(kept));
++  std::ranges::stable_sort(accounts_, {}, [&names](const MailAccount& account) {
++    return PlaceInOrder(names, account.email);
++  });
++  observers_.Notify(&Observer::OnMailChanged);
++}
++
++void MailService::Renamed(const std::string& before, const std::string& after) {
++  if (!prefs_ || before == after) {
++    return;
++  }
++  // its place in the order
++  std::vector<std::string> order = Order();
++  const std::string old_name = CanonicalAddress(before);
++  const std::string new_name = CanonicalAddress(after);
++  for (std::string& name : order) {
++    if (name == old_name) {
++      name = new_name;
++    }
++  }
++  base::ListValue kept;
++  std::vector<std::string> seen;
++  for (std::string& name : order) {
++    if (!std::ranges::contains(seen, name)) {
++      seen.push_back(name);
++      kept.Append(std::move(name));
++    }
++  }
++  prefs_->SetList(kOrderPref, std::move(kept));
++  // whether it is watched
++  base::ListValue ignored = prefs_->GetList(kIgnoredPref).Clone();
++  for (base::Value& value : ignored) {
++    if (value.is_string() && value.GetString() == before) {
++      value = base::Value(after);
++    }
++  }
++  prefs_->SetList(kIgnoredPref, std::move(ignored));
++  // when it was last looked at: its new mail stays counted from then
++  base::DictValue looked = prefs_->GetDict(kLookedPref).Clone();
++  if (std::optional<base::Value> when = looked.Extract(before)) {
++    looked.Set(after, std::move(*when));
++  }
 +  prefs_->SetDict(kLookedPref, std::move(looked));
 +  observers_.Notify(&Observer::OnMailChanged);
 +}
@@ -12809,6 +13758,11 @@ index 0000000000000000000000000000000000000000..4f9509e26062794c57e5f5a695ff3b46
 +  // A failed look keeps what the last one found, as it was.
 +  if (problem_.empty() || problem_ == "signed-out") {
 +    accounts_ = std::move(next_);
++    // in the person's order (P5.81); the rest as they were found
++    const std::vector<std::string> order = Order();
++    std::ranges::stable_sort(accounts_, {}, [&order](const MailAccount& account) {
++      return PlaceInOrder(order, account.email);
++    });
 +    std::map<std::string, std::set<std::string>> seen;
 +    for (const MailAccount& account : accounts_) {
 +      // An account that was not there at the last look (just added, or just
@@ -12871,10 +13825,10 @@ index 0000000000000000000000000000000000000000..4f9509e26062794c57e5f5a695ff3b46
 +}  // namespace thoron_mail
 diff --git a/components/thoron_mail/mail_service.h b/components/thoron_mail/mail_service.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..3e4c28764458836945e8dccad2197a69c8ba1cd8
+index 0000000000000000000000000000000000000000..fdfcfc775038811b0fd94927c78d1d8e467faa67
 --- /dev/null
 +++ b/components/thoron_mail/mail_service.h
-@@ -0,0 +1,203 @@
+@@ -0,0 +1,219 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -12925,6 +13879,10 @@ index 0000000000000000000000000000000000000000..3e4c28764458836945e8dccad2197a69
 +// and for Gmail without the dots Gmail ignores and with one name for its two
 +// domains (P5.80).
 +std::string CanonicalAddress(std::string_view email);
++// Where `email` stands in `order` (addresses as CanonicalAddress gives them),
++// or `order.size()` when it is not there (P5.81).
++size_t PlaceInOrder(const std::vector<std::string>& order,
++                    std::string_view email);
 +
 +class MailService {
 + public:
@@ -12977,7 +13935,19 @@ index 0000000000000000000000000000000000000000..3e4c28764458836945e8dccad2197a69
 +  using GoogleSignedIn = base::RepeatingCallback<bool()>;
 +  void SetGoogleSignedIn(GoogleSignedIn signed_in);
 +
++  // The accounts found at the last look, in the person's order (Order()).
 +  const std::vector<MailAccount>& accounts() const { return accounts_; }
++  // P5.81: the order the person put the accounts in, first to last, as
++  // addresses (CanonicalAddress). An account it does not name comes after
++  // those it does, in the order it was found. Kept in "thoron_mail.order".
++  std::vector<std::string> Order() const;
++  void SetOrder(const std::vector<std::string>& emails);
++  // An address changed (a mailbox or an account of the person's list was
++  // edited): its place in the order, whether it is watched and when it was
++  // last looked at go with it.
++  void Renamed(const std::string& before, const std::string& after);
++  // The most addresses the order keeps.
++  static constexpr size_t kMostOrdered = 100;
 +  // The unread messages of every watched account.
 +  int total_unread() const;
 +  // P5.76: an account's messages that came since the person last looked at it

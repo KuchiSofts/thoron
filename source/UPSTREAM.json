@@ -2,7 +2,7 @@
   "repository": "https://github.com/gz83/thorium",
   "commit": "efc0fffc256e7402ad4c3dc38ae1e5754221c03d",
   "chromium": "158.0.8127.65",
-  "tree": "8dcba6f8d670d68be289cddc0a6078cd1204f7ec",
+  "tree": "6fcb597e43a8650657c994b3ff95e3445886c5e6",
   "executable": [],
   "withheld": {
     "other/thorium-build-config-and-simd.patch": "9f4402144aea034a58e16210e13f313a54cdb6fe",

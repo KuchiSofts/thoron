@@ -67,10 +67,12 @@ OLD = [
 
 
 class ImapServer:
-    """A stand-in for a mail server: IMAP in plain text on 127.0.0.1, one made-up mailbox."""
+    """A stand-in for a mail server: IMAP in plain text on 127.0.0.1, made-up mailboxes. `users` holds every
+    sign-in it takes (name to password); a step may change it, as a person changes a password."""
 
     def __init__(self, user: str, password: str):
         self.user, self.password = user, password
+        self.users = {user: password}
         day_ago = time.time() - 86400
         self.messages: list[tuple[int, str, bytes]] = [(uid, imap_date(day_ago + uid), data) for uid, data in OLD]
         self.logins: list[tuple[str, bool]] = []
@@ -101,7 +103,7 @@ class ImapServer:
                             _, user, password = base64.b64decode(given).decode("utf-8").split("\0")
                         except (ValueError, UnicodeDecodeError):
                             user = password = ""
-                        signed_in = user == server.user and password == server.password
+                        signed_in = bool(user) and server.users.get(user) == password
                         server.logins.append((user, signed_in))
                         self.say(f"{tag} OK signed in\r\n" if signed_in else
                                  f"{tag} NO [AUTHENTICATIONFAILED] Invalid credentials\r\n")

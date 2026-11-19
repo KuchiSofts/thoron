@@ -53,7 +53,16 @@ You are not limited to the Google accounts Thoron is signed in to. In the menu c
   make one in your Google Account under Security, 2-Step Verification, App passwords.
 - **Outlook, Hotmail and Live** cannot be added this way: Microsoft no longer lets mail programs sign in with a
   password. **Proton Mail** needs its Bridge app, which Thoron does not use yet.
-- To take a mailbox out again: **Remove**, next to it under "Accounts to watch".
+- To change a mailbox (a new password, another address or server): **Edit**, next to it under "Accounts to
+  watch" on Thoron M-Notifier's page (**Accounts and backup...** in its menu). Leave the password empty to keep the one it has. A new password, address or server is signed in to
+  first and kept only when that works, so a typo changes nothing. Only its mail page is kept at once.
+- To take a mailbox out again: **Remove**, next to it.
+
+## Your order
+
+Under **Accounts to watch**, drag an account to where you want it, or use its arrows (▲ ▼; with the keyboard,
+Alt and an arrow key). The menu lists the accounts in that order, it stays after a restart, and it is in the
+backup.
 
 ## What is counted
 
@@ -70,6 +79,8 @@ X-notifier can save its accounts to a file with a passphrase (its Export). Thoro
    kept encrypted. One that Thoron is signed in to at Google says **Counted**. For the others, **Sign in**
    opens Google's page with the address filled in, and **Copy password** puts its password on the clipboard
    to paste there. You do this once for an account; Google keeps the sign-in.
+4. **Edit** next to an account changes its address, its name or its password (left empty, the password stays).
+   An *app password* typed there also lets Thoron read the account's mail as a mailbox.
 
 Thoron M-Notifier does not sign in to Google by itself the way X-notifier does: that is what signs people
 out. Up to 30 Google accounts are counted. Entries of X-notifier that are not mail are left out.
@@ -78,9 +89,12 @@ out. Up to 30 Google accounts are counted. Entries of X-notifier that are not ma
 
 On Thoron M-Notifier's page, under **Backup**:
 
-- **Save a backup...** writes your mailboxes and settings to a file. With a passphrase the file is sealed and
-  holds the passwords safely. Without one it holds no passwords, unless you tick that you want them in it as
-  they are.
+- **Save a backup...** writes your mailboxes, your list, your order and your settings to a file you choose in
+  Windows' own Save dialog (named with the day, so older backups stay beside it; the next one starts in the same
+  folder). With a passphrase the file is sealed and holds the passwords safely. Without one it holds no
+  passwords, unless you tick that you want them in it as they are. Thoron reads the file back after writing it:
+  when a folder does not take the whole file, you are told so and asked to choose another, and no empty file is
+  left behind.
 - **Read a backup...** brings them back, on this PC or another.
 - The list of Google accounts (see above) is in the backup too.
 - Save the file into your Google Drive folder, or any folder that is synced, and it is in the cloud.

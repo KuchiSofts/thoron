@@ -101,6 +101,17 @@ class ServerTests(unittest.TestCase):
             self.assertIn("a1 NO", said)
             self.assertIn("a2 BAD", said)
 
+    def test_more_mailboxes_and_a_changed_password(self):
+        with mi.ImapServer("u@example.com", "pw") as server:
+            server.users["v@example.org"] = "pw2"
+            other = base64.b64encode(b"\0v@example.org\0pw2").decode()
+            self.assertIn("a1 OK", self.talk(server, ["a1 AUTHENTICATE PLAIN " + other, "a2 LOGOUT"]))
+            server.users["u@example.com"] = "new"
+            old = base64.b64encode(b"\0u@example.com\0pw").decode()
+            self.assertIn("a1 NO", self.talk(server, ["a1 AUTHENTICATE PLAIN " + old, "a2 LOGOUT"]))
+            empty = base64.b64encode(b"\0\0").decode()
+            self.assertIn("a1 NO", self.talk(server, ["a1 AUTHENTICATE PLAIN " + empty, "a2 LOGOUT"]))
+
 
 if __name__ == "__main__":
     unittest.main()

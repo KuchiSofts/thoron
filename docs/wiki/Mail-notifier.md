@@ -120,6 +120,21 @@ On Thoron M-Notifier's page, on the Backup tab:
 - The list of Google accounts (see above) is in the backup too.
 - Save the file into your Google Drive folder, or any folder that is synced, and it is in the cloud.
 
+### By itself
+
+Turn on **Save a backup by itself after each change** and choose a folder (your Google Drive folder, for one).
+Every two minutes Thoron looks whether anything a backup holds has changed (an account, a password, your order,
+a setting), and then writes a new backup into that folder, named with the date and time
+(`thoron-m-notifier-auto-...`). Nothing is written while nothing changes.
+
+- **Backups kept:** only its own newest files stay (5 unless you choose 3, 10 or 20). Your other files in the
+  folder, and the backups you saved yourself, are never touched.
+- **Passphrase:** type one (8 characters or more) and choose **Keep**: the backups are then sealed with it and
+  hold the passwords. Thoron keeps the passphrase encrypted by Windows, so it is not asked for again on this
+  PC; on another PC you type it to read a backup. Without a passphrase the backups hold everything except the
+  passwords.
+- **Save one now** writes one at once. If the folder is gone or cannot be written, the Backup tab says so.
+
 ## Coming
 
 Outlook and Hotmail (with Microsoft's own sign-in) and Proton Mail are planned.

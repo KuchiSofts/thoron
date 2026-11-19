@@ -2115,7 +2115,7 @@ index af9b6f1dc58174281ec64b74c578a3639888ce86..198ab30e882fb2fd51c0b88e79088925
                            /*edge_padding=*/trailing_decorations_edge_padding);
  
 diff --git a/chrome/browser/prefs/browser_prefs.cc b/chrome/browser/prefs/browser_prefs.cc
-index fdd05fad32252be538eef299e830625a6a3c96ba..95e1ec9972ab61d891f0c57cc9070dba70e5929f 100644
+index fdd05fad32252be538eef299e830625a6a3c96ba..607b87e7ef480a104aed80c91db64cc53137a859 100644
 --- a/chrome/browser/prefs/browser_prefs.cc
 +++ b/chrome/browser/prefs/browser_prefs.cc
 @@ -3,6 +3,7 @@
@@ -2136,7 +2136,7 @@ index fdd05fad32252be538eef299e830625a6a3c96ba..95e1ec9972ab61d891f0c57cc9070dba
    // Call outs to individual subsystems that register Local State (browser-wide)
    // prefs en masse. See RegisterProfilePrefs for per-profile prefs. Please
    // keep this list alphabetized.
-@@ -2049,6 +2053,50 @@ void RegisterLocalState(PrefRegistrySimple* registry) {
+@@ -2049,6 +2053,53 @@ void RegisterLocalState(PrefRegistrySimple* registry) {
  void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry,
                            const std::string& locale) {
    TRACE_EVENT0("browser", "chrome::RegisterProfilePrefs");
@@ -2180,6 +2180,9 @@ index fdd05fad32252be538eef299e830625a6a3c96ba..95e1ec9972ab61d891f0c57cc9070dba
 +  registry->RegisterIntegerPref("thoron_mail.quiet_from", -1);
 +  registry->RegisterIntegerPref("thoron_mail.quiet_to", -1);
 +  registry->RegisterDictionaryPref("thoron_mail.account_sounds");
++  // P5.77: the backup written by itself: on or off, its folder, how many are
++  // kept, its passphrase encrypted by the system, and the last one written.
++  registry->RegisterDictionaryPref("thoron_mail.auto_backup");
 +  // Thoron's own toolbar buttons (P5.78): their order, left to right, where
 +  // they are next to each other ("mail,adblock"; "" is that default). A
 +  // person changes it by moving a button with the mouse.
@@ -7369,16 +7372,17 @@ index 0000000000000000000000000000000000000000..d0fafbafa75adc4e08b11c75f203035c
 +#endif  // CHROME_BROWSER_UI_WEBUI_THORON_ADBLOCK_UI_H_
 diff --git a/chrome/browser/ui/webui/thoron_mail_ui.cc b/chrome/browser/ui/webui/thoron_mail_ui.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..46ea28316ffa01599a665b4a91c12b512c9981ad
+index 0000000000000000000000000000000000000000..651b2b310f72d2063b8fca161dfa697eb3949883
 --- /dev/null
 +++ b/chrome/browser/ui/webui/thoron_mail_ui.cc
-@@ -0,0 +1,2186 @@
+@@ -0,0 +1,2583 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
 +#include "chrome/browser/ui/webui/thoron_mail_ui.h"
 +
 +#include <algorithm>
++#include <functional>
 +#include <optional>
 +#include <string>
 +#include <vector>
@@ -7412,9 +7416,15 @@ index 0000000000000000000000000000000000000000..46ea28316ffa01599a665b4a91c12b51
 +#include "chrome/browser/ui/tabs/tab_strip_model.h"
 +#include "chrome/browser/ui/webui/theme_source.h"
 +#include "base/base64.h"
++#include "base/files/file_enumerator.h"
 +#include "base/files/file_path.h"
 +#include "base/files/file_util.h"
++#include "base/functional/callback_helpers.h"
++#include "base/json/values_util.h"
++#include "base/strings/strcat.h"
 +#include "base/strings/stringprintf.h"
++#include "components/prefs/scoped_user_pref_update.h"
++#include "crypto/sha2.h"
 +#include "base/time/time.h"
 +#include "chrome/browser/download/download_prefs.h"
 +#include "chrome/browser/ui/select_file_policy/chrome_select_file_policy.h"
@@ -7566,6 +7576,10 @@ index 0000000000000000000000000000000000000000..46ea28316ffa01599a665b4a91c12b51
 +    Register("exportBackup", &MailHandler::ExportBackup);
 +    Register("saveBackup", &MailHandler::SaveBackup);
 +    Register("importBackup", &MailHandler::ImportBackup);
++    Register("setAutoBackup", &MailHandler::SetAutoBackup);
++    Register("chooseAutoBackupFolder", &MailHandler::ChooseAutoBackupFolder);
++    Register("setAutoBackupPassphrase", &MailHandler::SetAutoBackupPassphrase);
++    Register("saveAutoBackupNow", &MailHandler::SaveAutoBackupNow);
 +    Register("editImapAccount", &MailHandler::EditImapAccount);
 +    Register("editGoogleAccount", &MailHandler::EditGoogleAccount);
 +    Register("setOrder", &MailHandler::SetOrder);
@@ -7710,8 +7724,21 @@ index 0000000000000000000000000000000000000000..46ea28316ffa01599a665b4a91c12b51
 +    for (const std::string& name : service.Order()) {
 +      account_order.Append(name);
 +    }
++    // P5.77: the backup written by itself (its passphrase is not sent)
++    const ThoronMailCenter::AutoBackup auto_backup = Center().auto_backup();
++    base::DictValue auto_state =
++        base::DictValue()
++            .Set("on", auto_backup.on)
++            .Set("folder", auto_backup.folder.AsUTF8Unsafe())
++            .Set("keep", auto_backup.keep)
++            .Set("sealed", auto_backup.sealed)
++            .Set("last", JsTime(auto_backup.last))
++            .Set("name", auto_backup.name)
++            .Set("error", auto_backup.error)
++            .Set("writing", auto_backup.writing);
 +    ResolveJavascriptCallback(
 +        args[0], base::DictValue()
++                     .Set("autoBackup", std::move(auto_state))
 +                     .Set("sound", std::move(sound))
 +                     .Set("order", std::move(account_order))
 +                     .Set("accounts", std::move(accounts))
@@ -7802,7 +7829,7 @@ index 0000000000000000000000000000000000000000..46ea28316ffa01599a665b4a91c12b51
 +        !args[2].is_string()) {
 +      return;
 +    }
-+    if (select_file_dialog_ || !save_id_.empty()) {
++    if (select_file_dialog_ || !save_id_.empty() || !folder_id_.empty()) {
 +      AnswerSaved(args[0].GetString(), "busy", base::FilePath());
 +      return;
 +    }
@@ -7855,17 +7882,90 @@ index 0000000000000000000000000000000000000000..46ea28316ffa01599a665b4a91c12b51
 +        contents->GetTopLevelNativeWindow());
 +  }
 +
++  // P5.77: [on, keep] of the backup written by itself
++  void SetAutoBackup(const base::ListValue& args) {
++    if (args.size() >= 2 && args[0].is_bool() && args[1].is_int()) {
++      Center().SetAutoBackup(args[0].GetBool(), args[1].GetInt());
++    }
++  }
++
++  // P5.77: [id] opens the system's dialog to choose its folder: gives "" when
++  // one was chosen, else "cancelled" or "busy".
++  void ChooseAutoBackupFolder(const base::ListValue& args) {
++    AllowJavascript();
++    if (args.empty() || !args[0].is_string()) {
++      return;
++    }
++    if (select_file_dialog_ || !save_id_.empty() || !folder_id_.empty()) {
++      Answer(args[0].GetString(), "busy");
++      return;
++    }
++    // The offline checks give the folder; nobody is there to choose one.
++    const base::CommandLine& command = *base::CommandLine::ForCurrentProcess();
++    if (command.HasSwitch("thoron-mail-auto-backup-folder-for-testing")) {
++      Center().SetAutoBackupFolder(command.GetSwitchValuePath(
++          "thoron-mail-auto-backup-folder-for-testing"));
++      Answer(args[0].GetString(), std::string());
++      return;
++    }
++    folder_id_ = args[0].GetString();
++    base::FilePath start = Center().auto_backup().folder;
++    if (start.empty()) {
++      start = Profile::FromWebUI(web_ui())->GetPrefs()->GetFilePath(
++          "thoron_mail.backup_folder");
++    }
++    content::WebContents* contents = web_ui()->GetWebContents();
++    if (start.empty()) {
++      start = DownloadPrefs::FromBrowserContext(contents->GetBrowserContext())
++                  ->DownloadPath();
++    }
++    select_file_dialog_ = ui::SelectFileDialog::Create(
++        this, std::make_unique<ChromeSelectFilePolicy>(contents));
++    select_file_dialog_->SelectFile(
++        ui::SelectFileDialog::SELECT_FOLDER, std::u16string(), start,
++        /*file_types=*/nullptr, 0, base::FilePath::StringType(),
++        contents->GetTopLevelNativeWindow());
++  }
++
++  // P5.77: [id, passphrase] gives "" or "locked", "short", "bad"
++  void SetAutoBackupPassphrase(const base::ListValue& args) {
++    AllowJavascript();
++    if (args.size() >= 2 && args[0].is_string() && args[1].is_string()) {
++      ResolveJavascriptCallback(
++          args[0],
++          base::Value(Center().SetAutoBackupPassphrase(args[1].GetString())));
++    }
++  }
++
++  // P5.77: [id] writes one now: gives "" or why not
++  void SaveAutoBackupNow(const base::ListValue& args) {
++    AllowJavascript();
++    if (!args.empty() && args[0].is_string()) {
++      Center().SaveAutoBackupNow(base::BindOnce(
++          &MailHandler::Answer, weak_factory_.GetWeakPtr(), args[0].GetString()));
++    }
++  }
++
 +  // ui::SelectFileDialog::Listener:
 +  void FileSelected(const ui::SelectedFileInfo& file, int index) override {
 +    // resetting the dialog may delete `file`: what is needed is taken first
 +    const base::FilePath path = file.path();
 +    select_file_dialog_ = nullptr;
++    if (!folder_id_.empty()) {
++      Center().SetAutoBackupFolder(path);
++      Answer(std::exchange(folder_id_, std::string()), std::string());
++      return;
++    }
 +    Profile::FromWebUI(web_ui())->GetPrefs()->SetFilePath(
 +        "thoron_mail.backup_folder", path.DirName());
 +    Write(path);
 +  }
 +  void FileSelectionCanceled() override {
 +    select_file_dialog_ = nullptr;
++    if (!folder_id_.empty()) {
++      Answer(std::exchange(folder_id_, std::string()), "cancelled");
++      return;
++    }
 +    save_text_.clear();
 +    AnswerSaved(std::exchange(save_id_, std::string()), "cancelled",
 +                base::FilePath());
@@ -8157,6 +8257,9 @@ index 0000000000000000000000000000000000000000..46ea28316ffa01599a665b4a91c12b51
 +  std::string save_id_;
 +  bool save_sealed_ = false;
 +  std::string save_text_;
++  // P5.77: the page's answer while the folder of the backup written by
++  // itself is being chosen
++  std::string folder_id_;
 +  scoped_refptr<ui::SelectFileDialog> select_file_dialog_;
 +  base::ScopedObservation<thoron_mail::MailService,
 +                          thoron_mail::MailService::Observer>
@@ -8212,6 +8315,111 @@ index 0000000000000000000000000000000000000000..46ea28316ffa01599a665b4a91c12b51
 +      observation_{this};
 +};
 +
++namespace {
++
++// P5.77: the backup written by itself: {on, folder, keep, secret (its
++// passphrase encrypted by the system, base64), mark (a hash of what the last
++// one held, encrypted by the system, so the profile keeps no hash of the
++// passwords), name, time, error}.
++constexpr char kAutoBackupPref[] = "thoron_mail.auto_backup";
++constexpr char kAutoBackupPrefix[] = "thoron-m-notifier-auto-";
++constexpr int kMostAutoBackupsKept = 50;
++
++// How often it looks whether a new one is needed (the offline checks look
++// more often).
++base::TimeDelta AutoBackupLook() {
++  int seconds = 0;
++  if (base::StringToInt(
++          base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
++              "thoron-mail-auto-backup-seconds-for-testing"),
++          &seconds) &&
++      seconds > 0) {
++    return base::Seconds(seconds);
++  }
++  return base::Minutes(2);
++}
++
++// One of its own files: the prefix, the time it was written
++// (YYYY-MM-DD-HHMMSS) and ".thoron" (sealed) or ".json"; nothing else is.
++bool IsAutoBackupName(std::string_view name) {
++  if (!base::StartsWith(name, kAutoBackupPrefix)) {
++    return false;
++  }
++  std::string_view stamp = name.substr(std::string_view(kAutoBackupPrefix).size());
++  if (base::EndsWith(stamp, ".thoron")) {
++    stamp.remove_suffix(7);
++  } else if (base::EndsWith(stamp, ".json")) {
++    stamp.remove_suffix(5);
++  } else {
++    return false;
++  }
++  constexpr std::string_view kShape = "0000-00-00-000000";
++  if (stamp.size() != kShape.size()) {
++    return false;
++  }
++  for (size_t i = 0; i < kShape.size(); ++i) {
++    if (kShape[i] == '-' ? stamp[i] != '-' : !base::IsAsciiDigit(stamp[i])) {
++      return false;
++    }
++  }
++  return true;
++}
++
++// Off the UI thread: the backup's `json`, sealed with `passphrase` when
++// there is one, written into `folder` as a new file (WriteBackupFile: whole
++// and read back), then only the newest `keep` of its own files left there.
++// With `unchanged`, the last one's name: while that file is still there,
++// nothing is written. Gives {the new file's name, ""}, {"", why not}, or
++// {"", ""} when none was needed.
++std::pair<std::string, std::string> WriteAutoBackup(base::FilePath folder,
++                                                    std::string unchanged,
++                                                    std::string json,
++                                                    std::string passphrase,
++                                                    int keep,
++                                                    base::Time now) {
++  if (!base::DirectoryExists(folder)) {
++    return {std::string(), "folder"};
++  }
++  if (IsAutoBackupName(unchanged) &&
++      base::PathExists(folder.AppendASCII(unchanged))) {
++    return {std::string(), std::string()};
++  }
++  const bool seal = !passphrase.empty();
++  std::string text =
++      seal ? thoron_mail::SealBackup(json, passphrase) : std::move(json);
++  if (text.empty()) {
++    return {std::string(), "write"};
++  }
++  base::Time::Exploded at;
++  now.LocalExplode(&at);
++  const std::string name = base::StringPrintf(
++      "%s%04d-%02d-%02d-%02d%02d%02d.%s", kAutoBackupPrefix, at.year, at.month,
++      at.day_of_month, at.hour, at.minute, at.second, seal ? "thoron" : "json");
++  std::string error = WriteBackupFile(folder.AppendASCII(name), std::move(text));
++  if (!error.empty()) {
++    return {std::string(), std::move(error)};
++  }
++  // its own files, the newest first (their names sort by their time)
++  std::vector<std::string> own;
++  base::FileEnumerator files(folder, /*recursive=*/false,
++                             base::FileEnumerator::FILES);
++  for (base::FilePath path = files.Next(); !path.empty(); path = files.Next()) {
++    std::string found = path.BaseName().AsUTF8Unsafe();
++    if (IsAutoBackupName(found)) {
++      own.push_back(std::move(found));
++    }
++  }
++  std::ranges::sort(own, std::greater<>());
++  for (size_t i = static_cast<size_t>(keep); i < own.size(); ++i) {
++    if (own[i] != name) {
++      base::DeleteFile(folder.AppendASCII(own[i]));
++    }
++  }
++  return {name, std::string()};
++}
++
++}  // namespace
++
 +// static
 +ThoronMailCenter& ThoronMailCenter::For(Profile* profile) {
 +  auto* center = static_cast<ThoronMailCenter*>(profile->GetUserData(kCenterKey));
@@ -8255,6 +8463,16 @@ index 0000000000000000000000000000000000000000..46ea28316ffa01599a665b4a91c12b51
 +    g_browser_process->os_crypt_async()->GetInstance(base::BindOnce(
 +        &ThoronMailCenter::OnEncryptor, weak_factory_.GetWeakPtr()));
 +  }
++  // P5.77: the backup written by itself looks every few minutes (nothing is
++  // done while it is off). Unretained: the timer is this object's.
++  auto_backup_timer_.Start(
++      FROM_HERE, AutoBackupLook(),
++      base::BindRepeating(
++          [](ThoronMailCenter* center) {
++            center->CheckAutoBackup(/*even_unchanged=*/false,
++                                    base::DoNothing());
++          },
++          base::Unretained(this)));
 +}
 +
 +ThoronMailCenter::~ThoronMailCenter() {
@@ -9523,6 +9741,188 @@ index 0000000000000000000000000000000000000000..46ea28316ffa01599a665b4a91c12b51
 +  }
 +}
 +
++std::optional<std::string> ThoronMailCenter::Encrypted(
++    const std::string& text) const {
++  std::string encrypted;
++  if (!encryptor_ || !encryptor_->EncryptString(text, &encrypted)) {
++    return std::nullopt;
++  }
++  return base::Base64Encode(encrypted);
++}
++
++std::optional<std::string> ThoronMailCenter::Decrypted(
++    const std::string& kept) const {
++  std::string encrypted;
++  std::string text;
++  if (!encryptor_ || !base::Base64Decode(kept, &encrypted) ||
++      !encryptor_->DecryptString(encrypted, &text)) {
++    return std::nullopt;
++  }
++  return text;
++}
++
++ThoronMailCenter::AutoBackup ThoronMailCenter::auto_backup() const {
++  const base::DictValue& kept = profile_->GetPrefs()->GetDict(kAutoBackupPref);
++  AutoBackup backup;
++  backup.on = kept.FindBool("on").value_or(false);
++  if (const base::Value* folder = kept.Find("folder")) {
++    backup.folder = base::ValueToFilePath(*folder).value_or(base::FilePath());
++  }
++  backup.keep =
++      std::clamp(kept.FindInt("keep").value_or(5), 1, kMostAutoBackupsKept);
++  const std::string* secret = kept.FindString("secret");
++  backup.sealed = secret && !secret->empty();
++  if (const base::Value* time = kept.Find("time")) {
++    backup.last = base::ValueToTime(*time).value_or(base::Time());
++  }
++  if (const std::string* name = kept.FindString("name")) {
++    backup.name = *name;
++  }
++  if (const std::string* error = kept.FindString("error")) {
++    backup.error = *error;
++  }
++  backup.writing = auto_backup_writing_;
++  return backup;
++}
++
++void ThoronMailCenter::SetAutoBackup(bool on, int keep) {
++  {
++    ScopedDictPrefUpdate update(profile_->GetPrefs(), kAutoBackupPref);
++    update->Set("on", on);
++    update->Set("keep", std::clamp(keep, 1, kMostAutoBackupsKept));
++  }
++  CheckAutoBackup(/*even_unchanged=*/false, base::DoNothing());
++}
++
++void ThoronMailCenter::SetAutoBackupFolder(const base::FilePath& folder) {
++  {
++    ScopedDictPrefUpdate update(profile_->GetPrefs(), kAutoBackupPref);
++    update->Set("folder", base::FilePathToValue(folder));
++    update->Remove("error");
++  }
++  CheckAutoBackup(/*even_unchanged=*/false, base::DoNothing());
++}
++
++std::string ThoronMailCenter::SetAutoBackupPassphrase(
++    const std::string& passphrase) {
++  if (!passphrase.empty() && passphrase.size() < 8) {
++    return "short";
++  }
++  if (passphrase.size() > 1024) {
++    return "bad";
++  }
++  if (!encryptor_) {
++    return "locked";
++  }
++  {
++    ScopedDictPrefUpdate update(profile_->GetPrefs(), kAutoBackupPref);
++    if (passphrase.empty()) {
++      update->Remove("secret");
++    } else {
++      std::optional<std::string> secret = Encrypted(passphrase);
++      if (!secret) {
++        return "locked";
++      }
++      update->Set("secret", std::move(*secret));
++    }
++  }
++  CheckAutoBackup(/*even_unchanged=*/false, base::DoNothing());
++  return std::string();
++}
++
++void ThoronMailCenter::SaveAutoBackupNow(Told done) {
++  CheckAutoBackup(/*even_unchanged=*/true, std::move(done));
++}
++
++void ThoronMailCenter::CheckAutoBackup(bool even_unchanged, Told done) {
++  const AutoBackup backup = auto_backup();
++  if (!backup.on || backup.folder.empty()) {
++    std::move(done).Run("off");
++    return;
++  }
++  if (auto_backup_writing_) {
++    std::move(done).Run("busy");
++    return;
++  }
++  // the passwords and the passphrase are read once the system's encryption
++  // is there (a moment after the browser starts)
++  if (!encryptor_) {
++    std::move(done).Run("wait");
++    return;
++  }
++  const base::DictValue& kept = profile_->GetPrefs()->GetDict(kAutoBackupPref);
++  std::string passphrase;
++  if (const std::string* secret = kept.FindString("secret");
++      secret && !secret->empty()) {
++    std::optional<std::string> opened = Decrypted(*secret);
++    if (!opened) {
++      OnAutoBackupWritten(std::string(), std::move(done),
++                          {std::string(), "locked"});
++      return;
++    }
++    passphrase = std::move(*opened);
++  }
++  std::string json =
++      base::WriteJsonWithOptions(BackupDict(!passphrase.empty()),
++                                 base::JSONWriter::OPTIONS_PRETTY_PRINT)
++          .value_or(std::string());
++  if (json.empty()) {
++    std::move(done).Run("write");
++    return;
++  }
++  // what this one holds, where it goes, how it is sealed and how many are
++  // kept: when none of it changed, the last one is still the backup
++  const std::string mark = crypto::SHA256HashString(
++      base::StrCat({json, "\n", passphrase, "\n", backup.folder.AsUTF8Unsafe(),
++                    "\n", base::NumberToString(backup.keep)}));
++  std::string unchanged;
++  if (const std::string* last = kept.FindString("mark");
++      !even_unchanged && last) {
++    if (Decrypted(*last) == mark) {
++      unchanged = backup.name;
++    }
++  }
++  auto_backup_writing_ = true;
++  base::ThreadPool::PostTaskAndReplyWithResult(
++      FROM_HERE,
++      {base::MayBlock(), base::TaskPriority::USER_VISIBLE,
++       base::TaskShutdownBehavior::SKIP_ON_SHUTDOWN},
++      base::BindOnce(&WriteAutoBackup, backup.folder, std::move(unchanged),
++                     std::move(json), std::move(passphrase), backup.keep,
++                     base::Time::Now()),
++      base::BindOnce(&ThoronMailCenter::OnAutoBackupWritten,
++                     weak_factory_.GetWeakPtr(), mark, std::move(done)));
++}
++
++void ThoronMailCenter::OnAutoBackupWritten(
++    std::string mark,
++    Told done,
++    std::pair<std::string, std::string> written) {
++  auto_backup_writing_ = false;
++  const auto& [name, error] = written;
++  const base::DictValue& kept = profile_->GetPrefs()->GetDict(kAutoBackupPref);
++  const std::string* was = kept.FindString("error");
++  // the profile is written only when something changed
++  if (!name.empty() || error != (was ? *was : std::string())) {
++    ScopedDictPrefUpdate update(profile_->GetPrefs(), kAutoBackupPref);
++    if (error.empty()) {
++      update->Remove("error");
++    } else {
++      update->Set("error", error);
++    }
++    if (!name.empty()) {
++      update->Set("name", name);
++      update->Set("time", base::TimeToValue(base::Time::Now()));
++      if (std::optional<std::string> kept_mark = Encrypted(mark)) {
++        update->Set("mark", std::move(*kept_mark));
++      } else {
++        update->Remove("mark");
++      }
++    }
++  }
++  std::move(done).Run(error);
++}
++
 +ThoronMailMenuUIConfig::ThoronMailMenuUIConfig()
 +    : DefaultTopChromeWebUIConfig(content::kChromeUIScheme,
 +                                  kThoronMailMenuHost) {}
@@ -9561,10 +9961,10 @@ index 0000000000000000000000000000000000000000..46ea28316ffa01599a665b4a91c12b51
 +WEB_UI_CONTROLLER_TYPE_IMPL(ThoronMailMenuUI)
 diff --git a/chrome/browser/ui/webui/thoron_mail_ui.h b/chrome/browser/ui/webui/thoron_mail_ui.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..9fee128cfc84e0763ef421aa3eab11b16946fa07
+index 0000000000000000000000000000000000000000..4799c6d350ece531f3e38ba1be3ceb209f982df7
 --- /dev/null
 +++ b/chrome/browser/ui/webui/thoron_mail_ui.h
-@@ -0,0 +1,261 @@
+@@ -0,0 +1,308 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -9574,8 +9974,12 @@ index 0000000000000000000000000000000000000000..9fee128cfc84e0763ef421aa3eab11b1
 +#include <memory>
 +#include <optional>
 +#include <string_view>
++#include <utility>
 +#include <vector>
 +
++#include "base/files/file_path.h"
++#include "base/time/time.h"
++#include "base/timer/timer.h"
 +#include "base/memory/raw_ptr.h"
 +#include "base/supports_user_data.h"
 +#include "chrome/browser/ui/webui/top_chrome/top_chrome_web_ui_controller.h"
@@ -9696,6 +10100,38 @@ index 0000000000000000000000000000000000000000..9fee128cfc84e0763ef421aa3eab11b1
 +  using Imported = base::OnceCallback<void(std::string, int)>;
 +  void ImportBackup(std::string file, std::string passphrase, Imported done);
 +
++  // P5.77: the backup written by itself. When it is on, the M-Notifier looks
++  // every few minutes whether what a backup holds changed since the last one
++  // (or that one is gone from the folder), and then writes a new one into
++  // the folder the person chose: sealed with the passphrase kept for it (it
++  // then holds the passwords), or, without one, a file without the passwords.
++  // Only the newest `keep` of its own files stay in that folder; no other
++  // file there is touched.
++  struct AutoBackup {
++    bool on = false;
++    base::FilePath folder;
++    int keep = 5;
++    // a passphrase is kept for it (encrypted by the system)
++    bool sealed = false;
++    // the last one written, and its file's name
++    base::Time last;
++    std::string name;
++    // why the last one could not be written: "" or "folder" (not there),
++    // "write", "verify" or "locked" (the passphrase cannot be read here)
++    std::string error;
++    bool writing = false;
++  };
++  AutoBackup auto_backup() const;
++  void SetAutoBackup(bool on, int keep);
++  void SetAutoBackupFolder(const base::FilePath& folder);
++  // "" when kept, else "locked" or "short" (fewer than 8 characters); an empty
++  // passphrase leaves the passwords out of the next ones.
++  std::string SetAutoBackupPassphrase(const std::string& passphrase);
++  // Writes one now (even when nothing changed): `done` gets "" or why not
++  // ("off", "busy", "wait": the system's encryption is not there yet, or an
++  // error as in AutoBackup).
++  void SaveAutoBackupNow(Told done);
++
 +  // P5.82: the sound of new mail. `name` is "system" (Windows' own sound for
 +  // new mail) or one Thoron makes (mail_sounds.h), at `volume` (0 to 100);
 +  // an account may have its own, or "off". It stays quiet, for every account,
@@ -9769,6 +10205,14 @@ index 0000000000000000000000000000000000000000..9fee128cfc84e0763ef421aa3eab11b1
 +  // Opens `url` in a tab of the profile: the tab that is on that site when
 +  // one is open (unless the person wants a new tab), else a new one.
 +  void OpenPage(const GURL& url);
++  // P5.77: the look of the backup written by itself, and its end.
++  void CheckAutoBackup(bool even_unchanged, Told done);
++  void OnAutoBackupWritten(std::string mark,
++                           Told done,
++                           std::pair<std::string, std::string> written);
++  // a value kept encrypted by the system, in base64, and read back
++  std::optional<std::string> Encrypted(const std::string& text) const;
++  std::optional<std::string> Decrypted(const std::string& kept) const;
 +
 +  const raw_ptr<Profile> profile_;
 +  std::unique_ptr<thoron_mail::MailService> service_;
@@ -9786,6 +10230,9 @@ index 0000000000000000000000000000000000000000..9fee128cfc84e0763ef421aa3eab11b1
 +  scoped_refptr<os_crypt_async::Encryptor> encryptor_;
 +  // the sign-in to a mailbox that is being added
 +  std::unique_ptr<thoron_mail::ImapCheck> imap_test_;
++  // P5.77: the looks of the backup written by itself, and one being written
++  base::RepeatingTimer auto_backup_timer_;
++  bool auto_backup_writing_ = false;
 +  base::WeakPtrFactory<ThoronMailCenter> weak_factory_{this};
 +};
 +
@@ -11916,10 +12363,10 @@ index 0000000000000000000000000000000000000000..4c249e10c731f7b7fc3e2bf12a29b82e
 +#endif  // COMPONENTS_THORON_MAIL_MAIL_FEED_H_
 diff --git a/components/thoron_mail/mail_page.cc b/components/thoron_mail/mail_page.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..7fe619eabdb28320639373323767c4bb7395b630
+index 0000000000000000000000000000000000000000..bb1a74730f6dea814813db76f47ab54530d3783a
 --- /dev/null
 +++ b/components/thoron_mail/mail_page.cc
-@@ -0,0 +1,2086 @@
+@@ -0,0 +1,2326 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -12023,6 +12470,8 @@ index 0000000000000000000000000000000000000000..7fe619eabdb28320639373323767c4bb
 +  input[type=range] { accent-color: var(--accent); inline-size: 180px; }
 +  .password-box { display: flex; align-items: center; gap: 6px; }
 +  .password-box input { flex: 1; min-inline-size: 0; }
++  #auto-pass { font: inherit; box-sizing: border-box; padding: 6px 10px; border-radius: 8px;
++               border: 1px solid var(--line); background: var(--bg); color: inherit; }
 +  #add-panel { padding: 4px 16px 12px; max-block-size: 480px; overflow-y: auto; }
 +  #add-panel h3 { font-size: 12px; font-weight: 500; color: var(--accent); margin: 14px 0 6px; }
 +  /* a switch: an on/off setting, as the browser's own settings show one */
@@ -12263,6 +12712,31 @@ index 0000000000000000000000000000000000000000..7fe619eabdb28320639373323767c4bb
 +    <section class="panel" id="tab-backup" role="tabpanel" hidden>
 +      <h2 data-t>Backup</h2>
 +      <p class="hint" data-t>Save it into your Google Drive folder, or any folder that is synced, to keep it in the cloud.</p>
++      <h3 data-t>By itself</h3>
++      <div class="card" id="auto">
++        <div class="setting"><label class="label" for="auto-on"><span data-t>Save a backup by itself after each change</span>
++            <small data-t>It looks every two minutes, and keeps only its own newest files in the folder.</small></label>
++          <span class="controls"><span class="switch"><input type="checkbox" id="auto-on" role="switch"><span></span></span></span></div>
++        <div class="setting"><span class="label"><span data-t>Folder</span>
++            <small id="auto-folder"></small></span>
++          <span class="controls"><button id="auto-choose" type="button" class="small" data-t>Choose...</button></span></div>
++        <div class="setting"><label class="label" for="auto-keep" data-t>Backups kept</label>
++          <span class="controls"><select id="auto-keep">
++            <option value="3">3</option><option value="5">5</option><option value="10">10</option>
++            <option value="20">20</option>
++          </select></span></div>
++        <div class="block">
++          <label class="field" for="auto-pass"><span data-t>Passphrase for these backups: they are then sealed, and hold the passwords</span></label>
++          <div class="password-box"><input id="auto-pass" type="password" autocomplete="new-password">
++            <button id="auto-pass-keep" type="button" class="small" data-t>Keep</button>
++            <button id="auto-pass-forget" type="button" class="small" data-t hidden>Remove</button></div>
++          <p class="hint" id="auto-pass-state"></p>
++          <div class="buttons"><button id="auto-now" type="button" data-t>Save one now</button></div>
++          <p class="hint" id="auto-state"></p>
++          <p class="hint" id="auto-note" role="status"></p>
++        </div>
++      </div>
++      <h3 data-t>By hand</h3>
 +      <div class="card">
 +        <div class="block" id="backup">
 +          <label class="field"><span data-t>Passphrase: seals the file, and keeps the passwords in it safe</span>
@@ -12777,6 +13251,99 @@ index 0000000000000000000000000000000000000000..7fe619eabdb28320639373323767c4bb
 +                                                 'Это не резервная копия Thoron M-Notifier.'],
 +  'Read. Mailboxes now:': ['Leída. Buzones ahora:', 'Lue. Boîtes à présent :', 'Eingelesen. Postfächer jetzt:',
 +                           'Lido. Caixas agora:', 'Прочитано. Ящиков теперь:'],
++  // P5.77: the backup written by itself
++  'By itself': ['Automática', 'Automatique', 'Automatisch', 'Automático', 'Автоматически'],
++  'By hand': ['A mano', 'À la main', 'Von Hand', 'Manualmente', 'Вручную'],
++  'Save a backup by itself after each change': [
++    'Guardar una copia automáticamente tras cada cambio',
++    'Enregistrer une sauvegarde automatiquement après chaque modification',
++    'Nach jeder Änderung automatisch eine Sicherung speichern',
++    'Salvar um backup automaticamente após cada alteração',
++    'Сохранять копию автоматически после каждого изменения'],
++  'It looks every two minutes, and keeps only its own newest files in the folder.': [
++    'Comprueba cada dos minutos y solo conserva sus archivos más recientes en la carpeta.',
++    'Il vérifie toutes les deux minutes et ne garde que ses fichiers les plus récents dans le dossier.',
++    'Es prüft alle zwei Minuten und behält im Ordner nur seine neuesten Dateien.',
++    'Verifica a cada dois minutos e mantém na pasta apenas os seus arquivos mais recentes.',
++    'Проверяет каждые две минуты и хранит в папке только свои самые новые файлы.'],
++  'Folder': ['Carpeta', 'Dossier', 'Ordner', 'Pasta', 'Папка'],
++  'Choose...': ['Elegir...', 'Choisir...', 'Auswählen...', 'Escolher...', 'Выбрать...'],
++  'Backups kept': ['Copias conservadas', 'Sauvegardes conservées', 'Aufbewahrte Sicherungen', 'Backups mantidos',
++                   'Хранить копий'],
++  'Passphrase for these backups: they are then sealed, and hold the passwords': [
++    'Frase de contraseña para estas copias: entonces van selladas y llevan las contraseñas',
++    'Phrase secrète pour ces sauvegardes : elles sont alors scellées et contiennent les mots de passe',
++    'Passphrase für diese Sicherungen: Dann sind sie versiegelt und enthalten die Passwörter',
++    'Frase secreta para estes backups: eles ficam selados e levam as senhas',
++    'Кодовая фраза для этих копий: тогда они запечатаны и содержат пароли'],
++  'Keep': ['Guardar', 'Garder', 'Behalten', 'Guardar', 'Сохранить'],
++  'Save one now': ['Guardar una ahora', 'En enregistrer une maintenant', 'Jetzt eine speichern', 'Salvar um agora',
++                   'Сохранить сейчас'],
++  'Not chosen yet': ['Aún sin elegir', 'Pas encore choisi', 'Noch nicht gewählt', 'Ainda não escolhida',
++                     'Ещё не выбрана'],
++  'A passphrase is kept for them, encrypted by Windows: the passwords are in them, sealed.': [
++    'Se guarda una frase de contraseña para ellas, cifrada por Windows: llevan las contraseñas, selladas.',
++    'Une phrase secrète est gardée pour elles, chiffrée par Windows : elles contiennent les mots de passe, scellés.',
++    'Eine Passphrase ist dafür gespeichert, von Windows verschlüsselt: Sie enthalten die Passwörter, versiegelt.',
++    'Uma frase secreta é guardada para eles, cifrada pelo Windows: levam as senhas, seladas.',
++    'Для них хранится кодовая фраза, зашифрованная Windows: пароли в них запечатаны.'],
++  'Without a passphrase they hold everything but the passwords.': [
++    'Sin frase de contraseña llevan todo menos las contraseñas.',
++    'Sans phrase secrète, elles contiennent tout sauf les mots de passe.',
++    'Ohne Passphrase enthalten sie alles außer den Passwörtern.',
++    'Sem frase secreta, levam tudo menos as senhas.', 'Без кодовой фразы в них всё, кроме паролей.'],
++  'Last saved': ['Última guardada', 'Dernière enregistrée', 'Zuletzt gespeichert', 'Último salvo',
++                 'Последняя сохранена'],
++  'The first one is saved within two minutes.': ['La primera se guarda en menos de dos minutos.',
++                                                 'La première est enregistrée dans les deux minutes.',
++                                                 'Die erste wird innerhalb von zwei Minuten gespeichert.',
++                                                 'O primeiro é salvo em até dois minutos.',
++                                                 'Первая сохраняется в течение двух минут.'],
++  'Choose a folder for it.': ['Elige una carpeta para ella.', 'Choisissez-lui un dossier.',
++                              'Wählen Sie dafür einen Ordner.', 'Escolha uma pasta para ele.',
++                              'Выберите для неё папку.'],
++  'The folder is not there any more: choose it again.': ['La carpeta ya no está: vuelve a elegirla.',
++                                                         "Le dossier n'existe plus : choisissez-le à nouveau.",
++                                                         'Den Ordner gibt es nicht mehr: Wählen Sie ihn erneut.',
++                                                         'A pasta não existe mais: escolha-a de novo.',
++                                                         'Папки больше нет: выберите её снова.'],
++  'Reading the file back did not give the backup. Choose another folder.': [
++    'Al leer el archivo de nuevo, la copia no estaba. Elige otra carpeta.',
++    "En relisant le fichier, la sauvegarde n'y était pas. Choisissez un autre dossier.",
++    'Beim Zurücklesen war die Sicherung nicht in der Datei. Wählen Sie einen anderen Ordner.',
++    'Ao ler o arquivo de volta, o backup não estava lá. Escolha outra pasta.',
++    'При обратном чтении файла копии в нём не оказалось. Выберите другую папку.'],
++  'Its passphrase cannot be read on this PC: type it again.': [
++    'Su frase de contraseña no se puede leer en este PC: escríbela de nuevo.',
++    'Sa phrase secrète ne peut pas être lue sur ce PC : saisissez-la à nouveau.',
++    'Ihre Passphrase kann auf diesem PC nicht gelesen werden: Geben Sie sie erneut ein.',
++    'A frase secreta não pode ser lida neste PC: digite-a de novo.',
++    'Её кодовую фразу нельзя прочитать на этом ПК: введите её снова.'],
++  'A passphrase needs 8 characters or more.': ['Una frase de contraseña necesita 8 caracteres o más.',
++                                               'Une phrase secrète doit avoir 8 caractères ou plus.',
++                                               'Eine Passphrase braucht 8 oder mehr Zeichen.',
++                                               'Uma frase secreta precisa de 8 caracteres ou mais.',
++                                               'Кодовая фраза должна содержать не менее 8 символов.'],
++  'This passphrase is too long.': ['Esta frase de contraseña es demasiado larga.',
++                                   'Cette phrase secrète est trop longue.', 'Diese Passphrase ist zu lang.',
++                                   'Esta frase secreta é longa demais.', 'Эта кодовая фраза слишком длинная.'],
++  'Kept: the next backups are sealed with it.': ['Guardada: las próximas copias van selladas con ella.',
++                                                 'Gardée : les prochaines sauvegardes sont scellées avec elle.',
++                                                 'Gespeichert: Die nächsten Sicherungen werden damit versiegelt.',
++                                                 'Guardada: os próximos backups são selados com ela.',
++                                                 'Сохранено: следующие копии запечатываются ею.'],
++  'Removed: the next backups hold everything but the passwords.': [
++    'Quitada: las próximas copias llevan todo menos las contraseñas.',
++    'Retirée : les prochaines sauvegardes contiennent tout sauf les mots de passe.',
++    'Entfernt: Die nächsten Sicherungen enthalten alles außer den Passwörtern.',
++    'Removida: os próximos backups levam tudo menos as senhas.',
++    'Удалено: следующие копии содержат всё, кроме паролей.'],
++  'Saved.': ['Guardada.', 'Enregistrée.', 'Gespeichert.', 'Salvo.', 'Сохранено.'],
++  'Turn it on and choose a folder first.': ['Actívala y elige primero una carpeta.',
++                                            "Activez-la et choisissez d'abord un dossier.",
++                                            'Schalten Sie sie ein und wählen Sie zuerst einen Ordner.',
++                                            'Ative-o e escolha primeiro uma pasta.',
++                                            'Сначала включите её и выберите папку.'],
 +};
 +const AT = {es: 0, fr: 1, de: 2, pt: 3, ru: 4}[LANG];
 +const t = (text) => (AT === undefined || !ROWS[text] ? text : ROWS[text][AT]);
@@ -12902,7 +13469,88 @@ index 0000000000000000000000000000000000000000..7fe619eabdb28320639373323767c4bb
 +  }
 +  interval.value = String(next.interval);
 +  showSound(next);
++  showAuto(next);
 +  showList(next);
++}
++
++// --- The backup written by itself (P5.77) ---
++// The browser looks every two minutes whether what a backup holds changed, and then writes a new one into the
++// folder the person chose: sealed with the passphrase kept for it (then with the passwords), or without the
++// passwords. Only its own newest files stay in that folder.
++const AUTO_ERRORS = {
++  folder: 'The folder is not there any more: choose it again.',
++  write: 'The file could not be written there. Choose another folder.',
++  verify: 'Reading the file back did not give the backup. Choose another folder.',
++  locked: 'Its passphrase cannot be read on this PC: type it again.',
++  wait: 'Passwords cannot be kept yet. Try again in a moment.',
++  busy: 'A backup is being saved already.',
++  off: 'Turn it on and choose a folder first.',
++  short: 'A passphrase needs 8 characters or more.',
++  bad: 'This passphrase is too long.',
++};
++const autoNote = (words) => {
++  $('auto-note').textContent = words;
++};
++
++function showAuto(next) {
++  const auto = next.autoBackup;
++  if (!auto) {
++    return;
++  }
++  $('auto-on').checked = auto.on;
++  $('auto-folder').textContent = auto.folder || t('Not chosen yet');
++  const keep = $('auto-keep');
++  if (![...keep.options].some((option) => option.value === String(auto.keep))) {
++    const option = make('option', '', String(auto.keep));
++    option.value = String(auto.keep);
++    keep.append(option);
++  }
++  keep.value = String(auto.keep);
++  $('auto-pass-forget').hidden = !auto.sealed;
++  $('auto-pass-state').textContent = t(auto.sealed ?
++      'A passphrase is kept for them, encrypted by Windows: the passwords are in them, sealed.' :
++      'Without a passphrase they hold everything but the passwords.');
++  $('auto-now').disabled = !auto.on || !auto.folder || auto.writing;
++  let said = '';
++  if (auto.error) {
++    said = t(AUTO_ERRORS[auto.error] || AUTO_ERRORS.write);
++  } else if (auto.on && !auto.folder) {
++    said = t('Choose a folder for it.');
++  } else if (auto.last) {
++    said = `${t('Last saved')}: ${ago(auto.last)} (${auto.name})`;
++  } else if (auto.on) {
++    said = t('The first one is saved within two minutes.');
++  }
++  $('auto-state').textContent = said;
++}
++
++async function chooseAutoFolder() {
++  let answer = 'cancelled';
++  try {
++    answer = await sendWithPromise('chooseAutoBackupFolder');
++  } catch {
++    return;
++  }
++  if (answer === 'busy') {
++    autoNote(t(AUTO_ERRORS.busy));
++  }
++  await refresh();
++}
++
++async function setAutoPassphrase(passphrase) {
++  let answer = 'wait';
++  try {
++    answer = await sendWithPromise('setAutoBackupPassphrase', passphrase);
++  } catch {
++    return;
++  }
++  if (!answer) {
++    $('auto-pass').value = '';
++  }
++  autoNote(answer ? t(AUTO_ERRORS[answer] || AUTO_ERRORS.wait) :
++      t(passphrase ? 'Kept: the next backups are sealed with it.' :
++          'Removed: the next backups hold everything but the passwords.'));
++  await refresh();
 +}
 +
 +// --- Sounds (P5.82) ---
@@ -13908,6 +14556,45 @@ index 0000000000000000000000000000000000000000..7fe619eabdb28320639373323767c4bb
 +$('import-file').addEventListener('change', () => {
 +  readBackup($('import-file').files[0]);
 +  $('import-file').value = '';
++});
++// P5.77: the backup written by itself; turned on without a folder, the folder is asked for at once
++$('auto-on').addEventListener('change', async () => {
++  const on = $('auto-on').checked;
++  chrome.send('setAutoBackup', [on, Number($('auto-keep').value)]);
++  autoNote('');
++  if (on && state && state.autoBackup && !state.autoBackup.folder) {
++    await chooseAutoFolder();
++    return;
++  }
++  refresh();
++});
++$('auto-choose').addEventListener('click', chooseAutoFolder);
++$('auto-keep').addEventListener('change', () => {
++  chrome.send('setAutoBackup', [$('auto-on').checked, Number($('auto-keep').value)]);
++  refresh();
++});
++$('auto-pass-keep').addEventListener('click', () => {
++  if ($('auto-pass').value) {
++    setAutoPassphrase($('auto-pass').value);
++  }
++});
++$('auto-pass').addEventListener('keydown', (event) => {
++  if (event.key === 'Enter' && $('auto-pass').value) {
++    setAutoPassphrase($('auto-pass').value);
++  }
++});
++$('auto-pass-forget').addEventListener('click', () => setAutoPassphrase(''));
++$('auto-now').addEventListener('click', async () => {
++  $('auto-now').disabled = true;
++  autoNote('');
++  let answer = 'write';
++  try {
++    answer = await sendWithPromise('saveAutoBackupNow');
++  } catch {
++    return;
++  }
++  autoNote(answer ? t(AUTO_ERRORS[answer] || AUTO_ERRORS.write) : t('Saved.'));
++  refresh();
 +});
 +if (PAGE) {
 +  document.body.classList.add('page');

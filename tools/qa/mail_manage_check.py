@@ -177,14 +177,15 @@ def unwritable_problems(answer: dict, target: Path) -> list[str]:
 class Page:
     """The M-Notifier's own page (#manage) in one start of the browser."""
 
-    def __init__(self, browser: Path, profile: Path, gmail_port: int, imap_port: int, backup_file: Path):
+    def __init__(self, browser: Path, profile: Path, gmail_port: int, imap_port: int, backup_file: Path,
+                 extra_args: tuple[str, ...] = ()):
         (profile / "DevToolsActivePort").unlink(missing_ok=True)
         args = [str(browser), "--headless=new", f"--user-data-dir={profile}", "--no-first-run",
                 "--no-default-browser-check", "--disable-background-networking", "--disable-component-update",
                 "--enable-features=ThoronMailNotifier", "--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1",
                 f"--thoron-mail-feeds-for-testing=http://127.0.0.1:{gmail_port}/",
                 f"--thoron-mail-imap-for-testing=127.0.0.1:{imap_port}",
-                f"--thoron-mail-backup-file-for-testing={backup_file}",
+                f"--thoron-mail-backup-file-for-testing={backup_file}", *extra_args,
                 "--remote-debugging-address=127.0.0.1", "--remote-debugging-port=0", "about:blank"]
         self.profile = profile
         self.proc = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

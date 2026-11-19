@@ -2425,6 +2425,28 @@ response's body. Thoron is the browser, so it does it for every page:
 - **Checked:** `mail_settings_check.py` (tabs, the Settings button, one list, every sound, an account's own
   sound, quiet hours, the backup) and `mail_manage_check.py` again on the new list.
 
+### 12.77 A backup written by itself into a chosen folder (P5.77, 2026-11-19)
+
+- **When:** a timer of the M-Notifier (every two minutes) builds what a backup would hold and compares it with
+  the last one written; only a change (or the last file gone from the folder) writes a new one. A timer instead
+  of a hook in every setting: nothing that changes the backup can be missed, and the look is cheap (a few
+  accounts as JSON and a hash). Nothing is written at shutdown.
+- **What it holds:** with a passphrase kept for it, the whole backup sealed as "Save a backup..." seals it
+  (`mail_backup.cc`: scrypt, AES-256-GCM), passwords included; without one, everything except the passwords.
+  A file with the passwords as they are is never written by itself.
+- **What the profile keeps:** one setting (`thoron_mail.auto_backup`): on or off, the folder, how many to keep,
+  the passphrase encrypted by the system (os_crypt, as the mailboxes' passwords), and the last file's name and
+  time. To know whether anything changed it keeps a hash of the last backup, its passphrase, its folder and how
+  many are kept; the hash is encrypted by the system too, so the profile holds no hash of a password that could
+  be guessed against outside the browser.
+- **Writing:** off the UI thread, through the same `WriteBackupFile` as the manual backup (a whole file or
+  none, read back). Names are `thoron-m-notifier-auto-YYYY-MM-DD-HHMMSS.thoron` (sealed) or `.json`; the
+  newest `keep` of exactly those names stay, and no other file of the folder is read, changed or deleted.
+- **Errors:** a folder that is gone, a file that cannot be written or read back, and a passphrase that cannot
+  be decrypted here are kept and shown on the Backup tab; the next look tries again.
+- **Checked:** `mail_auto_backup_check.py` (off, plain, unchanged, changed, sealed, kept, restart, gone, now)
+  with the browser told to look every few seconds and given the folder.
+
 ## 13. Credits
 
 The procedural operators and the rest of the filter syntax are uBlock Origin's (with forms from Adblock

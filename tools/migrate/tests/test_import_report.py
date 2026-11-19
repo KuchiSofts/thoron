@@ -53,7 +53,9 @@ class ReportTests(unittest.TestCase):
         quiet.start()
         self.addCleanup(quiet.stop)
         self.tmp = tempfile.TemporaryDirectory()
-        root = Path(self.tmp.name)
+        # resolved, as the tool resolves the folders it is given: a temporary folder named by its short (8.3)
+        # name, as on the CI's machines, is then the same path to both
+        root = Path(self.tmp.name).resolve()
         self.source, self.dest = root / "Thorium" / "User Data", root / "Thoron" / "User Data"
         self.source.mkdir(parents=True)
         (self.source / "Local State").write_text("{}", encoding="utf-8")

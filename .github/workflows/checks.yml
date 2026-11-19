@@ -26,6 +26,10 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
         with:
           python-version: "3.12"
+      # The signing tools (manifests, key rotation, the ad blocker's resources) use Ed25519 from this one
+      # package; pinned to the version the tests are run with locally.
+      - name: Python package the tests use
+        run: python -m pip install --disable-pip-version-check --no-input cryptography==46.0.6
       - name: Tests
         run: python -m unittest discover -s tools -t .
       - name: Docs and privacy linter

@@ -331,7 +331,7 @@ class ClosedTests(unittest.TestCase):
 
 class ProfileTests(unittest.TestCase):
     def setUp(self):
-        self.tmp = Path(tempfile.mkdtemp(prefix="thoron-sessions-"))
+        self.tmp = Path(tempfile.mkdtemp(prefix="thoron-sessions-")).resolve()   # a short (8.3) name too
         self.profile = self.tmp / "User Data" / "Default"
         (self.profile / "Sessions").mkdir(parents=True)
 
@@ -386,7 +386,7 @@ class ImportTests(unittest.TestCase):
         quiet = mock.patch.object(ip, "QUIET_SECONDS", 0)   # written just before; see the test below
         quiet.start()
         self.addCleanup(quiet.stop)
-        self.tmp = Path(tempfile.mkdtemp(prefix="thoron-tabs-import-"))
+        self.tmp = Path(tempfile.mkdtemp(prefix="thoron-tabs-import-")).resolve()   # a short (8.3) name too
         self.src = self.tmp / "Chrome" / "User Data" / "Default"
         (self.src / "Sessions").mkdir(parents=True)
         session, tabs, self.expected = golden("chrome")

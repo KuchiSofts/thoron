@@ -7,6 +7,37 @@ Explanations live in the design docs under `docs/design/`.
 ## [Unreleased]
 
 ### Added
+- **Import:** Settings' "Import bookmarks and settings" now lists Thorium, Chrome, Edge, Brave, Vivaldi, Opera and Chromium when they are in your Windows account, and brings over bookmarks, history, saved passwords, search engines, form entries, cookies (so you stay signed in to your sites), and the home page and startup pages. It asks you to close the other browser first and never closes it, works on copies of its files, and leaves out passwords and cookies that Chrome locks to itself. Each import leaves a short report in your profile folder with counts only.
+- **First start:** a welcome page offers to import from another browser and to make Thoron your default browser. Windows asks you to confirm the default on its own page; closing the tab skips both.
+- **Guides:** the Windows steps of the install and update guides (the installer with its two questions, the portable package, removing both) are followed on a clean Windows for every build, clicks included, and every step does what the guide says.
+- **Updates:** a Thoron installed for one user also looks for a newer release once a day, even while it is closed, through a task in Task Scheduler that runs with your own rights. It follows your update setting, keeps your build, downloads nothing on a metered connection, and stays off if you switch it off. Uninstalling Thoron removes it.
+- **Releases:** every program and library of a release is checked for the processor it is built for and for the libraries it loads, so a package never carries a file that would not start on a clean Windows.
+- **Updates:** an installed Thoron downloads only what changed in a release: from 158.0.8127.3010 to .6500 that was 31 MB instead of the 143 MB installer. A Thoron installed for every user of the PC is not updated by the browser, which never asks for administrator rights; the About page says that a newer release is out.
+- **Quality:** every state of the About page's update line is checked in a running Thoron, from "Checking for updates" and the download's percentage to "Relaunch Thoron to finish updating", with a build that trusts only a test key.
+- **Import:** open windows, tabs and tab groups from Firefox, with each tab's history and pinned tabs; Firefox's own pages stay behind (`tools/migrate/firefox_sessions.py`).
+- **Quality:** Thoron's installer is checked on a clean Windows in Windows Sandbox: install, first start, an update while Thoron runs, uninstall, for one user and for every user of the PC, with the profile kept. Run from a read-only folder, the installer stops with code 109; run it from Downloads.
+- **Releases:** one release can carry several builds of a version (AVX2 and SSE4), with one update manifest that names them all.
+- **Releases:** a banner at the top of every release's notes, and a picture for links to the repository.
+- **Quality:** a video check for H.264, HEVC, AV1 and VP9 up to 4K60 on each graphics adapter; on NVIDIA graphics Thoron decodes all of them in hardware and drops about as few frames as Chrome.
+- **Ad blocking:** Thoron adblock's "Restore from file" takes uBlock Origin's own backup: your filters, lists, trusted sites, rules and changed settings come over.
+- **Quality:** a tool that watches each of the browser's processes for one that keeps the processor busy; none did in an hour of heavy pages (upstream had a report of processes that climbed).
+- **Updates:** before a release is published, the last release's own updater must have installed it.
+- **Quality:** a check that passwords are offered, saved, encrypted, kept after a restart and filled in again, also one added by hand; it passes on Windows (upstream had reports of lost passwords).
+- **Quality:** each release's debugging symbols are kept beside it, so a crash in a release can be read by function names.
+- **Quality:** Speedometer 3, JetStream 2.1 and MotionMark measured against Thorium 156 and Chrome 157; an AVX-512 build is not measurably faster than the AVX2 one, so none ships for now.
+- **Quality:** a check that a site does not crash its page; Discord's pages load without a crash on both builds (a crash was reported upstream).
+- **Quality:** every release must pass an 8-hour memory test first; the first run of 158 used 2 MB per hour more at most, under what can be measured.
+- **Install:** Thoron's elevation and tracing services have their own COM interface IDs, so a system-wide Thoron and Thorium never share a registration.
+- **Install:** `ThoronSetup.exe`, one small installer for every release: it downloads the newest signed Thoron for your processor, checks it and installs it.
+- **Updates:** a portable copy can update with a small delta instead of the whole package (about 2 % of it between two builds), checked file by file.
+- **Updates:** a download that breaks goes on where it stopped, also after a restart; on a metered connection updates wait unless you ask for them; the menu offers the relaunch once an update is installed.
+- **Updates:** going back to the version before asks for confirmation first, and can put the profile back as it was before the update, checked file by file.
+- **Docs:** user guides in `docs/user/`: install, import, updates and rollback, portable passphrase; the wiki links them.
+- **Portable:** a portable copy can update itself from the release's package: the new version is unpacked beside the old one and the next start runs it, settings kept (from the browser once releases are signed).
+- **Updates:** the browser has its own updater: it checks the signed release on GitHub, downloads and checks the update, installs it and asks for a relaunch, with each step on the About page. It is switched on once releases are signed; until then it asks nothing.
+- **Import:** tabs and tab groups from Chrome, Thorium and Thoron come over with their order, pinned tabs, group names, colours and collapsed state, and each tab's history (command line for now).
+- **Portable:** the launcher refuses a package made for another kind of processor and says why, instead of starting a browser that cannot run.
+- **Updates:** an old updater never applies a release it may not: it fetches the release's full package and hands the update to the updater inside it, after checking that updater's hash.
 
 - **Ad blocking:** built-in `adblock-rust` engine ends ad and tracker requests before they leave the browser.
 - **Ad blocking:** off by default; "Built-in ad blocking" on `chrome://flags/#thoron-native-adblock` turns it on or off.
@@ -94,6 +125,94 @@ Explanations live in the design docs under `docs/design/`.
 - **Ad blocking:** Thoron adblock has its own shield: Thoron's T, filled teal while it blocks, with a slash or a pause where it does not.
 - **Windows:** a Windows Security prompt (Windows Hello, the PIN) that opens behind the browser is brought to the front.
 - **QA tools:** `windows_security_check.py` checks that with a stand-in window, off the screen.
+- **Mail:** Thoron's own mail notifier: unread Gmail of every signed-in Google account in the toolbar, with notices of new mail and no password.
+- **QA tools:** `mail_check.py` checks the notifier against a local stand-in for Gmail.
+- **Ad blocking:** trackers hidden under a site's own name (CNAME cloaking) are found and blocked, as uBlock Origin does only in Firefox; "Uncloak canonical names" in `chrome://adblock` turns it off.
+- **QA tools:** `adblock_cname_check.py` checks CNAME uncloaking offline.
+- **Ad blocking:** Settings has "Thoron adblock" in its side menu, below "Extensions": it opens `chrome://adblock`.
+- **QA tools:** `adblock_settings_link_check.py` checks that entry.
+- **Ad blocking:** "Ads and trackers" in page info and Settings, the shield's bubble and "Block element..." speak Spanish, French, German, Portuguese and Russian.
+- **QA tools:** `adblock_strings_check.py` checks those translations in each language.
+- **Ad blocking:** the scriptlets and stand-ins can be updated between releases, only with a copy signed with Thoron's key (off until that key exists); `tools/release/adblock_resources.py` signs one.
+- **QA tools:** `adblock_resources_check.py` checks signed scriptlet updates offline.
+- **About:** `chrome://credits` lists Thorium, uBlock Origin's scriptlets, the filter lists Thoron ships and the patch sources, each with its licence.
+- **QA tools:** `credits_check.py` checks those entries on the credits page.
+- **Icons:** the shield and the envelope take the browser theme's colours; a count is in the icon's corner as an extension's badge (toolbar) or next to the icon (address bar), so the icon stays in view.
+- **Icons:** the shield and the envelope are moved with the mouse: to another place of the toolbar, and before or after each other.
+- **Mail:** Thoron M-Notifier only counts unless asked for more: a sound of its own for new mail (on), a notice (off) and the messages listed in the menu (off) are separate settings.
+- **Mail, Ad blocking:** the M-Notifier's menu and Thoron adblock's pages take the browser theme's colours.
+- **Ad blocking:** `chrome://adblock` is a dashboard with tabs (Overview, Settings, Filter lists, My filters, My rules, Sites, Logger, Backup), one search over everything, cards and switches in the browser's design.
+- **Mail:** Thoron M-Notifier takes mailboxes by address and password (IMAP: Yahoo, iCloud, GMX, Gmail with an app password and others), so it is not limited to the Google accounts the browser is signed in to; the password is kept encrypted by the system.
+- **Mail:** what of Gmail is counted is a setting: the whole inbox, only its Primary tab, or the inbox and spam.
+- **Mail:** Thoron M-Notifier has its own page (accounts, settings) and a backup of mailboxes and settings: as JSON, or sealed with a passphrase.
+- **QA tools:** `mail_imap_check.py` checks mailboxes by password and the backup against a local stand-in mail server.
+- **Release tools:** `release.py prepare --manifest-key` builds and signs the update manifest from the packages it wrote; without the key it makes none.
+- **Release tools:** `release.py publish` makes no draft of a release whose update manifest is missing, unsigned, changed or names other files.
+- **Release tools:** `release.py prepare --security --highlights` writes the security fixes and a hand-written opening into the release notes.
+- **Release tools:** `release.py prepare --adblock-key` signs Thoron adblock's scriptlets and stand-ins with a release.
+- **Install:** a Windows portable package: unpack `ThoronPortable`, start `Thoron.exe`; the profile stays in the folder, nothing is installed. No console window, and it starts from any folder, even one with `%TEMP%` in its name.
+- **Release tools:** `portable.py` makes the portable folder and a reproducible `.zip`; it refuses a build that fails the package audit or holds profile data.
+- **QA tools:** `portable_check.py` starts the portable package for real from folders with spaces, non-Latin names and `& % !`, moved, and from a drive root.
+- **Docs:** `docs/release/PORTABLE.md`: the portable package, its launcher, what it leaves on a PC and what is not there yet.
+- **Privacy:** `docs/security/NETWORK.md` lists what a fresh Thoron 158 profile contacts request by request: who asks, when, and how to switch it off.
+- **Privacy:** `docs/security/NETWORK_REDUCTION.md`: the work order for removing the Google contacts a fresh profile does not need, each with its cause and a tested stop.
+- **QA tools:** `netlog_hosts.py` names the caller, time and answer of every request and fails when a host that must stay away is contacted.
+- **QA tools:** `mail_signin_check.py` checks that Thoron M-Notifier asks Gmail with a Google sign-in in the profile and not without.
+- **Mail:** Thoron M-Notifier reads X-notifier's file of accounts (`chrome.xn`, with its passphrase) and keeps the Google accounts in a list, their passwords encrypted by the system.
+- **Mail:** the list shows which Google accounts are counted; "Sign in" opens Google's page with the address filled in, "Copy password" puts the kept password on the clipboard.
+- **Mail:** the M-Notifier's backup holds the list of Google accounts.
+- **Mail:** put Thoron M-Notifier's accounts in your own order: drag them, or use their arrows (Alt and an arrow key). The menu follows it, and the backup keeps it.
+- **Mail:** edit a mailbox (address, password, server) and an account of your list (address, name, password); an empty password keeps the one there is, and a new one is signed in to before it is kept.
+- **QA tools:** `mail_manage_check.py` checks the M-Notifier's order, its editing and the backup saved into a file, offline.
+- **Mail:** Thoron M-Notifier's own page has tabs (Accounts, Alerts and sounds, Counting, Display, Backup) and one list of every account, each shown once with its counts; the menu's Settings button opens it.
+- **Mail:** ten new sounds for new mail, made by Thoron itself (no recordings, nothing to license), beside Windows' own: hear each before choosing, set the volume, and give an account its own sound or none.
+- **Mail:** smart quiet: no sound while a full-screen program, a game or a presentation runs, none while that inbox is the tab in front of you, and quiet hours that hold notices too.
+- **QA tools:** `mail_settings_check.py` checks the M-Notifier's tabs, its Settings button, the one list of accounts, the sounds and the quiet rules, offline.
+- **QA tools:** `mail_xn_check.py` and `xn_file.py` check the reading of X-notifier's file with made-up accounts.
+- **Updates:** the core of Thoron's own updater: it checks a signed update manifest before reading it and refuses a forged, older, expired or malformed one (`components/thoron_update`, tested against the reference tool).
+- **Updates:** a downloaded package is used only when its size and SHA-256 are the manifest's; a smaller delta is tried first and the full package is the fallback.
+- **Updates:** the updater chooses the build for the processor (AVX2, SSE4, ARM64) by itself.
+- **Updates:** a new version is put in place beside the old one and switched to in one step, so a copy that is stopped halfway still starts; the version before is kept for a rollback.
+- **Updates:** a snapshot of what matters in every profile (bookmarks, passwords, history, cookies, open tabs), verified and checked by SQLite, for a rollback; the last two are kept.
+- **Updates:** `thoron_update.exe` shows, applies and rolls back versions and checks a release; the update modes auto, notify and off.
+- **Updates:** signing-key rotation: the old key signs a statement that introduces the new one.
+- **Portable:** `Thoron.exe`, the portable launcher; it runs on every x64 processor and says when the build is not made for this one.
+- **Release:** `release.py prepare` refuses a release whose benchmark regressed against the baseline and is not explained.
+- **QA tools:** `portable_launcher_check.py` checks the launcher and an update and rollback of a portable copy from awkward folders and a drive root.
+- **Performance:** baselines of Thoron 158, Thorium 156 and Chrome 157 in `docs/perf/`.
+- **Release:** the notes of every release carry the summary of the upstream audit.
+- **Import:** `chrome_passwords.py` guides Chrome's password export into Thoron and overwrites and deletes the file afterwards.
+- **Import:** every import writes a report of what came over, by count, without any value.
+- **Import:** `detect.py` finds the Chromium-family browsers of the current user and their profiles.
+- **QA tools:** `cookie_persistence_check.py` checks that cookies and site storage survive a restart and an update.
+- **QA tools:** `identity_check.py` reads a build and its installer for every "Thorium" a person can still see.
+- **Legal:** each of the 6 patches without a licence has a written decision; 5 are carried out.
+- **Legal:** `unlicensed_patches.py check` fails when a patch without a licence is not withheld from `source/` or has no decision.
+- **QA tools:** `adblock_hosts_check.py` checks that a list line that only names a host stops that host; `glic_check.py` that no Gemini component is loaded and Settings has no AI page.
+- **QA tools:** `language_detect_check.py` checks that a page's language is found with no downloaded model.
+- **Security:** `docs/security/UPSTREAM_AUDIT_M158.md` reviews every finding in upstream's 18 commits behind the 158 series.
+- **Security:** `audit_diff` also reports extension-install, sandbox, encryption and installer changes, new flags and CI workflows.
+- **Security:** `patch_delta.py` tells a refreshed upstream patch from one that changes what it does.
+- **Security:** `docs/security/SAFE_BROWSING.md`: what stops phishing and malware pages today, what is left without Google's API keys, the choice and its work order.
+- **QA tools:** `safe_browsing_check.py` (online) opens Google's phishing and malware test pages and says what stopped each.
+- **Release:** `release.py prepare` refuses a Thoron version that is not the next one after the newest release tag; `version.py next` prints it.
+- **Release:** `prepare` refuses a build record without the source tag, its commit and the Chromium tag, and a build tree without the GPL text.
+- **Release:** every release holds the portable `.zip` and a licence bundle with the GPL text, both in `SHA256SUMS`; the manifest names the portable package.
+- **Release:** `prepare` refuses a contributor list, `CREDITS.md` or `NOTICE` that is out of date, and never rewrites them.
+- **Release:** `prepare` lints the wiki pages; `publish` prints the command that publishes them and never runs it.
+- **Docs:** `check_docs` checks the short form of `CHANGELOG.md` and the links between wiki pages.
+- **Release tools:** `tools/update/manifest.py` builds and checks the update manifest, schema 1; the format is in `docs/update/MANIFEST.md`.
+- **Release tools:** `manifest.py sign` signs the update manifest with Thoron's Ed25519 key; `verify` refuses a change of any bit.
+- **Security:** `docs/security/THREAT_MODEL.md` lists the threats to the updater, the import and portable encryption, each with its mitigation and test.
+- **Security:** `docs/security/SECURITY_RELEASES.md` is the runbook for a security release: what to watch, triage, fast track, checks, checklist.
+- **Docs:** `docs/qa/CRASH_TRIAGE.md` says where crash dumps are, how to read one, and that a dump never leaves the PC; publishing symbols is recommended.
+- **Docs:** `docs/qa/ARM_BETA_CHECKLIST.md` and the "ARM64 beta report" issue form tell ARM testers what to run and report, with nothing personal.
+- **QA tools:** `soak.py` opens and closes tabs for hours and fails when the browser's settled memory keeps growing.
+- **QA tools:** `sandbox_check.py` proves from Windows itself that the sandbox is on, with a `--no-sandbox` control.
+- **QA tools:** `widevine_check.py` (online) checks that Widevine is not shipped and is fetched and works when a page needs it.
+- **Mail:** the mail notifier is now Thoron M-Notifier: next to the address bar or in it, where you choose.
+- **Mail:** Thoron M-Notifier counts new mail since you last opened the account's inbox, and never spam; it has its own settings (what it counts, how often, notices and their sound, where mail opens, which accounts).
+- **QA tools:** `mail_place_check.py` checks where the M-Notifier's envelope is and what it says.
 - **QA tools:** `thoron_adblock_engine_fuzzer`, coverage-guided fuzzing of the ad blocking engine with libFuzzer; `adblock_breakage.py` measures pages beyond the home page and load times on the real network; `adblock_handover_check.py` checks the built-in blocker on by default and the hand-over from uBlock Origin.
 - **Version:** Thoron has its own version, 0.1.1, on the About page, `chrome://version` and in Windows.
 - **Ad blocking:** checks worker and service worker scripts and imports, and blocks WebSockets to hosts the lists block.
@@ -148,7 +267,30 @@ Explanations live in the design docs under `docs/design/`.
 - **Docs:** the project wiki is written in `docs/wiki/` and published by `publish_wiki.py`.
 
 ### Changed
+- **Updates:** updating a Thoron installed for every user of the PC while it runs no longer just ends it: Thoron is first asked to save the tabs of every window and its data and to close, as when you sign out of Windows.
 
+- **QA tools:** `bench.py` measures one warm-up run first and drops it.
+- **QA tools:** `bench.py` counts idle CPU as repeatable when its runs are within 0.1 points of each other; at about 0.1 % of the processor, 3 % of it was too small to measure.
+- **Brand:** translations name Thoron in every form of the name, not only the bare word.
+- **Brand:** the installer asks "Do you want to install Thoron?"; flags, version and URLs pages name Thoron.
+- **Brand:** the flags page shows Thoron's logo, the settings pages' dark header a white Thoron mark.
+- **UI:** internal pages read chrome:// in the address bar again; a typed thorium:// still opens.
+- **About:** chrome://credits begins "Thoron is based on Thorium and Chromium", each with its source link.
+- **Install:** the log files are thoron_debug.log and thoron_installer.log.
+- **Media:** AC-3 and E-AC-3 sound is decoded by Thoron's own lines; the old patch, whose author publishes no licence, is gone.
+- **Release:** `release.py prepare` refuses a release while a patch without a licence is in the series.
+- **Privacy:** Chromium's Gemini plumbing is off: its "Gemini in Chrome" component is not loaded and Settings has no Google AI page; the switch `Glic` brings it back.
+- **Mail:** up to 30 Google accounts are counted; Thoron M-Notifier stopped after 10.
+- **Mail:** a Gmail address written another way (dots, capitals, `googlemail.com`) is the same account.
+- **Privacy:** a profile nobody signed in to Google with no longer contacts Google's optimization guide, sign-in check, time service or search engine at start.
+- **Privacy:** the New Tab page's Google bar and doodle, suggestions fetched ahead and the "AI Mode" question are asked for only while somebody is signed in to Google.
+- **Mail:** Thoron M-Notifier looks at Gmail only while somebody is signed in to Google in the profile; other mailboxes are looked at as before.
+- **Privacy:** a page's language is found by the built-in detector; no model is downloaded for it.
+- **Privacy:** the list of Google's on-device AI models is fetched only once on-device AI is switched on.
+- **Security:** client-side phishing detection, which needs a model from Google's optimization guide, is off; Safe Browsing's lists and Thoron adblock's lists work as before.
+- **Release:** release notes take Thoron's changes from `CHANGELOG.md` and name the source tag, its commit and the Chromium tag.
+- **Release:** the draft's tag is put on the commit the build was made from.
+- **Build:** `BUILDINFO.json` names the source tag and the Chromium tag.
 - **Ad blocking:** the built-in blocker is to replace uBlock Origin; an installed uBlock Origin is never touched.
 - **Brand:** new icon "Vortex", three turning violet blades around a core, replaces "Radiant Core" everywhere.
 - **Install:** the Windows program file is now `thoron.exe` and the installer `thoron_<variant>_mini_installer.exe`.
@@ -164,7 +306,16 @@ Explanations live in the design docs under `docs/design/`.
 - **Repository:** every push runs the tests and linters and verifies the browser source against upstream.
 
 ### Fixed
+- **QA tools:** the profile check no longer calls the cookies that had already expired a loss: a rehearsal on a copy of an older backup saw them go at the start and stopped the update.
+- **Mail:** "Save a backup..." of Thoron M-Notifier could leave an empty file; the browser now writes the backup itself and reads it back, and says so when a folder does not take it.
+- **Name:** the build on Chromium 158.0.8127.65 called itself Chromium in most menus and pages, including "Chromium is up to date" on the About page; it is named Thoron again, and a release is refused when its strings do not name Thoron.
 
+- **Tools:** the release script finds 7-Zip in the Chromium tree by itself and names a program it cannot find.
+- **Import:** a damaged or crafted bookmarks file or browser list from another browser no longer stops the import report or the search for browsers; it is counted as unreadable.
+- **Tools:** the release script finds the installer under the name the build gives it; it looked for a name the 158 build no longer writes.
+- **Tools:** the Widevine check plays a protected test stream again; the public demo page it used had changed.
+- **Tools:** the benchmark tool starts again as a script; a test now starts every tool that way.
+- **Ad blocking:** a list line that only names a host, or a hosts file's line, stops that host, as in uBlock Origin; lists written that way stopped no page.
 - **Tools:** the profile rehearsal also sees a profile written a moment ago when the drive's clock runs ahead.
 - **Ad blocking:** ads in frames are blocked; a frame's own document was loaded without being checked.
 - **Ad blocking:** on a new profile, switches and settings changed before the first list update are kept.
@@ -177,6 +328,8 @@ Explanations live in the design docs under `docs/design/`.
 
 ### Removed
 
+- **Privacy:** the first start no longer opens Thorium's website.
+- **Build:** three patches whose author publishes no licence and that Thoron does not need; a part of a fourth.
 - **UI:** Thorium's hidden `chrome://eggs` and `chrome://robot` pages are gone; `chrome://authors` stays.
 - **Install:** the installer no longer ships Thorium-named files or content shell entries.
 - **Build:** Android-only patches are not carried over to the Chromium 158 series.
@@ -184,6 +337,15 @@ Explanations live in the design docs under `docs/design/`.
 
 ### Security
 
+- **Portable:** a portable copy no longer creates an empty `HKCU\Software\Google\Chrome\Extensions` key on the PC. Thoron still reads extensions that other programs register there when the key exists, and sees a key made later at its next start.
+- **Chromium:** updated to 158.0.8127.65 (from 158.0.8127.30), with the fixes Chrome's 158 branch has received since; Chrome names them when 158 reaches its full stable release.
+- **Import:** passwords and cookies that Chrome locks to itself are named in the import report as not brought over, never counted as imported.
+- **Import:** a profile closed only a moment ago is not imported yet, Chrome's password file is refused outside your own folders, and the import report's copies of the databases stay inside the new profile.
+- **Updates:** a package or delta with a file name that climbs out of its folder is refused instead of being unpacked under a made-safe name.
+- **Updates:** an update request no longer names the browser's version (its own User-Agent), and a checked package is held so that nothing can change it before it is installed.
+- **Security:** the flag "Allow Third-Party Extension Downloads" starts with a warning.
+- **Ad blocking:** a phishing list (Phishing URL Blocklist) is among Thoron adblock's default lists, so pages that steal passwords are stopped in every build.
+- **Safe Browsing:** without a Google API key it counts as off instead of being a switch that protects nothing, and the browser asks again before a program is saved.
 - **Ad blocking:** pages the lists name as harmful (malware, phishing) or as ad sites are not opened, as in uBlock Origin; the page shown instead has no scripts and escapes every address.
 - **Ad blocking:** a list update is recorded before it is read, so a bad list cannot close the browser at every start.
 - **Ad blocking:** only uBlock Origin's own lists may use trusted scriptlets; report-sending `$csp` rules are refused.

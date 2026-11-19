@@ -150,6 +150,61 @@ class AuditDiffTests(unittest.TestCase):
         target = self.repo.commit("logo")
         self.assertEqual(audit_diff.find_adult_names(self.repo.path, self.base, target), [])
 
+    # --- upstream audit of 158 (ROADMAP P2.2): changes the report did not show ---------------
+    def test_security_topics_seen_in_upstream_patches_are_reported(self):
+        # One real line per topic from upstream's patch series; each was invisible before.
+        lines = [
+            "+      CrxInstaller::OffStoreInstallAllowedBecausePref);",                    # off-store extension install
+            '+  if (!command_line->HasSwitch("allow-offstore-extension-downloads") ||',
+            "diff --git a/extensions/browser/sandboxed_unpacker.cc b/extensions/browser/sandboxed_unpacker.cc",
+            "+    : extensions::ExternalProviderImpl(",                                    # default extension
+            '+    extension.Set("external_crx", crx_path.AsUTF8Unsafe());',
+            '   v8_control_flow_integrity = v8_current_cpu == "arm64" &&',               # hardening build flag
+            "diff --git a/sandbox/policy/linux/bpf_audio_policy_linux.cc b/sandbox/policy/linux/bpf_audio_policy_linux.cc",
+            "+    case __NR_sched_getaffinity:",                                          # sandbox syscall policy
+            '+      base::CommandLine::ForCurrentProcess()->HasSwitch("disable-encryption");',
+            "diff --git a/components/os_crypt/async/browser/os_crypt_win.cc b/components/os_crypt/async/browser/os_crypt_win.cc",
+            "+      base::BindOnce(&FileSystemAccessSafeMoveHelper::DidFileSkipQuarantine,",
+            "diff --git a/chrome/installer/mini_installer/mini_installer.cc b/chrome/installer/mini_installer/mini_installer.cc",
+            "+  RegKey key(HKEY_CURRENT_USER, path, KEY_SET_VALUE);",
+        ]
+        for line in lines:
+            with self.subTest(line=line):
+                self.assertEqual(audit_diff.find_security_changes({"p.patch": [line]}), {"p.patch": [line.strip()]})
+
+    def test_ordinary_code_is_not_a_security_change(self):
+        lines = ["+  int show_delay = 400;", "+#include \"base/feature_list.h\"", "  cflags = [ \"-O3\" ]",
+                 "+  registrar->unpacked_install_directory());", "The store keeps its own offsets."]
+        self.assertEqual(audit_diff.find_security_changes({"p.patch": lines}), {})
+
+    def test_new_switches_and_flag_entries_are_listed_for_review(self):
+        lines = ['+  if (!command_line->HasSwitch("allow-offstore-extension-downloads") ||',
+                 '     kOsAll, SINGLE_VALUE_TYPE("allow-offstore-extension-downloads")},',
+                 "     kOsDesktop, FEATURE_VALUE_TYPE(features::kThoriumInstantMenus)},",
+                 '+  command_line->AppendSwitchASCII("js-flags", "--jitless");']
+        hits = audit_diff.find_patterns({"f": lines + ["+  if (command_line->HasSwitch(switches::kNoStartupWindow))"]})
+        self.assertEqual([text for _path, text in hits["flags_switches"]], [line.strip() for line in lines])
+        self.assertNotIn("flags_switches", audit_diff.STRICT_CATEGORIES)
+
+    def test_ci_workflow_change_reported_and_strict(self):
+        self.repo.write(".github/workflows/smoke.yml", b"on: workflow_dispatch\njobs: {}\n")
+        self.repo.write("ci/.github/workflows/not-active.yml", b"on: push\n")   # only the root folder runs
+        self.repo.write("docs/workflows.md", b"text\n")
+        target = self.repo.commit("add workflow")
+        self.assertEqual(audit_diff.find_ci_changes(self.repo.path, self.base, target),
+                         [(".github/workflows/smoke.yml", "A")])
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(audit_diff.main([self.repo.path, self.base, "HEAD", "--strict"]), 1)
+        self.assertIn(".github/workflows/smoke.yml", out.getvalue())
+
+    def test_deleted_ci_workflow_is_not_a_finding(self):
+        self.repo.write(".github/workflows/smoke.yml", b"on: workflow_dispatch\n")
+        base2 = self.repo.commit("workflow")
+        self.repo.remove(".github/workflows/smoke.yml")
+        target = self.repo.commit("remove workflow")
+        self.assertEqual(audit_diff.find_ci_changes(self.repo.path, base2, target), [])
+
     # --- review I2: common Windows/Linux variants --------------------------------------------
     def test_windows_and_linux_variants_hit_strict_categories(self):
         lines = [

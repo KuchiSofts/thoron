@@ -14,6 +14,10 @@ changes no added lists. Steps:
     restore  after "Restore from file" with that file, each is as it was changed again
     cloud    (P5.67) "Send to cloud storage", "Reset", then "Restore from cloud storage": each is as it was
              changed again (the browser's own sync is off here: it stays on the computer)
+    ublock   (P5.1) "Restore from file" with uBlock Origin's own backup file (made up here, as its "Back up to
+             file" writes it): its own filters, lists, trusted sites, switches and changed settings come over,
+             Thoron's own phishing list stays on, and what has no place here is named
+    round    (P5.1) a backup made after that holds what came over from uBlock Origin
 
     py -3 -I tools/qa/adblock_backup_check.py --browser <out>\\thoron.exe --work <scratch dir>
 Exit status 0 only when every step passes.
@@ -43,7 +47,8 @@ LIST_OFF = "easyprivacy"
 TURNED_ON = ("block-csp-reports", "default-fonts")
 # the settings that are on unless changed (P5.46: auto-update, the context menu, the menu's grid), and the
 # largest media size unless changed
-DEFAULT_ON = ("badge", "auto-update", "context-menu", "advanced", "toolbar-shield", "address-shield")
+DEFAULT_ON = ("badge", "auto-update", "context-menu", "advanced", "toolbar-shield", "address-shield",
+              "cname-uncloak")
 # P5.73: the settings with a few named values, and what each is unless chosen
 CHOICE_DEFAULTS = {"toolbar-position": "extensions", "address-position": "icons"}  # P5.71: the toolbar shield
 DEFAULT_MEDIA_KB = 50
@@ -66,6 +71,9 @@ READ = """(async () => {
     myFilters: state.myFilters, allowed: sites.allowed,
     switches: Object.fromEntries(sites.switches.map((s) => [s.host, s.names])), settings});
 })()"""
+
+
+MESSAGE = "document.getElementById('message').textContent"
 
 
 def changed_problems(step: str, got: dict) -> list[str]:
@@ -145,6 +153,54 @@ def _wait_message(ws: WebSocket, words: str, seconds: float) -> bool:
     return False
 
 
+# uBlock Origin's backup, as its "Back up to file" writes it (src/js/messaging.js, backupUserData): only the
+# settings changed from its defaults, its list names, the trusted sites with its own entries for browser pages.
+UBO_FILTERS = "||mine-ubo.test^\nexample.com##.ubo-banner\n"
+UBO_TRUSTED = "trusted-ubo.test"
+UBO_POPUPS = "popups-ubo.test"
+UBO_BACKUP = {
+    "timeStamp": 1790000000000,
+    "version": "1.60.0",
+    "userSettings": {"prefetchingDisabled": True, "noRemoteFonts": True, "showIconBadge": False,
+                     "largeMediaSize": 80, "uiTheme": "dark"},
+    "selectedFilterLists": ["user-filters", "ublock-filters", "ublock-badware", "ublock-privacy", "ublock-unbreak",
+                            "ublock-quick-fixes", "easylist", "urlhaus-1", "XYZ-0"],
+    "hiddenSettings": {"suspendUntilListsAreLoaded": False},
+    "whitelist": ["chrome-extension-scheme", "moz-extension-scheme", UBO_TRUSTED],
+    "dynamicFilteringString": "behind-the-scene * * noop\n",
+    "urlFilteringString": "",
+    "hostnameSwitchesString": f"no-large-media: behind-the-scene false\nno-popups: {UBO_POPUPS} true\n",
+    "userFilters": UBO_FILTERS,
+}
+
+
+def ublock_problems(got: dict, message: str) -> list[str]:
+    """What differs from UBO_BACKUP brought over (`got` as READ gives it)."""
+    out = []
+    settings = got.get("settings", {})
+    for name, want in (("prefetch", True), ("default-fonts", True), ("badge", False), ("media-kb", 80),
+                       ("theme", "dark")):
+        if settings.get(name) != want:
+            out.append(f"ublock: the setting {name} is {settings.get(name)!r}, not {want!r}")
+    if got.get("myFilters") != UBO_FILTERS:
+        out.append(f"ublock: own filters are {got.get('myFilters')!r}")
+    if sorted(got.get("disabled", [])) != ["easyprivacy"]:
+        out.append(f"ublock: the lists off are {got.get('disabled')}, not only easyprivacy (and never "
+                   "Thoron's phishing list)")
+    allowed = got.get("allowed", [])
+    if not any(UBO_TRUSTED in pattern for pattern in allowed):
+        out.append(f"ublock: {UBO_TRUSTED} is not trusted")
+    if any("scheme" in pattern for pattern in allowed):
+        out.append(f"ublock: uBlock Origin's own entries came over: {allowed}")
+    if "popups" not in got.get("switches", {}).get(UBO_POPUPS, []):
+        out.append(f"ublock: the switches of {UBO_POPUPS} are {got.get('switches', {}).get(UBO_POPUPS)}")
+    if "uBlock Origin was brought over" not in message:
+        out.append(f"ublock: the page said {message!r}")
+    elif "XYZ-0" not in message or "1 advanced setting" not in message:
+        out.append(f"ublock: what was left out is not named: {message!r}")
+    return out
+
+
 def run(browser: Path, work: Path) -> list[str]:
     problems: list[str] = []
     profile = Path(tempfile.mkdtemp(prefix="backup-", dir=work))
@@ -217,6 +273,43 @@ def run(browser: Path, work: Path) -> list[str]:
             if not sent or not restored:
                 found.append(f"cloud: the page never said it was {'sent' if not sent else 'restored'}")
             report("cloud", found, got)
+
+            # P5.1: uBlock Origin's own backup file
+            _eval(page, "window.confirm = () => true; document.getElementById('reset').click(); 1")
+            _wait_message(page, "back to its defaults", 90)
+            ubo_file = downloads / "my-ublock-backup_2026-11-17_10.00.00.txt"
+            ubo_file.write_text(json.dumps(UBO_BACKUP, indent=2), encoding="utf-8")
+            root = page.call("DOM.getDocument")["root"]["nodeId"]
+            node = page.call("DOM.querySelector", nodeId=root, selector="#restore-file")["nodeId"]
+            page.call("DOM.setFileInputFiles", files=[str(ubo_file)], nodeId=node)
+            brought = _wait_message(page, "was brought over", 90)
+            message = _eval(page, MESSAGE) or ""
+            got = json.loads(_eval(page, READ))
+            found = ublock_problems(got, message)
+            if not brought:
+                found.append("ublock: the page never said it was done")
+            report("ublock", found, got)
+
+            # and round again: a backup made now holds what came over from uBlock Origin
+            # the new file has the earlier one's name (the same day): that one goes first
+            for old in downloads.glob("*.json"):
+                old.unlink()
+            _eval(page, "document.getElementById('backup').click(); 1")
+            _wait_message(page, "saved as a file", 90)
+            again: list[Path] = []
+            for _ in range(40):
+                again = list(downloads.glob("*.json"))
+                if again:
+                    break
+                time.sleep(0.5)
+            time.sleep(1)
+            if not again:
+                report("round", ["round: no file was saved"], [])
+            else:
+                kept = backup_as_read(json.loads(again[0].read_text(encoding="utf-8")))
+                found = [p.replace("ublock:", "round:", 1)
+                         for p in ublock_problems(kept, "uBlock Origin was brought over XYZ-0 1 advanced setting")]
+                report("round", found, again[0].name)
         finally:
             page.close()
             browser_ws.close()

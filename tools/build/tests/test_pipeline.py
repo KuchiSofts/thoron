@@ -12,6 +12,22 @@ Usage = namedtuple("Usage", "total used free")
 GB = 1024 ** 3
 
 
+class LineEndingTests(unittest.TestCase):
+    def test_the_series_is_applied_with_autocrlf_off(self):
+        env = pipeline.git_lf_env({"PATH": "x"})
+        self.assertEqual((env["GIT_CONFIG_COUNT"], env["GIT_CONFIG_KEY_0"], env["GIT_CONFIG_VALUE_0"]),
+                         ("1", "core.autocrlf", "false"))
+        more = pipeline.git_lf_env({"GIT_CONFIG_COUNT": "2", "GIT_CONFIG_KEY_0": "a.b", "GIT_CONFIG_VALUE_0": "1"})
+        self.assertEqual((more["GIT_CONFIG_COUNT"], more["GIT_CONFIG_KEY_2"]), ("3", "core.autocrlf"))
+        self.assertEqual(more["GIT_CONFIG_KEY_0"], "a.b")              # what was set stays
+
+    def test_apply_hands_it_to_the_series_script(self):
+        with tempfile.TemporaryDirectory() as d, mock.patch.object(pipeline.subprocess, "run") as run,                 mock.patch.object(pipeline, "find_rejects", return_value=[]):
+            run.return_value = mock.Mock(returncode=0, stdout="")
+            pipeline.apply_upstream(Path(d), Path(d), "avx2")
+            self.assertEqual(run.call_args.kwargs["env"]["GIT_CONFIG_VALUE_0"], "false")
+
+
 class PipelineTests(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp(prefix="thoron-test-"))

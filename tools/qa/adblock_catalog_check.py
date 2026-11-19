@@ -47,10 +47,13 @@ READ_CATALOG = """(() => JSON.stringify(Array.from(document.querySelectorAll('#c
 })).concat([{none: !document.getElementById('catalog-none').hidden}])))()"""
 TYPE = ("(() => { const box = document.getElementById('%s'); box.value = %s; "
         "box.dispatchEvent(new Event('input')); return box.value; })()")
-READ_SETTINGS = r"""(() => JSON.stringify({
-  shown: Array.from(document.querySelectorAll('#settings .option')).filter((o) => !o.hidden).map((o) => o.textContent.replace(/\s+/g, ' ').trim()),
-  headings: Array.from(document.querySelectorAll('#settings h3')).filter((h) => !h.hidden).map((h) => h.textContent),
-  none: !document.getElementById('find-none').hidden}))()"""
+# What the Settings tab shows: a setting or a heading counts when neither it nor anything it is in is hidden
+# (the settings are in cards, and a card without a match is hidden as a whole).
+READ_SETTINGS = r"""(() => { const shown = (e) => !e.hidden && !e.closest('[hidden]');
+  return JSON.stringify({
+  shown: Array.from(document.querySelectorAll('#settings .option')).filter(shown).map((o) => o.textContent.replace(/\s+/g, ' ').trim()),
+  headings: Array.from(document.querySelectorAll('#settings h3')).filter(shown).map((h) => h.textContent),
+  none: !document.getElementById('find-none').hidden}); })()"""
 SET_CHOICE = ("(() => { const s = document.getElementById('%s'); s.value = '%s'; "
               "s.dispatchEvent(new Event('change')); return s.value; })()")
 READ_PREVIEW = """(() => { const bar = document.querySelector('#shield-preview .pv-bar');
@@ -176,6 +179,9 @@ def run(browser: Path, work: Path) -> list[str]:
               f"{[lst['text'][:30] for g in groups_of(found_lists)[0].values() for lst in g]}")
         problems += found
 
+        # the page has tabs: the settings are looked at on theirs
+        _eval(ws, "location.hash = '#settings'; 1")
+        time.sleep(0.8)
         everything = json.loads(_eval(ws, READ_SETTINGS))
         _eval(ws, TYPE % ("find-setting", json.dumps("Menü")))
         found_settings = json.loads(_eval(ws, READ_SETTINGS))

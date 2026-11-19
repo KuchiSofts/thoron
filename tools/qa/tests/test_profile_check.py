@@ -6,6 +6,7 @@ import shutil
 import sqlite3
 import struct
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -117,7 +118,7 @@ class ProfileTests(unittest.TestCase):
         p = snap["profiles"]["Default"]
         self.assertEqual(p["bookmarks"], 3)
         self.assertEqual(p["passwords"], 3)
-        self.assertEqual(p["cookies"], {"total": 4, "v10": 2, "empty": 1, "other": 1})
+        self.assertEqual(p["cookies"], {"total": 4, "expired": 0, "v10": 2, "empty": 1, "other": 1})
         self.assertEqual(p["extensions_enabled"], ["aaaa", "cccc"])
         self.assertEqual(p["session"]["tabs"], 3)                 # the newest Session_ file
         self.assertEqual(snap["os_crypt"], {"dpapi_key": True, "app_bound_key": False})
@@ -142,6 +143,33 @@ class ProfileTests(unittest.TestCase):
         problems = "\n".join(pc.compare(before, after))
         for word in ("passwords", "bookmarks", "cccc", "Videos", "cookies", "app-bound"):
             self.assertIn(word, problems)
+
+    def test_cookies_that_had_expired_may_go(self):
+        # a copy of an older backup: cookies whose time ran out since are deleted at the next start
+        now = int((time.time() + pc.CHROMIUM_EPOCH_OFFSET_S) * 1_000_000)
+        day = 86_400_000_000
+        db = sqlite3.connect(self.ud / "Default" / "Network" / "Cookies")
+        try:
+            db.execute("DROP TABLE cookies")
+            db.execute("CREATE TABLE cookies (host_key TEXT, encrypted_value BLOB, has_expires INTEGER, "
+                       "expires_utc INTEGER)")
+            rows = [(f"k{i}", b"v10x", 1, now + day) for i in range(90)]
+            rows += [(f"e{i}", b"v10x", 1, now - day) for i in range(10)]       # expired
+            rows += [("s", b"v10x", 0, 0)]                                     # a session cookie: no expiry
+            db.executemany("INSERT INTO cookies VALUES (?, ?, ?, ?)", rows)
+            db.commit()
+        finally:
+            db.close()
+        before = pc.snapshot(self.ud)
+        self.assertEqual((before["profiles"]["Default"]["cookies"]["total"],
+                          before["profiles"]["Default"]["cookies"]["expired"]), (101, 10))
+        after = json.loads(json.dumps(before))
+        after["profiles"]["Default"]["cookies"] = {"total": 91, "expired": 0, "v10": 91}   # the expired went
+        self.assertEqual([p for p in pc.compare(before, after) if "cookies" in p], [])
+        after["profiles"]["Default"]["cookies"] = {"total": 85, "expired": 0, "v10": 85}   # and six more
+        found = [p for p in pc.compare(before, after) if "cookies" in p]
+        self.assertEqual(len(found), 1)
+        self.assertIn("10 had expired", found[0])
 
     def set_startup(self, value, where="Secure Preferences"):
         path = self.ud / "Default" / where

@@ -4,6 +4,11 @@
 
 Every path is written relative to the build root (`<build_root>/...`); any path inside a user
 directory is replaced by `<redacted>`.
+
+It names the source a release is built from (ROADMAP L.2): `source_tag` is the tag of this repository the
+build is released under (`v` and Thoron's own version; null while that version is not set), `thoron_commit`
+the commit the tag is put on, and `chromium_tag` Chromium's own version, which is its tag. The release
+script refuses a build whose record does not name them.
     py -3 -I tools/build/buildinfo.py --root C:\\thoron-build --src C:\\thoron-build\\chromium\\src
         --repo . --upstream-ref "gz83 M156.0.8078.28 de9a1bc6" --variant win-x64-avx2
         --args out\\thoron\\args.gn --toolchain toolchain.json --started EPOCH --finished EPOCH --out BUILDINFO.json
@@ -18,6 +23,10 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+
+if __package__ in (None, ""):  # running as a script under `py -3 -I`: make `tools` importable
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from tools.release import version as ver  # noqa: E402
 
 USER_DIR_RE = re.compile(r"(?i)^(?:[a-z]:/+users/|/home/|/users/|/mnt/[a-z]/users/)")  # privacy-check: allow (detection pattern, not data)
 # A user-folder path anywhere in a string, with either slash style (also JSON-escaped backslashes).
@@ -43,10 +52,27 @@ def _scrub_all(value, build_root: str):
     return value
 
 
+def _version_fields(src: Path) -> dict[str, str]:
+    return dict(line.split("=", 1) for line in (src / "chrome" / "VERSION").read_text(encoding="utf-8").split()
+                if "=" in line)
+
+
 def chromium_version(src: Path) -> str:
-    fields = dict(line.split("=", 1) for line in (src / "chrome" / "VERSION").read_text(encoding="utf-8").split()
-                  if "=" in line)
+    fields = _version_fields(src)
     return ".".join(fields[k] for k in ("MAJOR", "MINOR", "BUILD", "PATCH"))
+
+
+def chromium_tag(src: Path) -> str:
+    """Chromium's own version, which is the tag its source is fetched by. A tree converted to a Thoron
+    version carries the rebuild in the last number (tools/release/version.py); this takes it out again."""
+    version = chromium_version(src)
+    return ver.split(version)[0] if "THORON_REBUILD" in _version_fields(src) else version
+
+
+def source_tag(src: Path) -> str | None:
+    """The tag of this repository the build is released under; None while Thoron's own version is not set."""
+    thoron = _version_fields(src).get("THORON_VERSION")
+    return f"v{thoron}" if thoron else None
 
 
 def _strip_comment(line: str) -> str:
@@ -95,6 +121,8 @@ def collect(build_root: Path, src: Path, thoron_repo: Path, upstream_ref: str, v
         "product": "Thoron",
         "variant": variant,
         "chromium_version": chromium_version(Path(src)),
+        "chromium_tag": chromium_tag(Path(src)),
+        "source_tag": source_tag(Path(src)),
         "thoron_commit": _git(thoron_repo, "rev-parse", "HEAD"),
         "thoron_dirty": bool(_git(thoron_repo, "status", "--porcelain")),
         "upstream_ref": upstream_ref,

@@ -5,8 +5,8 @@
 Run before every upstream merge and before every release:
     py -3 -I tools/audit/audit_diff.py REPO BASE TARGET [--section files|hosts|patterns|security|all]
                                        [--json] [--strict]
---strict exits 1 when non-image binaries, submodule changes, .gitmodules changes or high-risk
-patterns are added; every such finding needs a human review.
+--strict exits 1 when non-image binaries, submodule changes, .gitmodules changes, CI workflow changes
+or high-risk patterns are added; every such finding needs a human review.
 
 Robustness (hostile input is expected here): the file list comes from `git diff --raw -z`, file
 contents are read by blob id (never by path, never through the user's diff/textconv settings),
@@ -76,6 +76,9 @@ PATTERNS = {
     "mining_telemetry": r"(?i)coinhive|cryptonight|xmrig|stratum\+tcp|\bmonero\b|mixpanel|segment\.io|"
                         r"api\.amplitude|sentry\.io|posthog|telemetry\.[a-z]",
     "self_update": r"(?i)(update|download)(er)?_?(url|server|endpoint)|\bomaha\b|kUpdateURL",
+    # Every chrome://flags entry and every switch named by a string: each is a behaviour someone can turn on.
+    "flags_switches": r"\b(SINGLE|MULTI|FEATURE|FEATURE_WITH_PARAMS)_VALUE_TYPE\(|"
+                      r"\b(HasSwitch|AppendSwitch(ASCII|Native|Path)?)\(\s*\"[^\"]+\"",
 }
 # Content standards: adult/NSFW terms and sites. Stored ROT13-encoded so the repository never
 # contains these words in plain text; decoded at import time.
@@ -88,12 +91,28 @@ PATTERN_RES = {name: re.compile(rx) for name, rx in PATTERNS.items()}
 STRICT_CATEGORIES = ("remote_exec", "dynamic_code", "persistence", "security_disabled", "mining_telemetry",
                      "adult_content")
 
-SECURITY_RE = re.compile(
-    r"(?i)(SafeBrowsing|SitePerProcess|SiteIsolation|IsolateOrigins|StrictOrigin|HttpsUpgrade|HttpsFirst|"
+SECURITY_TOPICS = (
+    # the browser's own security features
+    r"SafeBrowsing|SitePerProcess|SiteIsolation|IsolateOrigins|StrictOrigin|HttpsUpgrade|HttpsFirst|"
     r"MixedContent|CertificateTransparency|CertVerifier|kNoSandbox|sandbox_type|SandboxType|V8Sandbox|jitless|"
     r"kWebSecurity|ContentSecurityPolicy|CORS|SameSite|ThirdPartyCookie|PrivateNetworkAccess|Spectre|"
     r"ControlFlowGuard|cfg_guards|is_cfi|enable_cdm_host_verification|DeviceBoundSession|PasswordProtection|"
-    r"DownloadProtection|kAllowInsecure|EnableDangerousDownload)")
+    r"DownloadProtection|kAllowInsecure|EnableDangerousDownload",
+    # extension installs and their proof: off-store installs, CRX verification, default and external extensions
+    r"off[-_]?store|CrxInstaller|InstallCrx|sandboxed_?unpacker|VerifierFormat|publisher_?proof|"
+    r"ExtensionInstall(Forcelist|Sources|Allowlist|Blocklist)|ExternalProvider|external_(crx|update_url|extensions)|"
+    r"preinstalled_extensions|is_from_webstore",
+    # sandbox policy and hardening build flags
+    r"sandbox/(linux|win|mac|policy)/|seccomp|__NR_[a-z0-9_]+|control_flow_integrity|branch-protection|"
+    r"stack[-_]protector|guard:cf|fsanitize=cfi|_FORTIFY_SOURCE",
+    # data at rest and the mark on downloaded files
+    r"os_?crypt|disable-encryption|dpapi|mock-keychain|password-store|quarantine|MarkOfTheWeb|Zone\.Identifier",
+    # installer and registry
+    r"chrome/installer/|mini_installer|HKEY_(LOCAL_MACHINE|CURRENT_USER|CLASSES_ROOT)|\bRegKey\b",
+)
+SECURITY_RE = re.compile("(?i)(" + "|".join(SECURITY_TOPICS) + ")")
+# CI definitions GitHub runs from the repository root: a merged workflow runs with this repository's token.
+CI_PATH_RE = re.compile(r"^\.github/(workflows|actions)/")
 HUNK_RE = re.compile(rb"^@@ -\d+(?:,(\d+))? \+\d+(?:,(\d+))? @@")
 
 
@@ -234,10 +253,19 @@ def find_submodules(repo: str, base: str, target: str) -> list[tuple[str, str, s
     return list(_analyze(repo, base, target)[2])
 
 
+def _resolved_changes(repo: str, base: str, target: str):
+    resolved = [_git(repo, "rev-parse", "--verify", f"{r}^{{commit}}").decode("ascii").strip() for r in (base, target)]
+    return [c for c in _changes(repo, *resolved) if c[1] in ("A", "M", "T")]
+
+
 def find_adult_names(repo: str, base: str, target: str) -> list[str]:
     """Added/modified paths whose name matches the content-standards terms (any file type)."""
-    resolved = [_git(repo, "rev-parse", "--verify", f"{r}^{{commit}}").decode("ascii").strip() for r in (base, target)]
-    return [c[0] for c in _changes(repo, *resolved) if c[1] in ("A", "M", "T") and ADULT_RE.search(c[0])]
+    return [c[0] for c in _resolved_changes(repo, base, target) if ADULT_RE.search(c[0])]
+
+
+def find_ci_changes(repo: str, base: str, target: str) -> list[tuple[str, str]]:
+    """(path, status) of every added or changed CI workflow or action definition."""
+    return [(c[0], c[1]) for c in _resolved_changes(repo, base, target) if CI_PATH_RE.search(c[0])]
 
 
 def _endpoint_key(host: str, url_path: str) -> str | None:
@@ -294,7 +322,7 @@ def find_security_changes(added: dict[str, list[str]]) -> dict[str, list[str]]:
     return changes
 
 
-def _print_report(section, binaries, submodules, gitmodules_changed, endpoints, patterns, security):
+def _print_report(section, binaries, submodules, gitmodules_changed, ci_changes, endpoints, patterns, security):
     if section in ("files", "all"):
         print(f"=== ADDED/MODIFIED NON-IMAGE BINARIES ({len(binaries)})")
         for path, st, size in binaries:
@@ -302,6 +330,9 @@ def _print_report(section, binaries, submodules, gitmodules_changed, endpoints, 
         print(f"\n=== SUBMODULE CHANGES ({len(submodules)}){'  + .gitmodules CHANGED' if gitmodules_changed else ''}")
         for path, old, new in submodules:
             print(f"  {path}: {old[:12]} -> {new[:12]}")
+        print(f"\n=== CI WORKFLOW CHANGES ({len(ci_changes)})")
+        for path, st in ci_changes:
+            print(f"  [{st}] {path}")
     if section in ("hosts", "all"):
         print(f"\n=== NETWORK ENDPOINTS IN ADDED LINES ({len(endpoints)})")
         for host, files in sorted(endpoints.items(), key=lambda kv: (-len(kv[1]), kv[0])):
@@ -328,7 +359,8 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--section", choices=["files", "hosts", "patterns", "security", "all"], default="all")
     parser.add_argument("--json", action="store_true", help="machine-readable output")
     parser.add_argument("--strict", action="store_true",
-                        help="exit 1 on binaries, submodule/.gitmodules changes or high-risk patterns")
+                        help="exit 1 on binaries, submodule/.gitmodules changes, CI workflow changes or "
+                             "high-risk patterns")
     args = parser.parse_args(argv)
 
     added, binaries, submodules, gitmodules_changed = _analyze(args.repo, args.base, args.target)
@@ -337,20 +369,23 @@ def main(argv: list[str]) -> int:
     security = find_security_changes(added)
     adult_names = find_adult_names(args.repo, args.base, args.target)
     patterns["adult_content"] += [(p, "(file name)") for p in adult_names]
+    ci_changes = find_ci_changes(args.repo, args.base, args.target)
 
     if args.json:
         print(json.dumps({
             "binaries": [{"path": p, "status": s, "size": n} for p, s, n in binaries],
             "submodules": [{"path": p, "old": o, "new": n} for p, o, n in submodules],
             "gitmodules_changed": gitmodules_changed,
+            "ci_workflows": [{"path": p, "status": s} for p, s in ci_changes],
             "endpoints": {h: sorted(f) for h, f in endpoints.items()},
             "patterns": {k: [{"path": p, "line": t} for p, t in v] for k, v in patterns.items()},
             "security": security,
         }, indent=1))
     else:
-        _print_report(args.section, binaries, submodules, gitmodules_changed, endpoints, patterns, security)
+        _print_report(args.section, binaries, submodules, gitmodules_changed, ci_changes, endpoints, patterns,
+                      security)
 
-    if args.strict and (binaries or submodules or gitmodules_changed
+    if args.strict and (binaries or submodules or gitmodules_changed or ci_changes
                         or any(patterns[c] for c in STRICT_CATEGORIES)):
         return 1
     return 0

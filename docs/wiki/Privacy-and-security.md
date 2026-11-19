@@ -6,6 +6,10 @@ Security and the safety of your data come first in Thoron.
 
 - No telemetry and no usage statistics.
 - The update check sends no identifier.
+- A profile nobody signed in to Google with asks Google nothing on its own account: no sign-in check, no
+  optimization guide, no time request, no connection ahead of a search. What belongs to a Google sign-in (the
+  New Tab page's Google bar and doodle, the mail counter's look at Gmail) works once you are signed in to
+  Google.
 - Every host a fresh profile contacts by itself is listed, with the reason, in
   [NETWORK.md](https://github.com/KuchiSofts/thoron/blob/main/docs/security/NETWORK.md).
 

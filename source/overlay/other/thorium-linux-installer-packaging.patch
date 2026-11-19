@@ -3848,7 +3848,7 @@ index 5a0ccc54a2db1342e3baa9f28ae792473bacf8ce..6aa8f4dbb9c1bcf0535abf5f0b4d58a5
 -update-alternatives --remove @@package_orig /usr/bin/@@usr_bin_symlink_name
 +# End
 diff --git a/chrome/installer/linux/rpm/build.py b/chrome/installer/linux/rpm/build.py
-index 43237aaad477263815bc59230a67d2da1f47a926..d8509a8d2c3c99078f00d686b1e18a3ed1b4dfb1 100755
+index 327584f8c4173380ca4a5a1768353c2793844bc1..857ca4e6ead259df085a92e39ab94148da4b0455 100755
 --- a/chrome/installer/linux/rpm/build.py
 +++ b/chrome/installer/linux/rpm/build.py
 @@ -1,5 +1,5 @@
@@ -3858,8 +3858,8 @@ index 43237aaad477263815bc59230a67d2da1f47a926..d8509a8d2c3c99078f00d686b1e18a3e
  # Use of this source code is governed by a BSD-style license that can be
  # found in the LICENSE file.
  
-@@ -17,46 +17,121 @@ sys.path.append(os.path.join(os.path.dirname(__file__), "../common"))
- import installer
+@@ -19,30 +19,106 @@ RPM_LEAD_MAGIC = b"\xed\xab\xee\xdb"
+ RPM_V4_LEAD_MAJOR = 3
  
  
 -def parse_args() -> argparse.Namespace:
@@ -3971,40 +3971,31 @@ index 43237aaad477263815bc59230a67d2da1f47a926..d8509a8d2c3c99078f00d686b1e18a3e
 -def verify_package(
 -    config: installer.InstallerConfig, rpm_file: pathlib.Path
 -) -> None:
--    depends = config.rpm_depends
--    version_output = subprocess.check_output(["rpm", "--version"])
--    version_match = re.match(r'.*version ([.\d]*)', str(version_output))
 +def verify_package(context, rpm_file):
++    # The package is built in RPM's v4 format (main() pins it), whatever rpm
++    # version builds it: its lead says so, and its dependencies are v4's.
+     with rpm_file.open("rb") as f:
+         lead = f.read(6)
+     if (
+@@ -58,15 +134,14 @@ def verify_package(
+         )
+         sys.exit(1)
+ 
+-    depends = config.rpm_depends
 +    depends = context["DEPENDS"]
-+    version_output = subprocess.check_output(["rpm", "--version"], text=True)
-+    version_match = re.search(r"(?<!\d)(\d+)(?:\.\d+)+", version_output)
      additional_deps = [
          "/bin/sh",
+         "rpmlib(CompressedFileNames) <= 3.0.4-1",
+         "rpmlib(FileDigests) <= 4.6.0-1",
+         "rpmlib(PayloadFilesHavePrefix) <= 4.0-1",
 -        "/usr/sbin/update-alternatives",
      ]
--    if version_match and version_match[1] >= '6.0':
--        additional_deps += ['rpmlib(LargeFiles) <= 4.12.0-1']
-+    if version_match and int(version_match.group(1)) >= 6:
-+        additional_deps.append("rpmlib(LargeFiles) <= 4.12.0-1")
-     else:
--        additional_deps += [
--            "rpmlib(CompressedFileNames) <= 3.0.4-1",
--            "rpmlib(FileDigests) <= 4.6.0-1",
--            "rpmlib(PayloadFilesHavePrefix) <= 4.0-1",
--        ]
 -    if config.is_official_build:
-+        additional_deps.extend(
-+            [
-+                "rpmlib(CompressedFileNames) <= 3.0.4-1",
-+                "rpmlib(FileDigests) <= 4.6.0-1",
-+                "rpmlib(PayloadFilesHavePrefix) <= 4.0-1",
-+            ]
-+        )
 +    if context["IS_OFFICIAL_BUILD"] == "1":
          additional_deps.append("rpmlib(PayloadIsXz) <= 5.2-1")
  
      all_deps = depends.split(",") + additional_deps
-@@ -68,9 +143,10 @@ def verify_package(
+@@ -78,9 +153,10 @@ def verify_package(
      installer.verify_package_deps(expected_depends, actual_depends)
  
  
@@ -4016,7 +4007,7 @@ index 43237aaad477263815bc59230a67d2da1f47a926..d8509a8d2c3c99078f00d686b1e18a3e
  
      log_level = logging.INFO if os.environ.get("VERBOSE") else logging.ERROR
      logging.basicConfig(level=log_level, format="%(message)s")
-@@ -79,98 +155,139 @@ def main() -> None:
+@@ -89,102 +165,143 @@ def main() -> None:
      output_dir = pathlib.Path(args.output_dir).absolute()
      channel = args.channel
  
@@ -4137,6 +4128,9 @@ index 43237aaad477263815bc59230a67d2da1f47a926..d8509a8d2c3c99078f00d686b1e18a3e
 -        else:
 -            compression_opt = "_binary_payload w0.gzdio"
 -
+-        # Pin RPM v4 format so rpm >= 6.0 continues emitting v4 headers and
+-        # standard SVR4 cpio payloads instead of v6 stripped cpio (07070X),
+-        # which libarchive and rpm-ostree cannot extract (crbug.com/583945825).
 -        cmd = [
 -            "fakeroot",
 -            "rpmbuild",
@@ -4144,6 +4138,7 @@ index 43237aaad477263815bc59230a67d2da1f47a926..d8509a8d2c3c99078f00d686b1e18a3e
 -            f"--target={args.arch}",
 -            "--rmspec",
 -            f"--define=_topdir {rpm_build_dir}",
+-            "--define=_rpmformat 4",
 -            f"--define={compression_opt}",
 -            "--define=__os_install_post %{nil}",
 -            "--define=_build_id_links none",
@@ -4196,6 +4191,9 @@ index 43237aaad477263815bc59230a67d2da1f47a926..d8509a8d2c3c99078f00d686b1e18a3e
 +    else:
 +        compression_opt = "_binary_payload w0.gzdio"
 +
++    # Pin RPM v4 format so rpm >= 6.0 continues emitting v4 headers and
++    # standard SVR4 cpio payloads instead of v6 stripped cpio (07070X),
++    # which libarchive and rpm-ostree cannot extract (crbug.com/583945825).
 +    cmd = [
 +        "fakeroot",
 +        "rpmbuild",
@@ -4203,6 +4201,7 @@ index 43237aaad477263815bc59230a67d2da1f47a926..d8509a8d2c3c99078f00d686b1e18a3e
 +        f"--target={args.arch}",
 +        "--rmspec",
 +        f"--define=_topdir {rpmbuild_dir}",
++        "--define=_rpmformat 4",
 +        f"--define={compression_opt}",
 +        "--define=__os_install_post %{nil}",
 +        "--define=_build_id_links none",

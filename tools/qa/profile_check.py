@@ -31,11 +31,13 @@ import re
 import sqlite3
 import struct
 import sys
+import time
 from pathlib import Path
 
 CMD_SET_TAB_WINDOW, CMD_PINNED, CMD_TAB_CLOSED, CMD_WINDOW_CLOSED = 0, 12, 16, 17
 CMD_SET_TAB_GROUP, CMD_TAB_GROUP_METADATA2 = 25, 27
-COOKIE_LOSS_TOLERANCE = 0.02      # expired cookies are deleted at start-up
+COOKIE_LOSS_TOLERANCE = 0.02      # of the cookies not yet expired when counted, this share may expire meanwhile
+CHROMIUM_EPOCH_OFFSET_S = 11644473600   # Chromium counts microseconds since 1601, Unix seconds since 1970
 NO_NEW_SESSION = "the new version did not write a session"   # a browser without a window never writes one
 RESTORES_LAST_SESSION = (1, 6)    # session.restore_on_startup: the last tabs (6: and some pages); else a new tab page or pages
 
@@ -152,14 +154,22 @@ def profile_summary(profile: Path) -> dict:
         passwords += rows[0][0] if rows else 0
     out["passwords"] = passwords
     cookies_db = next((p for p in (profile / "Network" / "Cookies", profile / "Cookies") if p.is_file()), None)
-    rows = _sqlite_rows(cookies_db, "SELECT substr(encrypted_value, 1, 3) FROM cookies") if cookies_db else []
-    cookies = {"total": 0} if rows is not None else {"unreadable": True}
-    for (prefix,) in rows or []:
+    # With each cookie whether it had already expired when it was counted: the browser deletes those at its next
+    # start, so their going is no loss (a copy of an older backup holds many). Only the expiry is read, never a
+    # value. A table without the expiry columns is counted as before.
+    now = int((time.time() + CHROMIUM_EPOCH_OFFSET_S) * 1_000_000)
+    rows = _sqlite_rows(cookies_db, "SELECT substr(encrypted_value, 1, 3), has_expires = 1 AND expires_utc > 0 "
+                                    f"AND expires_utc < {now} FROM cookies") if cookies_db else []
+    if rows is None and cookies_db:
+        rows = _sqlite_rows(cookies_db, "SELECT substr(encrypted_value, 1, 3), 0 FROM cookies")
+    cookies = {"total": 0, "expired": 0} if rows is not None else {"unreadable": True}
+    for prefix, expired in rows or []:
         if isinstance(prefix, str):              # some rows store the value as TEXT, not BLOB
             prefix = prefix.encode("utf-8", "replace")
         key = prefix.decode("ascii", "replace") if prefix and re.match(rb"v\d\d", prefix) else ("empty" if not prefix else "other")
         cookies[key] = cookies.get(key, 0) + 1
         cookies["total"] += 1
+        cookies["expired"] += 1 if expired else 0
     out["cookies"] = cookies
     settings, readable, startup = {}, True, None
     for name in ("Preferences", "Secure Preferences"):          # the second is the protected one, and wins
@@ -227,8 +237,11 @@ def compare(before: dict, after: dict) -> list[str]:
         if "unreadable" in bc or "unreadable" in ac:
             problems.append(f"{name}: cookies unreadable {'before' if 'unreadable' in bc else 'after'}")
         else:
-            if ac["total"] < bc["total"] * (1 - COOKIE_LOSS_TOLERANCE):
-                problems.append(f"{name}: cookies {bc['total']} -> {ac['total']} (more than normal expiry)")
+            # those already expired when they were counted go at the start; of the rest, 2 % may expire meanwhile
+            kept = bc["total"] - bc.get("expired", 0)
+            if ac["total"] < kept * (1 - COOKIE_LOSS_TOLERANCE):
+                problems.append(f"{name}: cookies {bc['total']} -> {ac['total']} (more than normal expiry; "
+                                f"{bc.get('expired', 0)} had expired)")
             if ac.get("v20", 0) > bc.get("v20", 0):
                 problems.append(f"{name}: cookies re-encrypted with the app-bound scheme (v20)")
         problems += _compare_sessions(name, b, a, name in before.get("last_active_profiles", []))

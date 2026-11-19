@@ -1,0 +1,57 @@
+{
+  "browser": "Thoron 158.0.8127.3010",
+  "version": "",
+  "warmup": 1,
+  "startup_ms": {
+    "median": 484.0,
+    "spread_pct": 16.1,
+    "runs": 5,
+    "repeatable": false,
+    "values": [
+      531.0,
+      453.0,
+      484.0,
+      516.0,
+      468.0
+    ]
+  },
+  "memory_1_tab_mb": {
+    "median": 313.2,
+    "spread_pct": 2.6,
+    "runs": 5,
+    "repeatable": true,
+    "values": [
+      313.2,
+      314.2,
+      309.3,
+      314.3,
+      306.2
+    ]
+  },
+  "memory_20_tabs_mb": {
+    "median": 678.3,
+    "spread_pct": 1.8,
+    "runs": 5,
+    "repeatable": true,
+    "values": [
+      682.5,
+      670.1,
+      678.3,
+      679.6,
+      677.5
+    ]
+  },
+  "idle_cpu_pct": {
+    "median": 0.1,
+    "spread_pct": 43.9,
+    "runs": 5,
+    "repeatable": false,
+    "values": [
+      0.0,
+      0.1,
+      0.1,
+      0.1,
+      0.1
+    ]
+  }
+}

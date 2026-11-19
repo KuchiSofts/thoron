@@ -1,0 +1,341 @@
+#!/usr/bin/env python3
+# Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be found in the LICENSE file.
+"""Thoron M-Notifier's envelope, where it is and what it says, checked end to end and offline (ROADMAP P5.76).
+Windows only.
+
+The envelope is next to the address bar (in the toolbar), in the address bar, or in both, where the person
+chooses, as Thoron adblock's shield. The toolbar and the address bar are part of the window, which a headless
+browser does not draw, so this check runs the browser with a window placed off the screen and finds the
+envelopes with Windows UI Automation (their names follow what they say). A local server stands in for Gmail
+(as in mail_check.py) with a made-up account; nothing leaves the PC. The M-Notifier's menu is opened as a tab
+and its settings are changed there as a person does. Steps:
+
+    place     in the toolbar only (the default), in the address bar only, and in both
+    says      the envelope says how much mail there is: unread mail there at the first look is not new; a new
+              message is; opening the account's inbox counts the new mail from then
+    position  where in the toolbar (right after the address bar, next to the menu, after the extensions) and
+              where in the address bar (at the far end, before the other icons, with them); the order of the
+              buttons shows it
+    drag      (P5.78) the toolbar's envelope is moved with the mouse: past Thoron adblock's shield next to it
+              the two change places, back again, and from next to the menu to the address bar's end it
+              is the first button there; a press that moved it opens no menu (the mouse messages are sent to the window; the real
+              mouse is not moved)
+
+    py -3 -I tools/qa/mail_place_check.py --browser <out>\\thoron.exe --work <scratch dir>
+Exit status 0 when every step passes (or the check does not apply, on another system).
+"""
+import argparse
+import json
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+from pathlib import Path
+
+if __package__ in (None, ""):  # running as a script under `py -3 -I`: make `tools` importable
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from tools.qa import bench  # noqa: E402
+from tools.qa.adblock_icon_check import _menu_window, _row, _windows, toolbar_buttons  # noqa: E402
+from tools.qa.adblock_site_switch_check import _close_browser, _devtools_port, _open  # noqa: E402
+from tools.qa.cdp import WebSocket  # noqa: E402
+from tools.qa.mail_check import GET_STATE, MENU_URL, Gmail, entry, feed, now_utc  # noqa: E402
+
+# what an envelope says, and so its name ("Thoron M-Notifier: 1 new, 4 unread"); the menu's tab is named
+# "Thoron M-Notifier" too, but only buttons count
+NAME = "Thoron M-Notifier"
+PLACES = ("address", "both", "toolbar")
+# where in the toolbar and in the address bar, in the order the check sets them; the last of each is its default
+POSITIONS = (("toolbar-position", "address"), ("toolbar-position", "menu"), ("toolbar-position", "extensions"),
+             ("address-position", "end"), ("address-position", "start"), ("address-position", "icons"))
+SETTLE_S = 1.5
+LOOK_S = 4.0
+SHIELD = "Thoron adblock"
+
+
+def shield_of(buttons: list[dict]) -> dict | None:
+    """Thoron adblock's shield in the toolbar (as tall as its buttons)."""
+    return next((b for b in buttons if b["name"].startswith(SHIELD) and b["h"] >= 30), None)
+
+
+def right_of_bar(buttons: list[dict], ref: dict) -> list[dict]:
+    """The toolbar's buttons right of the address bar, left to right: those after the widest gap of the row
+    (the address bar)."""
+    row = [b for b in _row(buttons, ref) if b["h"] >= 30]
+    if len(row) < 2:
+        return row
+    gaps = [(row[n + 1]["x"] - (row[n]["x"] + row[n]["w"]), n) for n in range(len(row) - 1)]
+    return row[max(gaps)[1] + 1:]
+
+
+def middle(button: dict) -> tuple[int, int]:
+    return button["x"] + button["w"] // 2, button["y"] + button["h"] // 2
+
+
+def drag_problems(step: str, want_first: str, buttons: list[dict], menu_open: bool) -> list[str]:
+    """After a drag: `want_first` ("mail" or "adblock") is the left one of the two in the toolbar."""
+    _, envelope = envelopes(buttons)
+    shield = shield_of(buttons)
+    if not envelope or not shield:
+        return [f"drag: {step}: the toolbar has an envelope: {envelope is not None}, a shield: {shield is not None}"]
+    out = []
+    first = "mail" if envelope["x"] < shield["x"] else "adblock"
+    if first != want_first:
+        out.append(f"drag: {step}: {first} is left, not {want_first}")
+    if menu_open:
+        out.append(f"drag: {step}: the press that moved the envelope opened its menu")
+    return out
+
+
+def _drag(hwnd: int, start: tuple[int, int], end: tuple[int, int]) -> None:
+    """What a drag sends to the window, between two points on the screen; the real mouse is not moved. The
+    browser only follows a drag while it sees the left button held, which it asks Windows about: for the time
+    of the drag this thread shares its input state with the window's thread and says the button is down there
+    (no other program sees that)."""
+    import ctypes
+    import ctypes.wintypes as wt
+    user32 = ctypes.WinDLL("user32", use_last_error=True)
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+
+    def post(message: int, keys: int, x: int, y: int) -> None:
+        point = wt.POINT(x, y)
+        user32.ScreenToClient(hwnd, ctypes.byref(point))
+        user32.PostMessageW(hwnd, message, keys, (point.y << 16) | (point.x & 0xFFFF))
+        time.sleep(0.05)
+
+    def held(down: bool) -> None:
+        keys = (ctypes.c_ubyte * 256)()
+        user32.GetKeyboardState(keys)
+        keys[0x01] = 0x80 if down else 0  # VK_LBUTTON
+        user32.SetKeyboardState(keys)
+
+    me = kernel32.GetCurrentThreadId()
+    theirs = user32.GetWindowThreadProcessId(hwnd, None)
+    attached = bool(user32.AttachThreadInput(me, theirs, True))
+    try:
+        post(0x0200, 0, *start)       # move
+        held(True)
+        post(0x0201, 0x0001, *start)  # left down
+        steps = 12
+        for n in range(1, steps + 1):
+            post(0x0200, 0x0001, start[0] + (end[0] - start[0]) * n // steps,
+                 start[1] + (end[1] - start[1]) * n // steps)
+        time.sleep(0.3)
+        held(False)
+        post(0x0202, 0, *end)         # left up
+        time.sleep(0.6)
+    finally:
+        held(False)
+        if attached:
+            user32.AttachThreadInput(me, theirs, False)
+
+
+def envelopes(buttons: list[dict]) -> tuple[dict | None, dict | None]:
+    """The address bar's envelope (as tall as the address bar's icons) and the toolbar's (as tall as its
+    buttons)."""
+    found = [b for b in buttons if b["name"].startswith(NAME)]
+    return (next((b for b in found if b["h"] < 30), None), next((b for b in found if b["h"] >= 30), None))
+
+
+def place_problems(place: str, address: dict | None, toolbar: dict | None) -> list[str]:
+    want = {"toolbar": (False, True), "address": (True, False), "both": (True, True)}[place]
+    if (address is not None, toolbar is not None) != want:
+        return [f"place: {place!r}, but there is an envelope in the address bar: {address is not None}, in the "
+                f"toolbar: {toolbar is not None}"]
+    return []
+
+
+def says_problems(step: str, name: str, want: str) -> list[str]:
+    return [] if name == want else [f"says: {step}: the envelope says {name!r}, not {want!r}"]
+
+
+def position_problems(setting: str, value: str, buttons: list[dict]) -> list[str]:
+    address, toolbar = envelopes(buttons)
+    if setting == "toolbar-position":
+        if not toolbar:
+            return [f"position: no envelope in the toolbar with {setting} {value!r}"]
+        # the toolbar's buttons right of the address bar (the window's own buttons are on another line)
+        right = [b for b in _row(buttons, toolbar) if b["h"] >= 30 and (not address or b["x"] > address["x"])]
+        names = [b["name"][:22] for b in right]
+        at = right.index(toolbar)
+        if value == "address" and at != 0:
+            return [f"position: 'right after the address bar', but the envelope is button {at + 1} ({names})"]
+        if value == "menu" and at != len(right) - 2:
+            return [f"position: 'next to the menu', but the envelope is not right before it ({names})"]
+        if value == "extensions" and at == len(right) - 1:
+            return [f"position: 'after the extensions', but the envelope is last ({names})"]
+        return []
+    if not address:
+        return [f"position: no envelope in the address bar with {setting} {value!r}"]
+    # the address bar's icons at its end, with the envelope: its security chip (at the other end, past the
+    # address) is not one of them
+    icons = trailing_icons([b for b in _row(buttons, address) if b["h"] < 30 and b["w"] <= 40], address)
+    names = [b["name"][:22] for b in icons]
+    at = icons.index(address)
+    if value == "end" and at != len(icons) - 1:
+        return [f"position: 'at the far end', but the envelope is icon {at + 1} of {len(icons)} ({names})"]
+    if value == "start" and at != 0:
+        return [f"position: 'before the other icons', but the envelope is icon {at + 1} ({names})"]
+    if value == "icons" and len(icons) > 1 and at == len(icons) - 1:
+        return [f"position: 'with the other icons', but the envelope is at the far end ({names})"]
+    return []
+
+
+def trailing_icons(icons: list[dict], envelope: dict) -> list[dict]:
+    """The icons next to each other (at most 40 px apart) with the envelope among them, left to right."""
+    group: list[dict] = []
+    groups = [group]
+    for icon in sorted(icons, key=lambda b: b["x"]):
+        if group and icon["x"] - (group[-1]["x"] + group[-1]["w"]) > 40:
+            group = []
+            groups.append(group)
+        group.append(icon)
+    return next((g for g in groups if envelope in g), [envelope])
+
+
+def _width(hwnd: int) -> int:
+    import ctypes
+    import ctypes.wintypes as wt
+    r = wt.RECT()
+    ctypes.WinDLL("user32").GetWindowRect(hwnd, ctypes.byref(r))
+    return r.right - r.left
+
+
+def _launch(browser: Path, profile: Path, gmail_port: int) -> subprocess.Popen:
+    args = [str(browser), f"--user-data-dir={profile}", "--no-first-run", "--no-default-browser-check",
+            "--disable-default-apps", "--disable-background-networking", "--disable-component-update",
+            "--enable-features=ThoronMailNotifier,ThoronNativeAdblock",
+            "--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1",
+            f"--thoron-mail-feeds-for-testing=http://127.0.0.1:{gmail_port}/",
+            # off the screen: the check needs a real window, not the person's attention
+            "--window-position=-4000,-4000", "--window-size=1000,700",
+            "--remote-debugging-address=127.0.0.1", "--remote-debugging-port=0", "about:blank"]
+    return subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def run(browser: Path, work: Path) -> list[str]:
+    profile = Path(tempfile.mkdtemp(prefix="mail-place-", dir=work))
+    problems: list[str] = []
+    with Gmail() as gmail:
+        old = [entry(1, "Hello"), entry(2, "Lunch")]
+        gmail.answers[0] = (200, feed("alice@example.com", 3, old))
+        proc = _launch(browser, profile, gmail.port)
+        port = None
+        ws = None
+        try:
+            port = _devtools_port(profile)
+            ws = WebSocket(_open(port, MENU_URL)["webSocketDebuggerUrl"])
+            time.sleep(3)
+
+            def send(name: str, *args) -> None:
+                ws.call("Runtime.evaluate", expression=f"chrome.send({json.dumps(name)}, {json.dumps(list(args))}); 1")
+                time.sleep(SETTLE_S)
+
+            def state() -> dict:
+                reply = ws.call("Runtime.evaluate", expression=GET_STATE, awaitPromise=True, returnByValue=True)
+                return json.loads(reply.get("result", {}).get("value") or "{}")
+
+            def report(name: str, found: list[str], detail: str) -> None:
+                print(f"{'PASS' if not found else 'FAIL'}  {name}: {detail}")
+                problems.extend(found)
+
+            for place in PLACES:
+                send("setChoice", "place", place)
+                address, toolbar = envelopes(toolbar_buttons(proc.pid))
+                report("place", place_problems(place, address, toolbar),
+                       f"{place}: address bar {address is not None}, toolbar {toolbar is not None}")
+
+            send("checkNow")
+            time.sleep(LOOK_S)
+
+            def name() -> str:
+                return (envelopes(toolbar_buttons(proc.pid))[1] or {}).get("name", "")
+
+            report("says", says_problems("first look", name(), f"{NAME}: 3 unread"), name())
+            gmail.answers[0] = (200, feed("alice@example.com", 4, [entry(3, "New one", when=now_utc())] + old))
+            time.sleep(2.5)  # the new message came after the first look
+            send("checkNow")
+            time.sleep(LOOK_S)
+            report("says", says_problems("a new message", name(), f"{NAME}: 1 new, 4 unread"), name())
+            send("openInbox", 0)
+            report("says", says_problems("the inbox opened", name(), f"{NAME}: 4 unread"), name())
+
+            send("setChoice", "place", "both")
+            for setting, value in POSITIONS:
+                send("setChoice", setting, value)
+                buttons = toolbar_buttons(proc.pid)
+                found = position_problems(setting, value, buttons)
+                report("position", found, f"{setting} {value}")
+            send("setChoice", "place", "toolbar")
+            if state().get("choices", {}).get("place") != "toolbar":
+                problems.append("position: the envelope's place was not put back")
+
+            # P5.78: moved with the mouse. Both after the extensions, the envelope left of the shield.
+            window = max(_windows(proc.pid), key=lambda h: _width(h))
+            buttons = toolbar_buttons(proc.pid)
+            report("drag", drag_problems("as it comes", "mail", buttons, False), "the envelope is left of the shield")
+            for step, want in (("past the shield", "adblock"), ("back", "mail")):
+                buttons = toolbar_buttons(proc.pid)
+                _, envelope = envelopes(buttons)
+                shield = shield_of(buttons)
+                if not envelope or not shield:
+                    report("drag", [f"drag: {step}: no envelope or no shield in the toolbar"], step)
+                    break
+                # past the shield's middle, to its far side
+                far = shield["x"] + shield["w"] - 4 if want == "adblock" else shield["x"] + 4
+                _drag(window, middle(envelope), (far, middle(shield)[1]))
+                buttons = toolbar_buttons(proc.pid)
+                report("drag", drag_problems(step, want, buttons, _menu_window(proc.pid)), f"{step}: {want} is left")
+            # from next to the menu to the address bar's end: it leaves the menu and is the first button there
+            send("setChoice", "toolbar-position", "menu")
+            buttons = toolbar_buttons(proc.pid)
+            _, envelope = envelopes(buttons)
+            row = right_of_bar(buttons, envelope) if envelope else []
+            if envelope and row:
+                _drag(window, middle(envelope), (row[0]["x"] + 6, middle(envelope)[1]))
+                where = state().get("choices", {}).get("toolbar-position")
+                buttons = toolbar_buttons(proc.pid)
+                _, envelope = envelopes(buttons)
+                row = right_of_bar(buttons, envelope) if envelope else []
+                first = bool(row) and row[0] is envelope
+                report("drag", [] if where != "menu" and first else
+                       [f"drag: moved from the menu to the address bar's end, its place is {where!r} and it is "
+                        f"{'the first button there' if first else 'not the first button there'}"],
+                       f"from the menu to the address bar's end: {where}")
+            else:
+                report("drag", ["drag: no envelope next to the menu"], "from the menu")
+            send("setChoice", "toolbar-position", "extensions")
+        except (OSError, RuntimeError, ValueError, KeyError, TypeError, IndexError) as e:
+            problems.append(f"the run failed: {e}")
+        finally:
+            if ws:
+                try:
+                    ws.close()
+                except OSError:
+                    pass
+            if port is not None:
+                _close_browser(port, proc)
+            else:
+                bench._stop(proc, profile)
+            shutil.rmtree(profile, ignore_errors=True)
+    return problems
+
+
+def main(argv: list[str]) -> int:
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--browser", required=True, type=Path)
+    p.add_argument("--work", required=True, type=Path, help="scratch folder for the throwaway profile")
+    a = p.parse_args(argv)
+    if sys.platform != "win32":
+        print("MAIL PLACE CHECK: does not apply here (Windows only)")
+        return 0
+    a.work.mkdir(parents=True, exist_ok=True)
+    problems = run(a.browser.resolve(), a.work)
+    for problem in problems:
+        print(problem)
+    print("MAIL PLACE CHECK: PASSED" if not problems else f"MAIL PLACE CHECK: FAILED ({len(problems)} problem(s))")
+    return 0 if not problems else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

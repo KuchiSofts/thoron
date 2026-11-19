@@ -103,6 +103,37 @@ class RenameProductTests(unittest.TestCase):
         self.assertEqual((once, n1, twice, n2), ("Thoron and Thoron", 2, "Thoron and Thoron", 0))
 
 
+class RenameTranslationTests(unittest.TestCase):
+    """Translations inflect the name, join it with a hyphen or set it next to another script."""
+
+    def test_every_form_of_the_name_is_renamed(self):
+        cases = {
+            "Kirjaudu Thoriumiin": "Kirjaudu Thoroniin",                      # an ending
+            "Thoriumból": "Thoronból",
+            "Thorium-Profil": "Thoron-Profil",                                # a hyphen after
+            "ku-Thorium.": "ku-Thoron.",                                      # a hyphen before
+            "kweThorium?": "kweThoron?",                                      # a prefix
+            "=1{Thorium-en}other{Thoriumin}": "=1{Thoron-en}other{Thoronin}",
+            "Thoriumของ": "Thoronของ",          # another script right after
+            "从Thorium中移除": "从Thoron中移除",   # and on both sides
+            "Thorium\\u2019s": "Thoron\\u2019s",                              # an escaped apostrophe
+            "About Thorium": "About Thoron",
+        }
+        for before, after in cases.items():
+            self.assertEqual(ti.rename_product(before, translated=True)[0], after, before)
+            self.assertEqual(ti.rename_product(after, translated=True), (after, 0), after)
+
+    def test_the_plain_rule_leaves_those_forms_alone(self):
+        for text in ("Thoriumiin", "Thorium-Profil", "ku-Thorium."):
+            self.assertEqual(ti.rename_product(text), (text, 0), text)        # source strings: the exact name only
+
+    def test_paths_addresses_identifiers_and_other_products_stay(self):
+        for text in ("https://github.com/Alex313031/Thorium-Win", "Thorium/User Data", "%LOCALAPPDATA%\\Thorium\\",
+                     "org.chromium.Thorium", "Thorium_Public_Bundle", "THORIUM_DEBUG", "ThoriumHTM", "Thorium.app",
+                     "ThoriumOS-Einstellungen", "ThoriumVox", "Alex313031 recommends Thorium-Profil"):
+            self.assertEqual(ti.rename_product(text, translated=True), (text, 0), text)
+
+
 class InstallModesTests(unittest.TestCase):
     def test_every_identity_value_changes(self):
         out = ti.edit_install_modes(INSTALL_MODES)
@@ -117,10 +148,12 @@ class InstallModesTests(unittest.TestCase):
         self.assertIn(ti.guid_struct(ti.THORON_IDS["toast_activator_clsid"]), out)
         self.assertIn(ti.THORON_IDS["sandbox_sid_prefix"], out)
 
-    def test_interface_iids_stay_with_the_checked_in_midl_output(self):
+    def test_interface_iids_are_thorons_own(self):
+        # P2.19: MIDL's dynamic GUIDs put Thoron's IDs into the build (test_thoron_com_ids.py), so the install
+        # mode registers those, not upstream's that the checked-in MIDL output holds
         out = ti.edit_install_modes(INSTALL_MODES)
-        self.assertIn("{0xbb19a0e5", out)
-        self.assertIn("{0xe0b03e2d", out)
+        self.assertNotIn("{0xbb19a0e5", out)
+        self.assertNotIn("{0xe0b03e2d", out)
 
     def test_new_ids_differ_from_each_other_and_from_thorium(self):
         values = [v.upper() for k, v in ti.THORON_IDS.items() if k != "sandbox_sid_prefix"]
@@ -321,8 +354,10 @@ class ApplyTests(unittest.TestCase):
             (self.src / dest).write_bytes(b"old icon")
         write_exe_fixtures(self.src)
         from tools.build.tests.test_thoron_linux_names import LINUX_FIXTURES
-        from tools.build.tests.test_thoron_overlay_edits import FLAG_ENTRIES, FLAGS, VERSION_HTML, VERSION_PAGE
-        for rel, text in {**LINUX_FIXTURES, FLAGS: FLAG_ENTRIES, VERSION_HTML: VERSION_PAGE}.items():
+        from tools.build.tests.test_thoron_overlay_edits import OVERLAY_FIXTURES
+        from tools.build.tests.test_thoron_surface_edits import SURFACE_FIXTURES
+        from tools.build.tests.test_thoron_com_ids import COM_FIXTURES
+        for rel, text in {**LINUX_FIXTURES, **OVERLAY_FIXTURES, **SURFACE_FIXTURES, **COM_FIXTURES}.items():
             (self.src / rel).parent.mkdir(parents=True, exist_ok=True)
             (self.src / rel).write_bytes(text.encode("utf-8"))
 
@@ -345,6 +380,27 @@ class ApplyTests(unittest.TestCase):
         again = ti.apply(self.src, REPO, string_files=["chrome/app/chromium_strings.grd"], translations=False)
         self.assertEqual(again["strings"]["replacements"], 0)
         self.assertEqual(again["files_changed"], 0)
+
+    def test_apply_uses_the_wider_rule_for_translation_files_only(self):
+        xtb = self.src / "chrome/app/resources/chromium_strings_fi.xtb"
+        xtb.parent.mkdir(parents=True, exist_ok=True)
+        xtb.write_text('<translation id="1">Thoriumin asetukset</translation>\n', encoding="utf-8")
+        self.strings.write_text('<message name="IDS_A" desc="Thoriumin">Thorium</message>\n' + CreditsTests.ABOUT,
+                                encoding="utf-8")
+        files = ["chrome/app/chromium_strings.grd", "chrome/app/resources/chromium_strings_fi.xtb"]
+        ti.apply(self.src, REPO, string_files=files, translations=False)
+        self.assertIn("Thoronin asetukset", xtb.read_text(encoding="utf-8"))
+        self.assertIn('desc="Thoriumin">Thoron<', self.strings.read_text(encoding="utf-8"))
+        self.assertEqual(ti.apply(self.src, REPO, string_files=files, translations=False)["files_changed"], 0)
+
+    def test_the_dark_page_mark_is_thorons(self):
+        ti.apply(self.src, REPO, string_files=["chrome/app/chromium_strings.grd"], translations=False)
+        mark = (self.src / "ui/webui/resources/images/chrome_logo_dark.svg").read_text(encoding="utf-8")
+        self.assertIn('fill="#FFFFFF"', mark)
+        self.assertIn("Thoron logo", mark)
+        shapes = re.findall(r"<(?:path|circle)[^>]*>", mark)
+        colour = (REPO / "branding/thoron/thoron-logo-mono.svg").read_text(encoding="utf-8")
+        self.assertEqual(shapes, re.findall(r"<(?:path|circle)[^>]*>", colour))   # the same mark, in white
 
     def test_apply_is_all_or_nothing(self):
         broken = re.sub(r".*\.app_guid = .*\n", "", INSTALL_MODES)
@@ -369,6 +425,24 @@ class CreditsTests(unittest.TestCase):
         self.assertEqual(out.count("Alex313031"), 2)
         self.assertNotIn("Thoron Authors", out)
         self.assertEqual(ti.edit_chromium_strings(out), out)
+
+    def test_the_credit_line_renamed_by_upstream_s_string_step_is_taken_back(self):
+        # upstream's string step, run after this one, renames "Chromium" in the credit line to "Thorium"
+        renamed = self.ABOUT.replace("The Thorium Authors", "The Thorium Authors, Alex313031 and KuchiSofts")
+        out = ti.edit_chromium_strings(renamed)
+        self.assertEqual(out.count("The Chromium Authors, Alex313031 and KuchiSofts"), 2)
+        self.assertNotIn("Thorium Authors", out)
+        chromium = self.ABOUT.replace("The Thorium Authors", "The Chromium Authors")
+        self.assertEqual(ti.edit_chromium_strings(chromium), out)
+
+    def test_a_tree_without_upstream_s_string_step_is_refused(self):
+        self.assertEqual(ti.product_name_problems("About Thorium. Thorium is up to date. Chromium project\n" * 30), [])
+        found = ti.product_name_problems("About Chromium. Chromium is up to date. Thorium flags\n" * 30)
+        self.assertEqual(len(found), 1)
+        self.assertIn("has not run on this tree", found[0])
+        credits = "The Chromium Authors, Alex313031 and KuchiSofts: Chromium, Chromium\n" * 30
+        self.assertEqual(ti.product_name_problems(credits + "About Thoron\n"), [])     # credits do not count
+        self.assertEqual(ti.product_name_problems("About Chromium\n" * 5), [])         # too few to judge
 
     def test_about_page_anchor_missing_raises(self):
         with self.assertRaises(ti.IdentityError):

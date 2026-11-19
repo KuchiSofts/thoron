@@ -25,14 +25,15 @@ changed, missing or extra file is noticed. `materialize` writes the build tree t
 
 ## Files that are withheld
 
-Seven files of the series are recorded in `UPSTREAM.json` by their hash only and are not published here
+Two files of the series are recorded in `UPSTREAM.json` by their hash only and are not published here
 yet. The tree hash still verifies; `materialize` says which content is missing.
 
 - `other/thorium-default-api-keys.patch`: it carries Google API credentials that are not Thoron's. Whether
   a release ships without them is ROADMAP **L.8**.
-- Six patches whose original authors publish no licence (listed as NOT STATED in
-  [`docs/legal/PATCH_LICENSES.md`](../docs/legal/PATCH_LICENSES.md)). They wait for the author's permission
-  or a rewrite, ROADMAP **L.1**.
+- `other/thorium-build-config-and-simd.patch`: 36 of its lines come from an author who publishes no licence
+  (listed as NOT STATED in [`docs/legal/PATCH_LICENSES.md`](../docs/legal/PATCH_LICENSES.md)). It waits for
+  the author's permission, or the lines come out, ROADMAP **L.1**
+  ([`docs/legal/UNLICENSED_PATCHES.md`](../docs/legal/UNLICENSED_PATCHES.md)).
 
 ## Licences and credit
 

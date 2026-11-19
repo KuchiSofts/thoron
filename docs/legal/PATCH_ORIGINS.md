@@ -93,8 +93,12 @@ Re-run on 2026-11-08 for the series rebased to Chromium 158.0.8127.30 (ROADMAP *
   checks).
 - The ten new Thoron patches carry `Origin:` and `License:` headers (BSD-3-Clause).
 
-The six patches that still need permission or a rewrite are the five RobRich999 ones (one also
+Done on 2026-11-16 (docs/legal/UNLICENSED_PATCHES.md): three dropped, one written again, one trimmed;
+only `thorium-build-config-and-simd.patch` still waits for its author. Before that, the six patches that
+needed permission or a rewrite were the five RobRich999 ones (one also
 Muril-o) and the profile reversion part of `disable-encryption.patch` (win32ss) in the table above.
+What each one does, what Thoron would lose without it and the way out are in
+[`UNLICENSED_PATCHES.md`](UNLICENSED_PATCHES.md), with what a second look at the inventory found.
 
 ## Keeping it current
 

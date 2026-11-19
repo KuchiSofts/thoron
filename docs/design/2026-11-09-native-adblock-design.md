@@ -2041,6 +2041,390 @@ response's body. Thoron is the browser, so it does it for every page:
   off-screen test browser and an ordinary window the same way: the first is brought in front, the second stays.
   No real prompt is opened. The icon check measures the new shield on a picture of the window.
 
+### 12.64 Thoron's mail notifier, Gmail first (P5.75, 2026-11-16)
+
+- **Why (the owner):** "add our own X-notifier, super smart, that we can add all our emails"; the X-notifier
+  extension the owner runs signs in to the accounts itself, with stored passwords, in the same browser, and is
+  the strongest suspect for the Google sign-outs the owner sees. Thoron's own needs no password at all.
+- **How it reads mail:** Gmail's feed of unread mail (`mail.google.com/mail/u/N/feed/atom`, Atom 0.3) of each
+  Google account the profile is signed in to, with the profile's own sign-in, as Gmail's page is sent it
+  (`thoron_mail::MailService`, a browser-process loader with the profile's cookies for mail.google.com). Accounts
+  are found by asking u/0, u/1, ... until one is not there (401, a page to sign in, or the first account again),
+  ten at most. The feed is parsed in the data decoder's sandboxed process (`ParseXmlIsolated`), never in the
+  browser; texts are cut at 400 characters; a message's link is kept only if it leads to mail.google.com (made
+  https). It looks 15 s after the browser starts, then every 2 minutes (1, 2, 5, 10, 15 or 30), and when its menu
+  opens; a failed look keeps what the last one found.
+- **New mail:** a message not seen at the last look (Gmail's id) is new; the first look only learns what is
+  there. Up to three new messages make a notice each (sender, subject, the account), more make one notice that
+  counts them (`ThoronMailCenter::OnNewMail`, the browser's own notifications). A click opens the message in the
+  Gmail tab of that account when one is open, else in a new tab.
+- **The toolbar:** an envelope next to the shield (`ThoronMailButton`): teal with the count as a badge while there
+  is unread mail; not in an off-the-record window. Its menu (`chrome://mail-notifier.top-chrome`) lists each
+  account with its count and newest five messages, "Open inbox", "Check now", "Add an account" (Google's own
+  page), "Tell me of new mail" and "Look every"; in es/fr/de/pt/ru as well, times in the browser's language.
+- **Settings:** `thoron_mail.notify` and `thoron_mail.interval_minutes`, the profile's. The flag
+  `thoron-mail-notifier` turns it off.
+- **Checked** by `tools/qa/mail_check.py`: a local server stands in for Gmail (a switch only a local server is
+  accepted for) with made-up accounts: two accounts found, a new message, a link off Gmail dropped, no sign-in,
+  and a feed that is not XML. Outlook/Hotmail, Yahoo and Proton Mail come next.
+
+### 12.65 Thoron M-Notifier: where it is, new mail since you looked, its settings (P5.76, 2026-11-16)
+
+- **Why (the owner):** call it "Thoron M-Notifier"; the same settings as X-notifier; next to the address bar or
+  in it, with a position, as Thoron adblock's shield; opening an account's mailbox resets its new-mail counter;
+  spam is not counted; smooth, with no memory leak. The owner also asked to add a Gmail address with its
+  password: Thoron does not take or keep Google passwords (Google signs a person in only on its own page, and a
+  password kept by the browser is one more thing to steal). **Add an account** opens Google's own sign-in, and
+  the account is found from then on.
+- **New mail since you looked:** each account remembers when its inbox was last opened from the M-Notifier (its
+  address, **Open inbox**, or a notice; `thoron_mail.looked`, by address, at most 50). A message is new when it
+  came after that; an account seen for the first time starts from that moment, so what was there before is not
+  new, and mail that comes while Thoron is closed is new at the next start. Opening the inbox counts from then:
+  the account shows 0 new and still its unread count. The icon counts the new mail (or all unread mail, a
+  setting); new messages have a red dot in the menu.
+- **Spam:** the count is Gmail's feed of the inbox, so spam, trash and archived mail are never counted.
+- **Settings** (the menu's gear; one pref each, `thoron_mail.<name>`, a value it does not know is the default):
+  where (next to the address bar, in it, or both), where in the toolbar (right after the address bar, after the
+  extensions, next to the menu), where in the address bar (with the other icons, before them, at the far end),
+  what the icon counts (new or unread), how often it looks (1 to 30 minutes), notices of new mail and their
+  sound, where mail opens (the account's open Gmail tab or a new tab), and which accounts are watched (one not
+  watched is listed, but not counted and not told of; `thoron_mail.ignored`).
+- **Two envelopes, one menu code:** `ThoronMailButton` (the toolbar, moved where its position says as the
+  shield is) and `ThoronMailAddressIcon` (the address bar, laid out by `LocationBarView::Layout`, as large as its
+  other icons) draw the same envelope and open the same menu (`ThoronMailMenu`, a kept page shown at once).
+  Both follow the settings as soon as they change.
+- **No leak, smooth:** each envelope observes the service with a scoped observation (it ends with the view);
+  timers are one-shot and stop with their owner; the remembered times keep only the accounts there are (50 at
+  most); a look is one request at a time; the menu draws with the browser's own elements, no HTML strings.
+- **Checked** by `tools/qa/mail_check.py`: also that what was there at the first look is not new, a new
+  message counts and is marked, opening the inbox resets the count, a setting changes and an unknown value is
+  refused, and an account not watched is not counted; `tools/qa/mail_place_check.py` (a window off the
+  screen, Windows UI Automation): the envelope in the toolbar, the address bar or both, what it says as mail
+  comes and the inbox is opened, and each position.
+
+### 12.66 CNAME uncloaking (P5.18, 2026-11-16)
+
+- **Why:** a tracker can hide under a site's own name: `metrics.news.example` is, in DNS, a name for the
+  tracker's host, so a rule for the tracker never sees the request. uBlock Origin finds these only in Firefox
+  (which lets an extension ask DNS); in Chromium no extension can. Brave does it in its own engine.
+- **How, at no extra cost:** the network service tells the browser a host's canonical names with each answer
+  (`URLResponseHead::dns_aliases`, from the lookup it made anyway). The watcher between a request and the page
+  (`RedirectWatcher`) holds an answer that came with such a name until the engine has looked at it: the
+  alias's origin (`https://<alias>/`, as uBlock Origin replays it) is checked against the lists for the same
+  page and type (`EngineService::BlocksAlias`, `engine_core::blocks_alias`). Blocked: the page never gets the
+  answer, and the request is on the shield's count. No DNS lookup of Thoron's own: nothing more leaves the
+  PC, and with a proxy (where the proxy looks names up) nothing changes.
+- **Learned:** the host found hiding a tracker is remembered (in memory, two hours as uBlock Origin's
+  `cnameMaxTTL`, 500 hosts at most, forgotten when the lists or "My filters" change), and its next requests
+  are blocked before they leave (`EngineService::IsCloak` in the request proxy). Only the first request to
+  such a host reaches it.
+- **Not checked** (as uBlock Origin's defaults): a canonical name of the site's own (`cnameIgnore1stParty`:
+  `www.example.com` at `example.com`'s servers), a request an exception rule of the lists allows
+  (`cnameIgnoreExceptions`: a list that keeps a site's own address working wins), a request "My rules"
+  allow, and pages and frames themselves (`cnameIgnoreRootDocument`). Eight names per answer at most.
+- **Cost:** most answers carry no canonical name of another site and go on at once; one that does waits for
+  one look-up of the engine on the UI thread, as a redirect already does. The setting "Uncloak canonical
+  names" (Privacy, on by default, as uBlock Origin's on Firefox) turns it off. Measured (the check's cost
+  step, 30 images of each host in turns): 0.9 ms in the middle for an answer with a canonical name that is
+  looked at and let through, 0.8 ms for one without.
+- **Checked** by `tools/qa/adblock_cname_check.py`: a switch the browser accepts only for answers from
+  127.0.0.1 gives the canonical names DNS would; the hidden tracker is blocked, its next request never leaves,
+  a name no list names, one of the site's own and an excepted host load, and the setting turns it off and on.
+  The engine's part is unit-tested (`a_tracker_under_a_site_s_own_name_is_found_by_its_canonical_name`).
+
+### 12.67 Thoron adblock in the side menu of Settings (P5.30, 2026-11-16)
+
+- **Why:** the browser's own Settings should lead to the blocker's page, as they lead to the extensions.
+- **How:** an entry "Thoron adblock" with a shield, below "Extensions" in the side menu of `chrome://settings`,
+  opens `chrome://adblock` in a new tab (the same kind of link as "Extensions": not a page of Settings, so
+  the menu neither selects it nor stops its click). It is shown while the built-in blocker is on
+  (`thoronAdblock`, given by the strings of Settings); its name is a name and is not translated.
+- **Checked** by `tools/qa/adblock_settings_link_check.py`: the entry shown with its name and address, a click
+  of the mouse opens the page in a new tab, and with the blocker off the entry is hidden. The check found that
+  the menu stopped every click but the one on "Extensions"; Thoron's is let through as well.
+
+### 12.68 The browser's own strings of Thoron adblock, translated (P5.16, 2026-11-16)
+
+- **What:** the strings Thoron adds to the browser's own pages (page info and site settings: "Ads and
+  trackers" and what it does; the shield's bubble; "Block element...", "Subscribe to filter list..." and
+  "Temporarily allow large media elements" in the context menu; the menus' names) in es, fr, de, pt-BR, pt-PT
+  and ru, as the pages of the blocker already are (`i18n.js`). Other languages show the English.
+- **How:** in the browser's translation files (`components/strings/components_strings_<lang>.xtb`), each under
+  the id grit gives the English text (computed with grit itself from the messages, so a changed English text
+  needs its translations again). Plurals in ICU form, with Russian's four forms. "ads.example (3)" reads the
+  same in every language and is not translated.
+- **Checked** by `tools/qa/adblock_strings_check.py`: the browser started in each language shows the
+  translated heading and description of the setting in Settings, not the English (a translation whose id
+  does not match is silently left out).
+
+### 12.69 Signed updates of the scriptlets and stand-ins (P5.23, 2026-11-16)
+
+- **Why (the owner, 2026-11-11):** the built-in blocker must "still be able to update the scripts and
+  blocklists". The lists update by themselves; the scriptlets and stand-ins were fixed at build time (P5.19).
+  They run inside every page, so a copy is only taken in when Thoron signed it.
+- **The file:** `thoron-adblock-resources 1`, `serial: YYYYMMDDNN`, `signature: <base64>`, an empty line, then
+  the resources as the shipped `thoron_adblock_resources.json`. The Ed25519 signature is over the file without
+  its signature line (the header names the kind of file, so a signature over something else never fits).
+- **In the browser** (`list_store.cc`, `list_updater.cc`): after each check of the lists the updater asks for
+  `thoron_adblock_resources.signed` (a release asset of the Thoron repository, over HTTPS, as a list is
+  fetched: no cookies, no cache, 20 MB at most). It is taken in only when the signature holds with Thoron's
+  public key (BoringSSL's `ED25519_verify`), its serial is higher than the copy in use
+  (`kShippedResourcesSerial` for the shipped one) and the engine accepts it as a resource list; it is written
+  atomically to `<user data>/Thoron Adblock/resources.signed`, and the engine is rebuilt with it at once.
+  Every time the engine is built the stored copy is verified again; anything that does not hold leaves the
+  shipped copy in use. A newer browser with newer shipped resources (a higher serial) uses its own.
+- **No key, no update:** `kResourcesPublicKey` is all zero until the key ceremony (ROADMAP P2.11, the owner's).
+  Until then nothing is asked for and only the shipped copy is used. For the offline check a switch gives a
+  key made for that run, honoured only while the lists come from a local server.
+- **Making one:** `tools/release/adblock_resources.py keygen` makes the key (offline; the private key goes to a
+  file outside the repository, the public key is printed as the C++ array), `sign` signs a resource list with
+  a serial, `verify` checks a file as the browser does.
+- **With a release:** `tools/release/release.py prepare --adblock-key <private key file> --adblock-public-key
+  <base64> --adblock-serial <YYYYMMDDNN>` signs the `thoron_adblock_resources.json` of the build it packages
+  and writes `thoron_adblock_resources.signed` into the release folder, once it verifies with the key copies
+  hold. Without the key the step is left out. The file is not part of the draft: copies ask the release tagged
+  `adblock-resources` for it, and the owner uploads it there.
+- **Checked** by `tools/qa/adblock_resources_check.py`: no update, a forged update (changed after signing),
+  a signed newer one (in use at once), an older one (refused), a restart (the stored copy is checked again
+  and used), another key and no key (the shipped copy; with no key nothing is asked for).
+
+### 12.70 Thoron's icons the browser's way: colours, counts, order, alerts (P5.78, 2026-11-16)
+
+- **Why (the owner):** the M-Notifier should only count, like X-notifier, with a sound and without pop-ups
+  unless asked; both icons should fit the browser's colours and design, show their counts the way Chrome shows
+  an extension's so the icon is not hidden, and be moved with the mouse, also before or after each other.
+- **Colours** (`thoron::ColorsOf`): the browser theme's. The shield is filled with the theme's primary colour
+  while it blocks (its T in the colour that reads on it), the envelope is in it while there is mail to count;
+  a count in the toolbar is in the theme's plainest strong pair (on-surface and surface), so it reads on
+  both. No fixed colour is left in the icons.
+- **Counts:** in the toolbar the button's image is larger than its icon by 8 px, as an extension's (a 28 px
+  image around a 20 px icon; the button's insets are smaller by as much, so the button is as large as the
+  others), and the count is a 14 px badge in the image's bottom right corner with a ring cleared around it
+  (`thoron::WithCountBadge`): it covers a quarter of the icon at most. In the address bar the icons are small,
+  so the count is next to the icon (`thoron::WithCountBeside`) and covers nothing.
+- **Order, by mouse** (`thoron::ToolbarDrag`, `thoron::ArrangeToolbar`): a toolbar button that is dragged goes,
+  while it is dragged, to the nearest of the three places (right after the address bar, after the extensions,
+  next to the menu: the button's own setting) and before or after Thoron's other button there, once the
+  pointer passes that button's middle. The order is the profile's (`thoron.toolbar_order`, "mail,adblock");
+  every window follows it at once. A press that became a drag opens no menu. In the address bar the envelope
+  dragged past the shield changes places with it, and the layout puts the two in that order wherever they
+  are next to each other (the far end, before the other icons, with the other icons).
+- **The M-Notifier only counts** unless asked for more, three separate settings: "Play a sound for new mail"
+  (on: Windows' own new-mail sound, played by the M-Notifier itself, so it comes with or without a notice),
+  "Show a notice for new mail" (off; a notice is silent, the sound being the M-Notifier's) and "List the
+  messages in this menu" (off: the menu shows each account with its counts; a click opens its inbox and
+  counts its new mail from then).
+- **The pages:** the M-Notifier's menu and Thoron adblock's menu and settings read the browser theme's colours
+  (`chrome://theme/colors.css`) and use them, with their old colours as the fallback; a person's own theme or
+  accent on `chrome://adblock` still wins. A kept menu reads the colours again each time it is shown.
+- **Checked** by `mail_check.py` (as it comes: a sound and no notice for new mail; with the notice on and the
+  sound off, a notice and no sound; the checks count the sound and do not make it), `mail_place_check.py` (the
+  envelope dragged past the shield and back, and from the menu to the address bar's end; for the time of a
+  drag the check tells the test browser's own input thread that the button is held, since the browser asks
+  Windows, and no other program sees it) and `adblock_icon_check.py` (the shield's places, size and menu).
+
+### 12.71 Mailboxes by address and password, what is counted, a backup (P5.77, 2026-11-16)
+
+- **Why (the owner):** "allow me to add users and passwords, so I am not limited to the Google accounts
+  signed in"; "change whether it shows only new messages in Primary, or with the others, and with spam"; "save
+  and back up the list to Google Drive, export to JSON or to an encrypted file with a password".
+- **A mailbox by address and password** is looked at over IMAP, the protocol mail programs use
+  (`thoron_mail::ImapCheck`). One look: connect over TLS, sign in (SASL PLAIN, or LOGIN where a server has no
+  other way), open the inbox read-only, count its unread messages, read the sender and the subject of the
+  newest 20 without marking them (`BODY.PEEK`), sign out. Nothing in the mailbox is changed.
+  - **The connection** is the network service's (`ProxyResolvingSocketFactory`, TLS on, the server's
+    certificate checked as for any site), so the person's proxy settings hold and the browser process parses no
+    TLS. A look ends after 30 seconds at the latest.
+  - **What the server sends is read in Rust** (`imap.rs`): a state machine that is given the bytes and says
+    what to send; C++ only carries bytes. A look takes 2 MB at most and 64 KB for one message's headers; a
+    server that sends more ends it. Words outside ASCII (RFC 2047) are decoded there and turned into text by
+    ICU for the charsets a message names. 13 unit tests: a whole look, both ways to sign in, a refused
+    password, a refused inbox, an inbox without unread mail, too much data, a dropped connection, dates, folded
+    headers, addresses, encoded words, literals.
+  - **The password** is typed into Thoron's own page, sent once to the browser process, and kept in the
+    profile encrypted by the system (os_crypt: on Windows a key only this Windows account can use), next to the
+    address, the server and the port (`thoron_mail.imap_accounts`). It is never given back to a page, never
+    written as it is, never logged; in memory it is overwritten once sent. A mailbox is signed in to once before
+    it is kept, so a wrong password is told at once.
+  - **Which services:** any with IMAP over TLS and a password. Known by name (server and mail page filled in):
+    Gmail (Google takes only an "app password" here, and says so in its account settings; the page tells the
+    person), Yahoo, AOL, iCloud, GMX, Mail.ru, Yandex, Zoho, Fastmail; any other by `imap.<its domain>` or the
+    server the person names. **Not possible this way:** Outlook, Hotmail and Live (Microsoft takes no password
+    from a mail program any more; it needs Microsoft's own sign-in and an application registered with
+    Microsoft) and Proton Mail (only through its Bridge program). The page says so instead of failing.
+  - A mailbox that could not be read keeps the counts of the last look that could, and shows why ("sign-in
+    refused", "could not be reached").
+- **What of Gmail is counted** (the browser's Google accounts): the whole inbox (as before), only its Primary
+  tab (Gmail's feed of the label `^sq_ig_i_personal`; where Gmail does not know it, the inbox), or the inbox
+  and spam (the spam's feed is read too, its messages marked "Spam"). A mailbox added by address and password
+  counts its whole inbox.
+- **An account that is new to the M-Notifier is only learned:** what it has at its first look is not new mail
+  and makes no sound.
+- **The M-Notifier's own page** (`chrome://mail-notifier.top-chrome/#manage`, opened in a tab from the menu):
+  the accounts, every setting, the form for a mailbox, and the backup. A menu closes when another window is
+  used (a password manager); a tab does not.
+- **The backup** (`thoron_mail::SealBackup`, `OpenBackup`): the mailboxes and the settings as one file. With a
+  passphrase it is sealed and holds the passwords: scrypt (N 32768, r 8, p 1) makes the key, AES-256-GCM seals
+  the backup's JSON, bound to this kind of file, so a wrong passphrase and a changed file both simply do not
+  open. Without a passphrase it is plain JSON and holds no password unless the person asks. Read back, it
+  brings the mailboxes and settings (each checked as when a person sets it); a mailbox without its password in
+  the file keeps the one it has here, or is left out. The file is saved where the person chooses (a folder
+  that is synced, Google Drive's for one, keeps it in the cloud). Thoron does not sign in to Google Drive
+  itself: it has no Google API keys by design.
+- **Checked** by `tools/qa/mail_imap_check.py` (a local stand-in mail server; a switch that takes only a
+  loopback address sends every look there in plain text): a refused password, a mailbox added and read with
+  its words decoded, the password nowhere in the profile's files as it is nor given to the page, new mail and
+  its sound, the count reset, a restart, and the backup (sealed, bare, with passwords; the mailbox removed and
+  brought back; a wrong passphrase, none, and a changed file refused), and by `tools/qa/mail_check.py` (what of
+  Gmail is counted).
+
+### 12.72 chrome://adblock as a dashboard with tabs (P5.79, 2026-11-16)
+
+- **Why (the owner):** the settings should match the browser's colours and style, be more professional, "with
+  tabs and a smart UI".
+- **The page:** a header that stays in view (the shield, the state On / Paused / Off, a search box), a bar of
+  eight tabs, one panel at a time:
+  Overview (on, off and for how long; five numbers; quick actions; troubleshooting), Settings (a card each
+  for appearance, privacy, default behavior, filtering, shortcuts, advanced), Filter lists (the lists in
+  use, add a list, the catalog), My filters, My rules, Sites (allowed sites, the menu's switches), Logger,
+  Backup (file, cloud storage, starting over).
+- **Addresses:** the tab is in the address (`chrome://adblock/#lists`), so a reload, a link, Back and Forward
+  keep it. Every address that worked before still does: an old anchor, or the id of anything on the page,
+  opens the tab it is on and goes to it (the menu's "Logger" and "Settings", the shortcuts, a subscribe
+  link).
+- **Keyboard:** the tabs follow the usual pattern (arrow keys, Home and End); `/` goes to the search; Ctrl+S
+  saves in the two editors.
+- **The look:** the browser theme's colours (twelve of them, from `chrome://theme/colors.css`), each with a
+  colour of the page's own behind it. A person's choice of light or dark and their accent colour still win;
+  a theme chosen against the browser's uses the page's own colours of that kind. Cards on a quiet
+  background, pill buttons, switches for what is on or off, as the browser's own settings have them; from
+  480 px wide to three columns on a wide screen.
+- **Smarter:** one search over tabs, settings (also by the choices of a select), buttons, lists in use,
+  catalog lists by name, address or country, and sites; counts on four tabs; a mark for unsaved changes in
+  both editors and an undo for My rules; empty states that say what to do; a red mark on a list that could
+  not be downloaded.
+- **Nothing given up:** every id, every `data-setting`, every control and every message of the page is kept
+  (97 ids of the settings page, 38 of the menu), no HTML strings, no outside resources; the new strings (21)
+  are in es, fr, de, pt and ru. Found on the way and fixed: importing allowed sites always ended in an error.
+- **Checked:** the 32 offline checks that work these pages pass on it. Three were written for the page as one
+  long sheet and follow the tabs now: the catalog check (a setting counts as shown when nothing it is in is
+  hidden), the theme check (a light page is told from a dark one by its text, and "as the system" is the
+  browser's own), the tools check (the colour-blind colours where a page names its light and dark shade at
+  once).
+
+### 12.73 X-notifier's file of accounts, and a list of Google accounts (P5.80, 2026-11-16)
+
+- **Why (the owner):** "I want to be able to save all the email accounts like in X-notifier, and like this
+  file from X-notifier": a person who used X-notifier has a file of accounts sealed with a passphrase and
+  expects Thoron M-Notifier to take it, keep the accounts and save them again.
+- **The file** (`chrome.xn`): text in sections. `[---<info>---]` and a line holding the file's token
+  (digits); `[---<preferences>---]` and lines of name, kind and value, among them the name a person gave an
+  account; `[---<accounts>---]` and a line for each account with its kind, user, password and the token;
+  `[------]`. The info line and the account lines are encrypted with the passphrase: AES in counter mode,
+  the first 8 bytes where the counter starts, in base64; the key is the passphrase's first 32 bytes
+  encrypted once with themselves. Only the form is used, none of X-notifier's code;
+  `tools/qa/xn_file.py` writes and reads it for the checks.
+- **Where it is read:** in the M-Notifier's page, with the browser's own cryptography for pages. The
+  browser process is given the accounts, never the file: a file from outside is not parsed where a mistake
+  would cost most. A wrong passphrase is known by the token (it is not digits), and a line that does not
+  end in the file's token is left out.
+- **What is taken:** the entries of the kind "gmail" (a user written without "@" is a Gmail address);
+  other kinds (forums, scripts) are not mail and are left out, and the page says how many.
+- **The list:** each account's address, the name it had, and its password encrypted by the system, as the
+  browser keeps its own passwords (`thoron_mail.google_accounts`). X-notifier signs in to Google by itself
+  with these passwords, in the browser's own session, and signs out again when the order of accounts does
+  not fit; that is brittle and is the likely cause of Google sign-outs seen with it. Thoron M-Notifier does
+  not sign in for anybody. An account is counted while Thoron is signed in to it at Google, and the list
+  shows which are: "Sign in" opens Google's own page with the address filled in, and "Copy password" puts
+  the kept password on the clipboard for that page (written by the browser, marked as confidential, never
+  sent to a page). A sign-in at Google lasts, so this is done once for an account.
+- **App passwords:** a password of 16 letters is the shape of an app password, which opens the mailbox
+  itself: such an account is also added as a mailbox (12.71), and stays in the list in case the mail server
+  does not take it.
+- **One account, one line:** addresses are compared the way Gmail does (capitals, dots, `googlemail.com`),
+  so an account found at Google and the same one as a mailbox or in the list are one.
+- **Thirty accounts:** the M-Notifier asked Gmail for at most 10 accounts; a person with more had the rest
+  left out without a word. It is 30 now.
+- **Backup:** the M-Notifier's own backup (12.71) holds the list: without passwords, with them, or sealed.
+- **Checked:** `mail_xn_check.py`, with a made-up file and stand-ins for Gmail and a mail server: a wrong
+  passphrase, the reading, no password as text in the profile or in what the page is told, counted or
+  not, twelve accounts, the sign-in page only for an address of the list, the list after a restart, and
+  the backup.
+
+### 12.74 Lines that only name a host (S.14, 2026-11-16)
+
+- **Found by measuring:** the optional phishing list was fetched and stopped none of its own hosts, while
+  the malware list stopped all of them. The malware list is written as rules (`||host^$all`); the
+  phishing list, like many lists of harmful sites, is plain host names, one a line.
+- **Cause:** the rule parser takes a line that is only a host name for a piece of text to look for in
+  addresses. That can stop a request inside a page, and never the page itself.
+- **As uBlock Origin:** a line that is nothing but a host name ("ads.example.com"), or a line of a hosts
+  file ("0.0.0.0 ads.example.com", with or without a comment), is the rule for that whole host, on pages
+  and in pages. Thoron adblock rewrites such a line to `||host^$all` before the parser sees it
+  (`engine_core.rs`, `plain_hosts_as_rules`), for every list and for "My filters".
+- **What is not such a line:** anything with a path, an option, a wildcard, a cosmetic part or a comment
+  mark; a number (an address); one word alone ("localhost"); the names a hosts file gives the machine
+  itself. As in uBlock Origin, a pattern that happens to look like a host name ("banner.gif") is read as
+  a host; lists write such patterns with a separator.
+- **Checked:** two engine tests (the page, another name of the host, a request in a page; a page that
+  only mentions the host stays open) and `adblock_hosts_check.py` end to end, with the server not asked
+  for a stopped page.
+
+### 12.75 The accounts' order, editing, and a backup the browser writes (P5.81, 2026-11-19)
+
+- **The owner's asks:** reorder the list, edit the addresses and passwords of the list, and "Save a backup..."
+  saved an empty file.
+- **The empty file:** the page wrote the file itself (the File System Access API). Its Save picker makes the
+  file at once, empty; the text is written beside it and put in its place only when the page closes the file.
+  When that last step failed, the empty file stayed, and the page took the error for the dialog being closed
+  and said nothing. Now the browser asks for the file with the system's own Save dialog, writes
+  the backup next to it, reads it back, and puts it in its place; where a folder takes no such move, it is
+  written in place and read back. Anything short of the whole backup is told to the person, and an empty file
+  it made is removed. The file is named with the day and the next save starts in the last folder.
+- **The order:** a list of addresses (as Gmail sees them: no dots, one domain) in the profile. Accounts it
+  does not name come after, as they were found, so a new account never pushes others aside. Dragged, moved with
+  arrows, or with Alt and an arrow key; part of the backup.
+- **Editing:** the password is never shown; an empty field keeps it. What a mailbox signs in with (address,
+  sign-in name, server, port, password) is signed in to before it is kept, as when it is added, so a typo
+  changes nothing; its mail page alone is kept at once. A new address takes the order, the watched setting and
+  the last look along. On the list, a new app password makes the account a mailbox, or gives its mailbox the
+  password, so the two never disagree.
+- **Security:** no new network use. The file is written by the browser process to the path the person picked in
+  the system's dialog (`ChromeSelectFilePolicy`, so a policy that forbids file dialogs is followed); what it holds
+  is what the backup held before (passwords only sealed, or when the person ticks it). The checks' switch
+  `--thoron-mail-backup-file-for-testing` names the file instead of the dialog, as `--thoron-mail-feeds-for-testing`
+  stands in for Gmail: it changes only where a backup the person asked for goes, and needs the command line,
+  which already reaches the profile.
+- **Checked:** `mail_manage_check.py`, offline with a stand-in mail server.
+
+### 12.76 The page in tabs, one list of accounts, sounds (P5.82, 2026-11-19)
+
+- **The owner's asks:** the page showed every address three times (the menu's list, "Accounts to watch", the
+  list of Google accounts); the menu's gear should open the settings page; more sounds and smart sounds, free or
+  credited, nothing under copyright.
+- **One list:** the accounts counted and those of the person's list are merged by address (as Gmail reads it)
+  and shown once, in the person's order. A row has what is needed at a glance (name, kind, new and unread mail, a
+  switch to count it); the rest is in its opened part (its own sound, its place, edit, remove). The menu's list
+  is the menu's alone: the page hides it. Removing takes two presses, without a dialog that would block the
+  page.
+- **Tabs:** Accounts, Alerts and sounds, Counting, Display, Backup, in the browser's own settings style (a
+  column of tabs, cards of settings, switches for on and off); the tab is kept in the address. The menu's gear
+  opens the page instead of a panel squeezed into the menu.
+- **Sounds without copyright:** the browser makes each sound from tones when it plays it (`mail_sounds.cc`: a
+  note is a pitch with overtones, a short rise, a fall and a fade at its end; bell-like sounds take overtones
+  that are not whole multiples, as a struck bell's are). No file is shipped and no recording is used, so there
+  is nothing to license or credit beyond our own (CREDITS.md says so). Windows' new-mail sound stays the
+  default: it is the person's own sound scheme, played by name. The volume follows the ear (a power curve), and
+  the loudest sample never passes the volume's share. A sound plays from memory; the one playing is stopped
+  before its memory is reused.
+- **Smart quiet, in order:** an account set to no sound; quiet hours (they hold the notices too, as "do not
+  disturb" does); the account's own inbox or mail page as the active tab of the active window (the person is
+  looking at it); and Windows' own answer to "may I disturb now" (`SHQueryUserNotificationState`: a full-screen
+  program, a Direct3D game, presentation mode, a full-screen app). The offline checks do not ask Windows, so a
+  full-screen window on the PC cannot change their result.
+- **Checked:** `mail_settings_check.py` (tabs, the Settings button, one list, every sound, an account's own
+  sound, quiet hours, the backup) and `mail_manage_check.py` again on the new list.
+
 ## 13. Credits
 
 The procedural operators and the rest of the filter syntax are uBlock Origin's (with forms from Adblock

@@ -38,9 +38,9 @@ This list is generated from GitHub by `tools/credits/contributors.py`. Bots are 
 anonymous contributors are credited by name only.
 
 <!-- contributors:start -->
-- [@Alex313031](https://github.com/Alex313031) (4905 commits)
-- [@gz83](https://github.com/gz83) (18 commits)
-- [@hocheung-chromium](https://github.com/hocheung-chromium) (18 commits)
+- [@Alex313031](https://github.com/Alex313031) (4913 commits)
+- [@hocheung-chromium](https://github.com/hocheung-chromium) (340 commits)
+- [@gz83](https://github.com/gz83) (20 commits)
 - [@midzer](https://github.com/midzer) (5 commits)
 - [@RoyalOughtness](https://github.com/RoyalOughtness) (2 commits)
 - [@szepeviktor](https://github.com/szepeviktor) (2 commits)
@@ -126,6 +126,12 @@ Thoron's own work covers the updater, import, packaging, security tooling, brand
 documentation. It is developed by [KuchiSofts](https://github.com/KuchiSofts) and released under the
 same BSD-3-Clause terms as Thorium, unless a file says otherwise. The Thoron logo artwork is
 © 2026 KuchiSofts, licensed CC BY 4.0.
+
+The sounds of Thoron M-Notifier (Chime, Bell, Marimba, Pop, Water drops, Bright, Soft, Knock, Ding,
+Double beep) are Thoron's own: the browser makes each one from tones when it plays it
+(`components/thoron_mail/mail_sounds.cc`, BSD-3-Clause). No recording or sample of anyone's is used or
+shipped. "Windows' new-mail sound" is the one in the person's own Windows sound scheme, played by name
+and never copied.
 
 If we have missed or mis-credited anyone, please open an issue on
 [KuchiSofts/thoron](https://github.com/KuchiSofts/thoron). Correct credit matters to us.

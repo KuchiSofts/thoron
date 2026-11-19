@@ -1,0 +1,156 @@
+# ARM64 beta report (ROADMAP P2b.4). The steps are in docs/qa/ARM_BETA_CHECKLIST.md.
+# The form asks for nothing personal: no names, accounts, e-mail addresses, serial numbers or PC names.
+name: ARM64 beta report
+description: Results from running a Thoron ARM64 build on a real Windows-on-ARM or ARM64 Linux device
+title: "ARM64: "
+labels: ["arm64"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for testing. The steps are in the
+        [ARM beta checklist](https://github.com/KuchiSofts/thoron/blob/main/docs/qa/ARM_BETA_CHECKLIST.md).
+
+        - Test on the new profile Thoron creates, and never start it with `--no-sandbox`.
+        - Write nothing personal here: no names, account names, e-mail addresses, serial numbers, PC names or IP addresses.
+        - Attach no crash dump (`.dmp`), no log and no file from a profile. They can hold passwords.
+        - A security problem does not belong here. Report it privately: https://github.com/KuchiSofts/thoron/security/advisories/new
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Windows 11 on ARM
+        - Ubuntu 24.04 (ARM64)
+        - Ubuntu 26.04 (ARM64)
+        - Another ARM64 Linux (best effort)
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Device class
+      description: "The kind of device, its chip family and its memory. No serial number and no PC name."
+      placeholder: "Snapdragon X laptop, 16 GB / Raspberry Pi 5, 8 GB"
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS version
+      description: "Windows: version and build. Linux: distribution and version, Wayland or X11 (step L2) and the page size (step L3)."
+      placeholder: "Windows 11 24H2 / Ubuntu 24.04, Wayland, page size 4096"
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Thoron version
+      description: "From chrome://version, with the Chromium version (step A4)."
+      placeholder: "Thoron 0.1.x, Chromium 158.0.8127.x"
+    validations:
+      required: true
+  - type: dropdown
+    id: package
+    attributes:
+      label: Package
+      options:
+        - Installer (Windows)
+        - Portable .zip (Windows)
+        - .deb (Linux)
+        - Portable .tar.xz (Linux)
+    validations:
+      required: true
+  - type: dropdown
+    id: verified
+    attributes:
+      label: Download verified (step A1)
+      options:
+        - Signature and checksum both verified
+        - One of them did not verify
+        - Not checked
+    validations:
+      required: true
+  - type: dropdown
+    id: native
+    attributes:
+      label: Runs as ARM64, not emulated (step A3)
+      options:
+        - "Yes"
+        - "No"
+        - Could not tell
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps
+      description: "Write pass, fail or not run after each step. The W steps are for Windows, the L steps for Linux."
+      render: text
+      value: |
+        A2 installs and starts:
+        A5 sandbox page:
+        B1 smoke page:
+        B2 graphics feature status:
+        B3 video, 5 minutes:
+        B4 Thoron adblock:
+        B5 saved password after a restart:
+        B6 extension from the Web Store:
+        B7 download, PDF, print to PDF:
+        C1 30 minutes, 10 or more tabs:
+        C2 sleep and wake:
+        C3 CPU at rest:
+        W1 no administrator prompt:
+        W2 listed in installed apps:
+        W3 video on battery:
+        W4 uninstall keeps the profile:
+        L1 package installs:
+        L4 sandbox after a restart:
+    validations:
+      required: true
+  - type: textarea
+    id: failures
+    attributes:
+      label: What failed or looked wrong
+      description: "For each failed step: what you did, what happened, and what you expected. Describe a crash in words; do not attach the dump."
+  - type: textarea
+    id: smoke_page
+    attributes:
+      label: Line from the smoke page (step B1)
+      description: "The one line the page shows. It names the OS and the Chromium version, nothing else."
+      render: text
+  - type: textarea
+    id: sandbox
+    attributes:
+      label: Text of chrome://sandbox (step A5)
+      render: text
+  - type: textarea
+    id: gpu
+    attributes:
+      label: Graphics Feature Status (step B2)
+      description: "Only the first list of chrome://gpu, not the whole page."
+      render: text
+  - type: input
+    id: dumps
+    attributes:
+      label: Number of crash dump files (step C4)
+      description: "The number only. Never attach the files."
+      placeholder: "0"
+    validations:
+      required: true
+  - type: textarea
+    id: optional
+    attributes:
+      label: Optional results
+      description: "Protected video plays or does not play; what tools/build/smoke.py printed; benchmark results (Speedometer 3, JetStream 2, MotionMark)."
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: Before you send
+      options:
+        - label: I tested on a new profile and never started Thoron with --no-sandbox.
+          required: true
+        - label: This report holds nothing personal (no names, accounts, e-mail addresses, serial numbers, PC names or IP addresses).
+          required: true
+        - label: I attached no crash dump, no log and no file from a profile.
+          required: true

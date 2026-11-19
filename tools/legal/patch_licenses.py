@@ -79,7 +79,8 @@ def _clean(text: str, limit: int = 160) -> str:
 
 def classify(patch_text: str, patches_md: str, name: str, projects: dict[str, dict],
              research: dict[str, dict] | None = None) -> dict:
-    head = "\n".join(patch_text.splitlines()[:40])
+    # the header is everything before the first file of the patch, however long its description is
+    head = patch_text.split("\ndiff --git ", 1)[0]
     fields = {k.lower(): v for k, v in HEADER_RE.findall(head)}
     if "license" in fields:
         # a header that agrees with the research or PATCHES.md (for example one written from them by
@@ -131,6 +132,24 @@ def render_table(rows: list[dict], source: str = "the upstream patch series") ->
     out += [f"| `{r['patch']}` | {r['origin']} | {'**' + r['license'] + '**' if r['license'] in BLOCKING else r['license']} | "
             f"{r['evidence']} |" for r in rows]
     return "\n".join(out) + "\n"
+
+
+def read_table(markdown: str) -> list[dict]:
+    """The rows of an inventory as render_table wrote it (the release script reads them, ROADMAP L.3)."""
+    rows = []
+    for line in markdown.splitlines():
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if len(cells) == 4 and len(cells[0]) > 2 and cells[0].startswith("`") and cells[0].endswith("`"):
+            rows.append({"patch": cells[0].strip("`"), "origin": cells[1], "license": cells[2].strip("*"),
+                         "evidence": cells[3]})
+    return rows
+
+
+def origin_names(origin: str) -> list[str]:
+    """The projects and people an Origin cell names, without what stands in brackets:
+    `Thorium (Alex313031, gz83); idea from Iridium` names Thorium and Iridium."""
+    parts = re.split(r"[,;]", re.sub(r"\([^)]*\)", "", origin))
+    return [name for name in (re.sub(r"(?i)^idea from\s+", "", part.strip()).strip() for part in parts) if name]
 
 
 def series_patches(tree: Path) -> list[str]:

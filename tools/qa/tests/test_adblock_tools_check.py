@@ -87,6 +87,9 @@ class LookTests(unittest.TestCase):
         self.assertEqual(tc.colorblind_problems(False, {"class": False, "allow": "#1e8e3e"}), [])
         self.assertEqual(len(tc.colorblind_problems(True, {"class": True, "allow": "#1e8e3e"})), 1)
         self.assertEqual(len(tc.colorblind_problems(False, {"class": False, "allow": "#1a73e8"})), 1)
+        # both shades named at once, as a page that is light or dark by itself writes them
+        self.assertEqual(tc.colorblind_problems(True, {"class": True, "allow": "light-dark(#1a73e8, #8ab4f8)"}), [])
+        self.assertEqual(tc.colorblind_problems(False, {"class": False, "allow": "light-dark(#1e8e3e, #81c995)"}), [])
 
     def test_info(self):
         text = ("Thoron 158.0.8127.3006\nLists in use:\n  EasyList (100 rules)\nMy filters: 1 rules\n"

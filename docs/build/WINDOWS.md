@@ -197,6 +197,13 @@ Expected on M156: about 610 files (575 string and translation files, 24 icons, t
 `BRANDING` and the 12 build and installer files that name the program file). The COM interface IDs
 are still upstream's (ROADMAP **P2.19**), so install Thoron per user only.
 
+On a Chromium 158 tree that already carries the earlier identity, the step as of 2026-11-16 changes
+about 295 more files (ROADMAP **B.3**): 280 translation files, where the name is inflected or joined
+with a hyphen, 14 files a person reads the result of (installer dialog, flags, version, URLs and credits
+pages, the first start, the address bar) and the dark-mode mark of the settings pages. What still
+carries Thorium's name on purpose, and how to check a finished build for the rest, is in
+[`IDENTITY_LEFT.md`](IDENTITY_LEFT.md).
+
 ## 8. Build
 
 The release configuration is upstream's `other\AVX2\win_AVX2_args.gn` with Thoron's privacy
@@ -246,6 +253,23 @@ py -3 -I tools\migrate\import_profile.py --from "$env:LOCALAPPDATA\Thorium\User 
 Then use Thoron and keep Thorium closed as a backup: two copies of a profile used online at the
 same time can make sites sign one of them out, and both sync as the same device.
 
+**Bringing the open tabs of another browser.** The whole-profile copy above already brings
+Thorium's windows and tabs. From another browser of the Chromium family (Chrome, for example), the
+open windows, tabs, tab groups and each tab's history can be copied into a Thoron profile that has
+started once. Close both browsers first; the other browser's files are only read:
+
+```powershell
+py -3 -I tools\migrate\sessions.py read --profile "$env:LOCALAPPDATA\Google\Chrome\User Data\Default"
+py -3 -I tools\migrate\sessions.py import --from "$env:LOCALAPPDATA\Google\Chrome\User Data\Default" --to "$env:LOCALAPPDATA\Thoron\User Data\Default" --set-aside --restore-on-next-start
+```
+
+`read` prints what would come over, as JSON. `import` keeps Thoron's own last session in a folder
+inside `Sessions` (`--set-aside`) and makes the next start of Thoron open the imported windows once
+(`--restore-on-next-start`), without changing the start-up setting. The groups come over as
+Thoron's own: their link to the other browser's saved groups is left out, because Thoron would
+otherwise close a group it does not know. A minimized window opens as a normal one, as Thoron does
+with its own session.
+
 **Moving over an install made before the rename.** Thoron builds from before ROADMAP **P2.20**
 installed `thorium.exe` and took over Thorium's `App Paths` entry. After installing a newer build
 over such an install (with Thoron closed and backed up), run this once:
@@ -284,7 +308,7 @@ one, so going back means restoring a backup. Never skip these steps (ROADMAP **Q
    again and compares. A window with your tabs opens and closes by itself: do not use it. The last
    line must say that the new build kept everything. The copy is deleted whatever happened, and your
    real `User Data` is only read. A build that does not close when asked does not count as a pass.
-   With `--browser-log <private local folder>ehearsal.log` the new build also writes its own log
+   With `--browser-log <private local folder>\rehearsal.log` the new build also writes its own log
    there: kept when the rehearsal fails, to find out why (it names your pages, so it stays on your
    PC), and deleted when it passes.
 4. Only then install over the real Thorium. The installer first asks "Do you want to install

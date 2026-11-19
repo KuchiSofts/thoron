@@ -8,7 +8,7 @@ boxes and clicks the buttons of the page. After every step it loads a local test
 test hosts for a script, and looks which ones were blocked. Host-resolver rules send the test hosts to a
 local server and make every other host fail; the built-in lists come from that server too.
 
-    default                the first update is in: the built-in easylist blocks its test host, 8 lists shown
+    default                the first update is in: the built-in easylist blocks its test host, its 9 default lists shown
     my filters             a rule of one's own is saved: its host is blocked
     refused rule           a rule that allows every request is refused; nothing changes; the box keeps the text
     add a list             a list is added by its address: its host is blocked, its title is shown, and its
@@ -87,9 +87,11 @@ READ_PAGE = """JSON.stringify((() => {
 ALL = {"easy": True, "list": True, "mine": True}
 
 # What is done, and what must be true afterwards. Blocked hosts are named by their key in HOSTS.
+# Thoron adblock's default lists (the phishing list is the ninth, S.14)
+DEFAULT_LISTS = 9
 STEPS = [
     {"name": "default", "act": ("none",),
-     "want": {"blocked": {"easy": True, "list": False, "mine": False}, "rows": 8, "custom": 0,
+     "want": {"blocked": {"easy": True, "list": False, "mine": False}, "rows": DEFAULT_LISTS, "custom": 0,
               "checked": {"easylist": True}, "not_applied": False}},
     {"name": "my filters", "act": ("filters", MINE),
      "want": {"blocked": {"easy": True, "list": False, "mine": True}, "message": "saved", "bad": False}},
@@ -97,26 +99,26 @@ STEPS = [
      "want": {"blocked": {"easy": True, "list": False, "mine": True}, "message": "allows every request",
               "bad": True, "filters": MINE + "@@*\n"}},
     {"name": "add a list", "act": ("add", "/extra.txt"),
-     "want": {"blocked": ALL, "message": "added", "bad": False, "rows": 9, "custom": 1,
+     "want": {"blocked": ALL, "message": "added", "bad": False, "rows": DEFAULT_LISTS + 1, "custom": 1,
               "title": "Extra test list", "no_cookie": "thoron_trusted"}},
     {"name": "refused list", "act": ("add", "/bad.txt"),
-     "want": {"blocked": ALL, "message": "not a usable filter list", "bad": True, "rows": 9}},
+     "want": {"blocked": ALL, "message": "not a usable filter list", "bad": True, "rows": DEFAULT_LISTS + 1}},
     {"name": "not https", "act": ("add_url", "http://lists.example/filters.txt"),
-     "want": {"blocked": ALL, "message": "https://", "bad": True, "rows": 9}},
+     "want": {"blocked": ALL, "message": "https://", "bad": True, "rows": DEFAULT_LISTS + 1}},
     {"name": "list off", "act": ("toggle", "easylist"),
      "want": {"blocked": {"easy": False, "list": True, "mine": True}, "message": "switched off", "bad": False,
               "checked": {"easylist": False}}},
     {"name": "after a restart", "act": ("restart",),
-     "want": {"blocked": {"easy": False, "list": True, "mine": True}, "rows": 9, "custom": 1,
+     "want": {"blocked": {"easy": False, "list": True, "mine": True}, "rows": DEFAULT_LISTS + 1, "custom": 1,
               "checked": {"easylist": False}, "filters": MINE, "not_applied": False}},
     {"name": "list on", "act": ("toggle", "easylist"),
      "want": {"blocked": ALL, "message": "in use", "bad": False, "checked": {"easylist": True}}},
     {"name": "after an update", "act": ("version",),
-     "want": {"blocked": ALL, "rows": 9, "custom": 1, "filters": MINE, "not_applied": False,
+     "want": {"blocked": ALL, "rows": DEFAULT_LISTS + 1, "custom": 1, "filters": MINE, "not_applied": False,
               "first": {"list": True, "mine": True}}},
     {"name": "remove the list", "act": ("remove",),
      "want": {"blocked": {"easy": True, "list": False, "mine": True}, "message": "removed", "bad": False,
-              "rows": 8, "custom": 0}},
+              "rows": DEFAULT_LISTS, "custom": 0}},
     {"name": "after an interruption", "act": ("interrupt",),
      "want": {"blocked": {"easy": True, "list": False, "mine": True}, "not_applied": True, "still_marked": True,
               "filters": MINE}},

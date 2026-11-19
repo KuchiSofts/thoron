@@ -1,0 +1,393 @@
+{
+ "session": {
+  "windows": [
+   {
+    "id": 1485903225,
+    "type": "normal",
+    "show_state": "normal",
+    "bounds": [
+     -4000,
+     -4000,
+     800,
+     600
+    ],
+    "selected_tab": 4,
+    "user_title": "",
+    "app_name": "",
+    "tabs": [
+     {
+      "id": 1485903226,
+      "pinned": true,
+      "group": null,
+      "current": 1,
+      "navigations": [
+       {
+        "index": 0,
+        "url": "http://127.0.0.1:47615/p/pinned-1",
+        "title": "Thoron session test pinned-1"
+       },
+       {
+        "index": 1,
+        "url": "http://127.0.0.1:47615/p/pinned-2",
+        "title": ""
+       }
+      ]
+     },
+     {
+      "id": 1485903227,
+      "pinned": false,
+      "group": "9762e59f0582bc70d77af9f2f02f6537",
+      "current": 1,
+      "navigations": [
+       {
+        "index": 0,
+        "url": "http://127.0.0.1:47615/p/work-a1",
+        "title": ""
+       },
+       {
+        "index": 1,
+        "url": "http://127.0.0.1:47615/p/work-a2",
+        "title": "Thoron session test work-a2"
+       },
+       {
+        "index": 2,
+        "url": "http://127.0.0.1:47615/p/work-a3",
+        "title": ""
+       }
+      ]
+     },
+     {
+      "id": 1485903228,
+      "pinned": false,
+      "group": "9762e59f0582bc70d77af9f2f02f6537",
+      "current": 0,
+      "navigations": [
+       {
+        "index": 0,
+        "url": "http://127.0.0.1:47615/p/work-b1",
+        "title": ""
+       }
+      ]
+     },
+     {
+      "id": 1485903229,
+      "pinned": false,
+      "group": "02755b51c88fce71605ee4027900eba3",
+      "current": 1,
+      "navigations": [
+       {
+        "index": 0,
+        "url": "http://127.0.0.1:47615/p/later-c1",
+        "title": ""
+       },
+       {
+        "index": 1,
+        "url": "http://127.0.0.1:47615/p/later-c2",
+        "title": ""
+       }
+      ]
+     },
+     {
+      "id": 1485903230,
+      "pinned": false,
+      "group": null,
+      "current": 2,
+      "navigations": [
+       {
+        "index": 0,
+        "url": "http://127.0.0.1:47615/p/plain-d1",
+        "title": ""
+       },
+       {
+        "index": 1,
+        "url": "http://127.0.0.1:47615/p/plain-d2",
+        "title": ""
+       },
+       {
+        "index": 2,
+        "url": "http://127.0.0.1:47615/p/plain-d3",
+        "title": ""
+       }
+      ]
+     }
+    ],
+    "groups": [
+     {
+      "id": "9762e59f0582bc70d77af9f2f02f6537",
+      "title": "Work",
+      "color": "blue",
+      "collapsed": false
+     },
+     {
+      "id": "02755b51c88fce71605ee4027900eba3",
+      "title": "Later",
+      "color": "red",
+      "collapsed": true
+     }
+    ]
+   },
+   {
+    "id": 1485903233,
+    "type": "normal",
+    "show_state": "minimized",
+    "bounds": [
+     -4000,
+     -4000,
+     800,
+     600
+    ],
+    "selected_tab": 1,
+    "user_title": "",
+    "app_name": "",
+    "tabs": [
+     {
+      "id": 1485903234,
+      "pinned": false,
+      "group": "e01ec543a5d56feec592cdb266ce69ed",
+      "current": 0,
+      "navigations": [
+       {
+        "index": 0,
+        "url": "http://127.0.0.1:47615/p/notes-e1",
+        "title": ""
+       }
+      ]
+     },
+     {
+      "id": 1485903235,
+      "pinned": false,
+      "group": null,
+      "current": 1,
+      "navigations": [
+       {
+        "index": 0,
+        "url": "http://127.0.0.1:47615/p/other-f1",
+        "title": "Thoron session test other-f1"
+       },
+       {
+        "index": 1,
+        "url": "http://127.0.0.1:47615/p/other-f2",
+        "title": ""
+       }
+      ]
+     }
+    ],
+    "groups": [
+     {
+      "id": "e01ec543a5d56feec592cdb266ce69ed",
+      "title": "Notes éü",
+      "color": "green",
+      "collapsed": false
+     }
+    ]
+   }
+  ],
+  "active_window": 1,
+  "commands": 136,
+  "marker": true,
+  "complete": true,
+  "skipped": {
+   "unknown": 0,
+   "malformed": 0,
+   "over_limit": 0
+  },
+  "unknown_ids": []
+ },
+ "closed": {
+  "entries": [
+   {
+    "kind": "window",
+    "type": "normal",
+    "show_state": "normal",
+    "bounds": [
+     -4000,
+     -4000,
+     800,
+     600
+    ],
+    "selected_tab": 4,
+    "user_title": "",
+    "tabs": [
+     {
+      "pinned": true,
+      "group": null,
+      "current": 1,
+      "navigations": [
+       {
+        "index": 0,
+        "url": "http://127.0.0.1:47615/p/pinned-1",
+        "title": "Thoron session test pinned-1"
+       },
+       {
+        "index": 1,
+        "url": "http://127.0.0.1:47615/p/pinned-2",
+        "title": "Thoron session test pinned-2"
+       }
+      ]
+     },
+     {
+      "pinned": false,
+      "group": {
+       "title": "Work",
+       "color": "blue",
+       "collapsed": false
+      },
+      "current": 1,
+      "navigations": [
+       {
+        "index": 0,
+        "url": "http://127.0.0.1:47615/p/work-a1",
+        "title": "Thoron session test work-a1"
+       },
+       {
+        "index": 1,
+        "url": "http://127.0.0.1:47615/p/work-a2",
+        "title": "Thoron session test work-a2"
+       },
+       {
+        "index": 2,
+        "url": "http://127.0.0.1:47615/p/work-a3",
+        "title": "Thoron session test work-a3"
+       }
+      ]
+     },
+     {
+      "pinned": false,
+      "group": {
+       "title": "Work",
+       "color": "blue",
+       "collapsed": false
+      },
+      "current": 0,
+      "navigations": [
+       {
+        "index": 0,
+        "url": "http://127.0.0.1:47615/p/work-b1",
+        "title": "Thoron session test work-b1"
+       }
+      ]
+     },
+     {
+      "pinned": false,
+      "group": {
+       "title": "Later",
+       "color": "red",
+       "collapsed": true
+      },
+      "current": 1,
+      "navigations": [
+       {
+        "index": 0,
+        "url": "http://127.0.0.1:47615/p/later-c1",
+        "title": "Thoron session test later-c1"
+       },
+       {
+        "index": 1,
+        "url": "http://127.0.0.1:47615/p/later-c2",
+        "title": "Thoron session test later-c2"
+       }
+      ]
+     },
+     {
+      "pinned": false,
+      "group": null,
+      "current": 2,
+      "navigations": [
+       {
+        "index": 0,
+        "url": "http://127.0.0.1:47615/p/plain-d1",
+        "title": "Thoron session test plain-d1"
+       },
+       {
+        "index": 1,
+        "url": "http://127.0.0.1:47615/p/plain-d2",
+        "title": "Thoron session test plain-d2"
+       },
+       {
+        "index": 2,
+        "url": "http://127.0.0.1:47615/p/plain-d3",
+        "title": "Thoron session test plain-d3"
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "kind": "window",
+    "type": "normal",
+    "show_state": "minimized",
+    "bounds": [
+     -4000,
+     -4000,
+     800,
+     600
+    ],
+    "selected_tab": 1,
+    "user_title": "",
+    "tabs": [
+     {
+      "pinned": false,
+      "group": {
+       "title": "Notes éü",
+       "color": "green",
+       "collapsed": false
+      },
+      "current": 0,
+      "navigations": [
+       {
+        "index": 0,
+        "url": "http://127.0.0.1:47615/p/notes-e1",
+        "title": "Thoron session test notes-e1"
+       }
+      ]
+     },
+     {
+      "pinned": false,
+      "group": null,
+      "current": 1,
+      "navigations": [
+       {
+        "index": 0,
+        "url": "http://127.0.0.1:47615/p/other-f1",
+        "title": "Thoron session test other-f1"
+       },
+       {
+        "index": 1,
+        "url": "http://127.0.0.1:47615/p/other-f2",
+        "title": "Thoron session test other-f2"
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "kind": "tab",
+    "pinned": false,
+    "group": null,
+    "current": 1,
+    "navigations": [
+     {
+      "index": 0,
+      "url": "http://127.0.0.1:47615/p/closed-x1",
+      "title": "Thoron session test closed-x1"
+     },
+     {
+      "index": 1,
+      "url": "http://127.0.0.1:47615/p/closed-x2",
+      "title": "Thoron session test closed-x2"
+     }
+    ]
+   }
+  ],
+  "commands": 31,
+  "marker": true,
+  "complete": true,
+  "skipped": {
+   "unknown": 0,
+   "malformed": 0,
+   "over_limit": 0
+  },
+  "unknown_ids": []
+ },
+ "built_with": "extension"
+}

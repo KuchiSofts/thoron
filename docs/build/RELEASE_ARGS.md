@@ -33,6 +33,7 @@ args, using the values GN resolves for the release output folder (`gn args <out>
 | `enable_hangout_services_extension` | `false` | No hidden component extension that gives Google Meet pages extra system information. |
 | `disable_fieldtrial_testing_config` | `true` | No Google field-trial configuration is compiled in; features keep their coded defaults. |
 | `google_api_key`, `google_default_client_id`, `google_default_client_secret` | not set | `check` refuses any non-empty value. |
+| `symbol_level`, `v8_symbol_level`, `blink_symbol_level` | `0` | The Windows build still writes a `.pdb` per program with function names (no source lines), which `release.py prepare` keeps beside the release folder for crash triage (`docs/qa/CRASH_TRIAGE.md`, section 7). |
 
 ## Google API keys compiled in by a patch
 

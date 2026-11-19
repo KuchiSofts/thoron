@@ -11,7 +11,9 @@ and every decision taken on the way. The starting point was the report in
 - **Audit:** the 18 upstream commits since the tag were checked with `tools/audit/audit_diff.py --strict`:
   no binaries, no submodule changes. The network endpoints and `--no-sandbox` hits are in macOS smoke-test
   scripts that Thoron does not use. The new `developer-crx-installation.patch` adds a developer-mode
-  "install a local CRX" button and leaves signature checks unchanged.
+  "install a local CRX" button and leaves signature checks unchanged. It also adds a switch, off by
+  default, for installing extensions downloaded from other sites. The full review of every finding is in
+  [`docs/security/UPSTREAM_AUDIT_M158.md`](../security/UPSTREAM_AUDIT_M158.md) (ROADMAP **P2.2**).
 - **Branch:** `ks/M158`, local only. Like the M156 audit ref, it holds the full upstream tree, which still
   carries files that must not be published (ROADMAP **L.6**, **L.7**), and the local push hook refuses it.
 
@@ -56,6 +58,38 @@ The licence inventory was regenerated for this series (`docs/legal/PATCH_LICENSE
 
 The build also needs the PGO profiles (`checkout_pgo_profiles` in `.gclient`, then `gclient runhooks`),
 which a checkout made only for testing does not have.
+
+## Update to 158.0.8127.65 (2026-11-17, the security-release drill, ROADMAP S.9)
+
+Chromium's 158 branch had moved from .30 to .65. Following `docs/security/SECURITY_RELEASES.md`, section 3:
+
+- **Checkout:** a fresh checkout of the tag (`gclient sync --no-history`), 10.8 minutes.
+- **Fit:** 148 of 151 patches applied as they were. Three did not:
+  - `enable-hevc-ffmpeg-decoding.patch` carried "Subproject commit" sections (`v8`, `third_party/ffmpeg`,
+    `third_party/search_engines_data/resources`, `third_party/zstd/src`): the submodule state of its
+    author's checkout, which changes no file and no longer matched. They were taken out.
+  - `thorium-linux-installer-packaging.patch`: upstream changed `chrome/installer/linux/rpm/build.py`
+    (it now pins RPM's v4 package format, so that rpm 6 does not write packages other tools cannot unpack,
+    crbug.com/583945825). Refreshed by hand: Thorium's version of the script with upstream's fix in it
+    (the format pinned, the lead of the package checked, v4's dependencies expected).
+  - `ks-native-adblock-hook.patch` (Thoron's): the translation files had changed around its strings;
+    applied once with less context, then made again from the .65 tree by its generator.
+- **Found on the way and fixed in the tools:**
+  - `git apply` writes the files it changes with CRLF ends when Git's `core.autocrlf` is true (Git for
+    Windows' default), which also damages a binary file a patch adds: `pipeline.py apply` now runs with
+    `core.autocrlf=false`, and so does `rust_crates.py`.
+  - The newer `gnrt` writes the crates' README files while it vendors and stops when a patched crate's
+    licence file is not there yet: `rust_crates.py` goes on with Thoron's crate patches and vendors again.
+  - The identity step expected the About page's credit to start as "The Thorium Authors"; on .65 it is
+    Chromium's own "The Chromium Authors", which it now takes as well.
+  - Upstream's `setup.py` had stopped at the patches that needed a refresh, so its string step (product
+    name and Thorium's translations) and the processor-profile copy never ran: the first .65 build called
+    itself Chromium. Both were run afterwards from `setup.py` itself (4,374 translations merged in 486
+    files), then the identity step again, and the browser built again. The identity step now refuses a
+    tree where the string step has not run, and accepts the credit line that step renames.
+- **Result:** all 151 patches apply to .65, the patch headers pass, `source/` names Chromium
+  158.0.8127.65 and verifies, the release configuration is the same as for .30. Build version
+  158.0.8127.6500, Thoron 0.1.1.
 
 ## Still to do
 

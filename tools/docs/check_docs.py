@@ -3,8 +3,10 @@
 """Docs and privacy linter - part of the definition of done for every change.
 
 Checks: relative links (inline, reference-style, nested badges, HTML href/src) resolve to files that
-exist with exact case, inside the repository and not git-ignored; CHANGELOG has [Unreleased] and
-well-formed releases; ROADMAP has its date, legend and unique task IDs; with --private, every text
+exist with exact case, inside the repository and not git-ignored; CHANGELOG has [Unreleased],
+well-formed releases and the short form (one line per change under Added, Changed, Fixed, Removed and
+Security); the wiki pages in docs/wiki have a home page and link only to pages that exist; ROADMAP has
+its date, legend and unique task IDs; with --private, every text
 file we author contains no personal paths, personal e-mails or entries from the owner's
 private-strings list (never echoed), and nothing that describes one particular PC: no path on a
 drive other than C: (examples use the C: drive or a <placeholder>) and no exact CPU or GPU model (a build
@@ -178,6 +180,36 @@ def check_changelog(path: Path) -> list[str]:
     for number, line in enumerate(lines, 1):
         if RELEASE_HEADING_RE.match(line) and not VALID_RELEASE_RE.match(line):
             problems.append(f"{path.name}:{number}: release heading must be '## [X.Y.Z] - YYYY-MM-DD'")
+    from tools.release import changelog         # the short form, as the release notes read it (ROADMAP D.10)
+    problems += [f"{path.name}:{number}: {what}" for number, what in changelog.short_changelog("\n".join(lines))[1]]
+    return problems
+
+
+WIKI_DIR = "docs/wiki"
+WIKI_HOME = "Home.md"
+
+
+def check_wiki(root: Path) -> list[str]:
+    """The wiki's pages (ROADMAP D.9; publish_wiki.py copies them to the wiki as they are): there is a home
+    page, and a link from one page to another names a page that exists, by its name without `.md`, and a
+    heading on it. Long dashes and private data are checked with the other files we author."""
+    folder = root / WIKI_DIR
+    pages = {p.stem: p for p in sorted(folder.glob("*.md")) if p.is_file()}
+    problems = [] if WIKI_HOME[:-3] in pages else [f"{WIKI_DIR}: no {WIKI_HOME}; a wiki needs its home page"]
+    anchor_cache: dict = {}
+    for path in pages.values():
+        for number, text in _prose_lines(path):
+            for target in _link_targets(text):
+                if target.startswith("#"):
+                    name, fragment = path.stem, unquote(target[1:])
+                elif EXTERNAL_RE.match(target):
+                    continue
+                else:
+                    name, _, fragment = unquote(target).partition("#")
+                if name not in pages:
+                    problems.append(f"{_rel(root, path)}:{number}: no wiki page -> {target}")
+                elif fragment and fragment.lower() not in _anchors(pages[name], anchor_cache):
+                    problems.append(f"{_rel(root, path)}:{number}: broken anchor -> {target}")
     return problems
 
 
@@ -200,6 +232,11 @@ def check_roadmap(path: Path) -> list[str]:
         else:
             seen[match.group(1)] = number
     return problems
+
+
+def private_strings_file() -> Path:
+    """Where the owner's list of private strings is kept: outside every repository."""
+    return Path.home() / ".githooks" / "private-strings.txt"
 
 
 def _load_private(private_list: Path | None) -> list[str]:
@@ -249,6 +286,22 @@ def check_dashes(root: Path, files: list[Path]) -> list[str]:
     return problems
 
 
+# A control character in a text file is almost always damage: an edit that turned "\r" in a Windows path
+# into a carriage return ("tools\release" became "tools", CR, "elease"), or "\t", "\b", "\f" the same way.
+CONTROL_RE = re.compile(rb"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]|\r(?!\n)")
+
+
+def check_control_chars(root: Path, files: list[Path]) -> list[str]:
+    problems = []
+    for path in files:
+        data = path.read_bytes()
+        for match in CONTROL_RE.finditer(data):
+            number = data.count(b"\n", 0, match.start()) + 1
+            problems.append(f"{_rel(root, path)}:{number}: control character {match.group()!r} (a damaged "
+                            "backslash in a path?)")
+    return problems
+
+
 def _glob(root: Path, patterns) -> list[Path]:
     found = set()
     for pattern in patterns:
@@ -272,7 +325,10 @@ def main(argv: list[str]) -> int:
         problems += check_changelog(root / "CHANGELOG.md")
     if (root / "ROADMAP.md").is_file():
         problems += check_roadmap(root / "ROADMAP.md")
+    if (root / WIKI_DIR).is_dir():
+        problems += check_wiki(root)
     problems += check_dashes(root, _glob(root, OWNED_PRIVATE_GLOBS))
+    problems += check_control_chars(root, _glob(root, OWNED_PRIVATE_GLOBS))
     if (root / "ROADMAP.md").is_file():
         from tools.docs import roadmap_progress
         readme = (root / "README.md").read_text(encoding="utf-8")
@@ -282,11 +338,11 @@ def main(argv: list[str]) -> int:
         except ValueError:
             problems.append("README.md: missing <!-- roadmap:start/end --> markers for the generated roadmap section")
     if args.private:
-        private_list = Path.home() / ".githooks" / "private-strings.txt"
-        if not private_list.is_file():
-            print(f"note: no private-strings list at {private_list}; only built-in patterns are checked")
+        strings = private_strings_file()
+        if not strings.is_file():
+            print(f"note: no private-strings list at {strings}; only built-in patterns are checked")
         ours = [f for f in _glob(root, OWNED_PRIVATE_GLOBS) if not _rel(root, f).startswith(NOT_OURS)]
-        problems += check_private(root, ours, private_list)
+        problems += check_private(root, ours, strings)
 
     for problem in problems:
         print(problem)

@@ -107,7 +107,7 @@ are kept as an overlay on one pinned upstream commit:
 reproduce exactly what a release was built from. Upstream's own files are fetched, not copied into `main`.
 
 A file that must not be published is recorded by its hash only: the patch with Google credentials that
-are not Thoron's (L.8) and six patches whose authors publish no licence (L.1). The tree hash still
+are not Thoron's (L.8) and, since 2026-11-16, one patch whose author publishes no licence (L.1; it was six). The tree hash still
 verifies, and the list is in `source/README.md`. Both lists must be empty before the first release.
 
 ## 8. Changelog and wiki

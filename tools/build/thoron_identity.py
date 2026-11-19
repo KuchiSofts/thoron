@@ -6,7 +6,8 @@ and patch series (ROADMAP P2.3).
 It changes what makes the browser a separate product, so it installs and runs side by side with
 Thorium and keeps its own profile:
   - the product name in the UI strings and their translations (only the name: URLs, paths,
-    identifiers and lowercase `thorium` stay untouched);
+    identifiers and lowercase `thorium` stay untouched), and where a person reads it outside the string
+    files: the installer's dialogs, internal pages, the first start, the address bar (ROADMAP B.3);
   - `chromium_install_modes.h`: install and profile folder name (`%LOCALAPPDATA%\\Thoron`), app GUID,
     app ID, ProgIDs, URL scheme, Active Setup GUID, COM class IDs (notifications, elevation,
     tracing), the sandbox AppContainer SID prefix, and the list of old IDs the installer cleans up;
@@ -14,8 +15,9 @@ Thorium and keeps its own profile:
   - the icons, from `branding/thoron/`;
   - the Windows program file `thoron.exe` (P2.20) and, on Linux, the `thoron` program, the
     `thoron-browser` package, desktop file and the profile folder `~/.config/thoron` (P2.4, P2.21).
-The COM *interface* IDs stay as upstream's: they are compiled into the checked-in MIDL output and
-are only registered by system-level installs (ROADMAP P2.19).
+  - the COM interface IDs a system-level install registers (`IElevator2Chromium` and
+    `ISystemTraceSessionChromium`, ROADMAP P2.19): a placeholder in the IDL and MIDL's `dynamic_guids` in
+    the `midl()` target put Thoron's own IDs into the build, so the checked-in MIDL output stays as it is.
 
 Every edit is anchored: a missing anchor stops the tool before any file is written. Running it again
 is a no-op.
@@ -29,6 +31,9 @@ import sys
 from pathlib import Path
 
 INSTALL_MODES_PATH = "chrome/install_static/chromium_install_modes.h"
+# Upstream's IDs of the two COM interfaces a system-level install registers (ROADMAP P2.19).
+ELEVATOR_OLD = "BB19A0E5-00C6-4966-94B2-5AFEC6FED93A"
+TRACING_OLD = "E0B03E2D-7682-4D83-B9FF-4574AF720500"
 BRANDING_PATH = "chrome/app/theme/chromium/BRANDING"
 
 # Generated once for Thoron (2026-11-08) and fixed here so every build is identical.
@@ -37,6 +42,10 @@ THORON_IDS = {
     "active_setup_guid": "{C11EF3BA-7841-46B8-8709-A6A46AD4A917}",
     "toast_activator_clsid": "5F7AE246-B5EB-4BE2-8E25-762A896E0A5D",
     "elevator_clsid": "262D272B-85DD-42A9-9DB0-479774CF1ADC",
+    # P2.19, 2026-11-17: the interfaces a system-level install registers (Chromium's are
+    # {BB19A0E5-00C6-4966-94B2-5AFEC6FED93A} and {E0B03E2D-7682-4D83-B9FF-4574AF720500}).
+    "elevator_iid": "FF416EBA-F45C-49B0-92BF-0B2DAD51A4C5",
+    "tracing_service_iid": "C9B1E9B2-B984-441A-A3E9-A70D9AAB855C",
     "tracing_service_clsid": "AE5771C0-8CDA-4982-BABC-4080F3C0D2E5",
     "old_tracing_iid": "054AF894-044A-42BE-BE37-C8414D146382",
     "sandbox_sid_prefix": "S-1-15-2-410603446-659394758-2458910261-1759236400-866594459-1279508806-",
@@ -77,10 +86,16 @@ ICON_MAP = [
   + [("branding/thoron/png/thoron_wordmark_white.png",
       f"components/resources/default_{s}_percent/chromium/product_logo_white.png") for s in (100, 200)] \
   + [(_PNG.format(252), f"{_THEME}/default_100_percent/chromium/thorium_mascot.png"),   # chrome://version, dark
-     (_PNG.format(504), f"{_THEME}/default_200_percent/chromium/thorium_mascot.png")]
+     (_PNG.format(504), f"{_THEME}/default_200_percent/chromium/thorium_mascot.png"),
+     # the small mark next to the title of the settings, history, downloads and extensions pages, dark mode
+     ("branding/thoron/thoron-logo-mono-white.svg", "ui/webui/resources/images/chrome_logo_dark.svg")]
 
 # The product name only: not inside URLs, paths or identifiers, not part of a longer word.
 NAME_RE = re.compile(r"(?<![\w/\\.\-@%])Thorium(?![\w\-/\\])(?!\.\w)")
+# In a translation the name is also inflected ("Thoriumin"), joined with a hyphen ("Thorium-Profil", "ku-Thorium")
+# or set next to another script without a space. Still not renamed: paths, addresses, identifiers and the
+# names of other products (ThoriumOS).
+TRANSLATED_NAME_RE = re.compile(r"(?<![/\\.@%_])Thorium(?![A-Z0-9_/]|\\(?!u[0-9A-Fa-f]{4})|\.[a-z0-9])")
 _STRUCT = r"\{0x[0-9A-Fa-f]+,\s*0x[0-9A-Fa-f]+,\s*0x[0-9A-Fa-f]+,\s*\{(?:0x[0-9A-Fa-f]+,\s*){7}0x[0-9A-Fa-f]+\}\}"
 _GUID = r"\{[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\}"
 
@@ -99,13 +114,14 @@ def guid_struct(guid: str) -> str:
 CREDIT_MARK = "Alex313031"   # a line that names the upstream author is credit text: never renamed
 
 
-def rename_product(text: str) -> tuple[str, int]:
-    out, total = [], 0
+def rename_product(text: str, translated: bool = False) -> tuple[str, int]:
+    """Rename the product in UI strings; `translated` for a translation file (.xtb), where the name has more forms."""
+    name, out, total = TRANSLATED_NAME_RE if translated else NAME_RE, [], 0
     for line in text.splitlines(keepends=True):
         if CREDIT_MARK in line:
             out.append(line)
             continue
-        line, n = NAME_RE.subn("Thoron", line)
+        line, n = name.subn("Thoron", line)
         out.append(line)
         total += n
     return "".join(out), total
@@ -113,12 +129,16 @@ def rename_product(text: str) -> tuple[str, int]:
 
 CHROMIUM_STRINGS_PATH = "chrome/app/chromium_strings.grd"
 CREDIT_LINE = "The Chromium Authors, Alex313031 and KuchiSofts"
+# The credit as it may stand before this step: upstream's "The Thorium Authors", Chromium's own "The Chromium
+# Authors" (on 158.0.8127.65 no upstream patch sets Thorium's first), or the credit line itself, also with
+# "Thorium" for "Chromium" (upstream's string step renames the product in it when it runs after this one).
+_CREDIT_BEFORE = r"The (?:Thorium|Thoron|Chromium) Authors(?:, Alex313031 and KuchiSofts)?"
 _ABOUT_EDITS = [
     ("About company name",
-     r'(<message name="IDS_ABOUT_VERSION_COMPANY_NAME"[^>]*>\s*)(?:The (?:Thorium|Thoron) Authors|' + re.escape(CREDIT_LINE) + r')(\s*</message>)'),
+     r'(<message name="IDS_ABOUT_VERSION_COMPANY_NAME"[^>]*>\s*)' + _CREDIT_BEFORE + r'(\s*</message>)'),
     ("About copyright",
      r'(<message name="IDS_ABOUT_VERSION_COPYRIGHT"[^>]*>\s*Copyright <ph name="YEAR">[^<]*<ex>[^<]*</ex></ph> )'
-     r'(?:The (?:Thorium|Thoron) Authors|' + re.escape(CREDIT_LINE) + r')(\. All rights reserved\.)'),
+     + _CREDIT_BEFORE + r'(\. All rights reserved\.)'),
 ]
 
 
@@ -132,6 +152,19 @@ def edit_chromium_strings(text: str) -> str:
     if missing:
         raise IdentityError(f"{CHROMIUM_STRINGS_PATH}: anchors not found exactly once: {', '.join(missing)}")
     return text
+
+
+def product_name_problems(text: str) -> list[str]:
+    """A tree where upstream's string step (setup.py's GRD/XTB rebase) has not run still names the product
+    Chromium in most of its strings, and this step, which renames Thorium, would leave the browser calling
+    itself Chromium (it happened once, in the drill of 2026-11-17)."""
+    lines = [line for line in text.splitlines() if CREDIT_MARK not in line]    # credits name Chromium on purpose
+    chromium = sum(len(re.findall(r"\bChromium\b", line)) for line in lines)
+    ours = sum(len(re.findall(r"\bTho(?:ron|rium)\b", line)) for line in lines)
+    if chromium > ours and chromium >= 20:                                     # a real string file, not a sample
+        return [f"{CHROMIUM_STRINGS_PATH}: the product is named Chromium {chromium} times and Thorium or Thoron "
+                f"{ours} times: upstream's string step (setup.py's GRD/XTB rebase) has not run on this tree"]
+    return []
 
 
 def compute_remap(messages, id_fn) -> dict[str, str]:
@@ -236,6 +269,9 @@ def _install_mode_edits() -> list[tuple[str, str, str]]:
         ("elevator_clsid", r"(\.elevator_clsid = )" + _STRUCT, r"\g<1>" + guid_struct(ids["elevator_clsid"])),
         ("tracing_service_clsid", r"(\.tracing_service_clsid = )" + _STRUCT,
          r"\g<1>" + guid_struct(ids["tracing_service_clsid"])),
+        ("elevator_iid", r"(\.elevator_iid = )" + _STRUCT, r"\g<1>" + guid_struct(ids["elevator_iid"])),
+        ("tracing_service_iid", r"(\.tracing_service_iid = )" + _STRUCT,
+         r"\g<1>" + guid_struct(ids["tracing_service_iid"])),
         ("old tracing IIDs", r"(kOldTracingServiceIids = std::to_array<IID>\(\{)(?:\s*//[^\n]*)*\s*" + _STRUCT + r"\s*,?",
          lambda m: m.group(1) + old_iid),
         ("sandbox_sid_prefix", r'(\.sandbox_sid_prefix =\s*)(?:L"[^"]*"\s*)+(?=,)',
@@ -251,7 +287,8 @@ def edit_install_modes(text: str) -> str:
             missing.append(f"{name} ({n} matches)")
     if missing:
         raise IdentityError(f"{INSTALL_MODES_PATH}: anchors not found exactly once: {', '.join(missing)}")
-    return text
+    # the comment that names the elevator's interface ID, where there is one
+    return text.replace("// {" + ELEVATOR_OLD + "}.", "// {" + THORON_IDS["elevator_iid"] + "}.")
 
 
 _NL = r"\r?\n"
@@ -447,11 +484,99 @@ OVERLAY_EDITS = {
          ' origin schemes."', 1),
         ('"Choose the password store backend, instead of using', _W + "the Basic backend stores passwords"
          " without the system keyring's protection. Choose the password store backend, instead of using", 1),
-        ("Enabled for Thorium Portable.", "Used by portable installs.", 2)],
-        "forbid": [r"Thorium Portable"]},
-    # chrome://version: the link to the build variant file is labelled after Thorium (the file path stays)
+        # extensions from any website (docs/security/UPSTREAM_AUDIT_M158.md, section 5): the Android sentence
+        # and "signatures, prompts and policies still apply" go, the warning says what is left
+        ('"Allows downloaded CRX files to be installed when developer mode is enabled on the extensions page.'
+         " CRX signatures, permission prompts, and extension policies still apply. Android also requires"
+         ' experimental extension support. Only enable this for sources you trust."',
+         _W + "with this on and developer mode enabled, any website can offer you an extension that the Chrome"
+         " Web Store has not checked. Only the permission prompt stands before the install, and the file's"
+         " signature does not show who made it. Allows downloaded CRX files to be installed when developer mode"
+         ' is enabled on the extensions page. Only enable this for sources you trust."', 1),
+        ("Enabled for Thorium Portable.", "Used by portable installs.", 2),
+        # the browser's name in the flag texts (ROADMAP B.3)
+        ('"Enables Thorium to automatically', '"Enables Thoron to automatically', 1),
+        ('"Allows Thorium to use the detected', '"Allows Thoron to use the detected', 1),
+        ("strokes. Thorium enables them by default", "strokes. Thoron enables them by default", 1),
+        ('"Thorium Rectangular Tabs UI"', '"Rectangular Tabs UI"', 1),
+        ('"Disable Thorium Secure DNS Fallback"', '"Disable Thoron Secure DNS Fallback"', 1),
+        ('"Disables Thorium\'s fallback', '"Disables Thoron\'s fallback', 1),
+        ('"Controls whether Thorium allows', '"Controls whether Thoron allows', 1),
+        ("for all Thorium instances.", "for all Thoron instances.", 1),
+        (". Thorium flag", ". Thoron flag", 4),
+        ('"Inform Thorium\'s GPU process', '"Inform Thoron\'s GPU process', 1),
+        ("for pairing Thorium to devices", "for pairing Thoron to devices", 1),
+        ('"When moving a Thorium user profile', '"When moving a Thoron user profile', 1)],
+        # what may stay names upstream's own designs (its 2024 interface, its icon set); a new text that
+        # names Thorium stops the run, so it is looked at
+        "forbid": [r"Thorium Portable", r"Thorium(?! 2024| Custom Icons|'s custom icons|[A-Z0-9_])"]},
+    # chrome://version: the link to the build variant file is labelled after Thorium (the file path stays),
+    # so are the tooltips of the two pictures, and the company line links to upstream's repository
     "components/webui/version/resources/about_version.html": {"replace": [
-        (">THORIUM_VERSION.txt</a>", ">BUILD_VARIANT.txt</a>", 1)], "forbid": [r"THORIUM_VERSION"]},
+        (">THORIUM_VERSION.txt</a>", ">BUILD_VARIANT.txt</a>", 1),
+        ('title="Thorium Banner"', 'title="Thoron"', 2),
+        ("Thorium Mascot", "Thoron logo", 6),
+        ('href="https://github.com/Alex313031/thorium">$i18n{company}', f'href="{_GH}">$i18n{{company}}', 1)],
+        "forbid": [r"THORIUM_VERSION", r"Thorium"]},
+}
+
+_MI = "chrome/installer/mini_installer/"
+# Thorium's name where a person still reads it outside the string files (ROADMAP B.3). Texts and pictures
+# only: no registry key, folder or ID is renamed here. What is left of those, and why, is in
+# docs/build/IDENTITY_LEFT.md.
+SURFACE_EDITS = {
+    # the installer asked "Do you want to install Thorium?" under the title "Thorium <version>"; the name
+    # is only shown (dialog title, question, the message for an unsupported processor)
+    _MI + "mini_installer_version.h.template": {"replace": [
+        ('kProductName[] = L"Thorium";', 'kProductName[] = L"Thoron";', 1)], "forbid": [r'L"Thorium"']},
+    # the installer's file properties named upstream's repository
+    _MI + "mini_installer_exe_version.rc.version": {"replace": [
+        ('VALUE "Comments", "https://github.com/Alex313031/Thorium"', f'VALUE "Comments", "{_GH}"', 1)],
+        "forbid": [r"(?i)thorium"]},
+    # chrome://flags: upstream's mark next to the title, and the tooltip of the version
+    "components/webui/flags/resources/app.html.ts": {"replace": [
+        ('<img width="48" height="48" title="Hazard Icon" alt="hazard.svg"'
+         ' src="chrome://resources/images/hazard.svg">',
+         '<img width="48" height="48" alt="" src="chrome://theme/current-channel-logo@2x">', 1),
+        ('title="Thorium Version"', 'title="Thoron version"', 1)],
+        "forbid": [r"Thorium", r"hazard"]},
+    "chrome/browser/flag_descriptions.h": {"replace": [
+        ('"Thorium flag is enabled by default.";', '"Thoron flag is enabled by default.";', 1)],
+        "forbid": [r"Thorium"]},
+    "components/webui/chrome_urls/resources/app.html.ts": {"replace": [
+        ("<h1>Thorium URLs</h1>", "<h1>Thoron URLs</h1>", 1),
+        ("<h2>List of Thorium chrome:// URLs</h2>", "<h2>List of Thoron chrome:// URLs</h2>", 1)],
+        "forbid": [r"Thorium"]},
+    # the title of chrome://dino (the same constant sets it and recognises it)
+    "components/neterror/resources/dino_game/offline.ts": {"replace": [
+        ("ARCADE_MODE2_URL: string = 'Thorium Dino Game';", "ARCADE_MODE2_URL: string = 'Thoron Dino Game';", 1)],
+        "forbid": [r"Thorium"]},
+    # the first start opened upstream's website in a tab: Thoron opens no page of another project by itself
+    "chrome/browser/chrome_browser_main.cc": {
+        "remove": [r"(?m)^ *// Open Welcome page on first run\." + _EOL
+                   + r' *browser_creator_->AddFirstRunTabs\(\{GURL\("https://thorium\.rocks/welcome/"\)\}\);' + _EOL],
+        "forbid": [r"thorium\.rocks", r"AddFirstRunTabs\(\{"]},
+    # the address bar, tab search and copied addresses showed internal pages as thorium://. Off by default now:
+    # they read chrome:// as in Chromium; a typed thorium:// still opens, and the flag turns the display back on
+    "chrome/common/chrome_features.cc": {"replace": [
+        ("BASE_FEATURE(kThoriumInternalUrlSchemeBranding,\n             base::FEATURE_ENABLED_BY_DEFAULT);",
+         "BASE_FEATURE(kThoriumInternalUrlSchemeBranding,\n             base::FEATURE_DISABLED_BY_DEFAULT);", 1)]},
+    # chrome://credits began "Thorium is based on Chromium and is made available as source code here", linked
+    # to upstream's repository. The browser is Thoron and its source is Thoron's; Thorium stays named and linked
+    "tools/licenses/licenses.py": {"replace": [
+        ("'thorium_project': 'Thorium',", "'thorium_project': 'Thoron',", 1),
+        ("'thorium_link': 'https://github.com/Alex313031/thorium',", f"'thorium_link': '{_GH}',", 1)]},
+    "components/webui/about/resources/about_credits_reciprocal.tmpl": {"replace": [
+        ("{{thorium_project}} is based on {{opensource_project}} and",
+         "{{thorium_project}} is based on Thorium and {{opensource_project}} and", 1),
+        ('<a href="{{thorium_link}}">here</a>. Chromium source code',
+         '<a href="{{thorium_link}}">here</a>. Thorium source code is available'
+         ' <a href="https://github.com/Alex313031/thorium">here</a>. Chromium source code', 1)]},
+    # log files: next to the profile (with --enable-logging) and the installer's, in the temporary folder
+    "chrome/common/logging_chrome.cc": {"replace": [
+        ('FILE_PATH_LITERAL("thorium_debug.log")', 'FILE_PATH_LITERAL("thoron_debug.log")', 1)]},
+    "chrome/installer/util/logging_installer.cc": {"replace": [
+        ('FILE_PATH_LITERAL("thorium_installer.log")', 'FILE_PATH_LITERAL("thoron_installer.log")', 1)]},
 }
 
 
@@ -474,6 +599,46 @@ def _edit_names(rel: str, text: str, spec: dict, always_forbid: list[str]) -> st
     return text
 
 
+def _dynamic_guid(old: str, new: str) -> str:
+    return (f"\n  # Thoron (P2.19): its own interface ID, so a system-level Thoron and Thorium share no COM\n"
+            f"  # registration; the checked-in MIDL output keeps upstream's, which MIDL replaces at build time.\n"
+            f"  # The installer registers the Ole Automation marshaler and the type library for it, never the\n"
+            f"  # custom proxy/stub, which MIDL does not regenerate for a dynamic interface ID: so that is left\n"
+            f"  # out of the comparison (midl.py, ignore_proxy_stub).\n"
+            f"  dynamic_guids = \"ignore_proxy_stub,PLACEHOLDER-GUID-{old}={new}\"\n}}")
+
+
+# P2.19: Thoron's own COM interface IDs through MIDL's dynamic GUIDs (build/toolchain/win/midl.gni).
+COM_EDITS = {
+    "chrome/elevation_service/elevation_service_idl.idl": {"replace": [
+        (f"uuid({ELEVATOR_OLD})", f"uuid(PLACEHOLDER-GUID-{ELEVATOR_OLD})", 1)]},
+    "chrome/elevation_service/BUILD.gn": {"replace": [
+        ("  writes_tlb = true\n}", "  writes_tlb = true\n" + _dynamic_guid(ELEVATOR_OLD, THORON_IDS["elevator_iid"]), 1)]},
+    "chrome/windows_services/elevated_tracing_service/tracing_service_idl.idl": {"replace": [
+        (f"uuid({TRACING_OLD})", f"uuid(PLACEHOLDER-GUID-{TRACING_OLD})", 1)]},
+    "chrome/windows_services/elevated_tracing_service/BUILD.gn": {"replace": [
+        ("  writes_tlb = true\n}",
+         "  writes_tlb = true\n" + _dynamic_guid(TRACING_OLD, THORON_IDS["tracing_service_iid"]), 1)]},
+}
+
+
+# With dynamic GUIDs MIDL compiles the IDL made in gen/, and the files it writes name that path in their first
+# comment; the checked-in output must say the same for MIDL's comparison to hold. Only that comment changes
+# (the type library is byte for byte the same).
+for _idl in ("chrome/elevation_service/elevation_service_idl",
+             "chrome/windows_services/elevated_tracing_service/tracing_service_idl"):
+    for _arch in ("x64", "x86", "arm64"):
+        for _suffix in (".h", "_i.c", "_p.c"):
+            _name = _idl.rsplit("/", 1)[1]
+            COM_EDITS[f"third_party/win_build_output/midl/{_idl.rsplit('/', 1)[0]}/{_arch}/{_name}{_suffix}"] = {
+                "replace": [(f"Compiler settings for ../../{_idl}.idl:", f"Compiler settings for gen/{_idl}.idl:", 1)]}
+
+
+def edit_com_ids(rel: str, text: str) -> str:
+    """Thoron's own COM interface IDs in one IDL or build file (ROADMAP P2.19)."""
+    return _edit_names(rel, text, COM_EDITS[rel], [])
+
+
 def edit_exe_names(rel: str, text: str) -> str:
     """Rename the Windows program file in one build file (ROADMAP P2.20)."""
     return _edit_names(rel, text, EXE_EDITS[rel], [r"thorium\.exe"])
@@ -482,6 +647,11 @@ def edit_exe_names(rel: str, text: str) -> str:
 def edit_overlay(rel: str, text: str) -> str:
     """Thoron's edits to one upstream overlay file (ROADMAP S.4)."""
     return _edit_names(rel, text, OVERLAY_EDITS[rel], [])
+
+
+def edit_surface(rel: str, text: str) -> str:
+    """Thorium's name out of one file a person reads the result of (ROADMAP B.3)."""
+    return _edit_names(rel, text, SURFACE_EDITS[rel], [])
 
 
 def edit_linux_names(rel: str, text: str) -> str:
@@ -528,7 +698,7 @@ def apply(src: Path, repo: Path, string_files: list[str] | None = None, dry_run:
     for rel in files:
         path = src / rel
         text = path.read_bytes().decode("utf-8")
-        new, n = rename_product(text)
+        new, n = rename_product(text, translated=rel.endswith(".xtb"))
         if rel == CHROMIUM_STRINGS_PATH:
             try:
                 new = edit_chromium_strings(new)
@@ -538,6 +708,9 @@ def apply(src: Path, repo: Path, string_files: list[str] | None = None, dry_run:
             planned[path] = new.encode("utf-8")
             replacements += n
             string_changes += 1
+    grd = src / CHROMIUM_STRINGS_PATH
+    if grd.is_file():
+        problems += product_name_problems(planned.get(grd, grd.read_bytes()).decode("utf-8"))
     remapped = 0
     if translations:
         changed_xtb = {(src / r).resolve() for r in files if r.endswith(".xtb")}
@@ -570,7 +743,7 @@ def apply(src: Path, repo: Path, string_files: list[str] | None = None, dry_run:
             continue
         if new != text:
             planned[path] = new.encode("utf-8")
-    for rel in dict.fromkeys([*EXE_EDITS, *LINUX_EDITS, *OVERLAY_EDITS]):
+    for rel in dict.fromkeys([*EXE_EDITS, *LINUX_EDITS, *OVERLAY_EDITS, *SURFACE_EDITS, *COM_EDITS]):
         path = src / rel
         if not path.is_file():
             problems.append(f"missing {rel}")
@@ -580,6 +753,8 @@ def apply(src: Path, repo: Path, string_files: list[str] | None = None, dry_run:
             new = edit_exe_names(rel, text) if rel in EXE_EDITS else text
             new = edit_linux_names(rel, new) if rel in LINUX_EDITS else new
             new = edit_overlay(rel, new) if rel in OVERLAY_EDITS else new
+            new = edit_surface(rel, new) if rel in SURFACE_EDITS else new
+            new = edit_com_ids(rel, new) if rel in COM_EDITS else new
         except IdentityError as exc:
             problems.append(str(exc))
             continue

@@ -3,6 +3,10 @@ other/add-flag-for-auto-dark-mode.patch
 other/android-extensions-opt-in-ui.patch
 other/android-extensions-support.patch
 other/android-thorium-branding.patch
+other/disable-vulkan-gpu-log-warnings.patch
 other/enable-android-devtools-frontend.patch
 other/enable-ctrl-tab-mru.patch
 other/enable-extension-in-incognito.patch
+other/enable-mpeg2-ac3-eac3-decoding.patch
+other/enable-webrtc-h265-l1t2-l1t3-by-default.patch
+other/llvm-optimized-toolchain-build.patch

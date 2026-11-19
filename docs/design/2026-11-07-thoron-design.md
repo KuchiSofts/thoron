@@ -369,6 +369,16 @@ The installer, and later Settings, shows **"Import from…"** with:
 - On first start, the windows open exactly as they were: tab order, groups, pinned tabs, and the
   active tab.
 - Parser requirements: fuzzing, plus golden test files from each supported browser.
+- Status 2026-11-16 (P3.15, command-line version `tools/migrate/sessions.py`): the parser replays the
+  SNSS commands as Chromium does and trusts no byte (sizes, counts and work capped; an unknown or
+  damaged command is skipped and counted). The import writes the source's session file with two
+  changes, and the copy must read exactly as the source: commands Thoron cannot use are left out,
+  because Chromium stops reading a session at the first one and loses the rest; and each group's
+  link to the source profile's saved groups is taken out, because Thoron closes a restored group
+  linked to a saved group it does not know (`TabGroupSyncService::ConnectLocalTabGroup`: "deleted
+  remotely"), with its tabs. Unlinked, the group is restored and saved as Thoron's own. Found on the
+  way: a minimized window opens as a normal one when Chromium restores a session on Windows, its own
+  included.
 
 **What can and cannot be copied (stated honestly in the UI)**
 
@@ -661,6 +671,10 @@ previous one; the release script (P2.12) runs both.
 | Google API keys (2026-11-09) | Upstream's patch compiles Google API keys and OAuth credentials into the browser; kept for now, decided before the first release (ROADMAP **L.8**) |
 | Repository layout (2026-11-09) | The old upstream Thorium M138 tree that `main` still carried (about 1,500 files the builds never used) is removed; `main` keeps only Thoron's own work, plus Thorium's M138 `PATCHES.md` and README under `docs/upstream/`. The upstream Sponsor button (`FUNDING.yml`) is removed; Alex313031 stays credited in README and CREDITS |
 | Repository binaries (2026-11-07) | No prebuilt or proprietary binaries in the repository (ROADMAP **L.6**); purging them from history (**L.7**) waits for the owner's decision |
+| Safe Browsing (2026-11-16) | Both layers, never a dead switch: Thoron adblock gets a phishing list by default and is the protection every build has; Google's Safe Browsing stays as standard protection only, in a build with a key Thoron owns (ROADMAP **L.8**); a build without such a key starts with Safe Browsing off, because on without a key blocks nothing and saves programs without a question (measured); client-side phishing detection is dropped with the optimization guide's models (`docs/security/SAFE_BROWSING.md`, ROADMAP **S.14**) |
+| Google contacts of a fresh profile (2026-11-16) | A profile nobody signed in to Google with asks Google nothing on its own account: no optimization guide, no sign-in check, no time request, no connection ahead of a search, no AI model list; what belongs to a Google sign-in (the New Tab page's bar and doodle, suggestions fetched ahead, "AI Mode", Thoron M-Notifier's look at Gmail) works only while somebody is signed in to Google in the profile, so a signed-in person loses nothing (`docs/security/NETWORK_REDUCTION.md`, ROADMAP **S.15**) |
+| Chromium's Gemini plumbing (2026-11-16) | Off behind its own main switch (`Glic`): the component extension is not loaded and Settings shows no Google AI page; the switch brings all of it back for whoever wants it (ROADMAP **S.16**) |
+| Extensions other programs register (2026-11-16) | Kept as Chromium has it: an extension another program registers for Google Chrome is fetched and stays disabled until the person approves it. Reading a registration of Thoron's own instead would remove such extensions from everybody who approved one (ROADMAP **P2.16**) |
 
 No open questions remain. Anything further found during planning is either a builder decision (§14)
 or comes back to the owner as a single batch.

@@ -21,6 +21,8 @@ from pathlib import Path
 CRATES_IO = "third_party/rust/chromium_crates_io"
 PATCHED_CRATES = ("seahash-v4", "flatbuffers-v25")          # Thoron's patches in <CRATES_IO>/patches
 RESTORE_AFTER_GEN = ("third_party/rust/zune_jpeg/v0_5/README.chromium",)
+# LF line ends whatever the PC's git says (Git for Windows defaults core.autocrlf to true)
+GIT_LF = ("-c", "core.autocrlf=false")
 
 
 def git_apply_args(crate_dir: str) -> list[str]:
@@ -52,19 +54,22 @@ def run(src: Path) -> None:
     if not gnrt.is_file():
         subprocess.run([sys.executable, "tools/crates/run_gnrt.py", "--", "help"], cwd=src, env=env, check=True,
                        capture_output=True)
-    subprocess.run([str(gnrt), *vendor_args()], cwd=src, env=env, check=True)
+    # Newer gnrt (158.0.8127.65 on) writes the README files in this same step and stops when a patched crate's
+    # licence file is not there yet: the crates are downloaded by then, so it goes on with the patches.
+    subprocess.run([str(gnrt), *vendor_args()], cwd=src, env=env)
     for crate in PATCHED_CRATES:
         for patch in sorted((src / CRATES_IO / "patches" / crate).glob("*.patch")):
             crate_dir = f"{CRATES_IO}/vendor/{crate}"
-            check = subprocess.run(["git", *git_apply_args(crate_dir), "--check", "--reverse"],
+            check = subprocess.run(["git", *GIT_LF, *git_apply_args(crate_dir), "--check", "--reverse"],
                                    cwd=src, input=patch.read_bytes(), capture_output=True)
             if check.returncode == 0:
                 continue                                     # already applied
-            subprocess.run(["git", *git_apply_args(crate_dir)], cwd=src, input=patch.read_bytes(), check=True)
+            subprocess.run(["git", *GIT_LF, *git_apply_args(crate_dir)], cwd=src, input=patch.read_bytes(),
+                           check=True)
     subprocess.run([str(gnrt), "vendor"], cwd=src, env=env, check=True)   # README files, now that licences exist
     subprocess.run([str(gnrt), "gen"], cwd=src, env=env, check=True)
     format_build_files(src, gn)
-    subprocess.run(["git", "checkout", "--", *RESTORE_AFTER_GEN], cwd=src, check=True)
+    subprocess.run(["git", *GIT_LF, "checkout", "--", *RESTORE_AFTER_GEN], cwd=src, check=True)
 
 
 def changed_rust_build_files(porcelain: str) -> list[str]:

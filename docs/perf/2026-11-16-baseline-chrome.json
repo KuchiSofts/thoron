@@ -1,0 +1,57 @@
+{
+  "browser": "Chrome 157.0.8103.78",
+  "version": "",
+  "warmup": 1,
+  "startup_ms": {
+    "median": 516.0,
+    "spread_pct": 9.1,
+    "runs": 5,
+    "repeatable": false,
+    "values": [
+      500.0,
+      547.0,
+      500.0,
+      547.0,
+      516.0
+    ]
+  },
+  "memory_1_tab_mb": {
+    "median": 366.8,
+    "spread_pct": 2.5,
+    "runs": 5,
+    "repeatable": true,
+    "values": [
+      360.4,
+      369.4,
+      361.8,
+      367.6,
+      366.8
+    ]
+  },
+  "memory_20_tabs_mb": {
+    "median": 724.2,
+    "spread_pct": 1.7,
+    "runs": 5,
+    "repeatable": true,
+    "values": [
+      718.2,
+      730.9,
+      721.4,
+      724.2,
+      729.3
+    ]
+  },
+  "idle_cpu_pct": {
+    "median": 0.0,
+    "spread_pct": 283.3,
+    "runs": 5,
+    "repeatable": false,
+    "values": [
+      0.0,
+      0.0,
+      0.0,
+      -0.0,
+      0.1
+    ]
+  }
+}

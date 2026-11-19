@@ -7,8 +7,10 @@ local server on 127.0.0.1, so nothing leaves the machine and no real profile is 
 measured --runs times, after --warmup runs that are measured and dropped (the first start of a series
 reads the program from disk and is much slower than the rest; on a PC in use it doubled the start-up time
 and the memory of 20 tabs); the report gives the median and the spread ((max - min) / median), and marks a
-value repeatable when the spread is within 3 %. The online suites (Speedometer 3, JetStream 2,
-MotionMark) are a later step.
+value repeatable when the spread is within 3 %. Idle CPU is a value near 0, and 3 % of 0.1 % of the
+processor is less than one timer of the browser adds, so it counts as repeatable when its runs are within
+0.1 points of the whole processor (REPEATABLE_FLOOR). The online suites (Speedometer 3, JetStream 2,
+MotionMark) are `tools/qa/online_bench.py`.
     py -3 -I tools/qa/bench.py --browser <out>\\thoron.exe --work C:\\thoron-build\\bench --runs 5 --warmup 1
         --out docs/perf/<name>.json --md docs/perf/<name>.md
 """
@@ -29,6 +31,8 @@ if __package__ in (None, ""):  # running as a script under `py -3 -I`: make `too
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 REPEATABLE_PCT = 3.0
+# Measures near 0 that are also repeatable when their runs are this close, in the measure's own unit.
+REPEATABLE_FLOOR = {"idle_cpu_pct": 0.1}
 PAGE = ("<!doctype html><html><head><meta charset='utf-8'><title>bench</title></head><body>"
         "<h1>Thoron bench</h1><p>" + "Lorem ipsum dolor sit amet. " * 200 + "</p>"
         "<script>addEventListener('load', () => fetch('/ping').catch(() => {}));</script></body></html>")
@@ -59,13 +63,16 @@ def without_warmup(values: list[float], warmup: int) -> list[float]:
     return values[warmup:]
 
 
-def summarise(values: list[float]) -> dict:
+def summarise(values: list[float], floor: float = 0.0) -> dict:
+    """Median and spread of `values`; repeatable when the spread is within 3 %, or when the runs are
+    within `floor` of each other (for a measure near 0)."""
     if len(values) < 3:
         raise BenchError("at least 3 runs are needed")
     med = statistics.median(values)
-    spread = (max(values) - min(values)) / med * 100 if med else 0.0
-    return {"median": round(med, 1), "spread_pct": round(spread, 1), "runs": len(values),
-            "repeatable": spread <= REPEATABLE_PCT, "values": [round(v, 1) for v in values]}
+    rng = max(values) - min(values)
+    spread = rng / med * 100 if med else 0.0
+    return {"median": round(med, 1), "spread_pct": round(spread, 1), "range": round(rng, 2), "runs": len(values),
+            "repeatable": spread <= REPEATABLE_PCT or rng <= floor, "values": [round(v, 1) for v in values]}
 
 
 class PingServer:
@@ -319,6 +326,10 @@ def to_markdown(results: dict) -> str:
         if isinstance(s, dict) and "median" in s:
             out.append(f"| {key} | {s['median']} | {s['spread_pct']} % | {s['runs']} | "
                        f"{'yes' if s['repeatable'] else 'no'} |")
+    for key, floor in REPEATABLE_FLOOR.items():
+        if isinstance(results.get(key), dict):
+            out += ["", f"{key} is near 0, so it also counts as repeatable when its runs are within {floor} "
+                        f"of each other (they were within {results[key].get('range', '?')})."]
     return "\n".join(out) + "\n"
 
 
@@ -345,7 +356,7 @@ def main(argv: list[str]) -> int:
                    "memory_20_tabs_mb": summarise(without_warmup(run_memory(a.browser, a.work,
                                                                             a.runs + a.warmup, 20), a.warmup)),
                    "idle_cpu_pct": summarise(without_warmup(run_idle_cpu(a.browser, a.work, a.runs + a.warmup),
-                                                            a.warmup))}
+                                                            a.warmup), REPEATABLE_FLOOR["idle_cpu_pct"])}
         if a.profiles:
             results["startup_4_profiles_ms"] = summarise(without_warmup(
                 run_startup_profiles(a.browser, a.work, a.runs + a.warmup), a.warmup))

@@ -41,6 +41,19 @@ class StatsTests(unittest.TestCase):
     def test_repeatable_within_three_percent(self):
         self.assertTrue(bench.summarise([100.0, 101.0, 99.5])["repeatable"])
 
+    def test_near_zero_measure_uses_its_floor(self):
+        values = [0.10, 0.14, 0.12, 0.11, 0.13]          # 33 % spread, 0.04 points apart
+        self.assertFalse(bench.summarise(values)["repeatable"])
+        s = bench.summarise(values, bench.REPEATABLE_FLOOR["idle_cpu_pct"])
+        self.assertTrue(s["repeatable"])
+        self.assertAlmostEqual(s["range"], 0.04)
+        self.assertFalse(bench.summarise([0.1, 0.5, 0.3], 0.1)["repeatable"])   # 0.4 points apart
+
+    def test_markdown_names_the_floor(self):
+        md = bench.to_markdown({"browser": "thoron", "version": "158",
+                                "idle_cpu_pct": bench.summarise([0.10, 0.14, 0.12], 0.1)})
+        self.assertIn("within 0.1 of each other (they were within 0.04)", md)
+
     def test_needs_three_runs(self):
         with self.assertRaises(bench.BenchError):
             bench.summarise([1.0, 2.0])

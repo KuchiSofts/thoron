@@ -263,6 +263,7 @@ Explanations live in the design docs under `docs/design/`.
 - **Updates:** updating a Thoron installed for every user of the PC while it runs no longer just ends it: Thoron is first asked to save the tabs of every window and its data and to close, as when you sign out of Windows.
 
 - **QA tools:** `bench.py` measures one warm-up run first and drops it.
+- **QA tools:** `bench.py` counts idle CPU as repeatable when its runs are within 0.1 points of each other; at about 0.1 % of the processor, 3 % of it was too small to measure.
 - **Brand:** translations name Thoron in every form of the name, not only the bare word.
 - **Brand:** the installer asks "Do you want to install Thoron?"; flags, version and URLs pages name Thoron.
 - **Brand:** the flags page shows Thoron's logo, the settings pages' dark header a white Thoron mark.

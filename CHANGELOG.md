@@ -313,6 +313,7 @@ Explanations live in the design docs under `docs/design/`.
 - **Repository:** every push runs the tests and linters and verifies the browser source against upstream.
 
 ### Fixed
+- **Sessions:** a damaged session file could keep Thoron busy for minutes while it read the tabs to restore (Chromium's reader went on after its reads had failed); it now stops at the first one.
 - **Linux:** an update of a portable copy did not start the new version's updater: files the updater writes (its own copy, files made from a delta, files unpacked from a package) were made without the right to run them. Programs among them now keep it.
 - **Linux:** the updater's command line built on Windows only (it set a Windows-only launch option everywhere); the `.deb` lacked the copyright file Debian asks for and named its changelog wrongly; copying a Thorium profile into Thoron on Linux stopped at the browser's own lock links.
 - **Portable:** a portable copy leaves nothing in the PC's registry any more (no usage statistics choice, metrics id backup, beacons, clean-exit mark or settings checksums), and one moved to another PC keeps its home page, startup pages and search engine instead of having them reset.

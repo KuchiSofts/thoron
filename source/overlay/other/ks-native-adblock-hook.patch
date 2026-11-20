@@ -40818,6 +40818,25 @@ index ea1990e8cd42875e6d651edbe429c76de7e8ab9f..a2677474176180cc7dfac1a125873650
        NotifySessionServiceOfRestoredTabs(window, initial_tab_count);
      }
  
+diff --git a/components/sessions/core/serialized_navigation_entry.cc b/components/sessions/core/serialized_navigation_entry.cc
+index 3c83a547a011e52349b52c70ef4f4fa34699f19e..f4ca61ad2700b6b84eab0075fe9139e02a2e141f 100644
+--- a/components/sessions/core/serialized_navigation_entry.cc
++++ b/components/sessions/core/serialized_navigation_entry.cc
+@@ -249,8 +249,12 @@ bool SerializedNavigationEntry::ReadFromPickle(base::PickleIterator* iterator) {
+       for (int i = 0; i < extended_info_map_size; ++i) {
+         std::string key;
+         std::string value;
+-        if (iterator->ReadString(&key) && iterator->ReadString(&value))
+-          extended_info_map_[key] = value;
++        // Thoron: the count comes from the file; once a read fails the rest
++        // fails too, and a damaged count (up to 2^31) would keep this loop
++        // going for minutes.
++        if (!iterator->ReadString(&key) || !iterator->ReadString(&value))
++          break;
++        extended_info_map_[key] = value;
+       }
+     }
+ 
 diff --git a/chrome/app/thoron_welcome_strings.grdp b/chrome/app/thoron_welcome_strings.grdp
 new file mode 100644
 index 0000000000000000000000000000000000000000..b6eb09dc754d5fb775a343c383e29f919620d3ec
@@ -43893,10 +43912,10 @@ index 0000000000000000000000000000000000000000..52e83e8ee886a9d137246fac75fe83e4
 +}  // namespace user_data_importer::chromium_family
 diff --git a/components/user_data_importer/chromium_family/open_tabs.cc b/components/user_data_importer/chromium_family/open_tabs.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..2491ef0c83a100050fdce1bda37af4cefad7b4fe
+index 0000000000000000000000000000000000000000..dc9720fa8693221d1d96d60e9bf96cec688fa4a7
 --- /dev/null
 +++ b/components/user_data_importer/chromium_family/open_tabs.cc
-@@ -0,0 +1,261 @@
+@@ -0,0 +1,281 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -43959,11 +43978,31 @@ index 0000000000000000000000000000000000000000..2491ef0c83a100050fdce1bda37af4ce
 +// never because of the commands before it, so each one is replayed alone, once:
 +// the work grows with the number of commands, not faster. A file with more
 +// commands than a real session has is left to Chromium's replay as it is.
++//
++// A window's show state outside the values Chromium writes (1 normal, 2
++// minimized, 3 maximized, 5 full screen, 6 and 7 old ones; its
++// PersistedWindowShowState) is read as normal by the replay, but only after it
++// reports it as a fault, so it is made normal here first.
 +void LeaveOutWhatStopsTheReplay(
 +    std::vector<std::unique_ptr<sessions::SessionCommand>>& commands) {
 +  std::erase_if(commands, [](const auto& command) {
 +    return !IsKnownCommand(command->id());
 +  });
++  // kCommandSetWindowBounds3: the window, x, y, width, height, show state.
++  constexpr uint8_t kSetWindowBounds = 14;
++  constexpr size_t kSetWindowBoundsSize = 6 * sizeof(int32_t);
++  for (const auto& command : commands) {
++    if (command->id() != kSetWindowBounds ||
++        command->contents().size() != kSetWindowBoundsSize) {
++      continue;
++    }
++    base::span<uint8_t, 4u> state =
++        command->contents().subspan<5 * sizeof(int32_t), 4u>();
++    const int32_t value = base::I32FromNativeEndian(state);
++    if (value < 1 || value > 7 || value == 4) {
++      state.copy_from(base::I32ToNativeEndian(1));
++    }
++  }
 +  constexpr size_t kMostCommandsChecked = 500'000;
 +  if (commands.size() > kMostCommandsChecked) {
 +    return;
@@ -44358,20 +44397,22 @@ index 0000000000000000000000000000000000000000..ba56c7b6a41c55421e90bb8ece530bc2
 +}  // namespace sessions
 diff --git a/components/user_data_importer/chromium_family/open_tabs_unittest.cc b/components/user_data_importer/chromium_family/open_tabs_unittest.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..0aaa659bc827c89c4a0cc40fe0b7b6df1343e570
+index 0000000000000000000000000000000000000000..546649543677970e457b9f4dd356524718fb8089
 --- /dev/null
 +++ b/components/user_data_importer/chromium_family/open_tabs_unittest.cc
-@@ -0,0 +1,322 @@
+@@ -0,0 +1,376 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
 +#include "components/user_data_importer/chromium_family/open_tabs.h"
 +
++#include <limits>
 +#include <memory>
 +#include <string>
 +#include <vector>
 +
 +#include "base/numerics/byte_conversions.h"
++#include "base/pickle.h"
 +#include "components/sessions/core/serialized_navigation_entry.h"
 +#include "components/sessions/core/serialized_user_agent_override.h"
 +#include "components/sessions/core/session_command.h"
@@ -44635,6 +44676,58 @@ index 0000000000000000000000000000000000000000..0aaa659bc827c89c4a0cc40fe0b7b6df
 +  ASSERT_EQ(counts.tabs, 2);
 +  EXPECT_EQ(Urls(*windows[0]->tabs[1]),
 +            std::vector<std::string>{"https://example.org/two"});
++}
++
++// A navigation whose count of extended info entries is damaged (here the
++// largest int) is read at once: Chromium's reader went on looping after its
++// reads had failed (found by fuzzing the session reader).
++TEST_F(ThoronOpenTabsTest, ADamagedCountInANavigationIsReadAtOnce) {
++  base::Pickle pickle;
++  pickle.WriteInt(0);                               // index
++  pickle.WriteString("https://example.org/");       // virtual URL
++  pickle.WriteString16(u"Example");                 // title
++  pickle.WriteString(std::string());                // page state
++  pickle.WriteInt(0);                               // transition
++  pickle.WriteInt(0);                               // type mask
++  pickle.WriteString(std::string());                // referrer
++  pickle.WriteInt(0);                               // old referrer policy
++  pickle.WriteString(std::string());                // original request URL
++  pickle.WriteBool(false);                          // overriding user agent
++  pickle.WriteInt64(0);                             // time
++  pickle.WriteString16(std::u16string());           // search terms
++  pickle.WriteInt(200);                             // HTTP status
++  pickle.WriteInt(0);                               // referrer policy
++  pickle.WriteInt(std::numeric_limits<int>::max()); // extended info entries
++  base::PickleIterator iterator(pickle);
++  sessions::SerializedNavigationEntry entry;
++  ASSERT_TRUE(entry.ReadFromPickle(&iterator));
++  EXPECT_EQ(entry.virtual_url(), GURL("https://example.org/"));
++  EXPECT_TRUE(entry.extended_info_map().empty());
++}
++
++// A show state Chromium never writes is read as normal, without the fault the
++// replay would report (found by fuzzing the session reader).
++TEST_F(ThoronOpenTabsTest, AnUnknownShowStateOpensANormalWindow) {
++  SessionFile file;
++  const SessionID window = SessionID::FromSerializedValue(1);
++  file.Add(sessions::CreateSetWindowTypeCommand(window,
++                                                SessionWindow::TYPE_NORMAL));
++  std::unique_ptr<SessionCommand> bounds =
++      sessions::CreateSetWindowBoundsCommand(
++          window, gfx::Rect(10, 20, 800, 600),
++          ui::mojom::WindowShowState::kMaximized);
++  bounds->contents().last<4u>().copy_from(base::I32ToNativeEndian(9));
++  file.Add(std::move(bounds));
++  AddTab(file, window, SessionID::FromSerializedValue(2), 0,
++         {"https://example.org/one"}, 0);
++  file.Marker();
++  OpenTabsCounts counts;
++  std::vector<std::unique_ptr<SessionWindow>> windows =
++      ReadOpenTabs(file.bytes(), &counts);
++  ASSERT_EQ(windows.size(), 1u);
++  EXPECT_EQ(windows[0]->show_state, ui::mojom::WindowShowState::kNormal);
++  EXPECT_EQ(windows[0]->bounds.ToString(),
++            gfx::Rect(10, 20, 800, 600).ToString());
 +}
 +
 +TEST_F(ThoronOpenTabsTest, ALongHistoryKeepsTheEntriesAroundTheCurrentOne) {

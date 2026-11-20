@@ -119,7 +119,7 @@ class Browser:
             "(async () => { const out = {}; const list = await chrome.passwordsPrivate.getSavedPasswordList();"
             " for (const p of list) { let text = null; try { text = await chrome.passwordsPrivate"
             ".requestPlaintextPassword(p.id, 'VIEW'); } catch (e) { text = 'error: ' + e; }"
-            " out[p.urls.link] = text; } return JSON.stringify(out); })()")
+            " out[(p.affiliatedDomains[0] || {}).signonRealm || String(p.id)] = text; } return JSON.stringify(out); })()")
         try:
             return json.loads(value)
         except (TypeError, ValueError):
@@ -169,12 +169,12 @@ def probe(tools: Path, out: Path) -> int:
                                "--to", str(thoron)], capture_output=True, text=True, timeout=600)
         found["import_exit"] = copy.returncode
         found["import_text"] = (copy.stdout + copy.stderr)[-600:]
-        b = Browser("/usr/bin/thoron", thoron)
+        b = Browser("/usr/bin/thoron-browser", thoron)
         found["imported_readable"] = b.readable()
         found["thoron_added"] = b.add(SECOND)
         time.sleep(3)
         b.close()
-        b = Browser("/usr/bin/thoron", thoron)
+        b = Browser("/usr/bin/thoron-browser", thoron)
         found["after_restart"] = b.readable()
         b.close()
         found["thoron_stored"] = _stored(thoron)

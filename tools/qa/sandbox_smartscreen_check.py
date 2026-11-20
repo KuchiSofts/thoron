@@ -49,6 +49,19 @@ function WindowsOf($names) {
   $ids = @(Get-Process -Name $names -ErrorAction SilentlyContinue | ForEach-Object { $_.Id })
   @($A::RootElement.FindAll($T::Children, $C::TrueCondition) | Where-Object { $ids -contains $_.Current.ProcessId })
 }
+function SmartScreenWindow {
+  # the warning's window: SmartScreen's own, or (Windows 11) an application frame that holds SmartScreen's content
+  $ids = @(Get-Process -Name 'smartscreen' -ErrorAction SilentlyContinue | ForEach-Object { $_.Id })
+  if (-not $ids) { return $null }
+  foreach ($w in $A::RootElement.FindAll($T::Children, $C::TrueCondition)) {
+    if ($ids -contains $w.Current.ProcessId) { return $w }
+    foreach ($id in $ids) {
+      $cond = New-Object System.Windows.Automation.PropertyCondition($A::ProcessIdProperty, [int]$id)
+      if ($w.FindFirst($T::Descendants, $cond)) { return $w }
+    }
+  }
+  return $null
+}
 function OfType($root, $type) {
   $cond = New-Object System.Windows.Automation.PropertyCondition($A::ControlTypeProperty, $type)
   @($root.FindAll($T::Descendants, $cond))
@@ -71,14 +84,19 @@ try {
   # as a person opens it: Explorer opens the file through the shell, which applies the download's zone (the shell's
   # own ShellExecute call returns "cancelled" to its caller at once when SmartScreen steps in)
   try { Start-Process explorer.exe -ArgumentList ('"' + $file + '"') } catch { $r.open_error = "$_" }
-  $end = (Get-Date).AddSeconds(60)
+  # SmartScreen asks Microsoft about the file first, which can take a while on a Windows that just started
+  $end = (Get-Date).AddSeconds(180)
   $warning = $null
   do {
     Start-Sleep -Seconds 1
-    $warning = WindowsOf @('smartscreen') | Select-Object -First 1
+    $warning = SmartScreenWindow
     $installer = [bool](Get-Process -Name 'thoron_AVX2_mini_installer', 'setup' -ErrorAction SilentlyContinue)
   } while (-not $warning -and -not $installer -and (Get-Date) -lt $end)
   $r.warning = [bool]$warning
+  # what was there, for a run that saw neither: the programs that run and the windows they show
+  $r.processes = @(Get-Process | ForEach-Object { $_.Name } | Sort-Object -Unique)
+  $r.windows = @($A::RootElement.FindAll($T::Children, $C::TrueCondition) | ForEach-Object {
+    "$((Get-Process -Id $_.Current.ProcessId -ErrorAction SilentlyContinue).Name): $($_.Current.ClassName)" })
   $r.started_without_warning = (-not $warning) -and $installer
   if ($warning) {
     Mark 'run anyway'

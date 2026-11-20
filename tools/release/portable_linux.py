@@ -25,6 +25,7 @@ profile make user namespaces, a portable copy has no profile of its own (only an
 the launcher says so and how, and starts the browser all the same, which then says it cannot sandbox and stops.
 
     py -3 -I tools/release/portable_linux.py build --deb <thoron-browser_*.deb> --variant linux-x64-avx2 --dist <folder>
+        [--updater <out>/thoron_update]
     py -3 -I tools/release/portable_linux.py audit --archive <dist>/thoron-<version>-linux-x64-avx2-portable.tar.xz
 """
 from __future__ import annotations
@@ -51,6 +52,7 @@ VARIANT_FILE = "variant"
 CURRENT = "current"
 INSTALLED = "opt/kuchisofts/thoron/"            # where the .deb puts the browser
 PROGRAM = "thoron"
+UPDATER = "thoron_update"                       # the updater's command line, in the version folder
 VARIANTS = {"linux-x64-avx2": "avx2", "linux-x64-sse4": "sse4_2", "linux-arm64": "aarch64"}
 EPOCH = 315532800                               # 1980-01-01 00:00:00 UTC, as the Windows package
 _VERSION = re.compile(r"^\d+(\.\d+){3}$")
@@ -156,7 +158,7 @@ def read_deb(deb: Path) -> tuple[str, list[tuple[tarfile.TarInfo, bytes | None]]
     return version, entries
 
 
-def build(deb: Path, dist: Path, variant: str, epoch: int = EPOCH) -> Path:
+def build(deb: Path, dist: Path, variant: str, epoch: int = EPOCH, updater: Path | None = None) -> Path:
     if variant not in VARIANTS:
         raise PackageError(f"unknown variant {variant!r}")
     version, entries = read_deb(deb)
@@ -165,6 +167,8 @@ def build(deb: Path, dist: Path, variant: str, epoch: int = EPOCH) -> Path:
         raise PackageError(f"the .deb has no /{INSTALLED}{PROGRAM}")
     dist.mkdir(parents=True, exist_ok=True)
     archive = dist / tar_name(version, variant)
+    if updater is not None and not updater.is_file():
+        raise PackageError(f"no updater at {updater}")
     top = [(LAUNCHER, LAUNCHER_TEXT.encode(), 0o755), (README, readme_text(version, variant).encode(), 0o644),
            (VARIANT_FILE, f"{variant}\n".encode(), 0o644),
            (f"{BROWSER_DIR}/{CURRENT}", f"{version}\n".encode(), 0o644)]
@@ -192,6 +196,12 @@ def build(deb: Path, dist: Path, variant: str, epoch: int = EPOCH) -> Path:
             elif item.isfile():
                 info.size = len(data)
                 tar.addfile(info, io.BytesIO(data))
+        if updater is not None:
+            # Thoron's own updater lives in the version folder, as in the Windows package (swap.h)
+            data = updater.read_bytes()
+            info = tarfile.TarInfo(f"{FOLDER}/{BROWSER_DIR}/{version}/{UPDATER}")
+            info.size, info.mode, info.mtime = len(data), 0o755, epoch
+            tar.addfile(info, io.BytesIO(data))
     problems = audit(archive, variant)
     if problems:
         archive.unlink()
@@ -248,13 +258,14 @@ def main(argv: list[str]) -> int:
     b.add_argument("--deb", type=Path, required=True)
     b.add_argument("--variant", choices=sorted(VARIANTS), required=True)
     b.add_argument("--dist", type=Path, required=True)
+    b.add_argument("--updater", type=Path, help="the build's thoron_update, put beside the program (P3.12)")
     au = sub.add_parser("audit")
     au.add_argument("--archive", type=Path, required=True)
     au.add_argument("--variant", choices=sorted(VARIANTS))
     a = p.parse_args(argv)
     try:
         if a.command == "build":
-            archive = build(a.deb, a.dist, a.variant)
+            archive = build(a.deb, a.dist, a.variant, updater=a.updater)
             print(f"wrote {archive} ({archive.stat().st_size} bytes)")
             return 0
         problems = audit(a.archive, a.variant)

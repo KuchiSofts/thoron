@@ -12,6 +12,8 @@ what the browser needs to run (apt, from the .deb's own dependency list), and:
                 ~/.config/thoron (crash reports included)
     moved       the folder is moved to another name and started again: the profile comes along and is used
     sandbox     chrome://sandbox of that browser, read through DevTools, says it is adequately sandboxed
+    update      (when the package carries `thoron_update`) the moved copy updates itself to a newer version and
+                back, keeping its profile (tools/qa/linux_portable_update.py)
                 (WSL has no AppArmor; on Ubuntu with it, the launcher says what an administrator must allow)
 
     py -3 -I tools/qa/linux_portable_check.py --archive <thoron-*-linux-x64-avx2-portable.tar.xz>
@@ -77,6 +79,10 @@ start "$moved/ThoronPortable" moved
 grep -q "profile.*__MOVED__\|__MOVED__" "$moved/ThoronPortable/User Data/Local State" 2>/dev/null; echo $? > "$out/moved-named"
 [ -f "$moved/ThoronPortable/User Data/Local State" ] && echo yes > "$out/moved-profile"
 [ -e /home/tester/.config/thoron ] && echo yes >> "$out/config-thoron"
+# the update of the moved copy (tools/qa/linux_portable_update.py), when the package carries its updater
+if [ -x "$moved/ThoronPortable/Application/$(head -n1 "$moved/ThoronPortable/Application/current")/thoron_update" ]; then
+  as_tester python3 -I "$W/tools/qa/linux_portable_update.py" --package "$moved/ThoronPortable" \n    --out "$out/update.json" > "$out/update.txt" 2>&1
+fi
 echo done > "$out/reached"
 """
 
@@ -104,6 +110,16 @@ def problems(out: Path) -> dict[str, list[str]]:
     if read(out, "moved-ran") != "running" or read(out, "moved-profile") != "yes":
         found["moved"].append("after the move the browser did not open on the package's own profile")
     found["sandbox"] += sandbox_on(read(out, "sandbox.txt"))
+    update = read(out, "update.json")
+    if update:
+        import json
+        from tools.qa import linux_portable_update as lu
+        try:
+            steps = lu.problems(json.loads(update), f"/home/tester/{MOVED}/ThoronPortable")
+        except ValueError:
+            steps = {"update": [f"the update's results could not be read: {update[:200]!r}"]}
+        for step, issues in steps.items():
+            found[f"update: {step}"] = issues
     return found
 
 

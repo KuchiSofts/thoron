@@ -71,6 +71,18 @@ class BuildTests(unittest.TestCase):
             self.assertTrue({m.mtime for m in tar.getmembers()} == {pl.EPOCH})
         self.assertEqual(pl.audit(archive, "linux-x64-avx2"), [])
 
+    def test_the_updater_goes_beside_the_program(self):
+        updater = self.dir / "thoron_update"
+        updater.write_bytes(elf(62, "/lib64/ld-linux-x86-64.so.2"))
+        path = self.dir / "thoron.deb"
+        path.write_bytes(deb(the_deb()))
+        archive = pl.build(path, self.dir / "dist", "linux-x64-avx2", updater=updater)
+        with tarfile.open(archive) as tar:
+            item = tar.getmember(f"ThoronPortable/Application/{VERSION}/thoron_update")
+            self.assertTrue(item.mode & 0o100)
+        with self.assertRaises(pl.PackageError):
+            pl.build(path, self.dir / "dist", "linux-x64-avx2", updater=self.dir / "missing")
+
     def test_the_same_deb_gives_the_same_bytes(self):
         first = self.make().read_bytes()
         self.assertEqual(self.make().read_bytes(), first)

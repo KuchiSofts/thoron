@@ -6,7 +6,8 @@ On a test machine of tools/qa/wsl_test_vm.py, put back to its clean state, the u
 .tar.xz into a folder whose name has a space and accented and Cyrillic letters, with nothing installed but
 what the browser needs to run (apt, from the .deb's own dependency list), and:
 
-    starts      `./thoron` opens the browser on the machine's display (WSLg) and it stays open 20 s; the
+    starts      `./thoron` starts the browser (headless: the test machines' display is not always there) and
+                it answers on DevTools; the
                 profile is the package's own `User Data`, which the launcher made, and nothing appears in
                 ~/.config/thoron (crash reports included)
     moved       the folder is moved to another name and started again: the profile comes along and is used
@@ -49,13 +50,14 @@ as_tester() { runuser -u tester -- env HOME=/home/tester DISPLAY=:0 WAYLAND_DISP
 dir="/home/tester/__FOLDER__"
 as_tester mkdir -p "$dir"
 as_tester tar -xJf "$TAR" -C "$dir"; echo $? > "$out/unpack_exit"
-# the machine's display (WSLg) comes up a little after the machine starts
-for i in $(seq 90); do [ -S /tmp/.X11-unix/X0 ] && [ -S /mnt/wslg/runtime-dir/wayland-0 ] && break; sleep 1; done
-[ -S /tmp/.X11-unix/X0 ] && echo yes > "$out/display" || echo no > "$out/display"
+# the machine's display (WSLg's Wayland; its X11 socket is not always there) comes up a little after the
+# machine starts
+for i in $(seq 90); do [ -S /mnt/wslg/runtime-dir/wayland-0 ] && break; sleep 1; done
+[ -S /mnt/wslg/runtime-dir/wayland-0 ] && echo yes > "$out/display" || echo no > "$out/display"
 pkg="$dir/ThoronPortable"
 start() {  # $1 package folder, $2 name: the launcher with DevTools on 127.0.0.1, until it answers (at most 60 s)
   # (the first start on a freshly made machine takes a while: fonts and caches are made then)
-  as_tester bash -c "cd \"\$1\" || exit 1; ./thoron --no-first-run --no-default-browser-check --remote-debugging-port=9445 \
+  as_tester bash -c "cd \"\$1\" || exit 1; ./thoron --no-first-run --no-default-browser-check --headless=new --remote-debugging-port=9445 \
     about:blank > '$out/$2-run.txt' 2>&1 & p=\$!; \
     for i in \$(seq 60); do sleep 1; curl -s http://127.0.0.1:9445/json/version > '$out/$2-version.json' && \
       [ -s '$out/$2-version.json' ] && break; done; sleep 10; \

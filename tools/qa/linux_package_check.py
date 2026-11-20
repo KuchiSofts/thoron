@@ -60,7 +60,7 @@ step() { echo "$1" > "$out/reached"; }
 as_tester() { runuser -u tester -- env HOME=/home/tester DISPLAY=:0 WAYLAND_DISPLAY=wayland-0 \
   XDG_RUNTIME_DIR=/mnt/wslg/runtime-dir PULSE_SERVER=/mnt/wslg/PulseServer "$@"; }
 opens() {  # $1 program, $2 name for the files: opens on the display for 20 s, then closes
-  as_tester bash -c "'$1' --no-first-run --no-default-browser-check about:blank > '$out/$2-run.txt' 2>&1 & p=\$!; sleep 20; \
+  as_tester bash -c "'$1' --no-first-run --no-default-browser-check --ozone-platform=wayland about:blank > '$out/$2-run.txt' 2>&1 & p=\$!; sleep 20; \
     if kill -0 \$p 2>/dev/null; then echo running > '$out/$2-ran'; kill -TERM \$p; sleep 5; kill -KILL \$p 2>/dev/null; fi; true"
 }
 cp "$DEB" /tmp/thoron.deb; cp "$UP" /tmp/upstream.deb
@@ -70,9 +70,10 @@ apt-get install -y -qq /tmp/thoron.deb > "$out/apt-install.txt" 2>&1; echo $? > 
 dpkg -L thoron-browser > "$out/files.txt" 2>&1
 while read -r f; do [ -f "$f" ] && echo "$f"; done < "$out/files.txt" > "$out/regular-files.txt"
 dpkg-query -W -f='${Version}' thoron-browser > "$out/version.txt" 2>&1
-# the machine's display (WSLg) comes up a little after the machine starts
-for i in $(seq 90); do [ -S /tmp/.X11-unix/X0 ] && [ -S /mnt/wslg/runtime-dir/wayland-0 ] && break; sleep 1; done
-[ -S /tmp/.X11-unix/X0 ] && echo yes > "$out/display" || echo no > "$out/display"
+# the machine's display (WSLg's Wayland; its X11 socket is not always there) comes up a little after the
+# machine starts
+for i in $(seq 90); do [ -S /mnt/wslg/runtime-dir/wayland-0 ] && break; sleep 1; done
+[ -S /mnt/wslg/runtime-dir/wayland-0 ] && echo yes > "$out/display" || echo no > "$out/display"
 step coexists
 apt-get install -y -qq /tmp/upstream.deb > "$out/apt-upstream.txt" 2>&1; echo $? > "$out/upstream_exit"
 dpkg -L thorium-browser > "$out/upstream-files.txt" 2>&1

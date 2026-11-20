@@ -46,9 +46,10 @@ apt-get update -qq > "$out/apt-update.txt" 2>&1
 apt-get install -y -qq /tmp/thoron.deb dbus-x11 dbus-user-session xdg-desktop-portal xdg-desktop-portal-gtk \
   dconf-cli dconf-gsettings-backend gsettings-desktop-schemas > "$out/apt-install.txt" 2>&1
 echo $? > "$out/install_exit"
-# the machine's display (WSLg) comes up a little after the machine starts
-for i in $(seq 90); do [ -S /tmp/.X11-unix/X0 ] && [ -S /mnt/wslg/runtime-dir/wayland-0 ] && break; sleep 1; done
-[ -S /tmp/.X11-unix/X0 ] && echo yes > "$out/display" || echo no > "$out/display"
+# the machine's display (WSLg's Wayland; its X11 socket is not always there) comes up a little after the
+# machine starts
+for i in $(seq 90); do [ -S /mnt/wslg/runtime-dir/wayland-0 ] && break; sleep 1; done
+[ -S /mnt/wslg/runtime-dir/wayland-0 ] && echo yes > "$out/display" || echo no > "$out/display"
 mkdir -p /home/tester/.config/xdg-desktop-portal
 printf '[preferred]\ndefault=gtk\n' > /home/tester/.config/xdg-desktop-portal/portals.conf
 chown -R tester:tester /home/tester/.config
@@ -102,7 +103,7 @@ def probe(browser: Path, out: Path) -> int:
     port_file = profile / "DevToolsActivePort"
     proc = subprocess.Popen([str(browser), f"--user-data-dir={profile}", "--no-first-run", "--no-default-browser-check",
                              "--remote-debugging-address=127.0.0.1", "--remote-debugging-port=0",
-                             "data:text/html,<title>page</title>light or dark"],
+                             "--ozone-platform=wayland", "data:text/html,<title>page</title>light or dark"],
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
     results: dict = {"steps": {}}
     try:

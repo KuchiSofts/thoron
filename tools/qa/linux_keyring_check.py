@@ -52,9 +52,10 @@ apt-get update -qq > "$out/apt-update.txt" 2>&1
 apt-get install -y -qq /tmp/thoron.deb /tmp/upstream.deb dbus-x11 gnome-keyring libsecret-tools sqlite3 \
   > "$out/apt-install.txt" 2>&1
 echo $? > "$out/install_exit"
-# the machine's display (WSLg) comes up a little after the machine starts
-for i in $(seq 90); do [ -S /tmp/.X11-unix/X0 ] && [ -S /mnt/wslg/runtime-dir/wayland-0 ] && break; sleep 1; done
-[ -S /tmp/.X11-unix/X0 ] && echo yes > "$out/display" || echo no > "$out/display"
+# the machine's display (WSLg's Wayland; its X11 socket is not always there) comes up a little after the
+# machine starts
+for i in $(seq 90); do [ -S /mnt/wslg/runtime-dir/wayland-0 ] && break; sleep 1; done
+[ -S /mnt/wslg/runtime-dir/wayland-0 ] && echo yes > "$out/display" || echo no > "$out/display"
 runuser -u tester -- env HOME=/home/tester DISPLAY=:0 WAYLAND_DISPLAY=wayland-0 XDG_RUNTIME_DIR=/mnt/wslg/runtime-dir \
   XDG_CURRENT_DESKTOP=GNOME dbus-run-session -- bash -c "
     eval \$(printf 'made-up-keyring-password' | gnome-keyring-daemon --unlock --components=secrets)
@@ -86,13 +87,14 @@ def _evaluate(target: dict, expression: str):
 
 
 class Browser:
-    """A browser started on the display with DevTools on 127.0.0.1 and GNOME's keyring for passwords."""
+    """A browser started headless (no window is needed: the password page works the same) with DevTools on
+    127.0.0.1 and GNOME's keyring for passwords."""
 
     def __init__(self, program: str, profile: Path):
         self.profile = profile
         (profile / "DevToolsActivePort").unlink(missing_ok=True)
         self.proc = subprocess.Popen([program, f"--user-data-dir={profile}", "--no-first-run",
-                                      "--no-default-browser-check", "--password-store=gnome-libsecret", "--disable-gpu",
+                                      "--no-default-browser-check", "--password-store=gnome-libsecret", "--headless=new",
                                       "--remote-debugging-address=127.0.0.1", "--remote-debugging-port=0",
                                       "about:blank"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                      start_new_session=True)

@@ -421,6 +421,40 @@ The installer, and later Settings, shows **"Import from…"** with:
 
   It ships behind a version check, and reading old formats stays supported for good.
 
+#### 7.8.1 As built (ROADMAP P4.9, 2026-11-20, Windows)
+
+- **The key does not change.** Locking takes the key the copy already has (Local State's
+  `os_crypt.encrypted_key`, protected by Windows) and keeps it locked in the file `Thoron Portable Key` in the
+  User Data folder instead; Local State's copy is then removed. Values stay in Chromium's `v10` format, so
+  nothing is encrypted again, and removing the lock puts the key back into Local State.
+- **The key file** (format 1, `components/thoron_portable_key/key_file.h`) holds one passphrase lock
+  (Argon2id, RFC 9106, with its own cost and salt; at least 64 MiB, 3 passes, 4 lanes, at most 1 GiB, 32
+  passes, 16 lanes; setup measures this PC and asks for up to 256 MiB), at most one recovery-key lock
+  (HKDF-SHA256 of 128 random bits) and up to six remembered-PC locks (DPAPI for one Windows account on one
+  PC, kept in the file, so the drive alone opens nothing). Each lock is AES-256-GCM with its kind, cost and
+  salt bound in; the whole file carries an HMAC-SHA256 under a key derived from the profile key, checked
+  once any lock opens. Nothing else is read; the reader is fuzzed.
+- **Passphrase:** at least 12 characters, taken as Unicode NFC in UTF-8 so the same characters typed
+  elsewhere open the copy; the memory that held it is wiped once the key is derived.
+- **Recovery key:** 128 random bits and a 32-bit check, written as eight groups of four characters of
+  Crockford's base 32 (O read as 0, I and L as 1); setup asks for its last group before it locks.
+- **Writing the file** never leaves a copy that cannot be opened: the new file is written whole and
+  flushed beside the old one, the old one moved aside, the new one put in place, the old one removed; a
+  start finishes or undoes whatever a pulled drive left. Every write is read back and opened again before
+  it counts; a failed check puts the previous file back.
+- **At start** (`chrome/browser/thoron_portable`): before os_crypt starts, a copy with a key file is opened
+  with a lock this PC remembers, else Thoron's own Windows dialog asks for the passphrase or the recovery
+  key, before any profile or tab exists; Quit stops the browser. A damaged, changed or too weak key file is
+  said so and the browser quits; it never carries on with another key. A copy marked as locked in Local
+  State whose key file is missing starts only when the person chooses to start without its passwords and
+  sign-ins. While locked, the DPAPI key provider gives the unlocked key and App-Bound encryption is not
+  used.
+- **Settings:** `chrome://thoron-portable` locks, changes the passphrase, makes a new recovery key,
+  remembers or forgets this PC, and removes the lock.
+- **Decided here, as the threat model proposed (questions 5 to 7, the owner may change them):** Windows
+  first, with no keyring entry on Linux yet; only passwords and cookies are locked, and the page says so; the
+  "new key" action (E6) comes later. Linux and the review by someone other than the author stay open.
+
 ## 8. Release process and full changelog **[owner]**
 
 - **Draft first:** releases are always created as GitHub **drafts**. A human reviews and publishes

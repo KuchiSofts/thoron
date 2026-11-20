@@ -10,7 +10,7 @@ with the stage of the [roadmap](../../ROADMAP.md) that brings it (an ID such as 
 | [Install](INSTALL.md) | The portable package and the installer, which package fits your processor, moving a portable copy and USB drives, removing Thoron |
 | [Import](IMPORT.md) | Bringing your profile, open tabs and passwords over from Thorium and Chrome, today with small command-line tools |
 | [Updates and rollback](UPDATES.md) | How Thoron looks for updates, what the About page says, the update modes, updating and rolling back a portable copy |
-| [Portable passphrase](PORTABLE_PASSPHRASE.md) | The passphrase protection of a portable copy, which is not built yet, and what to do until then |
+| [Portable passphrase](PORTABLE_PASSPHRASE.md) | Locking a portable copy's passwords and sign-ins with a passphrase, a recovery key and remembered PCs (built, not in a release yet) |
 
 ## How the guides are tested
 

@@ -7,6 +7,8 @@ Explanations live in the design docs under `docs/design/`.
 ## [Unreleased]
 
 ### Added
+- **Portable:** a portable copy can lock its saved passwords and sign-ins with a passphrase on `chrome://thoron-portable`: they open on any PC once it is typed into Thoron's own window at start, with a recovery key to write down and an optional "Remember this PC". Nothing is encrypted again, and the lock can be removed. Windows only for now.
+- **Portable:** `tools/migrate/adopt_portable.py` takes over an upstream Thorium portable folder, which keeps its passwords and cookies unprotected, into a Thoron portable copy: it copies and checks every file, leaves the original as it was, protects the key at once and checks that every saved password and cookie still opens; then lock the copy with a passphrase.
 - **Mail:** Thoron M-Notifier reads Proton Mail through Proton Mail Bridge on your computer. A Proton address fills in Bridge's server and port; Bridge's own certificate is trusted by its fingerprint, taken when you add the mailbox, and a different one later is shown instead of trusted.
 - **Mail:** Thoron M-Notifier can save its backup by itself into a folder you choose (your Google Drive folder, for one) whenever something in it changes, keeping only its newest files there. With a passphrase the backups are sealed and hold the passwords; without one they hold everything else.
 - **Import:** Settings' "Import bookmarks and settings" now lists Thorium, Chrome, Edge, Brave, Vivaldi, Opera and Chromium when they are in your Windows account, and brings over bookmarks, history, saved passwords, search engines, form entries, cookies (so you stay signed in to your sites), and the home page and startup pages. It asks you to close the other browser first and never closes it, works on copies of its files, and leaves out passwords and cookies that Chrome locks to itself. Each import leaves a short report in your profile folder with counts only.
@@ -308,6 +310,7 @@ Explanations live in the design docs under `docs/design/`.
 - **Repository:** every push runs the tests and linters and verifies the browser source against upstream.
 
 ### Fixed
+- **Portable:** a portable copy leaves nothing in the PC's registry any more (no usage statistics choice, metrics id backup, beacons, clean-exit mark or settings checksums), and one moved to another PC keeps its home page, startup pages and search engine instead of having them reset.
 - **QA tools:** the benchmark waits until the browser has written its DevTools port file; reading it while it was being written stopped a run on Windows.
 - **Checks:** the repository's checks install the one Python package the signing tests use, and three import tests no longer fail when the temporary folder has a short (8.3) name, as on GitHub's machines.
 - **QA tools:** the profile check no longer calls the cookies that had already expired a loss: a rehearsal on a copy of an older backup saw them go at the start and stopped the update.

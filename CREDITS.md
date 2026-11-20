@@ -96,6 +96,11 @@ author publishes no licence; those patches need the author's permission, or a re
   `idna_adapter`, `percent-encoding`, `precomputed-hash`, `psl`, `psl-types`, `rustc-hash`, `rustc_version`,
   `seahash`, `semver`, `thiserror` 1.x, `url`. Two small build fixes are kept as patches (the MIT text `seahash`
   does not ship; FlatBuffers without nightly-only features).
+- **Argon2** (the passphrase of portable copies, in development): Daniel Dinu, Dmitry Khovratovich,
+  Jean-Philippe Aumasson and Samuel Neves, the reference implementation of
+  [P-H-C/phc-winner-argon2](https://github.com/P-H-C/phc-winner-argon2) (release 20190702), CC0 1.0 or
+  Apache-2.0. Thoron builds its portable C code unmodified (`third_party/argon2`) and checks it against the RFC
+  9106 test vector.
 - **uBlock Origin**: Raymond Hill ([@gorhill](https://github.com/gorhill)) and contributors,
   GPL-3.0. Thoron bundles the **unmodified** official release as a separate extension
   (https://github.com/gorhill/uBlock).

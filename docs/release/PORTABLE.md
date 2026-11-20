@@ -218,6 +218,14 @@ About the registry:
   made no such key. An extension a program registers in a key made later is seen at Thoron's next start.
 - A portable copy and an installed Thoron on one PC write the same values (both profiles are called
   `Default`). It is a trace, and it is shared. Whether the two can disturb each other was not looked into.
+- **Since 2026-11-20 a portable copy writes none of them** (ROADMAP P3.10). The browser tells a portable copy
+  by its layout (`Thoron.exe` beside `Application`, which holds `current` and the version folder) and then
+  keeps no usage statistics choice or sample, no metrics id backup, no default-browser beacon, no clean-exit
+  mark (its own `Local State` keeps that), no third-party DLL beacon or status (it does not set up that
+  blocking, whose list Thoron does not fetch) and no settings checksums (its own `Secure Preferences` keeps
+  them) in the registry. The signatures of its protected settings no longer name the PC either, so a copy
+  moved to another PC keeps its home page, startup pages and search engine (P3.12). Measured again the same
+  way in Windows Sandbox: nothing under `HKEY_CURRENT_USER`, no scheduled task, no file outside the folder.
 
 Inside the profile, after the move: one setting still held the old place after one start in the new one,
 `extensions.settings.<id>.path` of a built-in extension in `Secure Preferences` (the run with the `.cmd`
@@ -310,9 +318,8 @@ writes: `thoron_update.exe --root <package>\Application --status` answered `curr
 | What | Until then | Stage |
 |---|---|---|
 | Updates | The browser of a portable copy updates it from the release's package once releases are signed (P2.11): its own updater unpacks the new version beside the old one, puts it in place and refreshes the launcher, and the relaunch runs it (`tools/qa/portable_update_check.py` does the update with the real programs and a real package, offline). Until releases are signed, by hand: close Thoron and replace everything in the folder except `User Data` | P2.11, P3.20 |
-| A profile that opens on any PC | Saved passwords and sign-ins are locked to the Windows account they were saved with (measured: the profile's key is kept by DPAPI). On another PC or account they cannot be read and may be lost (known from how Chromium protects them; not measured). The browser's flag that stores them unprotected is deliberately not used | P4.9 |
-| Taking over an upstream Thorium portable folder | Not offered | P4.10 |
-| A portable copy that leaves no registry values | See section 4.1; it needs a change in the browser | no stage yet; upstream's report "Portable is not fully portable" (#592) is kept under P3.12 and P4.9 |
+| A profile that opens on any PC | Built, not in a release yet: `chrome://thoron-portable` locks the copy's passwords and sign-ins with a passphrase, and they open on any PC once it is typed ([portable passphrase](../user/PORTABLE_PASSPHRASE.md)). Until a release has it, they are locked to the Windows account they were saved with (DPAPI). The browser's flag that stores them unprotected is deliberately not used | P4.9 |
+| Taking over an upstream Thorium portable folder | `tools/migrate/adopt_portable.py` (copy, check, protect the key, check every password and cookie; the original untouched), then the passphrase on `chrome://thoron-portable` | P4.10 (done) |
 | The browser started without the launcher from a portable folder | It uses the PC's profile | no stage yet; it belongs with the launcher |
 | The first run's offers (import, P3.21) in a portable copy | Not adapted to a portable copy | P3.21 |
 | A signed `.zip` of a real release | `release.py prepare` makes it and lists it in `SHA256SUMS`; the release keys are not made yet | P2.11 |

@@ -78,7 +78,7 @@ changed in each version is in the [changelog](CHANGELOG.md), one line per change
 Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always current.
 
 <!-- roadmap:start -->
-**Overall:** `███████████████░░░░░` 153 of 211 tasks done (73%) · roadmap updated 2026-11-19
+**Overall:** `███████████████░░░░░` 154 of 211 tasks done (73%) · roadmap updated 2026-11-19
 
 | Area | Progress | Done | Status |
 |---|---|---|---|
@@ -88,7 +88,7 @@ Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always curre
 | [P2b - ARM64](ROADMAP.md#p2b---arm64) | `░░░░░░░░░░░░░░░░░░░░` | 0/5 | 🔄 In progress · ⛔ blocked item |
 | [P3 - Updater v1 + Import](ROADMAP.md#p3---updater-v1--import) | `██████████░░░░░░░░░░` | 11/21 | 🔄 In progress |
 | [P4 - Updater v2](ROADMAP.md#p4---updater-v2) | `████████████████░░░░` | 9/11 | 🔄 In progress |
-| [P5 - Quality](ROADMAP.md#p5---quality) | `██████████████████░░` | 72/82 | 🔄 In progress |
+| [P5 - Quality](ROADMAP.md#p5---quality) | `██████████████████░░` | 73/82 | 🔄 In progress |
 | [Security (S)](ROADMAP.md#security-s) | `██████████████░░░░░░` | 11/16 | 🔄 In progress |
 | [Quality & performance (Q)](ROADMAP.md#quality--performance-q) | `██████████████░░░░░░` | 5/7 | 🔄 In progress |
 | [Docs (D)](ROADMAP.md#docs-d) | `████████████░░░░░░░░` | 6/10 | 🔄 In progress |
@@ -220,7 +220,7 @@ Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always curre
 - [ ] **P5.7** HEVC/AV1 playback regression (#1271) and NVIDIA frame drops (#1285)
 - [ ] **P5.8** Passwords not saved (#137, #684, #1199)
 - [x] **P5.9** Random logouts and lost sessions (#1005, #458)
-- [ ] **P5.10** Slow start-up with multiple profiles (#803)
+- [x] **P5.10** Slow start-up with multiple profiles (#803)
 - [x] **P5.11** Evaluate an AVX-512 variant (performance gain versus stability)
 - [ ] **P5.12** Linux hardware video acceleration (VA-API) on current Ubuntu (#1231)
 - [x] **P5.13** Native ad blocking, spike: link `adblock-rust` into a 158 build, block with EasyList, measure (throwaway)

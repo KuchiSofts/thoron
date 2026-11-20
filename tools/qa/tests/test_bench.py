@@ -121,7 +121,7 @@ class ProfilesTests(unittest.TestCase):
             (root / "Local State").write_text(json.dumps({"profile": {"info_cache": {}}}), encoding="utf-8")
             bench.windows_template(root)
             state = json.loads((root / "Local State").read_text(encoding="utf-8"))
-            self.assertIs(state["browser"]["show_profile_picker_on_startup"], False)
+            self.assertIs(state["profile"]["show_picker_on_startup"], False)
             self.assertEqual(state["profile"]["last_active_profiles"], list(bench.PROFILES))
             self.assertIn("info_cache", state["profile"])
 

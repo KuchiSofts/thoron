@@ -275,13 +275,49 @@ def run_startup_profiles(browser: Path, work: Path, runs: int, timeout: float = 
     return values
 
 
+def open_page_at_start(browser: Path, template: Path) -> None:
+    """Each profile of `template` set, through its own Settings page, to open a page at start (Chromium does not
+    open a further profile's window that would only show a New Tab page, and it protects this setting against a
+    changed file)."""
+    import urllib.request
+    from tools.qa.cdp import WebSocket
+    for name in PROFILES:
+        (template / "DevToolsActivePort").unlink(missing_ok=True)
+        proc = subprocess.Popen([str(browser), "--headless=new", f"--user-data-dir={template}", "--no-first-run",
+                                 "--no-default-browser-check", f"--profile-directory={name}",
+                                 "--remote-debugging-address=127.0.0.1", "--remote-debugging-port=0",
+                                 "about:blank"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        try:
+            port = _port_file(template)
+            time.sleep(2)
+            opened = urllib.request.Request(f"http://127.0.0.1:{port}/json/new?chrome://settings/", method="PUT")
+            page = json.loads(urllib.request.urlopen(opened, timeout=10).read())
+            time.sleep(3)
+            ws = WebSocket(page["webSocketDebuggerUrl"])
+            try:
+                for pref, value in (("session.restore_on_startup", 4), ("session.startup_urls", ["about:blank"])):
+                    ws.call("Runtime.evaluate", awaitPromise=True, expression=(
+                        f"new Promise((ok) => chrome.settingsPrivate.setPref({json.dumps(pref)}, "
+                        f"{json.dumps(value)}, '', () => ok(1)))"))
+            finally:
+                ws.close()
+            time.sleep(1)
+            _close_by_devtools(port)
+            proc.wait(timeout=30)
+        except (BenchError, OSError, KeyError, ValueError, subprocess.TimeoutExpired) as exc:
+            _stop(proc, Path(tempfile.mkdtemp(prefix="stopped-", dir=template.parent)))
+            raise BenchError(f"could not set {name} to open a page at start: {exc}") from exc
+    (template / "DevToolsActivePort").unlink(missing_ok=True)
+
+
 def windows_template(template: Path) -> None:
     """The four profiles of `template` set to open together, as after an exit with four windows open: no profile
     picker at start, and the four named as the last ones open (Local State)."""
     path = template / "Local State"
     state = json.loads(path.read_text(encoding="utf-8"))
-    state.setdefault("browser", {})["show_profile_picker_on_startup"] = False
-    state.setdefault("profile", {})["last_active_profiles"] = list(PROFILES)
+    profile = state.setdefault("profile", {})
+    profile["show_picker_on_startup"] = False
+    profile["last_active_profiles"] = list(PROFILES)
     path.write_text(json.dumps(state), encoding="utf-8")
 
 
@@ -297,6 +333,7 @@ def run_startup_profile_windows(browser: Path, work: Path, runs: int, timeout: f
     minimized, out of a person's way."""
     import urllib.request
     template = profiles_template(browser, work)
+    open_page_at_start(browser, template)
     windows_template(template)
     values = []
     try:

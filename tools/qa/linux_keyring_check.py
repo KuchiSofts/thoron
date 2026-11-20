@@ -89,7 +89,7 @@ class Browser:
         self.profile = profile
         (profile / "DevToolsActivePort").unlink(missing_ok=True)
         self.proc = subprocess.Popen([program, f"--user-data-dir={profile}", "--no-first-run",
-                                      "--no-default-browser-check", "--password-store=gnome-libsecret",
+                                      "--no-default-browser-check", "--password-store=gnome-libsecret", "--disable-gpu",
                                       "--remote-debugging-address=127.0.0.1", "--remote-debugging-port=0",
                                       "about:blank"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                      start_new_session=True)
@@ -165,6 +165,7 @@ def probe(tools: Path, out: Path) -> int:
         b.close()
         found["thorium_stored"] = _stored(thorium)
         found["thorium_plain"] = _plain_in(thorium)
+        time.sleep(35)        # the copy waits until the closed browser has written its last files
         copy = subprocess.run([sys.executable, "-I", str(tools / "migrate" / "import_profile.py"), "--from", str(thorium),
                                "--to", str(thoron)], capture_output=True, text=True, timeout=600)
         found["import_exit"] = copy.returncode

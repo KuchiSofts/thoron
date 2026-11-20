@@ -16,7 +16,8 @@ The files come from the release's own .deb (read with this module's own `ar` and
 the portable copy and the installed one are the same build. The launcher finds the package from its own path
 (symbolic links followed), checks the processor against `variant` (avx2 or sse4_2 in /proc/cpuinfo, or an
 AArch64 machine) and starts nothing on one the build cannot run on (exit 3), reads `current` (a version and
-nothing else, or exit 4), makes `User Data` (or exit 5) and replaces itself with
+nothing else, or exit 4), makes `User Data` (or exit 5), keeps the crash reports in it too (Chromium on Linux
+puts them beside the default profile otherwise: BREAKPAD_DUMP_LOCATION) and replaces itself with
 `Application/<current>/thoron --user-data-dir=<package>/User Data` and its own arguments as it got them: no
 argument is read by a shell a second time, so spaces and any letters in the folder's name or the arguments are
 kept. It never turns the sandbox off. Where Ubuntu (23.10 and later) lets only programs named in an AppArmor
@@ -85,6 +86,10 @@ if [ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null)"
   echo "Thoron: this Linux lets only programs with an AppArmor profile use the sandbox. A portable copy has none;" >&2
   echo "an administrator can add one (README.txt, 'The sandbox'), or install the .deb, which brings its own." >&2
 fi
+# Chromium on Linux keeps its crash reports beside the default profile (~/.config/thoron) whatever the profile
+# folder; this keeps them in the package's own.
+BREAKPAD_DUMP_LOCATION="$here/User Data/Crash Reports"
+export BREAKPAD_DUMP_LOCATION
 exec "$program" --user-data-dir="$here/User Data" "$@"
 """
 

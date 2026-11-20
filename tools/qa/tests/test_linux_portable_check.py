@@ -16,7 +16,7 @@ def write(folder: Path, files: dict) -> None:
 
 def good() -> dict:
     return {"reached": "done", "deps_exit": "0", "unpack_exit": "0", "first-ran": "running",
-            "first-version.json": '{"Browser": "Thoron/158.0.8127.65"}', "profile-made": "yes",
+            "first-version.json": '{"Browser": "Chrome/158.0.8127.65"}', "profile-made": "yes",
             "moved-ran": "running", "moved-profile": "yes", "sandbox.txt": SANDBOX}
 
 

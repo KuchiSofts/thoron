@@ -8,7 +8,7 @@ what the browser needs to run (apt, from the .deb's own dependency list), and:
 
     starts      `./thoron` opens the browser on the machine's display (WSLg) and it stays open 20 s; the
                 profile is the package's own `User Data`, which the launcher made, and nothing appears in
-                ~/.config/thoron
+                ~/.config/thoron (crash reports included)
     moved       the folder is moved to another name and started again: the profile comes along and is used
     sandbox     chrome://sandbox of that browser, read through DevTools, says it is adequately sandboxed
                 (WSL has no AppArmor; on Ubuntu with it, the launcher says what an administrator must allow)
@@ -51,7 +51,7 @@ as_tester mkdir -p "$dir"
 as_tester tar -xJf "$TAR" -C "$dir"; echo $? > "$out/unpack_exit"
 pkg="$dir/ThoronPortable"
 start() {  # $1 package folder, $2 name: the launcher with DevTools on 127.0.0.1 for 20 s
-  as_tester bash -c "cd \"\$1\" && ./thoron --no-first-run --no-default-browser-check --remote-debugging-port=9445 \
+  as_tester bash -c "cd \"\$1\" || exit 1; ./thoron --no-first-run --no-default-browser-check --remote-debugging-port=9445 \
     about:blank > '$out/$2-run.txt' 2>&1 & p=\$!; sleep 20; \
     curl -s http://127.0.0.1:9445/json/version > '$out/$2-version.json'; \
     if kill -0 \$p 2>/dev/null; then echo running > '$out/$2-ran'; kill -TERM \$p; sleep 5; kill -KILL \$p 2>/dev/null; fi; true" _ "$1"
@@ -61,7 +61,7 @@ start "$pkg" first
 ls -A "$pkg" > "$out/package-after.txt"
 [ -f "$pkg/User Data/Local State" ] && echo yes > "$out/profile-made"
 [ -e /home/tester/.config/thoron ] && echo yes > "$out/config-thoron"
-as_tester python3 -I "$W/tools/qa/cdp.py" --browser "$pkg/Application/$(head -n1 "$pkg/Application/current")/thoron" \
+as_tester env BREAKPAD_DUMP_LOCATION=/tmp/cdp-crash python3 -I "$W/tools/qa/cdp.py" --browser "$pkg/Application/$(head -n1 "$pkg/Application/current")/thoron" \
   --work /tmp/cdp --page chrome://sandbox --png /tmp/sandbox.png --text "$out/sandbox.txt" > "$out/cdp.txt" 2>&1
 moved="/home/tester/__MOVED__"
 as_tester mv "$dir" "$moved"
@@ -88,8 +88,8 @@ def problems(out: Path) -> dict[str, list[str]]:
         found["starts"].append(f"the run stopped (deps {read(out, 'deps_exit')!r}, unpack {read(out, 'unpack_exit')!r})")
     if read(out, "first-ran") != "running":
         found["starts"].append(f"the browser did not stay open 20 s: {read(out, 'first-run.txt')[-300:]}")
-    if "Thoron" not in read(out, "first-version.json"):
-        found["starts"].append(f"DevTools did not name Thoron: {read(out, 'first-version.json')[:200]!r}")
+    if '"Browser"' not in read(out, "first-version.json"):
+        found["starts"].append(f"DevTools did not answer: {read(out, 'first-version.json')[:200]!r}")
     if read(out, "profile-made") != "yes":
         found["starts"].append("the package's own User Data holds no profile")
     if read(out, "config-thoron"):

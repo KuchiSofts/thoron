@@ -12,7 +12,7 @@ were, so that browser keeps working and stays your backup.
 
 | From | What comes over | Section |
 |---|---|---|
-| Thorium, Chrome, Edge, Brave, Vivaldi, Opera, Opera GX, Chromium | Bookmarks, history, saved passwords and cookies (not those Chrome locks to itself), search engines, form entries, the home page and startup pages, in Thoron's Settings | [1a](#1a-in-thorons-settings) |
+| Thorium, Chrome, Edge, Brave, Vivaldi, Opera, Opera GX, Chromium | Bookmarks, history, saved passwords and cookies (not those Chrome locks to itself), search engines, form entries, the home page and startup pages, and extensions from the Chrome Web Store (installed again from the store), in Thoron's Settings | [1a](#1a-in-thorons-settings) |
 | Thorium, same Windows account | Everything: bookmarks, history, saved passwords, cookies (you stay signed in), extensions, settings, open tabs and tab groups | [2](#2-thorium-the-whole-profile) |
 | Chrome, Thorium, Thoron | Open windows, tabs and tab groups (names, colours, collapsed or not), pinned tabs, each tab's back and forward history | [3](#3-open-tabs-and-tab-groups) |
 | Firefox | The same: open windows, tabs and tab groups, pinned tabs, each tab's history | [3](#from-firefox) |
@@ -24,8 +24,6 @@ were, so that browser keeps working and stays your backup.
 (app-bound encryption), so no other program can read them. Thoron does not try to get around that:
 the tricks that do are what password-stealing programs use. Passwords come over through Chrome's own
 export (section 4). For cookies there is no such way, so sign in to your sites again in Thoron.
-
-Not yet: extensions from Chrome, Edge, Brave, Vivaldi and Opera (section 6).
 
 ## 1a. In Thoron's Settings
 
@@ -53,15 +51,23 @@ whether the home button shows) and what the browser opens at its start: its last
 page, or pages of its own, which then become Thoron's startup pages. Only web pages come over, never a
 script or a browser's internal page, and a setting that your organization's policy decides stays as the
 policy says. Check them afterwards in Thoron's Settings, **On startup** and **Appearance**: they are set
-exactly as the other browser had them. Open tabs and extensions do not come over this way (sections 2 and
-3 for Thorium's whole profile and for tabs).
+exactly as the other browser had them. **Extensions (installed again from the Chrome Web Store)**
+is off until you tick it: Thoron reads which extensions you installed from the Chrome Web Store (only
+their IDs) and downloads each one again from the store, as a fresh install would, never a copy of the
+other browser's extension files. They arrive within a few minutes, with the access they ask for not
+granted: one that wants to read your sites, tabs or similar stays off, and Thoron's menu offers to turn
+it on, showing what it asks for; one that asks for none of that is on at once. Extensions that came
+with the browser, that a policy or another program put there, or that were loaded unpacked are left out
+(the unpacked and other-program ones are counted in the report; add those yourself if you trust them).
+The extensions' own settings and data stay behind. Open tabs do not come over this way (sections 2 and 3
+for Thorium's whole profile and for tabs).
 
 **The report.** Each import writes `Thoron import report.json` into the Thoron profile's folder (for an
 installed Thoron, `%LOCALAPPDATA%\Thoron\User Data\Default`), replacing the one before: when, from which
 browser, how many bookmarks, history entries, saved passwords, cookies, search engines and form entries came over,
-whether a home page did and how many startup pages,
+whether a home page did and how many startup pages, how many extensions are to be installed from the store,
 and how many were left out and why (passwords and cookies locked by Chrome, in no format Thoron knows, or
-that did not decrypt; a damaged database). It holds counts and the browser's name only, never an address, a name, a
+that did not decrypt; extensions not from the store; a damaged database). It holds counts and the browser's name only, never an address, a name, a
 password or any other value.
 
 ## 1. Before you start
@@ -275,8 +281,6 @@ lists, own filters, trusted sites and switches with the file's. Thoron's own phi
 
 | What | Stage |
 |---|---|
-| An import screen in the installer | P3.13 |
-| Extensions from Chrome, Edge, Brave, Vivaldi and Opera | P3.14 |
-| Tabs from Edge, Brave, Vivaldi and Opera, checked | P3.15 |
-| Taking over an upstream Thorium portable folder | P4.10 |
+| Open tabs and tab groups in Settings' own import | P3.22 |
+| The import on Linux (Settings) | P3.14 |
 | Linux: passwords imported from Thorium readable | P3.16 |

@@ -21575,10 +21575,10 @@ index 0000000000000000000000000000000000000000..35d8d4d6e1b99357d973bdac332fbba4
 +of the spec ("A signature to test against") is among them, under its own throwaway key.
 diff --git a/components/thoron_update/cli.cc b/components/thoron_update/cli.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..5c8886f3cf7438b7098c4225a0b8d46c1b6af3fc
+index 0000000000000000000000000000000000000000..635ce2be3582b2962c043cb10b3f759549c699b8
 --- /dev/null
 +++ b/components/thoron_update/cli.cc
-@@ -0,0 +1,564 @@
+@@ -0,0 +1,566 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -21941,7 +21941,9 @@ index 0000000000000000000000000000000000000000..5c8886f3cf7438b7098c4225a0b8d46c
 +  *out += "delta: " + ToString(*from) + " -> " + ToString(*version) + ", installing with " +
 +          setup.GetProgram().AsUTF8Unsafe() + "\n";
 +  base::LaunchOptions options;
-+  options.start_hidden = true;
++#if BUILDFLAG(IS_WIN)
++  options.start_hidden = true;  // setup.exe, the only installer this runs, shows no window
++#endif
 +  base::Process process = base::LaunchProcess(setup, options);
 +  int exit_code = -1;
 +  const bool ended =

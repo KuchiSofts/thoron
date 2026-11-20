@@ -8,6 +8,7 @@ with the stage of the [roadmap](../../ROADMAP.md) that brings it (an ID such as 
 | Guide | What it covers |
 |---|---|
 | [Install](INSTALL.md) | The portable package and the installer, which package fits your processor, moving a portable copy and USB drives, removing Thoron |
+| [Install on Linux](INSTALL_LINUX.md) | The `.deb` package and the portable folder on Linux, which package fits your processor, the sandbox and AppArmor, removing Thoron |
 | [Import](IMPORT.md) | Bringing your profile, open tabs and passwords over from Thorium and Chrome, today with small command-line tools |
 | [Updates and rollback](UPDATES.md) | How Thoron looks for updates, what the About page says, the update modes, updating and rolling back a portable copy |
 | [Portable passphrase](PORTABLE_PASSPHRASE.md) | Locking a portable copy's passwords and sign-ins with a passphrase, a recovery key and remembered PCs (built, not in a release yet) |
@@ -24,6 +25,8 @@ Sandbox. What they cannot follow yet: downloading from GitHub and the minisign c
 and no published key yet), installing Python from python.org (the Sandbox has no network: it gets the
 interpreter and its standard library from the PC), the warning "Windows protected your PC" for a
 downloaded file, and the sections of Import that need Chrome or Firefox installed.
+
+The steps of [Install on Linux](INSTALL_LINUX.md) are followed on clean Ubuntu 24.04 and 26.04 test machines (`tools/qa/wsl_test_vm.py`): `tools/qa/linux_package_check.py` installs the `.deb` with apt, starts Thoron, installs upstream Thorium beside it (each keeps its own profile) and removes Thoron (the profile stays); `tools/qa/linux_portable_check.py` unpacks the portable package into a folder whose name has a space and accented and Cyrillic letters, starts it, moves it and starts it again with the same profile, and nothing is written to `~/.config/thoron`. What they cannot follow: the AppArmor steps (WSL has no AppArmor).
 
 ## How to read the guides
 

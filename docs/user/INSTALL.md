@@ -7,8 +7,8 @@ Thoron for Windows x64 comes in two forms:
 - **Installed:** an installer puts Thoron into your own Windows account.
 
 **There is no public release yet.** The first one is Thoron 0.1.1 for Windows x64. Until then these
-packages exist only for people who build Thoron themselves ([build guide](../build/WINDOWS.md)). Linux and
-ARM64 follow later (ROADMAP P2.9, P2b.1).
+packages exist only for people who build Thoron themselves ([build guide](../build/WINDOWS.md)). For Linux
+see [Install on Linux](INSTALL_LINUX.md); ARM64 follows later (ROADMAP P2b.1).
 
 ## 1. Which package fits your processor
 

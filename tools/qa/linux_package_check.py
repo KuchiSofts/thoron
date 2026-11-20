@@ -60,7 +60,12 @@ step() { echo "$1" > "$out/reached"; }
 as_tester() { runuser -u tester -- env HOME=/home/tester DISPLAY=:0 WAYLAND_DISPLAY=wayland-0 \
   XDG_RUNTIME_DIR=/mnt/wslg/runtime-dir PULSE_SERVER=/mnt/wslg/PulseServer "$@"; }
 opens() {  # $1 program, $2 name for the files: opens on the display for 20 s, then closes
-  as_tester bash -c "'$1' --no-first-run --no-default-browser-check --ozone-platform=wayland about:blank > '$out/$2-run.txt' 2>&1 & p=\$!; sleep 20; \
+  # WSLg's display sometimes is not there at all: then the browser starts without one (headless), which still
+  # shows it starts and runs; the file "$2-mode" says which
+  local how="--ozone-platform=wayland"
+  [ -S /mnt/wslg/runtime-dir/wayland-0 ] || how="--headless=new --remote-debugging-port=0"
+  echo "$how" > "$out/$2-mode"
+  as_tester bash -c "'$1' --no-first-run --no-default-browser-check $how about:blank > '$out/$2-run.txt' 2>&1 & p=\$!; sleep 20; \
     if kill -0 \$p 2>/dev/null; then echo running > '$out/$2-ran'; kill -TERM \$p; sleep 5; kill -KILL \$p 2>/dev/null; fi; true"
 }
 cp "$DEB" /tmp/thoron.deb; cp "$UP" /tmp/upstream.deb

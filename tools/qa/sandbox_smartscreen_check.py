@@ -95,8 +95,13 @@ try {
   $r.warning = [bool]$warning
   # what was there, for a run that saw neither: the programs that run and the windows they show
   $r.processes = @(Get-Process | ForEach-Object { $_.Name } | Sort-Object -Unique)
+  # each top-level window: its program, its class, and the processes and kinds of the controls inside it (no
+  # words: a control's name is in the PC's language)
   $r.windows = @($A::RootElement.FindAll($T::Children, $C::TrueCondition) | ForEach-Object {
-    "$((Get-Process -Id $_.Current.ProcessId -ErrorAction SilentlyContinue).Name): $($_.Current.ClassName)" })
+    $inside = @($_.FindAll($T::Descendants, $C::TrueCondition))
+    $owners = @($inside | ForEach-Object { (Get-Process -Id $_.Current.ProcessId -ErrorAction SilentlyContinue).Name } | Sort-Object -Unique)
+    $kinds = @($inside | ForEach-Object { $_.Current.ControlType.ProgrammaticName -replace 'ControlType\.', '' } | Group-Object | ForEach-Object { "$($_.Name)=$($_.Count)" })
+    "$((Get-Process -Id $_.Current.ProcessId -ErrorAction SilentlyContinue).Name): $($_.Current.ClassName) [$($owners -join ',')] {$($kinds -join ' ')}" })
   $r.started_without_warning = (-not $warning) -and $installer
   if ($warning) {
     Mark 'run anyway'

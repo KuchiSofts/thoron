@@ -307,6 +307,7 @@ Explanations live in the design docs under `docs/design/`.
 - **Repository:** every push runs the tests and linters and verifies the browser source against upstream.
 
 ### Fixed
+- **QA tools:** the benchmark waits until the browser has written its DevTools port file; reading it while it was being written stopped a run on Windows.
 - **Checks:** the repository's checks install the one Python package the signing tests use, and three import tests no longer fail when the temporary folder has a short (8.3) name, as on GitHub's machines.
 - **QA tools:** the profile check no longer calls the cookies that had already expired a loss: a rehearsal on a copy of an older backup saw them go at the start and stopped the update.
 - **Mail:** "Save a backup..." of Thoron M-Notifier could leave an empty file; the browser now writes the backup itself and reads it back, and says so when a folder does not take it.

@@ -100,5 +100,31 @@ class ProfilesTests(unittest.TestCase):
         self.assertEqual(len(bench.PROFILES), 4)
 
 
+class DevToolsPortTests(unittest.TestCase):
+    """The port file is read only once the browser has written it (an empty file is still being written)."""
+
+    def test_an_empty_file_is_waited_for(self):
+        import tempfile
+        import threading
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as folder:
+            profile = Path(folder).resolve()
+            port_file = profile / "DevToolsActivePort"
+            port_file.write_text("", encoding="utf-8")
+            later = threading.Timer(0.5, lambda: port_file.write_text("9\n/devtools/browser/x\n", encoding="utf-8"))
+            later.start()
+            started = time.monotonic()
+            bench._open_tabs(profile, [], timeout=10)
+            later.join()
+            self.assertGreaterEqual(time.monotonic() - started, 0.4)
+
+    def test_no_file_in_time(self):
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as folder:
+            with self.assertRaises(bench.BenchError):
+                bench._open_tabs(Path(folder), [], timeout=0.5)
+
+
 if __name__ == "__main__":
     unittest.main()

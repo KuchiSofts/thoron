@@ -276,11 +276,18 @@ def _open_tabs(profile: Path, urls: list[str], timeout: float = 30) -> None:
     import urllib.request
     port_file = profile / "DevToolsActivePort"
     deadline = time.monotonic() + timeout
-    while not port_file.is_file():
-        if time.monotonic() > deadline:
-            raise BenchError("the browser did not open its DevTools port")
-        time.sleep(0.2)
-    port = int(port_file.read_text(encoding="utf-8").splitlines()[0])
+    port = 0
+    while not port:
+        # the browser may still be writing the file: on Windows it cannot be read until then, or it is empty
+        try:
+            first = port_file.read_text(encoding="utf-8").splitlines()[:1]
+            port = int(first[0]) if first and first[0].strip().isdigit() else 0
+        except OSError:
+            port = 0
+        if not port:
+            if time.monotonic() > deadline:
+                raise BenchError("the browser did not open its DevTools port")
+            time.sleep(0.2)
     for url in urls:
         req = urllib.request.Request(f"http://127.0.0.1:{port}/json/new?{url}", method="PUT")
         urllib.request.urlopen(req, timeout=10).read()

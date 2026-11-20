@@ -50,11 +50,13 @@ dir="/home/tester/__FOLDER__"
 as_tester mkdir -p "$dir"
 as_tester tar -xJf "$TAR" -C "$dir"; echo $? > "$out/unpack_exit"
 pkg="$dir/ThoronPortable"
-start() {  # $1 package folder, $2 name: the launcher with DevTools on 127.0.0.1 for 20 s
+start() {  # $1 package folder, $2 name: the launcher with DevTools on 127.0.0.1, until it answers (at most 60 s)
+  # (the first start on a freshly made machine takes a while: fonts and caches are made then)
   as_tester bash -c "cd \"\$1\" || exit 1; ./thoron --no-first-run --no-default-browser-check --remote-debugging-port=9445 \
-    about:blank > '$out/$2-run.txt' 2>&1 & p=\$!; sleep 20; \
-    curl -s http://127.0.0.1:9445/json/version > '$out/$2-version.json'; \
-    if kill -0 \$p 2>/dev/null; then echo running > '$out/$2-ran'; kill -TERM \$p; sleep 5; kill -KILL \$p 2>/dev/null; fi; true" _ "$1"
+    about:blank > '$out/$2-run.txt' 2>&1 & p=\$!; \
+    for i in \$(seq 60); do sleep 1; curl -s http://127.0.0.1:9445/json/version > '$out/$2-version.json' && \
+      [ -s '$out/$2-version.json' ] && break; done; sleep 10; \
+    if kill -0 \$p 2>/dev/null; then echo running > '$out/$2-ran'; kill -TERM \$p; sleep 8; kill -KILL \$p 2>/dev/null; fi; true" _ "$1"
 }
 apt-get install -y -qq curl > /dev/null 2>&1
 start "$pkg" first

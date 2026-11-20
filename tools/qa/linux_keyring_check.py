@@ -93,7 +93,7 @@ class Browser:
                                       "--remote-debugging-address=127.0.0.1", "--remote-debugging-port=0",
                                       "about:blank"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                      start_new_session=True)
-        end = time.monotonic() + 40
+        end = time.monotonic() + 120       # a first start on a freshly made machine takes a while
         while time.monotonic() < end and not (profile / "DevToolsActivePort").is_file():
             time.sleep(0.5)
         self.port = int((profile / "DevToolsActivePort").read_text().split()[0])

@@ -78,7 +78,7 @@ changed in each version is in the [changelog](CHANGELOG.md), one line per change
 Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always current.
 
 <!-- roadmap:start -->
-**Overall:** `███████████████░░░░░` 162 of 212 tasks done (76%) · roadmap updated 2026-11-19
+**Overall:** `███████████████░░░░░` 162 of 213 tasks done (76%) · roadmap updated 2026-11-19
 
 | Area | Progress | Done | Status |
 |---|---|---|---|
@@ -86,7 +86,7 @@ Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always curre
 | [P1 - Build environment](ROADMAP.md#p1---build-environment) | `██████████████████░░` | 9/10 | 🔄 In progress |
 | [P2 - First release](ROADMAP.md#p2---first-release) | `██████████████░░░░░░` | 18/26 | 🔄 In progress |
 | [P2b - ARM64](ROADMAP.md#p2b---arm64) | `░░░░░░░░░░░░░░░░░░░░` | 0/5 | 🔄 In progress · ⛔ blocked item |
-| [P3 - Updater v1 + Import](ROADMAP.md#p3---updater-v1--import) | `█████████████░░░░░░░` | 14/22 | 🔄 In progress |
+| [P3 - Updater v1 + Import](ROADMAP.md#p3---updater-v1--import) | `████████████░░░░░░░░` | 14/23 | 🔄 In progress |
 | [P4 - Updater v2](ROADMAP.md#p4---updater-v2) | `████████████████░░░░` | 9/11 | 🔄 In progress |
 | [P5 - Quality](ROADMAP.md#p5---quality) | `██████████████████░░` | 73/82 | 🔄 In progress |
 | [Security (S)](ROADMAP.md#security-s) | `██████████████░░░░░░` | 11/16 | 🔄 In progress |
@@ -195,6 +195,7 @@ Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always curre
 - [ ] **P3.20** Updates from inside the browser, Windows: a check on a schedule and from the About page, the signed manifest (P3.3), a verified download (P3.4), then Chromium's own installer applies the new version while the browser runs and the About page offers to relaunch; `User Data` is never opened by the update
 - [x] **P3.21** First run on Windows: offers to import from the browsers it finds (P3.13, P3.14) and to make Thoron the default browser for web links and for the file types a browser opens; where Windows wants the person to confirm, it opens Windows' own page for it and takes nothing over silently
 - [x] **P3.22** Open tabs and tab groups in Settings' own import: the importer of Chromium-family browsers (P3.14) brings the source's last session too (its newest `Session_` and `Tabs_` files, copied and checked as `tools/migrate/sessions.py import` does, restored once at the next start), with its own checkbox
+- [ ] **P3.23** Updates from inside the browser, Linux: a portable copy and a per-user install (`~/.local/share/thoron`, design 7.5a) look for releases while they run as on Windows (P3.20) and put a verified one in place with their own updater (`thoron_update --apply-package` or `--apply-delta`, the swap of P3.12); the per-user install has the systemd user timer of P3.10 for when Thoron is closed; a `.deb` copy is updated by apt only (P2.10) and its About page says so
 
 **P4 - Updater v2**
 

@@ -68,8 +68,9 @@ try {
   Set-Content -Path $file -Stream 'Zone.Identifier' -Value "[ZoneTransfer]`r`nZoneId=3`r`nReferrerUrl=https://github.com/KuchiSofts/thoron/releases`r`nHostUrl=__URL__"
   $r.marked = "$(Get-Content -Path $file -Stream 'Zone.Identifier' -Raw)"
   Mark 'open'
-  # as Explorer opens a file: through the shell, which applies the download's zone
-  (New-Object -ComObject Shell.Application).ShellExecute($file)
+  # as a person opens it: Explorer opens the file through the shell, which applies the download's zone (the shell's
+  # own ShellExecute call returns "cancelled" to its caller at once when SmartScreen steps in)
+  try { Start-Process explorer.exe -ArgumentList ('"' + $file + '"') } catch { $r.open_error = "$_" }
   $end = (Get-Date).AddSeconds(60)
   $warning = $null
   do {

@@ -12,7 +12,7 @@ were, so that browser keeps working and stays your backup.
 
 | From | What comes over | Section |
 |---|---|---|
-| Thorium, Chrome, Edge, Brave, Vivaldi, Opera, Opera GX, Chromium | Bookmarks, history, saved passwords and cookies (not those Chrome locks to itself), search engines, form entries, the home page and startup pages, and extensions from the Chrome Web Store (installed again from the store), in Thoron's Settings | [1a](#1a-in-thorons-settings) |
+| Thorium, Chrome, Edge, Brave, Vivaldi, Opera, Opera GX, Chromium | Bookmarks, history, saved passwords and cookies (not those Chrome locks to itself), search engines, form entries, the home page and startup pages, extensions from the Chrome Web Store (installed again from the store), and the open windows, tabs and tab groups (they open in new windows), in Thoron's Settings | [1a](#1a-in-thorons-settings) |
 | Thorium, same Windows account | Everything: bookmarks, history, saved passwords, cookies (you stay signed in), extensions, settings, open tabs and tab groups | [2](#2-thorium-the-whole-profile) |
 | Chrome, Thorium, Thoron | Open windows, tabs and tab groups (names, colours, collapsed or not), pinned tabs, each tab's back and forward history | [3](#3-open-tabs-and-tab-groups) |
 | Firefox | The same: open windows, tabs and tab groups, pinned tabs, each tab's history | [3](#from-firefox) |
@@ -59,13 +59,21 @@ granted: one that wants to read your sites, tabs or similar stays off, and Thoro
 it on, showing what it asks for; one that asks for none of that is on at once. Extensions that came
 with the browser, that a policy or another program put there, or that were loaded unpacked are left out
 (the unpacked and other-program ones are counted in the report; add those yourself if you trust them).
-The extensions' own settings and data stay behind. Open tabs do not come over this way (sections 2 and 3
-for Thorium's whole profile and for tabs).
+The extensions' own settings and data stay
+behind. **Open tabs and tab groups (they open now, in new windows)** is off until you tick it too: Thoron
+reads the other browser's last session (the one it would open itself at its next start) and opens its
+windows, tabs and tab groups, with the groups' names, colours and whether they were collapsed, in new
+Thoron windows straight away. Each tab keeps its back and forward history (up to 50 pages). Only web
+pages come over: a browser's own pages (its settings, its start page) and scripts do not, a tab that had
+only such pages is left out, and so are app and pop-up windows. Pages load fresh from their addresses, so
+what you had typed into a form, where you had scrolled to and a page that came from sending a form stay
+behind. At most 500 tabs in 50 windows come over. For Thorium's whole profile, or with the browsers
+closed, sections 2 and 3 bring the tabs too.
 
 **The report.** Each import writes `Thoron import report.json` into the Thoron profile's folder (for an
 installed Thoron, `%LOCALAPPDATA%\Thoron\User Data\Default`), replacing the one before: when, from which
 browser, how many bookmarks, history entries, saved passwords, cookies, search engines and form entries came over,
-whether a home page did and how many startup pages, how many extensions are to be installed from the store,
+whether a home page did and how many startup pages, how many extensions are to be installed from the store, how many open tabs,
 and how many were left out and why (passwords and cookies locked by Chrome, in no format Thoron knows, or
 that did not decrypt; extensions not from the store; a damaged database). It holds counts and the browser's name only, never an address, a name, a
 password or any other value.

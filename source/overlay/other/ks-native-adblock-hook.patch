@@ -677,13 +677,17 @@ index 02dbc0a2c2cf70d2bb15307f15f4b35ccd488b04..d5cf9f7efb61475b2673f3a843bc9ce2
          <message name="IDS_IMPORTER_LOCK_OK" desc="In Title Case: Text for OK button (to try importing again) on importer lock dialog">
            Try Again
 diff --git a/chrome/app/settings_strings.grdp b/chrome/app/settings_strings.grdp
-index 09348181debdd833c4c1aae1bfea68f08f799f3a..bf256af2875a7789723e26660be7497222152973 100644
+index 09348181debdd833c4c1aae1bfea68f08f799f3a..263ca39d6df8b7adb240c8060007376cca5156f4 100644
 --- a/chrome/app/settings_strings.grdp
 +++ b/chrome/app/settings_strings.grdp
-@@ -3721,6 +3721,18 @@
+@@ -3721,6 +3721,22 @@
        <message name="IDS_SETTINGS_IMPORT_AUTOFILL_FORM_DATA_CHECKBOX" desc="Checkbox for importing form data for autofill">
          Autofill form data
        </message>
++      <!-- Thoron (ROADMAP P3.22): checkbox for opening the open tabs of the browser imported from. -->
++      <message name="IDS_SETTINGS_IMPORT_OPEN_TABS_CHECKBOX" desc="Checkbox for opening, in new windows and right away, the windows, tabs and tab groups that were open in the browser being imported from.">
++        Open tabs and tab groups (they open now, in new windows)
++      </message>
 +      <!-- Thoron (ROADMAP P3.14): checkbox for installing the extensions again from their store. -->
 +      <message name="IDS_SETTINGS_IMPORT_EXTENSIONS_CHECKBOX" desc="Checkbox for installing again, from the Chrome Web Store, the extensions of the browser being imported from. Those that ask for access Chromium warns about stay off until the person accepts it.">
 +        Extensions (installed again from the Chrome Web Store)
@@ -858,7 +862,7 @@ index ab3c100b747f5ec6244fa719272e29427f723280..0e3f94013c68b992b10e28345a196074
 +  </message>
  </grit-part>
 diff --git a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
-index a14e54eed88c57f7f0b4ebd6a6f4c352e94b7edd..9073bb73982b7d924c2be48417c7cd7fc8bd75c6 100644
+index a14e54eed88c57f7f0b4ebd6a6f4c352e94b7edd..c44562f3b076df6c68ab9815d0eef5ecd114206e 100644
 --- a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
 +++ b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
 @@ -113,6 +113,7 @@
@@ -869,7 +873,7 @@ index a14e54eed88c57f7f0b4ebd6a6f4c352e94b7edd..9073bb73982b7d924c2be48417c7cd7f
  #include "components/subresource_filter/core/browser/subresource_filter_features.h"
  #include "components/subscription_eligibility/subscription_eligibility_service.h"
  #include "components/supervised_user/core/common/features.h"
-@@ -1300,6 +1301,12 @@ void AddImportDataStrings(content::WebUIDataSource* html_source) {
+@@ -1300,6 +1301,14 @@ void AddImportDataStrings(content::WebUIDataSource* html_source) {
        {"importSearch", IDS_SETTINGS_IMPORT_SEARCH_ENGINES_CHECKBOX},
        {"importAutofillFormData",
         IDS_SETTINGS_IMPORT_AUTOFILL_FORM_DATA_CHECKBOX},
@@ -879,10 +883,12 @@ index a14e54eed88c57f7f0b4ebd6a6f4c352e94b7edd..9073bb73982b7d924c2be48417c7cd7f
 +      {"importStartup", IDS_SETTINGS_IMPORT_STARTUP_CHECKBOX},
 +      // Thoron (ROADMAP P3.14): extensions, installed again from their store.
 +      {"importExtensions", IDS_SETTINGS_IMPORT_EXTENSIONS_CHECKBOX},
++      // Thoron (ROADMAP P3.22): open windows, tabs and tab groups.
++      {"importOpenTabs", IDS_SETTINGS_IMPORT_OPEN_TABS_CHECKBOX},
        {"importChooseFile", IDS_SETTINGS_IMPORT_CHOOSE_FILE},
        {"importCommit", IDS_SETTINGS_IMPORT_COMMIT},
        {"noProfileFound", IDS_SETTINGS_IMPORT_NO_PROFILE_FOUND},
-@@ -4314,6 +4321,33 @@ void AddSiteSettingsStrings(content::WebUIDataSource* html_source,
+@@ -4314,6 +4323,33 @@ void AddSiteSettingsStrings(content::WebUIDataSource* html_source,
    // The exception placeholder should not be translated. See
    // crbug.com/40700443.
    html_source->AddString("addSiteExceptionPlaceholder", "[*.]example.com");
@@ -2498,10 +2504,10 @@ index b57d6384773d0cb86893859066b219dec90c6d70..79f4f51a573f145e90604d3ee56549a7
        base::FeatureList::IsEnabled(ntp_features::kNtpAnimatedDoodles) &&
        !gfx::Animation::PrefersReducedMotion();
 diff --git a/chrome/browser/ui/webui/settings/settings_ui.cc b/chrome/browser/ui/webui/settings/settings_ui.cc
-index 90f8e1a51584d6030950ff5627242e3fd6659874..671ce38c0307c4d18f97afebc37d28a7e1feb741 100644
+index 90f8e1a51584d6030950ff5627242e3fd6659874..eb9a1ec3a483ff7e751f373de366718034eee44c 100644
 --- a/chrome/browser/ui/webui/settings/settings_ui.cc
 +++ b/chrome/browser/ui/webui/settings/settings_ui.cc
-@@ -256,6 +256,13 @@ void SettingsUI::RegisterProfilePrefs(
+@@ -256,6 +256,16 @@ void SettingsUI::RegisterProfilePrefs(
    registry->RegisterBooleanPref(prefs::kImportDialogHistory, true);
    registry->RegisterBooleanPref(prefs::kImportDialogSavedPasswords, true);
    registry->RegisterBooleanPref(prefs::kImportDialogSearchEngine, true);
@@ -2512,10 +2518,13 @@ index 90f8e1a51584d6030950ff5627242e3fd6659874..671ce38c0307c4d18f97afebc37d28a7
 +  // Thoron (ROADMAP P3.14): the "Extensions" choice; off by default, as it
 +  // installs from the Chrome Web Store.
 +  registry->RegisterBooleanPref(prefs::kImportDialogExtensions, false);
++  // Thoron (ROADMAP P3.22): the "Open tabs and tab groups" choice; off by
++  // default, as it opens windows.
++  registry->RegisterBooleanPref(prefs::kImportDialogOpenTabs, false);
    registry->RegisterDictionaryPref(prefs::kDeviceTabVisibilityHiddenSessions);
  }
  
-@@ -688,9 +695,13 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
+@@ -688,9 +698,13 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
    // Within the AI subpage are separate sections for Glic, for GEIC, and for all
    // other AI features. The visibility of these is separately controlled, but
    // we want to show the subpage if any of them are enabled.
@@ -39191,7 +39200,7 @@ index c56cb13d3c6b6dfaee4a006a1c5b8f1f4cf79000..68ddb4dc67afcb9ea7c565d382776f00
  chrome/app/vr_strings.grdp
  chrome/app/whats_new_strings.grdp
 diff --git a/chrome/browser/importer/BUILD.gn b/chrome/browser/importer/BUILD.gn
-index ed8e8bf048399ccab50b1f44498ef40dd73e8921..4380a4a2271cc28a619e7b18afba43b2227251c1 100644
+index ed8e8bf048399ccab50b1f44498ef40dd73e8921..740b5b611062c3106600e2dc1bd3284d7be87edf 100644
 --- a/chrome/browser/importer/BUILD.gn
 +++ b/chrome/browser/importer/BUILD.gn
 @@ -28,6 +28,9 @@ source_set("importer") {
@@ -39204,7 +39213,7 @@ index ed8e8bf048399ccab50b1f44498ef40dd73e8921..4380a4a2271cc28a619e7b18afba43b2
      "//ui/gfx",
      "//url",
    ]
-@@ -61,10 +64,26 @@ source_set("impl") {
+@@ -61,10 +64,31 @@ source_set("impl") {
      "//components/favicon/core",
      "//components/password_manager/core/browser:password_form",
      "//components/password_manager/core/browser/password_store:password_store_interface",
@@ -39218,6 +39227,11 @@ index ed8e8bf048399ccab50b1f44498ef40dd73e8921..4380a4a2271cc28a619e7b18afba43b2
 +    "//components/crx_file",
 +    "//extensions/browser",
 +    "//extensions/common",
++    # Thoron (ROADMAP P3.22): the open tabs of an import, opened with
++    # Chromium's restore of a session from elsewhere.
++    "//chrome/browser/sessions",
++    "//components/sessions",
++    "//components/user_data_importer/chromium_family:open_tabs",
    ]
  
    if (is_win) {
@@ -39232,10 +39246,10 @@ index ed8e8bf048399ccab50b1f44498ef40dd73e8921..4380a4a2271cc28a619e7b18afba43b2
      sources += [ "firefox_profile_lock_posix.cc" ]
    }
 diff --git a/chrome/browser/importer/DEPS b/chrome/browser/importer/DEPS
-index 6f0957d48299e596d4e4e79054f76aec52f77124..b580f312aae4f62732682e4360950ba2444c271c 100644
+index 6f0957d48299e596d4e4e79054f76aec52f77124..bb1f6633d3ef11bc2340ee111a0e84a9d8be3990 100644
 --- a/chrome/browser/importer/DEPS
 +++ b/chrome/browser/importer/DEPS
-@@ -1,3 +1,10 @@
+@@ -1,3 +1,12 @@
  include_rules = [
 +  # Thoron (ROADMAP P3.14): detection and the running check.
 +  "+components/user_data_importer/chromium_family",
@@ -39245,9 +39259,11 @@ index 6f0957d48299e596d4e4e79054f76aec52f77124..b580f312aae4f62732682e4360950ba2
 +  "+components/crx_file",
 +  "+extensions/browser",
 +  "+extensions/common",
++  # Thoron (ROADMAP P3.22): the open tabs of an import.
++  "+components/sessions/core",
  ]
 diff --git a/chrome/browser/importer/external_process_importer_client.cc b/chrome/browser/importer/external_process_importer_client.cc
-index cf319714e5c89d052477e42686a5ccdcdfdf9f5f..a6e89fe5ad465ec9b51d5f168d0375605addf770 100644
+index cf319714e5c89d052477e42686a5ccdcdfdf9f5f..1ac76f97ddb13674f52471e55268a4d5d66e87d6 100644
 --- a/chrome/browser/importer/external_process_importer_client.cc
 +++ b/chrome/browser/importer/external_process_importer_client.cc
 @@ -9,6 +9,7 @@
@@ -39281,7 +39297,7 @@ index cf319714e5c89d052477e42686a5ccdcdfdf9f5f..a6e89fe5ad465ec9b51d5f168d037560
  
    mojo::PendingRemote<user_data_importer::mojom::BookmarkHtmlParser>
        bookmark_html_parser;
-@@ -126,6 +136,37 @@ void ExternalProcessImporterClient::OnImportFinished(
+@@ -126,6 +136,38 @@ void ExternalProcessImporterClient::OnImportFinished(
    Cleanup();
  }
  
@@ -39308,6 +39324,7 @@ index cf319714e5c89d052477e42686a5ccdcdfdf9f5f..a6e89fe5ad465ec9b51d5f168d037560
 +  imported.Set("home_page", report->home_page);
 +  imported.Set("startup_pages", report->startup_pages);
 +  imported.Set("extensions_to_install_from_the_store", report->extensions);
++  imported.Set("open_tabs", report->open_tabs);
 +  left_out.Set("extensions_not_from_the_store", report->extensions_skipped);
 +  left_out.Set("damaged_databases", report->databases_refused);
 +  base::DictValue counts;
@@ -39319,7 +39336,7 @@ index cf319714e5c89d052477e42686a5ccdcdfdf9f5f..a6e89fe5ad465ec9b51d5f168d037560
  void ExternalProcessImporterClient::OnImportItemStart(
      user_data_importer::ImportItem import_item) {
    if (cancelled_)
-@@ -257,6 +298,51 @@ void ExternalProcessImporterClient::OnAutofillFormDataImportGroup(
+@@ -257,6 +299,60 @@ void ExternalProcessImporterClient::OnAutofillFormDataImportGroup(
      bridge_->SetAutofillFormData(autofill_form_data_);
  }
  
@@ -39366,6 +39383,15 @@ index cf319714e5c89d052477e42686a5ccdcdfdf9f5f..a6e89fe5ad465ec9b51d5f168d037560
 +    return;
 +  }
 +  bridge_->AddThoronWebStoreExtensions(extension_ids);
++}
++
++// Thoron (ROADMAP P3.22): the source's last session, for its open tabs.
++void ExternalProcessImporterClient::OnThoronOpenTabsImportReady(
++    const std::vector<uint8_t>& session_file) {
++  if (cancelled_) {
++    return;
++  }
++  bridge_->AddThoronOpenTabs(session_file);
 +}
 +
  ExternalProcessImporterClient::~ExternalProcessImporterClient() = default;
@@ -39668,7 +39694,7 @@ index d50675a79eb60f86b0278934884add02407a725a..85b761549bd1e0132eb0809d5e8cdae4
      case user_data_importer::TYPE_FIREFOX:
        metrics_type = IMPORTER_METRICS_FIREFOX3;
 diff --git a/chrome/browser/importer/in_process_importer_bridge.cc b/chrome/browser/importer/in_process_importer_bridge.cc
-index da614f0e7db5628e258f07fe0d7f2967dc1207f1..0345c1c452f1338292e4c5d88ca72b590b7383ae 100644
+index da614f0e7db5628e258f07fe0d7f2967dc1207f1..8bd6474a82985468c52b2b1685ab9a28cd13f98b 100644
 --- a/chrome/browser/importer/in_process_importer_bridge.cc
 +++ b/chrome/browser/importer/in_process_importer_bridge.cc
 @@ -53,6 +53,9 @@ history::VisitSource ConvertImporterVisitSourceToHistoryVisitSource(
@@ -39681,7 +39707,7 @@ index da614f0e7db5628e258f07fe0d7f2967dc1207f1..0345c1c452f1338292e4c5d88ca72b59
    }
    NOTREACHED();
  }
-@@ -172,6 +175,32 @@ void InProcessImporterBridge::SetAutofillFormData(
+@@ -172,6 +175,38 @@ void InProcessImporterBridge::SetAutofillFormData(
    writer_->AddAutocompleteFormDataEntries(autocomplete_entries);
  }
  
@@ -39703,6 +39729,12 @@ index da614f0e7db5628e258f07fe0d7f2967dc1207f1..0345c1c452f1338292e4c5d88ca72b59
 +void InProcessImporterBridge::AddThoronWebStoreExtensions(
 +    const std::vector<std::string>& ids) {
 +  writer_->AddThoronWebStoreExtensions(ids);
++}
++
++// Thoron (ROADMAP P3.22): the source's open windows and tabs, opened now.
++void InProcessImporterBridge::AddThoronOpenTabs(
++    const std::vector<uint8_t>& session_file) {
++  writer_->AddThoronOpenTabs(session_file);
 +}
 +
 +// Thoron (ROADMAP P3.14): hand the cookies to the profile's cookie store.
@@ -39757,7 +39789,7 @@ index b19a5aa8cee272d0c37e227e163f2481ac33b5f6..35d802902bc0bcc909d602e76ac802b4
  IPC_ENUM_TRAITS_MIN_MAX_VALUE(user_data_importer::ImporterType,
                                user_data_importer::TYPE_UNKNOWN,
 diff --git a/chrome/common/importer/profile_import.mojom b/chrome/common/importer/profile_import.mojom
-index 815b91161f772d93e6114b0843895cfd020275fb..253fa40f1f054f941575e983a00c97f478a7e92c 100644
+index 815b91161f772d93e6114b0843895cfd020275fb..fa6f15e96655bf152f3acba125e9ad3213427d75 100644
 --- a/chrome/common/importer/profile_import.mojom
 +++ b/chrome/common/importer/profile_import.mojom
 @@ -7,6 +7,8 @@ module chrome.mojom;
@@ -39769,7 +39801,7 @@ index 815b91161f772d93e6114b0843895cfd020275fb..253fa40f1f054f941575e983a00c97f4
  import "url/mojom/url.mojom";
  
  [Native]
-@@ -57,6 +59,27 @@ struct ImportedPasswordForm {
+@@ -57,6 +59,28 @@ struct ImportedPasswordForm {
  // These are messages sent from the profile import process to the browser.
  // These messages send information about the status of the import and individual
  // import tasks.
@@ -39792,12 +39824,13 @@ index 815b91161f772d93e6114b0843895cfd020275fb..253fa40f1f054f941575e983a00c97f4
 +  int32 databases_refused;
 +  int32 extensions;
 +  int32 extensions_skipped;
++  int32 open_tabs;
 +};
 +
  interface ProfileImportObserver {
    OnImportStart();
    OnImportFinished(bool succeeded, string error_msg);
-@@ -83,6 +106,24 @@ interface ProfileImportObserver {
+@@ -83,6 +107,27 @@ interface ProfileImportObserver {
    OnAutofillFormDataImportStart(uint32 total_autofill_form_data_entry_count);
    OnAutofillFormDataImportGroup(
        array<ImporterAutofillFormDataEntry> autofill_form_data_entry_group);
@@ -39816,6 +39849,9 @@ index 815b91161f772d93e6114b0843895cfd020275fb..253fa40f1f054f941575e983a00c97f4
 +  // Thoron (ROADMAP P3.14): the source's Chrome Web Store extensions, by ID.
 +  OnThoronExtensionsImportReady(array<string> extension_ids);
 +
++  // Thoron (ROADMAP P3.22): the source's last session file, for its open tabs.
++  OnThoronOpenTabsImportReady(array<uint8> session_file);
++
 +  // Thoron (ROADMAP P3.14): sent once by the Chromium-family importer, before
 +  // OnImportFinished.
 +  OnThoronImportReport(ThoronImportReport report);
@@ -39823,10 +39859,10 @@ index 815b91161f772d93e6114b0843895cfd020275fb..253fa40f1f054f941575e983a00c97f4
  
  // This interface is used to control the import process.
 diff --git a/chrome/common/importer/importer_bridge.h b/chrome/common/importer/importer_bridge.h
-index 1738a3baff3e4a2f45de8c8c54c64e34156d1a1b..0252adb95aba6eaf0500b48945282bcd42f6a33f 100644
+index 1738a3baff3e4a2f45de8c8c54c64e34156d1a1b..8d56f3682d63bf9634b26742ec0a34f4ecf78e6d 100644
 --- a/chrome/common/importer/importer_bridge.h
 +++ b/chrome/common/importer/importer_bridge.h
-@@ -17,10 +17,35 @@
+@@ -17,10 +17,36 @@
  class GURL;
  struct ImporterAutofillFormDataEntry;
  
@@ -39857,12 +39893,13 @@ index 1738a3baff3e4a2f45de8c8c54c64e34156d1a1b..0252adb95aba6eaf0500b48945282bcd
 +  int databases_refused = 0;
 +  int extensions = 0;
 +  int extensions_skipped = 0;
++  int open_tabs = 0;
 +};
 +
  class ImporterBridge : public base::RefCountedThreadSafe<ImporterBridge> {
   public:
    ImporterBridge();
-@@ -51,6 +76,25 @@ class ImporterBridge : public base::RefCountedThreadSafe<ImporterBridge> {
+@@ -51,6 +77,29 @@ class ImporterBridge : public base::RefCountedThreadSafe<ImporterBridge> {
    virtual void SetAutofillFormData(
        const std::vector<ImporterAutofillFormDataEntry>& entries) = 0;
  
@@ -39885,10 +39922,14 @@ index 1738a3baff3e4a2f45de8c8c54c64e34156d1a1b..0252adb95aba6eaf0500b48945282bcd
 +  // turns them on).
 +  virtual void AddThoronWebStoreExtensions(const std::vector<std::string>& ids) {}
 +
++  // Thoron (ROADMAP P3.22): the source's last session file; its windows, tabs
++  // and tab groups open now in new windows.
++  virtual void AddThoronOpenTabs(const std::vector<uint8_t>& session_file) {}
++
    // Notifies the coordinator that the import operation has begun.
    virtual void NotifyStarted() = 0;
  
-@@ -71,6 +115,10 @@ class ImporterBridge : public base::RefCountedThreadSafe<ImporterBridge> {
+@@ -71,6 +120,10 @@ class ImporterBridge : public base::RefCountedThreadSafe<ImporterBridge> {
    // external import process, since the importer only needs a few strings.
    virtual std::u16string GetLocalizedString(int message_id) = 0;
  
@@ -39900,10 +39941,10 @@ index 1738a3baff3e4a2f45de8c8c54c64e34156d1a1b..0252adb95aba6eaf0500b48945282bcd
    friend class base::RefCountedThreadSafe<ImporterBridge>;
  
 diff --git a/chrome/utility/importer/external_process_importer_bridge.h b/chrome/utility/importer/external_process_importer_bridge.h
-index 2f36e248431a347761704a2020f0d2c7949526dd..df51eb6155acef93e86bfaef6b59fb05321e5ec1 100644
+index 2f36e248431a347761704a2020f0d2c7949526dd..f3507db7ef6dea0513aaec6c66f91c8bc28f14e5 100644
 --- a/chrome/utility/importer/external_process_importer_bridge.h
 +++ b/chrome/utility/importer/external_process_importer_bridge.h
-@@ -65,12 +65,24 @@ class ExternalProcessImporterBridge : public ImporterBridge {
+@@ -65,12 +65,25 @@ class ExternalProcessImporterBridge : public ImporterBridge {
    void SetAutofillFormData(
        const std::vector<ImporterAutofillFormDataEntry>& entries) override;
  
@@ -39916,6 +39957,7 @@ index 2f36e248431a347761704a2020f0d2c7949526dd..df51eb6155acef93e86bfaef6b59fb05
 +                        int restore_on_startup,
 +                        const std::vector<GURL>& startup_pages) override;
 +  void AddThoronWebStoreExtensions(const std::vector<std::string>& ids) override;
++  void AddThoronOpenTabs(const std::vector<uint8_t>& session_file) override;
 +
    void NotifyStarted() override;
    void NotifyItemStarted(user_data_importer::ImportItem item) override;
@@ -39929,7 +39971,7 @@ index 2f36e248431a347761704a2020f0d2c7949526dd..df51eb6155acef93e86bfaef6b59fb05
  
   private:
 diff --git a/chrome/utility/importer/external_process_importer_bridge.cc b/chrome/utility/importer/external_process_importer_bridge.cc
-index 67092331c3801deddd2848162f5e4f3d41bff257..0ca734360d6339b45fcbe1e0e5d7376089a01947 100644
+index 67092331c3801deddd2848162f5e4f3d41bff257..233f73db61694de134ff4e7a02e1a5421b0db774 100644
 --- a/chrome/utility/importer/external_process_importer_bridge.cc
 +++ b/chrome/utility/importer/external_process_importer_bridge.cc
 @@ -17,6 +17,8 @@
@@ -39950,7 +39992,7 @@ index 67092331c3801deddd2848162f5e4f3d41bff257..0ca734360d6339b45fcbe1e0e5d73760
  
  } // namespace
  
-@@ -135,6 +139,43 @@ void ExternalProcessImporterBridge::SetAutofillFormData(
+@@ -135,6 +139,49 @@ void ExternalProcessImporterBridge::SetAutofillFormData(
    DCHECK_EQ(0, autofill_form_data_entries_left);
  }
  
@@ -39991,10 +40033,16 @@ index 67092331c3801deddd2848162f5e4f3d41bff257..0ca734360d6339b45fcbe1e0e5d73760
 +  observer_->OnThoronExtensionsImportReady(ids);
 +}
 +
++// Thoron (ROADMAP P3.22): the source's last session, for its open tabs.
++void ExternalProcessImporterBridge::AddThoronOpenTabs(
++    const std::vector<uint8_t>& session_file) {
++  observer_->OnThoronOpenTabsImportReady(session_file);
++}
++
  void ExternalProcessImporterBridge::NotifyStarted() {
    observer_->OnImportStart();
  }
-@@ -149,6 +190,29 @@ void ExternalProcessImporterBridge::NotifyItemEnded(
+@@ -149,6 +196,30 @@ void ExternalProcessImporterBridge::NotifyItemEnded(
    observer_->OnImportItemFinished(item);
  }
  
@@ -40017,6 +40065,7 @@ index 67092331c3801deddd2848162f5e4f3d41bff257..0ca734360d6339b45fcbe1e0e5d73760
 +  report->startup_pages = counts.startup_pages;
 +  report->extensions = counts.extensions;
 +  report->extensions_skipped = counts.extensions_skipped;
++  report->open_tabs = counts.open_tabs;
 +  report->databases_refused = counts.databases_refused;
 +  observer_->OnThoronImportReport(std::move(report));
 +}
@@ -40025,10 +40074,10 @@ index 67092331c3801deddd2848162f5e4f3d41bff257..0ca734360d6339b45fcbe1e0e5d73760
    observer_->OnImportFinished(true, std::string());
  }
 diff --git a/chrome/browser/importer/external_process_importer_client.h b/chrome/browser/importer/external_process_importer_client.h
-index 42b466d3ce66beb8cbd6af2ac11d52b4e03507d5..2465a8ae0e6a4d8fb1871bd84c0970663e9bdbf4 100644
+index 42b466d3ce66beb8cbd6af2ac11d52b4e03507d5..dc6f9ab5d4c5da154c16ac0111f0443e509c1158 100644
 --- a/chrome/browser/importer/external_process_importer_client.h
 +++ b/chrome/browser/importer/external_process_importer_client.h
-@@ -78,6 +78,20 @@ class ExternalProcessImporterClient
+@@ -78,6 +78,22 @@ class ExternalProcessImporterClient
        bool unique_on_host_and_path) override;
    void OnAutofillFormDataImportStart(
        uint32_t total_autofill_form_data_entry_count) override;
@@ -40044,12 +40093,14 @@ index 42b466d3ce66beb8cbd6af2ac11d52b4e03507d5..2465a8ae0e6a4d8fb1871bd84c097066
 +                                  const std::vector<GURL>& startup_pages) override;
 +  void OnThoronExtensionsImportReady(
 +      const std::vector<std::string>& extension_ids) override;
++  void OnThoronOpenTabsImportReady(
++      const std::vector<uint8_t>& session_file) override;
 +  // Thoron (ROADMAP P3.14): the counts for the import's local report.
 +  void OnThoronImportReport(chrome::mojom::ThoronImportReportPtr report) override;
    void OnAutofillFormDataImportGroup(
        const std::vector<ImporterAutofillFormDataEntry>&
            autofill_form_data_entry_group) override;
-@@ -105,6 +119,8 @@ class ExternalProcessImporterClient
+@@ -105,6 +121,8 @@ class ExternalProcessImporterClient
    std::vector<user_data_importer::ImportedBookmarkEntry> bookmarks_;
    favicon_base::FaviconUsageDataList favicons_;
    std::vector<ImporterAutofillFormDataEntry> autofill_form_data_;
@@ -40058,7 +40109,7 @@ index 42b466d3ce66beb8cbd6af2ac11d52b4e03507d5..2465a8ae0e6a4d8fb1871bd84c097066
  
    // Usually some variation on IDS_BOOKMARK_GROUP_...; the name of the folder
    // under which imported bookmarks will be placed.
-@@ -122,6 +138,9 @@ class ExternalProcessImporterClient
+@@ -122,6 +140,9 @@ class ExternalProcessImporterClient
    // Total number of autofill form data entries to import.
    size_t total_autofill_form_data_entry_count_;
  
@@ -40083,10 +40134,10 @@ index 9aecb7847e3f707853bdc2db0fd05bc41223a0b0..cb43492c09c6a2777bc282364e3bb64f
    ]
  
 diff --git a/chrome/browser/importer/in_process_importer_bridge.h b/chrome/browser/importer/in_process_importer_bridge.h
-index 61190844025f04ef83bcfe2c056f9f61661ca132..1c2dacc5ee0af1e0c57f89ddf155562092eaa145 100644
+index 61190844025f04ef83bcfe2c056f9f61661ca132..be662fa1873a4c27f6d2170ab5b166b645208d87 100644
 --- a/chrome/browser/importer/in_process_importer_bridge.h
 +++ b/chrome/browser/importer/in_process_importer_bridge.h
-@@ -52,6 +52,16 @@ class InProcessImporterBridge : public ImporterBridge {
+@@ -52,6 +52,17 @@ class InProcessImporterBridge : public ImporterBridge {
    void SetAutofillFormData(
        const std::vector<ImporterAutofillFormDataEntry>& entries) override;
  
@@ -40099,12 +40150,13 @@ index 61190844025f04ef83bcfe2c056f9f61661ca132..1c2dacc5ee0af1e0c57f89ddf1555620
 +                        int restore_on_startup,
 +                        const std::vector<GURL>& startup_pages) override;
 +  void AddThoronWebStoreExtensions(const std::vector<std::string>& ids) override;
++  void AddThoronOpenTabs(const std::vector<uint8_t>& session_file) override;
 +
    void NotifyStarted() override;
    void NotifyItemStarted(user_data_importer::ImportItem item) override;
    void NotifyItemEnded(user_data_importer::ImportItem item) override;
 diff --git a/chrome/browser/importer/profile_writer.h b/chrome/browser/importer/profile_writer.h
-index f609d99dde302a8226a246c9b51870c8f27ffab7..41452c431eee9d3cefb5f03b1c41e6af122ecb46 100644
+index f609d99dde302a8226a246c9b51870c8f27ffab7..9e0f112fcd518e37225075bb1dfa15a11eaeb0bd 100644
 --- a/chrome/browser/importer/profile_writer.h
 +++ b/chrome/browser/importer/profile_writer.h
 @@ -22,6 +22,10 @@ namespace autofill {
@@ -40118,7 +40170,7 @@ index f609d99dde302a8226a246c9b51870c8f27ffab7..41452c431eee9d3cefb5f03b1c41e6af
  namespace password_manager {
  struct PasswordForm;
  }  // namespace password_manager
-@@ -92,6 +96,24 @@ class ProfileWriter : public base::RefCountedThreadSafe<ProfileWriter> {
+@@ -92,6 +96,30 @@ class ProfileWriter : public base::RefCountedThreadSafe<ProfileWriter> {
    virtual void AddAutocompleteFormDataEntries(
        const std::vector<autofill::AutocompleteEntry>& autocomplete_entries);
  
@@ -40140,11 +40192,17 @@ index f609d99dde302a8226a246c9b51870c8f27ffab7..41452c431eee9d3cefb5f03b1c41e6af
 +  // it asks for; nothing is copied from the other browser.
 +  virtual void AddThoronWebStoreExtensions(const std::vector<std::string>& ids);
 +
++  // Thoron (ROADMAP P3.22): opens the windows, tabs and tab groups of another
++  // browser's session file in new windows, as Chromium restores a session from
++  // elsewhere: normal windows and web pages only, without the other browser's
++  // page state (user_data_importer::chromium_family::ReadOpenTabs).
++  virtual void AddThoronOpenTabs(const std::vector<uint8_t>& session_file);
++
   protected:
    friend class base::RefCountedThreadSafe<ProfileWriter>;
  
 diff --git a/chrome/browser/importer/profile_writer.cc b/chrome/browser/importer/profile_writer.cc
-index a29027ec2b250d2214cc0742d018a6bec414dae0..402aa49040ee533d29e67bb811cb4676d478f022 100644
+index a29027ec2b250d2214cc0742d018a6bec414dae0..390f10b47ed3dd90e0d7b269311062257bd73108 100644
 --- a/chrome/browser/importer/profile_writer.cc
 +++ b/chrome/browser/importer/profile_writer.cc
 @@ -11,6 +11,7 @@
@@ -40155,7 +40213,7 @@ index a29027ec2b250d2214cc0742d018a6bec414dae0..402aa49040ee533d29e67bb811cb4676
  #include "base/strings/string_number_conversions.h"
  #include "base/strings/string_util.h"
  #include "base/strings/utf_string_conversions.h"
-@@ -24,12 +25,25 @@
+@@ -24,12 +25,29 @@
  #include "chrome/browser/search_engines/template_url_service_factory.h"
  #include "chrome/browser/webdata_services/web_data_service_factory.h"
  #include "chrome/common/pref_names.h"
@@ -40172,6 +40230,10 @@ index a29027ec2b250d2214cc0742d018a6bec414dae0..402aa49040ee533d29e67bb811cb4676
  #include "components/favicon/core/favicon_service.h"
  #include "components/history/core/browser/history_service.h"
 +#include "base/version.h"
++#include "base/functional/callback_helpers.h"
++#include "chrome/browser/sessions/session_restore.h"
++#include "components/sessions/core/session_types.h"
++#include "components/user_data_importer/chromium_family/open_tabs.h"
 +#include "chrome/browser/extensions/updater/extension_updater.h"
 +#include "components/crx_file/id_util.h"
 +#include "extensions/browser/extension_registry.h"
@@ -40181,7 +40243,7 @@ index a29027ec2b250d2214cc0742d018a6bec414dae0..402aa49040ee533d29e67bb811cb4676
  #include "components/password_manager/core/browser/password_form.h"
  #include "components/password_manager/core/browser/password_store/password_form_converters.h"
  #include "components/password_manager/core/browser/password_store/password_store_interface.h"
-@@ -338,4 +352,112 @@ void ProfileWriter::AddAutocompleteFormDataEntries(
+@@ -338,4 +356,130 @@ void ProfileWriter::AddAutocompleteFormDataEntries(
      web_data_service->UpdateAutocompleteEntries(autocomplete_entries);
  }
  
@@ -40294,11 +40356,29 @@ index a29027ec2b250d2214cc0742d018a6bec414dae0..402aa49040ee533d29e67bb811cb4676
 +    }
 +  }
 +}
++
++void ProfileWriter::AddThoronOpenTabs(const std::vector<uint8_t>& session_file) {
++  CHECK(profile_, base::NotFatalUntil::M161);
++  if (profile_->IsOffTheRecord()) {
++    return;
++  }
++  const std::vector<std::unique_ptr<sessions::SessionWindow>> windows =
++      user_data_importer::chromium_family::ReadOpenTabs(session_file, nullptr);
++  if (windows.empty()) {
++    return;
++  }
++  std::vector<const sessions::SessionWindow*> to_open;
++  for (const std::unique_ptr<sessions::SessionWindow>& window : windows) {
++    to_open.push_back(window.get());
++  }
++  SessionRestore::RestoreForeignSessionWindows(
++      profile_, to_open.cbegin(), to_open.cend(), base::DoNothing());
++}
 diff --git a/chrome/common/pref_names.h b/chrome/common/pref_names.h
-index 980cb7353f1faf7f597b29868a0116267877c13e..a94bbb43ebb59aec4f9751ea3bfa797812123acb 100644
+index 980cb7353f1faf7f597b29868a0116267877c13e..a2dd7fcabc6b5b94a47a706ea60c7b0e8d5b172f 100644
 --- a/chrome/common/pref_names.h
 +++ b/chrome/common/pref_names.h
-@@ -916,6 +916,12 @@ inline constexpr char kImportDialogSavedPasswords[] =
+@@ -916,6 +916,14 @@ inline constexpr char kImportDialogSavedPasswords[] =
      "import_dialog_saved_passwords";
  inline constexpr char kImportDialogSearchEngine[] =
      "import_dialog_search_engine";
@@ -40308,14 +40388,16 @@ index 980cb7353f1faf7f597b29868a0116267877c13e..a94bbb43ebb59aec4f9751ea3bfa7978
 +inline constexpr char kImportDialogStartup[] = "import_dialog_startup";
 +// Thoron (ROADMAP P3.14): remembers the "Extensions" choice.
 +inline constexpr char kImportDialogExtensions[] = "import_dialog_extensions";
++// Thoron (ROADMAP P3.22): remembers the "Open tabs and tab groups" choice.
++inline constexpr char kImportDialogOpenTabs[] = "import_dialog_open_tabs";
  
  // A dictionary mapping foreign session tags (see
  // `sync_sessions::SyncedSession::GetSessionTag()`) to `true` for synced devices
 diff --git a/chrome/browser/extensions/api/settings_private/prefs_util.cc b/chrome/browser/extensions/api/settings_private/prefs_util.cc
-index 98d7b6df1cd57d393e0d146f62ab58580edffd90..1ba754f93033865283f30ef05451695ac8dc6589 100644
+index 98d7b6df1cd57d393e0d146f62ab58580edffd90..070c1d4ee8f1f4b4a7d98fbc22ea0d21005c1638 100644
 --- a/chrome/browser/extensions/api/settings_private/prefs_util.cc
 +++ b/chrome/browser/extensions/api/settings_private/prefs_util.cc
-@@ -1258,6 +1258,15 @@ const PrefsUtil::TypedPrefMap& PrefsUtil::GetAllowlistedKeys() {
+@@ -1258,6 +1258,18 @@ const PrefsUtil::TypedPrefMap& PrefsUtil::GetAllowlistedKeys() {
        settings_api::PrefType::kBoolean;
    (*s_allowlist)[::prefs::kImportDialogSearchEngine] =
        settings_api::PrefType::kBoolean;
@@ -40328,17 +40410,24 @@ index 98d7b6df1cd57d393e0d146f62ab58580edffd90..1ba754f93033865283f30ef05451695a
 +  // Thoron (ROADMAP P3.14): the "Extensions" choice.
 +  (*s_allowlist)[::prefs::kImportDialogExtensions] =
 +      settings_api::PrefType::kBoolean;
++  // Thoron (ROADMAP P3.22): the "Open tabs and tab groups" choice.
++  (*s_allowlist)[::prefs::kImportDialogOpenTabs] =
++      settings_api::PrefType::kBoolean;
  #endif  // BUILDFLAG(IS_CHROMEOS)
  
    // Supervised Users.  This setting is queried in our Tast tests (b/241943380).
 diff --git a/chrome/browser/ui/webui/settings/import_data_handler.cc b/chrome/browser/ui/webui/settings/import_data_handler.cc
-index 9e8523ea452d31c56e1109ef18818e210889e5ee..b4773f7e63bb4780d69527ce9028c07defa9e902 100644
+index 9e8523ea452d31c56e1109ef18818e210889e5ee..74a21f369b5971c064b50a85bce48c4f75f31ae6 100644
 --- a/chrome/browser/ui/webui/settings/import_data_handler.cc
 +++ b/chrome/browser/ui/webui/settings/import_data_handler.cc
-@@ -150,6 +150,18 @@ void ImportDataHandler::HandleImportData(const base::ListValue& args) {
+@@ -150,6 +150,22 @@ void ImportDataHandler::HandleImportData(const base::ListValue& args) {
    if (*type_dict.FindBool(prefs::kImportDialogSearchEngine)) {
      selected_items |= user_data_importer::SEARCH_ENGINES;
    }
++  // Thoron (ROADMAP P3.22): open windows, tabs and tab groups.
++  if (type_dict.FindBool(prefs::kImportDialogOpenTabs).value_or(false)) {
++    selected_items |= user_data_importer::OPEN_TABS;
++  }
 +  // Thoron (ROADMAP P3.14): extensions, installed again from their store.
 +  if (type_dict.FindBool(prefs::kImportDialogExtensions).value_or(false)) {
 +    selected_items |= user_data_importer::EXTENSIONS;
@@ -40354,7 +40443,7 @@ index 9e8523ea452d31c56e1109ef18818e210889e5ee..b4773f7e63bb4780d69527ce9028c07d
  
    const user_data_importer::SourceProfile& source_profile =
        importer_list_->GetSourceProfileAt(browser_index);
-@@ -231,6 +243,15 @@ void ImportDataHandler::SendBrowserProfileData(const std::string& callback_id) {
+@@ -231,6 +247,18 @@ void ImportDataHandler::SendBrowserProfileData(const std::string& callback_id) {
      browser_profile.Set(
          "autofillFormData",
          (browser_services & user_data_importer::AUTOFILL_FORM_DATA) != 0);
@@ -40367,14 +40456,17 @@ index 9e8523ea452d31c56e1109ef18818e210889e5ee..b4773f7e63bb4780d69527ce9028c07d
 +    // Thoron (ROADMAP P3.14): extensions, installed again from their store.
 +    browser_profile.Set(
 +        "extensions", (browser_services & user_data_importer::EXTENSIONS) != 0);
++    // Thoron (ROADMAP P3.22): open windows, tabs and tab groups.
++    browser_profile.Set(
++        "openTabs", (browser_services & user_data_importer::OPEN_TABS) != 0);
  
      browser_profiles.Append(std::move(browser_profile));
    }
 diff --git a/chrome/browser/resources/settings/people_page/import_data_browser_proxy.ts b/chrome/browser/resources/settings/people_page/import_data_browser_proxy.ts
-index ca628e702953f73b9fbebcdc716b845c7978f1ba..01569db291946102f4a37616752f149dd0012e7a 100644
+index ca628e702953f73b9fbebcdc716b845c7978f1ba..fb89e8fa174f91fe425077cb58c1129673372d06 100644
 --- a/chrome/browser/resources/settings/people_page/import_data_browser_proxy.ts
 +++ b/chrome/browser/resources/settings/people_page/import_data_browser_proxy.ts
-@@ -19,6 +19,12 @@ export interface BrowserProfile {
+@@ -19,6 +19,14 @@ export interface BrowserProfile {
    passwords: boolean;
    search: boolean;
    autofillFormData: boolean;
@@ -40382,16 +40474,18 @@ index ca628e702953f73b9fbebcdc716b845c7978f1ba..01569db291946102f4a37616752f149d
 +  cookies: boolean;
 +  // Thoron (ROADMAP P3.14): extensions, installed again from their store.
 +  extensions: boolean;
++  // Thoron (ROADMAP P3.22): open windows, tabs and tab groups.
++  openTabs: boolean;
 +  // Thoron (ROADMAP P3.14): the home page and startup pages.
 +  startup: boolean;
  }
  
  /**
 diff --git a/chrome/browser/resources/settings/people_page/import_data_dialog.ts b/chrome/browser/resources/settings/people_page/import_data_dialog.ts
-index 43d7734a9a015c630c9aae7c62169cb48299cbaf..dd5eef00726be1289542464fda7c55173c63c7dc 100644
+index 43d7734a9a015c630c9aae7c62169cb48299cbaf..09894500ebc79b5336dbf036e779a77c71a23ede 100644
 --- a/chrome/browser/resources/settings/people_page/import_data_dialog.ts
 +++ b/chrome/browser/resources/settings/people_page/import_data_dialog.ts
-@@ -78,6 +78,12 @@ export class SettingsImportDataDialogElement extends
+@@ -78,6 +78,14 @@ export class SettingsImportDataDialogElement extends
      passwords: false,
      search: false,
      autofillFormData: false,
@@ -40401,14 +40495,16 @@ index 43d7734a9a015c630c9aae7c62169cb48299cbaf..dd5eef00726be1289542464fda7c5517
 +    startup: false,
 +    // Thoron (ROADMAP P3.14): extensions, installed again from their store.
 +    extensions: false,
++    // Thoron (ROADMAP P3.22): open windows, tabs and tab groups.
++    openTabs: false,
    };
    protected accessor noImportDataTypeSelected_: boolean = false;
    protected accessor importStatus_: ImportDataStatus = ImportDataStatus.INITIAL;
 diff --git a/chrome/browser/resources/settings/people_page/import_data_dialog.html.ts b/chrome/browser/resources/settings/people_page/import_data_dialog.html.ts
-index 89321068222f0387855a126a3fd8ea2deca1a4bf..dde5f5054bc258e548137fef3e51b08aba1daa53 100644
+index 89321068222f0387855a126a3fd8ea2deca1a4bf..6484b1225e34fe04725f4b4bafe283fcfe25c6c9 100644
 --- a/chrome/browser/resources/settings/people_page/import_data_dialog.html.ts
 +++ b/chrome/browser/resources/settings/people_page/import_data_dialog.html.ts
-@@ -70,6 +70,24 @@ export function getHtml(this: SettingsImportDataDialogElement) {
+@@ -70,6 +70,30 @@ export function getHtml(this: SettingsImportDataDialogElement) {
                  pref-key="import_dialog_autofill_form_data"
                  label="$i18n{importAutofillFormData}" no-set-pref>
              </settings-checkbox>
@@ -40429,6 +40525,12 @@ index 89321068222f0387855a126a3fd8ea2deca1a4bf..dde5f5054bc258e548137fef3e51b08a
 +                ?hidden="${!this.selected_.extensions}"
 +                pref-key="import_dialog_extensions"
 +                label="$i18n{importExtensions}" no-set-pref>
++            </settings-checkbox>
++            <!-- Thoron (ROADMAP P3.22): open tabs and tab groups. -->
++            <settings-checkbox id="importDialogOpenTabs"
++                ?hidden="${!this.selected_.openTabs}"
++                pref-key="import_dialog_open_tabs"
++                label="$i18n{importOpenTabs}" no-set-pref>
 +            </settings-checkbox>
            </div>
          </div>
@@ -40505,21 +40607,23 @@ index 5f8f27c70bafe3eb6377350bcab26b51aae1cc7f..b8238485b74565db02f6e5e69548ccd2
      case user_data_importer::TYPE_BOOKMARKS_FILE:
        return new BookmarksFileImporter();
 diff --git a/components/user_data_importer/common/importer_data_types.h b/components/user_data_importer/common/importer_data_types.h
-index 3cac91f8d58380b688ad95177d0841cadeb5728c..5e1c5d406c1a18882be12dc0a8a5cd2f8946fdad 100644
+index 3cac91f8d58380b688ad95177d0841cadeb5728c..a2acc2d35ceb405347eb0641eaa81f05d374a452 100644
 --- a/components/user_data_importer/common/importer_data_types.h
 +++ b/components/user_data_importer/common/importer_data_types.h
-@@ -29,7 +29,9 @@ enum ImportItem {
+@@ -29,7 +29,11 @@ enum ImportItem {
    SEARCH_ENGINES = 1 << 4,
    HOME_PAGE = 1 << 5,
    AUTOFILL_FORM_DATA = 1 << 6,
 -  ALL = (1 << 7) - 1  // All the bits should be 1, hence the -1.
 +  // Thoron (ROADMAP P3.14): extensions, installed again from their store.
 +  EXTENSIONS = 1 << 7,
-+  ALL = (1 << 8) - 1  // All the bits should be 1, hence the -1.
++  // Thoron (ROADMAP P3.22): open windows, tabs and tab groups.
++  OPEN_TABS = 1 << 8,
++  ALL = (1 << 9) - 1  // All the bits should be 1, hence the -1.
  };
  
  // Information about a profile needed by an importer to do import work.
-@@ -111,6 +113,9 @@ enum VisitSource {
+@@ -111,6 +115,9 @@ enum VisitSource {
    VISIT_SOURCE_FIREFOX_IMPORTED = 1,
    VISIT_SOURCE_IE_IMPORTED = 2,
    VISIT_SOURCE_SAFARI_IMPORTED = 3,
@@ -40572,6 +40676,39 @@ index f6d7473a753334fed648b94b1e1fbcf2d1a0dad6..51e964416b4fe17e1d4d44568dfde43d
    <variant name="Thumbnail" summary="Thumbnail"/>
    <variant name="TopSites" summary="TopSites"/>
    <variant name="TrustTokens" summary="TrustTokens"/>
+diff --git a/components/sessions/BUILD.gn b/components/sessions/BUILD.gn
+index 6cd7e695e54e9cdfa58dad6225e0ddd357e3ac12..79cc7aea6e02c14fda1f2943fe203f6a083c9a9d 100644
+--- a/components/sessions/BUILD.gn
++++ b/components/sessions/BUILD.gn
+@@ -97,7 +97,13 @@ component("session_id") {
+ 
+ # Sources shared between the content and iOS implementations.
+ source_set("shared") {
+-  visibility = [ ":*" ]
++  visibility = [
++    ":*",
++
++    # Thoron (ROADMAP P3.22): the session of another browser read in an
++    # import, without the content layer.
++    "//components/user_data_importer/chromium_family:*",
++  ]
+ 
+   sources = [
+     "core/base_session_service_commands.cc",
+diff --git a/chrome/browser/sessions/session_restore.cc b/chrome/browser/sessions/session_restore.cc
+index ea1990e8cd42875e6d651edbe429c76de7e8ab9f..a2677474176180cc7dfac1a1258736508336073d 100644
+--- a/chrome/browser/sessions/session_restore.cc
++++ b/chrome/browser/sessions/session_restore.cc
+@@ -447,6 +447,9 @@ class SessionRestoreImpl : public BrowserCollectionObserver {
+       RestoreTabsToBrowser(*(*i), window, initial_tab_count,
+                            /*is_active_browser=*/false, restored_tabs,
+                            &new_group_ids, did_show_browser);
++      // Thoron (ROADMAP P3.22): a session imported from another browser
++      // has tab groups; their names and colours come back with them.
++      RestoreTabGroupMetadata(window, new_group_ids, (*i)->tab_groups);
+       NotifySessionServiceOfRestoredTabs(window, initial_tab_count);
+     }
+ 
 diff --git a/chrome/app/thoron_welcome_strings.grdp b/chrome/app/thoron_welcome_strings.grdp
 new file mode 100644
 index 0000000000000000000000000000000000000000..b6eb09dc754d5fb775a343c383e29f919620d3ec
@@ -40847,10 +40984,10 @@ index 0000000000000000000000000000000000000000..05d9b3c2fe8f46afc5448b3c22d7568b
 +#endif  // CHROME_BROWSER_UI_WEBUI_THORON_WELCOME_UI_H_
 diff --git a/chrome/utility/importer/chromium_family_importer_win.cc b/chrome/utility/importer/chromium_family_importer_win.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..d8c023341c323d5cbd263cd423a6bf23ee7ced20
+index 0000000000000000000000000000000000000000..782136cfcbebe06bab002718f55702a374112dec
 --- /dev/null
 +++ b/chrome/utility/importer/chromium_family_importer_win.cc
-@@ -0,0 +1,242 @@
+@@ -0,0 +1,247 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -40997,6 +41134,10 @@ index 0000000000000000000000000000000000000000..d8c023341c323d5cbd263cd423a6bf23
 +  void SetWebStoreExtensions(const std::vector<std::string>& ids) override {
 +    bridge_->AddThoronWebStoreExtensions(ids);
 +  }
++
++  void SetOpenTabsSession(const std::vector<uint8_t>& session_file) override {
++    bridge_->AddThoronOpenTabs(session_file);
++  }
 +  void SetCookies(const std::vector<cf::ImportedCookie>& cookies) override {
 +    std::vector<net::CanonicalCookie> converted;
 +    converted.reserve(cookies.size());
@@ -41061,7 +41202,7 @@ index 0000000000000000000000000000000000000000..d8c023341c323d5cbd263cd423a6bf23
 +      user_data_importer::SEARCH_ENGINES,
 +      user_data_importer::AUTOFILL_FORM_DATA, user_data_importer::PASSWORDS,
 +      user_data_importer::COOKIES, user_data_importer::HOME_PAGE,
-+      user_data_importer::EXTENSIONS};
++      user_data_importer::EXTENSIONS, user_data_importer::OPEN_TABS};
 +  cf::ChromiumFamilyReader::Stats stats;
 +  for (user_data_importer::ImportItem item : kOrder) {
 +    if (!(items & item) || cancelled()) {
@@ -41089,6 +41230,7 @@ index 0000000000000000000000000000000000000000..d8c023341c323d5cbd263cd423a6bf23
 +  counts.startup_pages = stats.startup_pages;
 +  counts.extensions = stats.extensions;
 +  counts.extensions_skipped = stats.extensions_skipped;
++  counts.open_tabs = stats.open_tabs;
 +  counts.databases_refused = stats.databases_refused;
 +  bridge_->ReportThoronImport(counts);
 +  bridge_->NotifyEnded();
@@ -41132,81 +41274,146 @@ index 0000000000000000000000000000000000000000..e48c1456bbf27ff2c455fae15b44e59a
 +#endif  // CHROME_UTILITY_IMPORTER_CHROMIUM_FAMILY_IMPORTER_WIN_H_
 diff --git a/components/user_data_importer/chromium_family/BUILD.gn b/components/user_data_importer/chromium_family/BUILD.gn
 new file mode 100644
-index 0000000000000000000000000000000000000000..c742ef3831d15e07f2cd464d1edff236a558e905
+index 0000000000000000000000000000000000000000..4b117af0f3cf13bbbc3bf6007a38b3a83252dfdf
 --- /dev/null
 +++ b/components/user_data_importer/chromium_family/BUILD.gn
-@@ -0,0 +1,58 @@
+@@ -0,0 +1,117 @@
 +# Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +# found in the LICENSE file.
 +
++import("//testing/libfuzzer/fuzzer_test.gni")
 +import("//testing/test.gni")
 +
-+# Thoron (ROADMAP P3.14): reads a Chromium-family browser's profile (Thorium,
-+# Chrome, Edge, Brave, Vivaldi, Opera, Chromium) during an import. A small
-+# library with few dependencies (base, sql, crypto, url and the importer common
-+# types) so it can be tested without linking Chromium's giant unit_tests.
-+assert(is_win, "The Chromium-family importer is Windows-only for now.")
-+
-+source_set("chromium_family") {
++# Thoron (ROADMAP P3.22): the open windows, tabs and tab groups of another
++# browser's last session, read with Chromium's own session code. Not tied to
++# Windows, so it can be fuzzed on Linux as well.
++source_set("open_tabs") {
 +  sources = [
-+    "browser_detection.cc",
-+    "browser_detection.h",
-+    "chromium_family_import_bridge.h",
-+    "chromium_family_reader.cc",
-+    "chromium_family_reader.h",
-+    "password_decryptor_win.cc",
-+    "password_decryptor_win.h",
++    "open_tabs.cc",
++    "open_tabs.h",
 +  ]
 +  deps = [
 +    "//base",
-+    "//components/user_data_importer/common",
-+    "//crypto",
-+    "//sql",
++    "//components/sessions:shared",
++    "//components/split_tabs",
++    "//components/tab_groups",
++    "//ui/base",
++    "//ui/gfx",
 +    "//url",
 +  ]
 +}
 +
-+source_set("unit_tests") {
++# Coverage-guided fuzzing of that reading (ROADMAP S.2, I3). Built only with a
++# fuzzing engine (use_libfuzzer).
++# The navigation driver the content layer gives the browser, for the tests
++# and the fuzzer, which link the session code without it.
++source_set("open_tabs_test_driver") {
 +  testonly = true
-+  sources = [
-+    "browser_detection_unittest.cc",
-+    "chromium_family_reader_unittest.cc",
-+    "password_decryptor_win_unittest.cc",
-+  ]
++  sources = [ "open_tabs_test_driver.cc" ]
 +  deps = [
-+    ":chromium_family",
 +    "//base",
-+    "//base/test:test_support",
-+    "//components/user_data_importer/common",
-+    "//crypto",
-+    "//sql",
-+    "//testing/gtest",
-+    "//url",
++    "//components/sessions:shared",
 +  ]
 +}
 +
-+# The tests alone, without linking the rest of Chromium:
-+#   thoron_chromium_import_unittests
-+test("thoron_chromium_import_unittests") {
++fuzzer_test("thoron_open_tabs_fuzzer") {
++  sources = [ "open_tabs_fuzzer.cc" ]
 +  deps = [
-+    ":unit_tests",
-+    "//base/test:run_all_unittests",
-+    "//testing/gtest",
++    ":open_tabs",
++    ":open_tabs_test_driver",
++    "//base",
++    "//components/sessions:shared",
++    "//ui/base",
 +  ]
++}
++
++group("thoron_open_tabs_all") {
++  testonly = true
++  deps = [ ":open_tabs" ]
++}
++
++if (is_win) {
++  # Thoron (ROADMAP P3.14): reads a Chromium-family browser's profile (Thorium,
++  # Chrome, Edge, Brave, Vivaldi, Opera, Chromium) during an import. A small
++  # library with few dependencies (base, sql, crypto, url and the importer
++  # common types) so it can be tested without linking Chromium's giant
++  # unit_tests. Windows-only for now.
++  source_set("chromium_family") {
++    sources = [
++      "browser_detection.cc",
++      "browser_detection.h",
++      "chromium_family_import_bridge.h",
++      "chromium_family_reader.cc",
++      "chromium_family_reader.h",
++      "password_decryptor_win.cc",
++      "password_decryptor_win.h",
++    ]
++    deps = [
++      ":open_tabs",
++      "//base",
++      "//components/sessions:shared",
++      "//components/user_data_importer/common",
++      "//crypto",
++      "//sql",
++      "//url",
++    ]
++  }
++
++  source_set("unit_tests") {
++    testonly = true
++    sources = [
++      "browser_detection_unittest.cc",
++      "chromium_family_reader_unittest.cc",
++      "open_tabs_unittest.cc",
++      "password_decryptor_win_unittest.cc",
++    ]
++    deps = [
++      ":chromium_family",
++      ":open_tabs",
++      ":open_tabs_test_driver",
++      "//base",
++      "//base/test:test_support",
++      "//components/sessions:shared",
++      "//components/tab_groups",
++      "//components/user_data_importer/common",
++      "//crypto",
++      "//sql",
++      "//testing/gtest",
++      "//ui/base",
++      "//ui/gfx",
++      "//url",
++    ]
++  }
++
++  # The tests alone, without linking the rest of Chromium:
++  #   thoron_chromium_import_unittests
++  test("thoron_chromium_import_unittests") {
++    deps = [
++      ":unit_tests",
++      "//base/test:run_all_unittests",
++      "//testing/gtest",
++    ]
++  }
 +}
 diff --git a/components/user_data_importer/chromium_family/DEPS b/components/user_data_importer/chromium_family/DEPS
 new file mode 100644
-index 0000000000000000000000000000000000000000..fc6697a3c130475f0f6791cbad053645ea00baf6
+index 0000000000000000000000000000000000000000..145c55c5d2982580ba3b1ced1d889c4c24634551
 --- /dev/null
 +++ b/components/user_data_importer/chromium_family/DEPS
-@@ -0,0 +1,4 @@
+@@ -0,0 +1,10 @@
 +include_rules = [
++  # Thoron (ROADMAP P3.22): the session of another browser.
++  "+components/sessions/core",
++  "+components/tab_groups",
++  "+ui/base/mojom",
++  "+ui/base/resource",
++  "+ui/gfx/geometry",
 +  "+crypto",
 +  "+sql",
 +]
 diff --git a/components/user_data_importer/chromium_family/browser_detection.cc b/components/user_data_importer/chromium_family/browser_detection.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..5d0fa564e45efcca98f7a4f6cb5cf008b1bc5dd5
+index 0000000000000000000000000000000000000000..53cd72bfbfaecc3d5bd47a57f1d1ad1ecea8df85
 --- /dev/null
 +++ b/components/user_data_importer/chromium_family/browser_detection.cc
 @@ -0,0 +1,207 @@
@@ -41403,7 +41610,7 @@ index 0000000000000000000000000000000000000000..5d0fa564e45efcca98f7a4f6cb5cf008
 +
 +uint16_t SupportedItems() {
 +  return FAVORITES | HISTORY | PASSWORDS | SEARCH_ENGINES |
-+         AUTOFILL_FORM_DATA | COOKIES | HOME_PAGE | EXTENSIONS;
++         AUTOFILL_FORM_DATA | COOKIES | HOME_PAGE | EXTENSIONS | OPEN_TABS;
 +}
 +
 +bool IsBrowserRunning(const base::FilePath& user_data) {
@@ -41689,10 +41896,10 @@ index 0000000000000000000000000000000000000000..215cfb4d69abb60ca927e50f84428e45
 +}  // namespace user_data_importer::chromium_family
 diff --git a/components/user_data_importer/chromium_family/chromium_family_import_bridge.h b/components/user_data_importer/chromium_family/chromium_family_import_bridge.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..146c0b7d87b6d7810557e6adbd7f3f6ab3648f2d
+index 0000000000000000000000000000000000000000..efa51aa54b2f5bfcb132213c0491e5d030bd1a5d
 --- /dev/null
 +++ b/components/user_data_importer/chromium_family/chromium_family_import_bridge.h
-@@ -0,0 +1,107 @@
+@@ -0,0 +1,111 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -41795,6 +42002,10 @@ index 0000000000000000000000000000000000000000..146c0b7d87b6d7810557e6adbd7f3f6a
 +  // Thoron (ROADMAP P3.14): the source profile's Chrome Web Store extensions,
 +  // by ID, to be installed again from the store.
 +  virtual void SetWebStoreExtensions(const std::vector<std::string>& ids) {}
++
++  // Thoron (ROADMAP P3.22): the source profile's last session file, for its
++  // open windows, tabs and tab groups.
++  virtual void SetOpenTabsSession(const std::vector<uint8_t>& session_file) {}
 +};
 +
 +}  // namespace user_data_importer::chromium_family
@@ -41802,19 +42013,21 @@ index 0000000000000000000000000000000000000000..146c0b7d87b6d7810557e6adbd7f3f6a
 +#endif  // COMPONENTS_USER_DATA_IMPORTER_CHROMIUM_FAMILY_CHROMIUM_FAMILY_IMPORT_BRIDGE_H_
 diff --git a/components/user_data_importer/chromium_family/chromium_family_reader.cc b/components/user_data_importer/chromium_family/chromium_family_reader.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..3c58bcd44232b83e434622cae139dc03668d645c
+index 0000000000000000000000000000000000000000..7e3fa14a66298c582deea7f297c7511b2a536a84
 --- /dev/null
 +++ b/components/user_data_importer/chromium_family/chromium_family_reader.cc
-@@ -0,0 +1,727 @@
+@@ -0,0 +1,778 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
 +#include "components/user_data_importer/chromium_family/chromium_family_reader.h"
 +
 +#include <algorithm>
++#include <functional>
 +#include <string_view>
 +#include <utility>
 +
++#include "base/files/file_enumerator.h"
 +#include "base/files/file_util.h"
 +#include "base/json/json_reader.h"
 +#include "base/strings/string_number_conversions.h"
@@ -41823,6 +42036,9 @@ index 0000000000000000000000000000000000000000..3c58bcd44232b83e434622cae139dc03
 +#include "base/time/time.h"
 +#include "base/values.h"
 +#include <optional>
++#include "components/sessions/core/session_command.h"
++#include "components/sessions/core/session_types.h"
++#include "components/user_data_importer/chromium_family/open_tabs.h"
 +#include "crypto/hash.h"
 +#include "sql/database.h"
 +#include "sql/statement.h"
@@ -42046,6 +42262,9 @@ index 0000000000000000000000000000000000000000..3c58bcd44232b83e434622cae139dc03
 +  if (items & EXTENSIONS) {
 +    ImportExtensions(bridge);
 +  }
++  if (items & OPEN_TABS) {
++    ImportOpenTabs(bridge);
++  }
 +  return stats_;
 +}
 +
@@ -42110,6 +42329,49 @@ index 0000000000000000000000000000000000000000..3c58bcd44232b83e434622cae139dc03
 +  stats_.extensions_skipped = skipped;
 +  if (!ids.empty()) {
 +    bridge->SetWebStoreExtensions(ids);
++  }
++}
++
++// Thoron (ROADMAP P3.22): the open windows, tabs and tab groups of the source
++// profile, from a copy of its newest complete session file
++// (`Sessions/Session_<time>`), the one the browser itself would restore: a file
++// still being written (no marker) gives way to the one before it. The file is
++// only checked and counted here; the browser reads it again and opens what is
++// safe to open (open_tabs.h).
++void ChromiumFamilyReader::ImportOpenTabs(ChromiumFamilyImportBridge* bridge) {
++  constexpr size_t kMostFilesTried = 5;
++  std::vector<std::pair<uint64_t, base::FilePath>> files;
++  base::FileEnumerator found(options_.profile_path.AppendASCII("Sessions"),
++                             /*recursive=*/false, base::FileEnumerator::FILES,
++                             FILE_PATH_LITERAL("Session_*"));
++  for (base::FilePath path = found.Next(); !path.empty(); path = found.Next()) {
++    const std::string name = path.BaseName().MaybeAsASCII();
++    uint64_t time = 0;
++    if (name.size() > 8 &&
++        base::StringToUint64(std::string_view(name).substr(8), &time)) {
++      files.emplace_back(time, path);
++    }
++  }
++  std::ranges::sort(files, std::greater<>());
++  for (size_t i = 0; i < files.size() && i < kMostFilesTried; ++i) {
++    const base::FilePath copy = CopyForReading(files[i].second);
++    std::string data;
++    if (copy.empty() || !base::ReadFileToStringWithMaxSize(
++                            copy, &data, kMostOpenTabsFileBytes)) {
++      continue;
++    }
++    const base::span<const uint8_t> bytes = base::as_byte_span(data);
++    if (!ReadSessionCommands(bytes)) {
++      continue;
++    }
++    OpenTabsCounts counts;
++    ReadOpenTabs(bytes, &counts);
++    stats_.open_tabs = counts.tabs;
++    if (counts.tabs > 0) {
++      bridge->SetOpenTabsSession(
++          std::vector<uint8_t>(bytes.begin(), bytes.end()));
++    }
++    return;
 +  }
 +}
 +// The home page and the startup choice, from a copy of the profile's
@@ -42535,10 +42797,10 @@ index 0000000000000000000000000000000000000000..3c58bcd44232b83e434622cae139dc03
 +}  // namespace user_data_importer::chromium_family
 diff --git a/components/user_data_importer/chromium_family/chromium_family_reader.h b/components/user_data_importer/chromium_family/chromium_family_reader.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..59f3d872513b50e14e62fb199f700cdbaebfd03c
+index 0000000000000000000000000000000000000000..3c1dd00df2a8f2af6645439004c3f7c9e8a0679b
 --- /dev/null
 +++ b/components/user_data_importer/chromium_family/chromium_family_reader.h
-@@ -0,0 +1,120 @@
+@@ -0,0 +1,123 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -42608,6 +42870,8 @@ index 0000000000000000000000000000000000000000..59f3d872513b50e14e62fb199f700cdb
 +    // Extensions the person installed from elsewhere (unpacked, by another
 +    // program, from a file): counted and left out.
 +    int extensions_skipped = 0;
++    // Tabs in the source's last session that will open (web pages only).
++    int open_tabs = 0;
 +    // A SQLite file whose copy failed PRAGMA quick_check, so its type was
 +    // skipped.
 +    int databases_refused = 0;
@@ -42647,6 +42911,7 @@ index 0000000000000000000000000000000000000000..59f3d872513b50e14e62fb199f700cdb
 +  void ImportCookies(ChromiumFamilyImportBridge* bridge);
 +  void ImportStartup(ChromiumFamilyImportBridge* bridge);
 +  void ImportExtensions(ChromiumFamilyImportBridge* bridge);
++  void ImportOpenTabs(ChromiumFamilyImportBridge* bridge);
 +
 +  const Options options_;
 +  base::ScopedTempDir temp_dir_;
@@ -42661,10 +42926,10 @@ index 0000000000000000000000000000000000000000..59f3d872513b50e14e62fb199f700cdb
 +#endif  // COMPONENTS_USER_DATA_IMPORTER_CHROMIUM_FAMILY_CHROMIUM_FAMILY_READER_H_
 diff --git a/components/user_data_importer/chromium_family/chromium_family_reader_unittest.cc b/components/user_data_importer/chromium_family/chromium_family_reader_unittest.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..476ba43ea3916d940c1e5c520a1a1f5540c62ff0
+index 0000000000000000000000000000000000000000..52e83e8ee886a9d137246fac75fe83e41c83d787
 --- /dev/null
 +++ b/components/user_data_importer/chromium_family/chromium_family_reader_unittest.cc
-@@ -0,0 +1,725 @@
+@@ -0,0 +1,805 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -42695,6 +42960,12 @@ index 0000000000000000000000000000000000000000..476ba43ea3916d940c1e5c520a1a1f55
 +#include "crypto/sha2.h"
 +#include "sql/database.h"
 +#include "sql/statement.h"
++#include "base/numerics/byte_conversions.h"
++#include "components/sessions/core/serialized_navigation_entry.h"
++#include "components/sessions/core/session_command.h"
++#include "components/sessions/core/session_id.h"
++#include "components/sessions/core/session_service_commands.h"
++#include "components/sessions/core/session_types.h"
 +#include "testing/gtest/include/gtest/gtest.h"
 +
 +namespace user_data_importer::chromium_family {
@@ -42724,6 +42995,10 @@ index 0000000000000000000000000000000000000000..476ba43ea3916d940c1e5c520a1a1f55
 +  void SetCookies(const std::vector<ImportedCookie>& entries) override {
 +    cookies = entries;
 +  }
++  void SetOpenTabsSession(const std::vector<uint8_t>& file) override {
++    open_tabs_file = file;
++    ++open_tabs_calls;
++  }
 +  void SetWebStoreExtensions(const std::vector<std::string>& ids) override {
 +    extensions = ids;
 +    ++extension_calls;
@@ -42744,6 +43019,8 @@ index 0000000000000000000000000000000000000000..476ba43ea3916d940c1e5c520a1a1f55
 +  int startup_calls = 0;
 +  std::vector<std::string> extensions;
 +  int extension_calls = 0;
++  std::vector<uint8_t> open_tabs_file;
++  int open_tabs_calls = 0;
 +};
 +
 +std::array<uint8_t, 32> MakeKey() {
@@ -43332,6 +43609,74 @@ index 0000000000000000000000000000000000000000..476ba43ea3916d940c1e5c520a1a1f55
 +  EXPECT_EQ(none.extension_calls, 0);
 +}
 +
++// Thoron (ROADMAP P3.22): a session file of one window with a tab on `url`,
++// complete (with the marker) or still being written.
++std::string ThoronSessionFile(const std::string& url, bool complete) {
++  std::string out;
++  auto append = [&out](base::span<const uint8_t> bytes) {
++    out.append(bytes.begin(), bytes.end());
++  };
++  append(base::U32ToLittleEndian(0x53534E53));
++  append(base::U32ToLittleEndian(3));
++  auto add = [&](std::unique_ptr<sessions::SessionCommand> command) {
++    append(base::U16ToLittleEndian(
++        static_cast<uint16_t>(command->contents().size() + 1)));
++    out.push_back(static_cast<char>(command->id()));
++    append(command->contents());
++  };
++  const SessionID window = SessionID::FromSerializedValue(1);
++  const SessionID tab = SessionID::FromSerializedValue(2);
++  add(sessions::CreateSetWindowTypeCommand(
++      window, sessions::SessionWindow::TYPE_NORMAL));
++  add(sessions::CreateSetTabWindowCommand(window, tab));
++  sessions::SerializedNavigationEntry page;
++  page.set_index(0);
++  page.set_virtual_url(GURL(url));
++  add(sessions::CreateUpdateTabNavigationCommand(tab, page));
++  add(sessions::CreateSetSelectedNavigationIndexCommand(tab, 0));
++  if (complete) {
++    append(base::U16ToLittleEndian(1));
++    out.push_back(static_cast<char>(255));
++  }
++  return out;
++}
++
++// The newest session file the browser itself would restore comes over: one
++// still being written (no marker) gives way to the one before it, and a file
++// not named as the browser names them is not read. Nothing comes without a
++// complete file.
++TEST_F(ChromiumFamilyReaderTest, OpenTabsFromTheNewestCompleteSessionFile) {
++  const base::FilePath sessions = profile_.Append(L"Sessions");
++  ASSERT_TRUE(base::CreateDirectory(sessions));
++  const std::string older = ThoronSessionFile("https://example.org/older", true);
++  Write(sessions.Append(L"Session_13400000000000000"), older);
++  Write(sessions.Append(L"Session_13400000000000001"),
++        ThoronSessionFile("https://example.org/newest", true));
++  Write(sessions.Append(L"Session_13500000000000000"),
++        ThoronSessionFile("https://example.org/being-written", false));
++  Write(sessions.Append(L"Session_x"),
++        ThoronSessionFile("https://example.org/odd-name", true));
++  Write(sessions.Append(L"Tabs_13600000000000000"),
++        ThoronSessionFile("https://example.org/closed", true));
++
++  FakeBridge bridge;
++  ChromiumFamilyReader reader(Options());
++  const ChromiumFamilyReader::Stats stats = reader.Import(OPEN_TABS, &bridge);
++  ASSERT_EQ(bridge.open_tabs_calls, 1);
++  const std::string sent(bridge.open_tabs_file.begin(),
++                         bridge.open_tabs_file.end());
++  EXPECT_EQ(sent, ThoronSessionFile("https://example.org/newest", true));
++  EXPECT_EQ(stats.open_tabs, 1);
++  EXPECT_TRUE(bridge.bookmarks.empty());
++
++  ASSERT_TRUE(base::DeleteFile(sessions.Append(L"Session_13400000000000000")));
++  ASSERT_TRUE(base::DeleteFile(sessions.Append(L"Session_13400000000000001")));
++  FakeBridge none;
++  ChromiumFamilyReader reader2(Options());
++  EXPECT_EQ(reader2.Import(OPEN_TABS, &none).open_tabs, 0);
++  EXPECT_EQ(none.open_tabs_calls, 0);
++}
++
 +TEST_F(ChromiumFamilyReaderTest, OnlyRequestedItems) {
 +  MakeBookmarks();
 +  MakeHistory(base::Time::Now());
@@ -43386,6 +43731,719 @@ index 0000000000000000000000000000000000000000..476ba43ea3916d940c1e5c520a1a1f55
 +  EXPECT_TRUE(bridge.bookmarks.empty());
 +  EXPECT_TRUE(bridge.history.empty());
 +  EXPECT_EQ(0, stats.passwords);
++}
++
++}  // namespace
++}  // namespace user_data_importer::chromium_family
+diff --git a/components/user_data_importer/chromium_family/open_tabs.cc b/components/user_data_importer/chromium_family/open_tabs.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..0a8514659b59711c94302fe48d02dd4a6a7f41b6
+--- /dev/null
++++ b/components/user_data_importer/chromium_family/open_tabs.cc
+@@ -0,0 +1,218 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "components/user_data_importer/chromium_family/open_tabs.h"
++
++#include <algorithm>
++#include <set>
++#include <string>
++#include <utility>
++
++#include "base/numerics/byte_conversions.h"
++#include "components/sessions/core/serialized_navigation_entry.h"
++#include "components/sessions/core/serialized_user_agent_override.h"
++#include "components/sessions/core/session_command.h"
++#include "components/sessions/core/session_id.h"
++#include "components/sessions/core/session_service_commands.h"
++#include "components/sessions/core/session_types.h"
++#include "components/tab_groups/tab_group_id.h"
++#include "ui/base/mojom/window_show_state.mojom.h"
++#include "url/gurl.h"
++
++namespace user_data_importer::chromium_family {
++
++namespace {
++
++// As components/sessions/core/command_storage_backend.cc writes them.
++constexpr uint32_t kFileSignature = 0x53534E53;  // "SNSS"
++constexpr uint32_t kFileVersionWithMarker = 3;
++constexpr uint8_t kInitialStateMarkerCommandId = 255;
++
++bool IsWebPage(const GURL& url) {
++  return url.is_valid() && (url.SchemeIsHTTPOrHTTPS() || url.SchemeIsFile());
++}
++
++// Keeps the tab's web pages only, each without the other browser's page state,
++// and the current one pointing at the same page or the nearest one kept before
++// it. False when no page is left.
++bool KeepWebPages(sessions::SessionTab& tab) {
++  std::vector<sessions::SerializedNavigationEntry> kept;
++  size_t current = 0;
++  const int old_current = tab.current_navigation_index;
++  for (size_t i = 0; i < tab.navigations.size(); ++i) {
++    const sessions::SerializedNavigationEntry& entry = tab.navigations[i];
++    if (!IsWebPage(entry.virtual_url()) || entry.has_post_data()) {
++      continue;
++    }
++    if (static_cast<int>(i) <= old_current) {
++      current = kept.size();
++    }
++    kept.push_back(entry);
++    kept.back().set_encoded_page_state(std::string());
++  }
++  if (kept.empty()) {
++    return false;
++  }
++  // At most kMostNavigationsPerTab entries, around the current one.
++  size_t first = 0;
++  if (kept.size() > kMostNavigationsPerTab) {
++    first = std::min(current > kMostNavigationsPerTab / 2
++                         ? current - kMostNavigationsPerTab / 2
++                         : 0,
++                     kept.size() - kMostNavigationsPerTab);
++    kept.erase(kept.begin() + first + kMostNavigationsPerTab, kept.end());
++    kept.erase(kept.begin(), kept.begin() + first);
++    current -= first;
++  }
++  for (size_t i = 0; i < kept.size(); ++i) {
++    kept[i].set_index(static_cast<int>(i));
++  }
++  tab.navigations = std::move(kept);
++  tab.current_navigation_index = static_cast<int>(current);
++  return true;
++}
++
++// Removes from the tab what belongs to the other browser or its data.
++void ForgetTheOtherBrowser(sessions::SessionTab& tab) {
++  tab.extension_app_id.clear();
++  tab.user_agent_override = sessions::SerializedUserAgentOverride();
++  tab.session_storage_persistent_id.clear();
++  tab.guid.clear();
++  tab.data.clear();
++  tab.extra_data.clear();
++  tab.split_id.reset();
++}
++
++}  // namespace
++
++std::optional<std::vector<std::unique_ptr<sessions::SessionCommand>>>
++ReadSessionCommands(base::span<const uint8_t> file) {
++  if (file.size() < 8 || file.size() > kMostOpenTabsFileBytes) {
++    return std::nullopt;
++  }
++  const uint32_t signature = base::U32FromLittleEndian(file.first<4u>());
++  const uint32_t version = base::U32FromLittleEndian(file.subspan<4u, 4u>());
++  if (signature != kFileSignature || version != kFileVersionWithMarker) {
++    return std::nullopt;
++  }
++  base::span<const uint8_t> rest = file.subspan(8u);
++  bool marker = false;
++  std::vector<std::unique_ptr<sessions::SessionCommand>> commands;
++  while (rest.size() >= 2) {
++    // Each command: its size (2 bytes, the id included), its id, its contents.
++    const size_t size = base::U16FromLittleEndian(rest.first<2u>());
++    rest = rest.subspan(2u);
++    if (size < 1 || size > rest.size()) {
++      break;  // cut short or damaged: the commands before it count, as in Chromium
++    }
++    const uint8_t id = rest[0];
++    const base::span<const uint8_t> contents = rest.subspan(1u, size - 1);
++    rest = rest.subspan(size);
++    if (id == kInitialStateMarkerCommandId) {
++      marker = true;
++      continue;
++    }
++    auto command = std::make_unique<sessions::SessionCommand>(
++        id, static_cast<sessions::SessionCommand::size_type>(contents.size()));
++    command->contents().copy_from(contents);
++    commands.push_back(std::move(command));
++  }
++  if (!marker) {
++    return std::nullopt;
++  }
++  return commands;
++}
++
++std::vector<std::unique_ptr<sessions::SessionWindow>> ReadOpenTabs(
++    base::span<const uint8_t> file,
++    OpenTabsCounts* counts) {
++  OpenTabsCounts found;
++  std::vector<std::unique_ptr<sessions::SessionWindow>> kept;
++  std::optional<std::vector<std::unique_ptr<sessions::SessionCommand>>>
++      commands = ReadSessionCommands(file);
++  if (commands) {
++    std::vector<std::unique_ptr<sessions::SessionWindow>> windows;
++    SessionID active_window = SessionID::InvalidValue();
++    std::string platform_session_id;
++    std::set<SessionID> discarded;
++    sessions::RestoreSessionFromCommands(*commands, &windows, &active_window,
++                                         &platform_session_id, &discarded);
++    size_t tabs_in_all = 0;
++    for (std::unique_ptr<sessions::SessionWindow>& window : windows) {
++      if (kept.size() >= kMostOpenTabsWindows || tabs_in_all >= kMostOpenTabs) {
++        break;
++      }
++      if (window->type != sessions::SessionWindow::TYPE_NORMAL) {
++        continue;
++      }
++      const sessions::SessionTab* selected =
++          window->selected_tab_index >= 0 &&
++                  static_cast<size_t>(window->selected_tab_index) <
++                      window->tabs.size()
++              ? window->tabs[window->selected_tab_index].get()
++              : nullptr;
++      int selected_at = 0;
++      std::vector<std::unique_ptr<sessions::SessionTab>> tabs;
++      std::set<tab_groups::TabGroupId> used_groups;
++      for (std::unique_ptr<sessions::SessionTab>& tab : window->tabs) {
++        if (tabs_in_all >= kMostOpenTabs) {
++          break;
++        }
++        if (!KeepWebPages(*tab)) {
++          continue;
++        }
++        ForgetTheOtherBrowser(*tab);
++        if (tab.get() == selected) {
++          selected_at = static_cast<int>(tabs.size());
++        }
++        if (tab->group) {
++          used_groups.insert(*tab->group);
++        }
++        tab->tab_visual_index = static_cast<int>(tabs.size());
++        tabs.push_back(std::move(tab));
++        ++tabs_in_all;
++      }
++      if (tabs.empty()) {
++        continue;
++      }
++      // Groups with a tab kept, without the link to the other browser's saved
++      // groups; a tab whose group has no entry of its own keeps no group.
++      std::vector<std::unique_ptr<sessions::SessionTabGroup>> groups;
++      std::set<tab_groups::TabGroupId> described;
++      for (std::unique_ptr<sessions::SessionTabGroup>& group :
++           window->tab_groups) {
++        if (used_groups.contains(group->id) && !described.contains(group->id)) {
++          group->saved_guid.reset();
++          described.insert(group->id);
++          groups.push_back(std::move(group));
++        }
++      }
++      for (std::unique_ptr<sessions::SessionTab>& tab : tabs) {
++        if (tab->group && !described.contains(*tab->group)) {
++          tab->group.reset();
++        }
++      }
++      window->tabs = std::move(tabs);
++      window->tab_groups = std::move(groups);
++      window->split_tabs.clear();
++      window->selected_tab_index = selected_at;
++      window->app_name.clear();
++      window->workspace.clear();
++      window->visible_on_all_workspaces = false;
++      window->extra_data.clear();
++      if (window->show_state == ui::mojom::WindowShowState::kMinimized) {
++        window->show_state = ui::mojom::WindowShowState::kNormal;
++      }
++      found.windows += 1;
++      found.tabs += static_cast<int>(window->tabs.size());
++      found.groups += static_cast<int>(window->tab_groups.size());
++      kept.push_back(std::move(window));
++    }
++  }
++  if (counts) {
++    *counts = found;
++  }
++  return kept;
++}
++
++}  // namespace user_data_importer::chromium_family
+diff --git a/components/user_data_importer/chromium_family/open_tabs.h b/components/user_data_importer/chromium_family/open_tabs.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..25d25acb17e72fcdf4268b3877ab1be54d77b2f3
+--- /dev/null
++++ b/components/user_data_importer/chromium_family/open_tabs.h
+@@ -0,0 +1,71 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef COMPONENTS_USER_DATA_IMPORTER_CHROMIUM_FAMILY_OPEN_TABS_H_
++#define COMPONENTS_USER_DATA_IMPORTER_CHROMIUM_FAMILY_OPEN_TABS_H_
++
++#include <cstddef>
++#include <cstdint>
++#include <memory>
++#include <optional>
++#include <vector>
++
++#include "base/containers/span.h"
++
++namespace sessions {
++class SessionCommand;
++struct SessionWindow;
++}  // namespace sessions
++
++namespace user_data_importer::chromium_family {
++
++// Thoron (ROADMAP P3.22): the open windows, tabs and tab groups of a
++// Chromium-family browser, from its last session file (`Session_<time>` in the
++// profile's `Sessions` folder), to open in Thoron.
++
++// The largest session file read; a heavy real session is a few MB.
++inline constexpr size_t kMostOpenTabsFileBytes = 64 * 1024 * 1024;
++// The most windows and tabs one import opens, and the most entries of a tab's
++// back and forward history kept.
++inline constexpr size_t kMostOpenTabsWindows = 50;
++inline constexpr size_t kMostOpenTabs = 500;
++inline constexpr size_t kMostNavigationsPerTab = 50;
++
++// The commands of a session file, read the way Chromium reads its own: the
++// "SNSS" header and version 3 (not encrypted, with the marker written once the
++// whole state is in the file), then every command up to the end or to the first
++// one cut short. nullopt when the header is not that or the marker never comes
++// (the browser was still writing it). The marker itself is not returned.
++std::optional<std::vector<std::unique_ptr<sessions::SessionCommand>>>
++ReadSessionCommands(base::span<const uint8_t> file);
++
++struct OpenTabsCounts {
++  int windows = 0;
++  int tabs = 0;
++  int groups = 0;
++};
++
++// The windows of a session file to open in Thoron, replayed by Chromium's own
++// code (sessions::RestoreSessionFromCommands) and then cut down to what is safe
++// and means something here:
++//  - normal browser windows only (no app or pop-up windows), at most
++//    kMostOpenTabsWindows, with at most kMostOpenTabs tabs in all;
++//  - in each tab only web pages (http, https and file), never a browser's own
++//    page or a script; a tab left with none is dropped, and so is a window
++//    left with no tab;
++//  - no page state of the other browser (form contents, scroll positions,
++//    POST data): each page is loaded again from its address; a page reached by
++//    a form's POST is left out;
++//  - nothing tied to the other browser or its data: no app or extension IDs,
++//    user agent overrides, session storage, tab data, workspace, links to its
++//    saved tab groups, or split views;
++//  - tab groups keep their name, colour and whether they were collapsed; a
++//    minimized window opens as a normal one.
++// Empty when the file is not a complete session. `counts` may be null.
++std::vector<std::unique_ptr<sessions::SessionWindow>> ReadOpenTabs(
++    base::span<const uint8_t> file,
++    OpenTabsCounts* counts);
++
++}  // namespace user_data_importer::chromium_family
++
++#endif  // COMPONENTS_USER_DATA_IMPORTER_CHROMIUM_FAMILY_OPEN_TABS_H_
+diff --git a/components/user_data_importer/chromium_family/open_tabs_fuzzer.cc b/components/user_data_importer/chromium_family/open_tabs_fuzzer.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..36d108b0e1729e047a84e9a4f51999d48f8e3019
+--- /dev/null
++++ b/components/user_data_importer/chromium_family/open_tabs_fuzzer.cc
+@@ -0,0 +1,62 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++// Coverage-guided fuzzing of the reading of another browser's session file in
++// Settings' import (ROADMAP P3.22, threat model I3): the file is input from
++// outside, read in the browser process before its windows open.
++
++#include <stddef.h>
++#include <stdint.h>
++
++#include "base/check_op.h"
++#include "base/compiler_specific.h"
++#include "base/containers/span.h"
++#include "base/no_destructor.h"
++#include "components/sessions/core/session_types.h"
++#include "components/user_data_importer/chromium_family/open_tabs.h"
++#include "ui/base/resource/resource_bundle.h"
++
++namespace cf = user_data_importer::chromium_family;
++
++namespace {
++
++// Chromium's tab groups name their colours from the resource bundle, which a
++// browser or utility process loads; here an empty one stands in.
++struct Environment {
++  ui::ResourceBundle bundle{nullptr};
++  ui::ResourceBundle::SharedInstanceSwapperForTesting swap{&bundle};
++};
++
++}  // namespace
++
++extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
++  static base::NoDestructor<Environment> environment;
++  // SAFETY: libFuzzer gives `size` bytes at `data`.
++  const base::span<const uint8_t> bytes = UNSAFE_BUFFERS(base::span(data, size));
++  cf::OpenTabsCounts counts;
++  const auto windows = cf::ReadOpenTabs(bytes, &counts);
++  // What comes out keeps the limits the reader promises.
++  CHECK_LE(windows.size(), cf::kMostOpenTabsWindows);
++  size_t tabs = 0;
++  for (const auto& window : windows) {
++    CHECK(!window->tabs.empty());
++    CHECK_EQ(window->type, sessions::SessionWindow::TYPE_NORMAL);
++    CHECK_GE(window->selected_tab_index, 0);
++    CHECK_LT(static_cast<size_t>(window->selected_tab_index),
++             window->tabs.size());
++    tabs += window->tabs.size();
++    for (const auto& tab : window->tabs) {
++      CHECK(!tab->navigations.empty());
++      CHECK_LE(tab->navigations.size(), cf::kMostNavigationsPerTab);
++      CHECK_GE(tab->current_navigation_index, 0);
++      CHECK_LT(static_cast<size_t>(tab->current_navigation_index),
++               tab->navigations.size());
++      for (const auto& entry : tab->navigations) {
++        CHECK(entry.encoded_page_state().empty());
++      }
++    }
++  }
++  CHECK_LE(tabs, cf::kMostOpenTabs);
++  CHECK_EQ(static_cast<size_t>(counts.tabs), tabs);
++  return 0;
++}
+diff --git a/components/user_data_importer/chromium_family/open_tabs_test_driver.cc b/components/user_data_importer/chromium_family/open_tabs_test_driver.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..ba56c7b6a41c55421e90bb8ece530bc27c7443dc
+--- /dev/null
++++ b/components/user_data_importer/chromium_family/open_tabs_test_driver.cc
+@@ -0,0 +1,39 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++// For the tests and the fuzzer of open_tabs.cc only (ROADMAP P3.22): they link
++// Chromium's session code without the content layer, which provides the
++// browser's navigation driver. This one leaves every entry as it was read.
++
++#include <string>
++
++#include "base/no_destructor.h"
++#include "components/sessions/core/serialized_navigation_driver.h"
++#include "components/sessions/core/serialized_navigation_entry.h"
++
++namespace sessions {
++namespace {
++
++class ThoronTestNavigationDriver : public SerializedNavigationDriver {
++ public:
++  int GetDefaultReferrerPolicy() const override { return 0; }
++  std::string GetSanitizedPageStateForPickle(
++      const SerializedNavigationEntry* navigation) const override {
++    return navigation->encoded_page_state();
++  }
++  void Sanitize(SerializedNavigationEntry* navigation) const override {}
++  std::string StripReferrerFromPageState(
++      const std::string& page_state) const override {
++    return page_state;
++  }
++};
++
++}  // namespace
++
++// static
++SerializedNavigationDriver* SerializedNavigationDriver::Get() {
++  static base::NoDestructor<ThoronTestNavigationDriver> driver;
++  return driver.get();
++}
++
++}  // namespace sessions
+diff --git a/components/user_data_importer/chromium_family/open_tabs_unittest.cc b/components/user_data_importer/chromium_family/open_tabs_unittest.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..9748cab6f8703358f6e4c18eb5a485a0fcd817cd
+--- /dev/null
++++ b/components/user_data_importer/chromium_family/open_tabs_unittest.cc
+@@ -0,0 +1,293 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "components/user_data_importer/chromium_family/open_tabs.h"
++
++#include <memory>
++#include <string>
++#include <vector>
++
++#include "base/numerics/byte_conversions.h"
++#include "components/sessions/core/serialized_navigation_entry.h"
++#include "components/sessions/core/serialized_user_agent_override.h"
++#include "components/sessions/core/session_command.h"
++#include "components/sessions/core/session_id.h"
++#include "components/sessions/core/session_service_commands.h"
++#include "components/sessions/core/session_types.h"
++#include "components/tab_groups/tab_group_color.h"
++#include "components/tab_groups/tab_group_id.h"
++#include "components/tab_groups/tab_group_visual_data.h"
++#include "testing/gtest/include/gtest/gtest.h"
++#include "ui/base/mojom/window_show_state.mojom.h"
++#include "ui/base/resource/resource_bundle.h"
++#include "ui/gfx/geometry/rect.h"
++#include "url/gurl.h"
++
++namespace user_data_importer::chromium_family {
++namespace {
++
++using sessions::SessionCommand;
++using sessions::SessionWindow;
++
++// A session file as Chromium writes one: the header, the commands, the marker
++// of a complete state.
++class SessionFile {
++ public:
++  explicit SessionFile(uint32_t version = 3) {
++    Append(base::U32ToLittleEndian(0x53534E53));
++    Append(base::U32ToLittleEndian(version));
++  }
++
++  void Add(std::unique_ptr<SessionCommand> command) {
++    Append(base::U16ToLittleEndian(
++        static_cast<uint16_t>(command->contents().size() + 1)));
++    bytes_.push_back(command->id());
++    Append(command->contents());
++  }
++  void Marker() {
++    Append(base::U16ToLittleEndian(1));
++    bytes_.push_back(255);
++  }
++  const std::vector<uint8_t>& bytes() const { return bytes_; }
++
++ private:
++  void Append(base::span<const uint8_t> more) {
++    bytes_.insert(bytes_.end(), more.begin(), more.end());
++  }
++  std::vector<uint8_t> bytes_;
++};
++
++sessions::SerializedNavigationEntry Page(int index, const std::string& url) {
++  sessions::SerializedNavigationEntry entry;
++  entry.set_index(index);
++  entry.set_virtual_url(GURL(url));
++  entry.set_original_request_url(GURL(url));
++  entry.set_title(u"a page");
++  entry.set_encoded_page_state("the other browser's page state");
++  return entry;
++}
++
++// One tab in `window` with the pages `urls`, the current one `current`.
++void AddTab(SessionFile& file,
++            SessionID window,
++            SessionID tab,
++            int position,
++            const std::vector<std::string>& urls,
++            int current) {
++  file.Add(sessions::CreateSetTabWindowCommand(window, tab));
++  file.Add(sessions::CreateSetTabIndexInWindowCommand(tab, position));
++  for (size_t i = 0; i < urls.size(); ++i) {
++    file.Add(sessions::CreateUpdateTabNavigationCommand(
++        tab, Page(static_cast<int>(i), urls[i])));
++  }
++  file.Add(sessions::CreateSetSelectedNavigationIndexCommand(tab, current));
++}
++
++std::vector<std::string> Urls(const sessions::SessionTab& tab) {
++  std::vector<std::string> urls;
++  for (const auto& entry : tab.navigations) {
++    urls.push_back(entry.virtual_url().spec());
++  }
++  return urls;
++}
++
++// Two windows: the first with a group of two tabs, a pinned tab and a tab of
++// browser pages only; the second an app window.
++SessionFile TwoWindows(tab_groups::TabGroupId group) {
++  SessionFile file;
++  const SessionID window = SessionID::FromSerializedValue(1);
++  const SessionID app = SessionID::FromSerializedValue(2);
++  file.Add(sessions::CreateSetWindowTypeCommand(window,
++                                                SessionWindow::TYPE_NORMAL));
++  file.Add(sessions::CreateSetWindowBoundsCommand(
++      window, gfx::Rect(10, 20, 800, 600),
++      ui::mojom::WindowShowState::kMinimized));
++  file.Add(sessions::CreateSetWindowWorkspaceCommand(window, "a desktop"));
++  file.Add(sessions::CreateAddWindowExtraDataCommand(window, "k", "v"));
++  const SessionID t1 = SessionID::FromSerializedValue(11);
++  const SessionID t2 = SessionID::FromSerializedValue(12);
++  const SessionID t3 = SessionID::FromSerializedValue(13);
++  const SessionID t4 = SessionID::FromSerializedValue(14);
++  AddTab(file, window, t1, 0, {"https://example.org/pinned"}, 0);
++  file.Add(sessions::CreatePinnedStateCommand(t1, true));
++  AddTab(file, window, t2, 1,
++         {"https://example.org/a", "chrome://settings/", "javascript:alert(1)",
++          "https://example.org/b"},
++         2);
++  file.Add(sessions::CreateTabGroupCommand(t2, group));
++  file.Add(sessions::CreateSetTabExtensionAppIDCommand(t2, "an-app"));
++  file.Add(sessions::CreateSessionStorageAssociatedCommand(t2, "storage-id"));
++  file.Add(sessions::CreateSetTabUserAgentOverrideCommand(
++      t2, sessions::SerializedUserAgentOverride::UserAgentOnly("an agent")));
++  file.Add(sessions::CreateAddTabExtraDataCommand(t2, "k", "v"));
++  AddTab(file, window, t3, 2, {"vivaldi://startpage/", "about:blank"}, 0);
++  AddTab(file, window, t4, 3, {"file:///C:/notes.html"}, 0);
++  file.Add(sessions::CreateTabGroupCommand(t4, group));
++  const tab_groups::TabGroupVisualData visuals(
++      u"Work", tab_groups::TabGroupColorId::kBlue, /*is_collapsed=*/true);
++  file.Add(sessions::CreateTabGroupMetadataUpdateCommand(
++      group, &visuals, std::string("a-saved-group-of-the-other-browser")));
++  file.Add(sessions::CreateSetSelectedTabInWindowCommand(window, 3));
++
++  file.Add(sessions::CreateSetWindowTypeCommand(app, SessionWindow::TYPE_APP));
++  file.Add(sessions::CreateSetWindowAppNameCommand(app, "an app"));
++  AddTab(file, app, SessionID::FromSerializedValue(21), 0,
++         {"https://example.org/app"}, 0);
++  file.Add(sessions::CreateSetActiveWindowCommand(window));
++  file.Marker();
++  return file;
++}
++
++// Chromium's tab groups name their colours from the resource bundle, which a
++// browser or utility process loads; here an empty one stands in.
++class ThoronOpenTabsTest : public testing::Test {
++ private:
++  ui::ResourceBundle bundle_{nullptr};
++  ui::ResourceBundle::SharedInstanceSwapperForTesting swap_{&bundle_};
++};
++
++TEST_F(ThoronOpenTabsTest, WindowsTabsAndGroupsComeBackWithWebPagesOnly) {
++  const tab_groups::TabGroupId group = tab_groups::TabGroupId::GenerateNew();
++  OpenTabsCounts counts;
++  std::vector<std::unique_ptr<SessionWindow>> windows =
++      ReadOpenTabs(TwoWindows(group).bytes(), &counts);
++  ASSERT_EQ(windows.size(), 1u);  // the app window is left out
++  EXPECT_EQ(counts.windows, 1);
++  EXPECT_EQ(counts.tabs, 3);  // the tab of browser pages only is left out
++  EXPECT_EQ(counts.groups, 1);
++
++  const SessionWindow& window = *windows[0];
++  EXPECT_EQ(window.type, SessionWindow::TYPE_NORMAL);
++  EXPECT_EQ(window.bounds.ToString(), gfx::Rect(10, 20, 800, 600).ToString());
++  EXPECT_EQ(window.show_state, ui::mojom::WindowShowState::kNormal);
++  EXPECT_TRUE(window.workspace.empty());
++  EXPECT_TRUE(window.extra_data.empty());
++  ASSERT_EQ(window.tabs.size(), 3u);
++  // The selected tab (the file page, 4th in the source) is still selected.
++  EXPECT_EQ(window.selected_tab_index, 2);
++
++  const sessions::SessionTab& pinned = *window.tabs[0];
++  EXPECT_TRUE(pinned.pinned);
++  EXPECT_EQ(Urls(pinned),
++            std::vector<std::string>{"https://example.org/pinned"});
++
++  const sessions::SessionTab& grouped = *window.tabs[1];
++  EXPECT_EQ(Urls(grouped), (std::vector<std::string>{"https://example.org/a",
++                                                     "https://example.org/b"}));
++  // The current page was the script, left out: the page kept before it.
++  EXPECT_EQ(grouped.current_navigation_index, 0);
++  EXPECT_EQ(grouped.navigations[1].index(), 1);
++  for (const auto& entry : grouped.navigations) {
++    EXPECT_TRUE(entry.encoded_page_state().empty());
++  }
++  EXPECT_TRUE(grouped.extension_app_id.empty());
++  EXPECT_TRUE(grouped.session_storage_persistent_id.empty());
++  EXPECT_TRUE(grouped.user_agent_override.ua_string_override.empty());
++  EXPECT_TRUE(grouped.extra_data.empty());
++  ASSERT_TRUE(grouped.group.has_value());
++  EXPECT_EQ(*grouped.group, group);
++  EXPECT_EQ(window.tabs[1]->tab_visual_index, 1);
++
++  EXPECT_EQ(Urls(*window.tabs[2]),
++            std::vector<std::string>{"file:///C:/notes.html"});
++  EXPECT_EQ(window.tabs[2]->tab_visual_index, 2);
++
++  ASSERT_EQ(window.tab_groups.size(), 1u);
++  EXPECT_EQ(window.tab_groups[0]->id, group);
++  EXPECT_EQ(window.tab_groups[0]->visual_data.title(), u"Work");
++  EXPECT_EQ(window.tab_groups[0]->visual_data.color(),
++            tab_groups::TabGroupColorId::kBlue);
++  EXPECT_TRUE(window.tab_groups[0]->visual_data.is_collapsed());
++  EXPECT_FALSE(window.tab_groups[0]->saved_guid.has_value());
++}
++
++TEST_F(ThoronOpenTabsTest, AFileNotCompleteOrNotThisFormatGivesNothing) {
++  const tab_groups::TabGroupId group = tab_groups::TabGroupId::GenerateNew();
++  std::vector<uint8_t> whole = TwoWindows(group).bytes();
++  ASSERT_FALSE(ReadOpenTabs(whole, nullptr).empty());
++
++  // Without the marker: the browser was still writing it.
++  std::vector<uint8_t> unmarked(whole.begin(), whole.end() - 3);
++  OpenTabsCounts counts;
++  EXPECT_TRUE(ReadOpenTabs(unmarked, &counts).empty());
++  EXPECT_EQ(counts.tabs, 0);
++  EXPECT_FALSE(ReadSessionCommands(unmarked).has_value());
++
++  // Another signature, an older or an encrypted version, too short.
++  std::vector<uint8_t> other = whole;
++  other[0] = 'X';
++  EXPECT_FALSE(ReadSessionCommands(other).has_value());
++  for (uint8_t version : {1, 2, 4, 5}) {
++    std::vector<uint8_t> versioned = whole;
++    versioned[4] = version;
++    EXPECT_FALSE(ReadSessionCommands(versioned).has_value()) << int{version};
++  }
++  EXPECT_FALSE(ReadSessionCommands(std::vector<uint8_t>(7, 0)).has_value());
++  EXPECT_TRUE(ReadOpenTabs({}, nullptr).empty());
++}
++
++TEST_F(ThoronOpenTabsTest, ACommandCutShortEndsTheReadingAsInChromium) {
++  SessionFile file;
++  const SessionID window = SessionID::FromSerializedValue(1);
++  file.Add(sessions::CreateSetWindowTypeCommand(window,
++                                                SessionWindow::TYPE_NORMAL));
++  AddTab(file, window, SessionID::FromSerializedValue(2), 0,
++         {"https://example.org/"}, 0);
++  file.Marker();
++  std::vector<uint8_t> bytes = file.bytes();
++  // A command that says it is longer than what is left of the file.
++  bytes.push_back(0xff);
++  bytes.push_back(0x7f);
++  bytes.push_back(6);
++  OpenTabsCounts counts;
++  EXPECT_EQ(ReadOpenTabs(bytes, &counts).size(), 1u);
++  EXPECT_EQ(counts.tabs, 1);
++}
++
++TEST_F(ThoronOpenTabsTest, ALongHistoryKeepsTheEntriesAroundTheCurrentOne) {
++  SessionFile file;
++  const SessionID window = SessionID::FromSerializedValue(1);
++  file.Add(sessions::CreateSetWindowTypeCommand(window,
++                                                SessionWindow::TYPE_NORMAL));
++  std::vector<std::string> urls;
++  for (int i = 0; i < 120; ++i) {
++    urls.push_back("https://example.org/" + std::to_string(i));
++  }
++  AddTab(file, window, SessionID::FromSerializedValue(2), 0, urls, 100);
++  file.Marker();
++  std::vector<std::unique_ptr<SessionWindow>> windows =
++      ReadOpenTabs(file.bytes(), nullptr);
++  ASSERT_EQ(windows.size(), 1u);
++  const sessions::SessionTab& tab = *windows[0]->tabs[0];
++  ASSERT_EQ(tab.navigations.size(), kMostNavigationsPerTab);
++  EXPECT_EQ(
++      tab.navigations[tab.current_navigation_index].virtual_url().spec(),
++      "https://example.org/100");
++  EXPECT_EQ(tab.navigations.front().virtual_url().spec(),
++            "https://example.org/70");
++  EXPECT_EQ(tab.navigations.back().index(),
++            static_cast<int>(kMostNavigationsPerTab) - 1);
++}
++
++TEST_F(ThoronOpenTabsTest, AtMostTheLimitOfTabsOpen) {
++  SessionFile file;
++  for (int w = 0; w < 3; ++w) {
++    const SessionID window = SessionID::FromSerializedValue(100000 + w);
++    file.Add(sessions::CreateSetWindowTypeCommand(window,
++                                                  SessionWindow::TYPE_NORMAL));
++    for (int t = 0; t < 200; ++t) {
++      AddTab(file, window, SessionID::FromSerializedValue(w * 1000 + t + 1), t,
++             {"https://example.org/" + std::to_string(t)}, 0);
++    }
++  }
++  file.Marker();
++  OpenTabsCounts counts;
++  std::vector<std::unique_ptr<SessionWindow>> windows =
++      ReadOpenTabs(file.bytes(), &counts);
++  EXPECT_EQ(counts.tabs, static_cast<int>(kMostOpenTabs));
++  EXPECT_EQ(counts.windows, 3);
++  EXPECT_EQ(windows[2]->tabs.size(), kMostOpenTabs - 400);
 +}
 +
 +}  // namespace

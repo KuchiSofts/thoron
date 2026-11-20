@@ -43816,10 +43816,10 @@ index 0000000000000000000000000000000000000000..52e83e8ee886a9d137246fac75fe83e4
 +}  // namespace user_data_importer::chromium_family
 diff --git a/components/user_data_importer/chromium_family/open_tabs.cc b/components/user_data_importer/chromium_family/open_tabs.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..0a8514659b59711c94302fe48d02dd4a6a7f41b6
+index 0000000000000000000000000000000000000000..24bd70d078c4ef1fb11b6dc0c3f48dd11391b36c
 --- /dev/null
 +++ b/components/user_data_importer/chromium_family/open_tabs.cc
-@@ -0,0 +1,218 @@
+@@ -0,0 +1,273 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -43852,6 +43852,64 @@ index 0000000000000000000000000000000000000000..0a8514659b59711c94302fe48d02dd4a
 +
 +bool IsWebPage(const GURL& url) {
 +  return url.is_valid() && (url.SchemeIsHTTPOrHTTPS() || url.SchemeIsFile());
++}
++
++// The command ids Chromium 158's replay reads
++// (components/sessions/core/session_service_commands.cc, CreateTabsAndWindows).
++bool IsKnownCommand(uint8_t id) {
++  static constexpr uint8_t kKnown[] = {0,  2,  5,  6,  7,  8,  9,  10, 11, 12, 13,
++                                       14, 15, 16, 17, 18, 19, 20, 21, 23, 24, 25,
++                                       27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37};
++  return std::ranges::find(kKnown, id) != std::end(kKnown);
++}
++
++sessions::SessionReplayResult Replay(
++    const std::vector<std::unique_ptr<sessions::SessionCommand>>& commands,
++    std::vector<std::unique_ptr<sessions::SessionWindow>>* windows) {
++  SessionID active_window = SessionID::InvalidValue();
++  std::string platform_session_id;
++  std::set<SessionID> discarded;
++  return sessions::RestoreSessionFromCommands(commands, windows, &active_window,
++                                              &platform_session_id, &discarded);
++}
++
++// Chromium's replay stops at the first command it does not know (another
++// browser's own, such as Edge's, Vivaldi's or Opera's, or one an older Chromium
++// wrote) or cannot read, and everything after it is lost. As Thoron's import
++// tool does (tools/migrate/sessions.py, prepare_copy), such commands are left
++// out first: those of an unknown id, then each one the replay stops at, found
++// by replaying ever shorter beginnings of the file.
++void LeaveOutWhatStopsTheReplay(
++    std::vector<std::unique_ptr<sessions::SessionCommand>>& commands) {
++  std::erase_if(commands, [](const auto& command) {
++    return !IsKnownCommand(command->id());
++  });
++  constexpr int kMostLeftOut = 64;
++  for (int left_out = 0; left_out < kMostLeftOut; ++left_out) {
++    std::vector<std::unique_ptr<sessions::SessionWindow>> windows;
++    if (Replay(commands, &windows) !=
++        sessions::SessionReplayResult::kCorruptedCommand) {
++      return;
++    }
++    // The shortest beginning whose replay stops: its last command is the one.
++    size_t low = 1;
++    size_t high = commands.size();
++    while (low < high) {
++      const size_t middle = low + (high - low) / 2;
++      std::vector<std::unique_ptr<sessions::SessionCommand>> beginning;
++      for (size_t i = 0; i < middle; ++i) {
++        beginning.push_back(commands[i]->Clone());
++      }
++      std::vector<std::unique_ptr<sessions::SessionWindow>> unused;
++      if (Replay(beginning, &unused) ==
++          sessions::SessionReplayResult::kCorruptedCommand) {
++        high = middle;
++      } else {
++        low = middle + 1;
++      }
++    }
++    commands.erase(commands.begin() + (low - 1));
++  }
 +}
 +
 +// Keeps the tab's web pages only, each without the other browser's page state,
@@ -43953,12 +44011,9 @@ index 0000000000000000000000000000000000000000..0a8514659b59711c94302fe48d02dd4a
 +  std::optional<std::vector<std::unique_ptr<sessions::SessionCommand>>>
 +      commands = ReadSessionCommands(file);
 +  if (commands) {
++    LeaveOutWhatStopsTheReplay(*commands);
 +    std::vector<std::unique_ptr<sessions::SessionWindow>> windows;
-+    SessionID active_window = SessionID::InvalidValue();
-+    std::string platform_session_id;
-+    std::set<SessionID> discarded;
-+    sessions::RestoreSessionFromCommands(*commands, &windows, &active_window,
-+                                         &platform_session_id, &discarded);
++    Replay(*commands, &windows);
 +    size_t tabs_in_all = 0;
 +    for (std::unique_ptr<sessions::SessionWindow>& window : windows) {
 +      if (kept.size() >= kMostOpenTabsWindows || tabs_in_all >= kMostOpenTabs) {
@@ -44040,10 +44095,10 @@ index 0000000000000000000000000000000000000000..0a8514659b59711c94302fe48d02dd4a
 +}  // namespace user_data_importer::chromium_family
 diff --git a/components/user_data_importer/chromium_family/open_tabs.h b/components/user_data_importer/chromium_family/open_tabs.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..25d25acb17e72fcdf4268b3877ab1be54d77b2f3
+index 0000000000000000000000000000000000000000..7cbbf83aa64e5430c6d2224259b177055163d270
 --- /dev/null
 +++ b/components/user_data_importer/chromium_family/open_tabs.h
-@@ -0,0 +1,71 @@
+@@ -0,0 +1,73 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -44092,8 +44147,10 @@ index 0000000000000000000000000000000000000000..25d25acb17e72fcdf4268b3877ab1be5
 +};
 +
 +// The windows of a session file to open in Thoron, replayed by Chromium's own
-+// code (sessions::RestoreSessionFromCommands) and then cut down to what is safe
-+// and means something here:
++// code (sessions::RestoreSessionFromCommands), after the commands it would stop
++// at are left out (another browser's own, or one it cannot read: it would lose
++// everything after them), and then cut down to what is safe and means something
++// here:
 +//  - normal browser windows only (no app or pop-up windows), at most
 +//    kMostOpenTabsWindows, with at most kMostOpenTabs tabs in all;
 +//  - in each tab only web pages (http, https and file), never a browser's own
@@ -44230,10 +44287,10 @@ index 0000000000000000000000000000000000000000..ba56c7b6a41c55421e90bb8ece530bc2
 +}  // namespace sessions
 diff --git a/components/user_data_importer/chromium_family/open_tabs_unittest.cc b/components/user_data_importer/chromium_family/open_tabs_unittest.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..9748cab6f8703358f6e4c18eb5a485a0fcd817cd
+index 0000000000000000000000000000000000000000..0aaa659bc827c89c4a0cc40fe0b7b6df1343e570
 --- /dev/null
 +++ b/components/user_data_importer/chromium_family/open_tabs_unittest.cc
-@@ -0,0 +1,293 @@
+@@ -0,0 +1,322 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -44478,6 +44535,35 @@ index 0000000000000000000000000000000000000000..9748cab6f8703358f6e4c18eb5a485a0
 +  OpenTabsCounts counts;
 +  EXPECT_EQ(ReadOpenTabs(bytes, &counts).size(), 1u);
 +  EXPECT_EQ(counts.tabs, 1);
++}
++
++// Edge, Vivaldi and Opera write commands of their own, and a command can be
++// damaged; Chromium's replay would stop at either and lose the rest.
++TEST_F(ThoronOpenTabsTest, ANotherBrowsersOwnOrADamagedCommandIsLeftOut) {
++  SessionFile file;
++  const SessionID window = SessionID::FromSerializedValue(1);
++  file.Add(sessions::CreateSetWindowTypeCommand(window,
++                                                SessionWindow::TYPE_NORMAL));
++  // another browser's own command (Edge writes 131), with some contents
++  auto vendor = std::make_unique<SessionCommand>(131, 4);
++  vendor->contents().copy_from(base::span<const uint8_t>({1, 2, 3, 4}));
++  file.Add(std::move(vendor));
++  AddTab(file, window, SessionID::FromSerializedValue(2), 0,
++         {"https://example.org/one"}, 0);
++  // a known command that cannot be read: a navigation of three bytes
++  auto damaged = std::make_unique<SessionCommand>(6, 3);
++  damaged->contents().copy_from(base::span<const uint8_t>({9, 9, 9}));
++  file.Add(std::move(damaged));
++  AddTab(file, window, SessionID::FromSerializedValue(3), 1,
++         {"https://example.org/two"}, 0);
++  file.Marker();
++  OpenTabsCounts counts;
++  std::vector<std::unique_ptr<SessionWindow>> windows =
++      ReadOpenTabs(file.bytes(), &counts);
++  ASSERT_EQ(windows.size(), 1u);
++  ASSERT_EQ(counts.tabs, 2);
++  EXPECT_EQ(Urls(*windows[0]->tabs[1]),
++            std::vector<std::string>{"https://example.org/two"});
 +}
 +
 +TEST_F(ThoronOpenTabsTest, ALongHistoryKeepsTheEntriesAroundTheCurrentOne) {

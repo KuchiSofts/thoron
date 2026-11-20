@@ -127,7 +127,10 @@ time.sleep(7200)
   $sources = Get-Content 'C:\ThoronTest\in\sources.json' -Raw | ConvertFrom-Json
   foreach ($s in $sources) {
     $root = [Environment]::ExpandEnvironmentVariables($s.user_data)
-    Copy-Item -Recurse -Force (Join-Path 'C:\ThoronTest\in\sources' $s.folder) $root
+    # into the folder itself, which may be there already (Windows comes with Edge, which makes its own)
+    New-Item -ItemType Directory -Force $root | Out-Null
+    Copy-Item -Recurse -Force (Join-Path (Join-Path 'C:\ThoronTest\in\sources' $s.folder) '*') $root
+    $r["made_$($s.folder)"] = @(Get-ChildItem -Recurse -File $root -Filter 'Session_*' -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName.Substring($root.Length) })
   }
   $r.made = @($sources | ForEach-Object { Test-Path ([Environment]::ExpandEnvironmentVariables($_.user_data)) })
   for ($i = 0; $i -lt 60; $i++) { try { [void][System.Net.Dns]::GetHostAddresses('clients2.google.com'); break } catch { Start-Sleep -Seconds 2 } }

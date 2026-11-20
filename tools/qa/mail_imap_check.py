@@ -27,6 +27,7 @@ import base64
 import json
 import shutil
 import socketserver
+import ssl
 import subprocess
 import sys
 import tempfile
@@ -68,11 +69,18 @@ OLD = [
 
 class ImapServer:
     """A stand-in for a mail server: IMAP in plain text on 127.0.0.1, made-up mailboxes. `users` holds every
-    sign-in it takes (name to password); a step may change it, as a person changes a password."""
+    sign-in it takes (name to password); a step may change it, as a person changes a password.
 
-    def __init__(self, user: str, password: str):
+    With `tls` it stands in for Proton Mail Bridge, a mail server on the person's own computer with a certificate
+    it made itself: "starttls" greets in plain text and starts TLS when asked (Bridge's default), "ssl" waits for
+    TLS at once (Bridge's other choice). `context` is its TLS side; a step may give it another certificate, as
+    Bridge makes a new one when it is installed again. `secured` counts the sessions that reached TLS."""
+
+    def __init__(self, user: str, password: str, tls: str = "", context=None):
         self.user, self.password = user, password
         self.users = {user: password}
+        self.tls, self.context = tls, context
+        self.secured = 0
         day_ago = time.time() - 86400
         self.messages: list[tuple[int, str, bytes]] = [(uid, imap_date(day_ago + uid), data) for uid, data in OLD]
         self.logins: list[tuple[str, bool]] = []
@@ -83,8 +91,37 @@ class ImapServer:
                 self.wfile.write(text.encode("ascii"))
                 self.wfile.flush()
 
+            def start_tls(self) -> bool:
+                try:
+                    self.request = server.context.wrap_socket(self.request, server_side=True)
+                except (OSError, ValueError):
+                    return False
+                # the plain-text files go: nothing is waiting in them (TLS starts after the answer)
+                for old in (self.rfile, self.wfile):
+                    try:
+                        old.close()
+                    except OSError:
+                        pass
+                self.rfile = self.request.makefile("rb", -1)
+                self.wfile = self.request.makefile("wb", 0)
+                server.secured += 1
+                return True
+
+            def finish(self):
+                try:
+                    super().finish()
+                finally:
+                    # the server closes the socket it handed over; the TLS one made from it is closed here
+                    if isinstance(self.request, ssl.SSLSocket):
+                        self.request.close()
+
             def handle(self):
-                self.say("* OK [CAPABILITY IMAP4rev1 AUTH=PLAIN] ready\r\n")
+                # before TLS a Bridge-like server takes nothing but STARTTLS (no password in plain text)
+                plain = server.tls == "starttls"
+                if server.tls == "ssl" and not self.start_tls():
+                    return
+                self.say("* OK [CAPABILITY IMAP4rev1 STARTTLS LOGINDISABLED] ready\r\n" if plain else
+                         "* OK [CAPABILITY IMAP4rev1 AUTH=PLAIN] ready\r\n")
                 signed_in = False
                 while True:
                     line = self.rfile.readline()
@@ -92,6 +129,20 @@ class ImapServer:
                         return
                     tag, _, rest = line.decode("utf-8", "replace").rstrip("\r\n").partition(" ")
                     command = rest.upper()
+                    if plain:
+                        if command == "STARTTLS":
+                            self.say(f"{tag} OK Begin TLS negotiation now\r\n")
+                            if not self.start_tls():
+                                return
+                            plain = False
+                        elif command == "CAPABILITY":
+                            self.say(f"* CAPABILITY IMAP4rev1 STARTTLS LOGINDISABLED\r\n{tag} OK\r\n")
+                        elif command == "LOGOUT":
+                            self.say(f"* BYE\r\n{tag} OK\r\n")
+                            return
+                        else:
+                            self.say(f"{tag} BAD start TLS first\r\n")
+                        continue
                     if command == "CAPABILITY":
                         self.say(f"* CAPABILITY IMAP4rev1 AUTH=PLAIN\r\n{tag} OK\r\n")
                     elif command.startswith("AUTHENTICATE PLAIN"):

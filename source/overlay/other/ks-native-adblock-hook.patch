@@ -7372,10 +7372,10 @@ index 0000000000000000000000000000000000000000..d0fafbafa75adc4e08b11c75f203035c
 +#endif  // CHROME_BROWSER_UI_WEBUI_THORON_ADBLOCK_UI_H_
 diff --git a/chrome/browser/ui/webui/thoron_mail_ui.cc b/chrome/browser/ui/webui/thoron_mail_ui.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..651b2b310f72d2063b8fca161dfa697eb3949883
+index 0000000000000000000000000000000000000000..c530ffc359d396e552996df3034ecce1350ae0b9
 --- /dev/null
 +++ b/chrome/browser/ui/webui/thoron_mail_ui.cc
-@@ -0,0 +1,2583 @@
+@@ -0,0 +1,2635 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -8594,6 +8594,13 @@ index 0000000000000000000000000000000000000000..651b2b310f72d2063b8fca161dfa697e
 +    account.user = account.email;
 +  }
 +  account.webmail = CheckedWebmail(account.webmail);
++  // a pin is for a server on this computer (Proton Mail Bridge) only
++  if (thoron_mail::IsLocalImapHost(account.host) &&
++      thoron_mail::IsCertificatePin(account.pin)) {
++    account.pin = base::ToUpperASCII(account.pin);
++  } else {
++    account.pin.clear();
++  }
 +  if (!IsAddress(account.email) || !thoron_mail::IsImapHost(account.host) ||
 +      account.port <= 0 || account.port > 65535 || account.password.empty() ||
 +      account.password.size() > 1024 || account.user.size() > 320) {
@@ -8647,6 +8654,9 @@ index 0000000000000000000000000000000000000000..651b2b310f72d2063b8fca161dfa697e
 +    if (const std::string* webmail = dict->FindString("webmail")) {
 +      account.webmail = *webmail;
 +    }
++    if (const std::string* pin = dict->FindString("pin")) {
++      account.pin = *pin;
++    }
 +    if (std::optional<thoron_mail::ImapAccount> checked =
 +            CheckedAccount(std::move(account))) {
 +      accounts.push_back(std::move(*checked));
@@ -8666,13 +8676,18 @@ index 0000000000000000000000000000000000000000..651b2b310f72d2063b8fca161dfa697e
 +    if (!encryptor_->EncryptString(account.password, &encrypted)) {
 +      return false;
 +    }
-+    kept.Append(base::DictValue()
-+                    .Set("email", account.email)
-+                    .Set("host", account.host)
-+                    .Set("port", account.port)
-+                    .Set("user", account.user)
-+                    .Set("webmail", account.webmail)
-+                    .Set("secret", base::Base64Encode(encrypted)));
++    base::DictValue entry = base::DictValue()
++                                .Set("email", account.email)
++                                .Set("host", account.host)
++                                .Set("port", account.port)
++                                .Set("user", account.user)
++                                .Set("webmail", account.webmail)
++                                .Set("secret", base::Base64Encode(encrypted));
++    // Proton Mail Bridge: the pin of its certificate (not a secret)
++    if (!account.pin.empty()) {
++      entry.Set("pin", account.pin);
++    }
++    kept.Append(std::move(entry));
 +  }
 +  profile_->GetPrefs()->SetList(kImapAccountsPref, std::move(kept));
 +  service_->SetImapAccounts(accounts);
@@ -8707,13 +8722,17 @@ index 0000000000000000000000000000000000000000..651b2b310f72d2063b8fca161dfa697e
 +    std::move(told).Run("busy");
 +    return;
 +  }
-+  // Signed in to once before it is kept: a wrong password is told at once.
++  // Signed in to once before it is kept: a wrong password is told at once. A
++  // server on this computer (Proton Mail Bridge) is trusted with the
++  // certificate it shows now, which is pinned.
 +  thoron_mail::ImapAccount to_test = *checked;
++  to_test.pin.clear();
 +  imap_test_ = std::make_unique<thoron_mail::ImapCheck>(
 +      profile_->GetDefaultStoragePartition()->GetNetworkContext(), to_test,
 +      base::BindOnce(&ThoronMailCenter::OnImapTested,
 +                     weak_factory_.GetWeakPtr(), std::move(*checked),
-+                     std::move(told)));
++                     std::move(told)),
++      /*trust_new_certificate=*/true);
 +}
 +
 +void ThoronMailCenter::OnImapTested(thoron_mail::ImapAccount account,
@@ -8725,6 +8744,9 @@ index 0000000000000000000000000000000000000000..651b2b310f72d2063b8fca161dfa697e
 +  if (!result.problem.empty()) {
 +    std::move(told).Run(result.problem);
 +    return;
++  }
++  if (thoron_mail::IsLocalImapHost(account.host)) {
++    account.pin = result.pin;
 +  }
 +  std::vector<thoron_mail::ImapAccount> accounts = service_->imap_accounts();
 +  accounts.push_back(std::move(account));
@@ -8760,7 +8782,8 @@ index 0000000000000000000000000000000000000000..651b2b310f72d2063b8fca161dfa697e
 +    return;
 +  }
 +  // an empty password keeps the one it has: it is never shown to be edited
-+  if (account.password.empty()) {
++  const bool password_typed = !account.password.empty();
++  if (!password_typed) {
 +    account.password = old->password;
 +  }
 +  std::optional<thoron_mail::ImapAccount> checked =
@@ -8768,6 +8791,13 @@ index 0000000000000000000000000000000000000000..651b2b310f72d2063b8fca161dfa697e
 +  if (!checked) {
 +    std::move(told).Run("bad");
 +    return;
++  }
++  // Proton Mail Bridge: its pin stays while it is the same server; its
++  // password typed again trusts the certificate it shows now (Bridge made a
++  // new one), which is pinned instead
++  const bool local = thoron_mail::IsLocalImapHost(checked->host);
++  if (local && checked->host == old->host && checked->port == old->port) {
++    checked->pin = old->pin;
 +  }
 +  if (std::ranges::any_of(known, [&](const thoron_mail::ImapAccount& other) {
 +        return other.email != before &&
@@ -8779,7 +8809,7 @@ index 0000000000000000000000000000000000000000..651b2b310f72d2063b8fca161dfa697e
 +  const bool same_sign_in =
 +      checked->email == old->email && checked->user == old->user &&
 +      checked->host == old->host && checked->port == old->port &&
-+      checked->password == old->password;
++      checked->password == old->password && !(local && password_typed);
 +  if (same_sign_in) {
 +    // only its mail page changed: nothing to sign in to again
 +    std::move(told).Run(ReplaceImapAccount(before, std::move(*checked)));
@@ -8792,11 +8822,16 @@ index 0000000000000000000000000000000000000000..651b2b310f72d2063b8fca161dfa697e
 +  // Signed in to once before it is kept: a wrong password is told at once, and
 +  // the mailbox stays as it was.
 +  thoron_mail::ImapAccount to_test = *checked;
++  if (password_typed) {
++    to_test.pin.clear();
++  }
++  const bool trust_new_certificate = to_test.pin.empty();
 +  imap_test_ = std::make_unique<thoron_mail::ImapCheck>(
 +      profile_->GetDefaultStoragePartition()->GetNetworkContext(), to_test,
 +      base::BindOnce(&ThoronMailCenter::OnImapEditTested,
 +                     weak_factory_.GetWeakPtr(), before, std::move(*checked),
-+                     std::move(told)));
++                     std::move(told)),
++      trust_new_certificate);
 +}
 +
 +void ThoronMailCenter::OnImapEditTested(std::string before,
@@ -8809,6 +8844,9 @@ index 0000000000000000000000000000000000000000..651b2b310f72d2063b8fca161dfa697e
 +  if (!result.problem.empty()) {
 +    std::move(told).Run(result.problem);
 +    return;
++  }
++  if (thoron_mail::IsLocalImapHost(account.host)) {
++    account.pin = result.pin;
 +  }
 +  std::move(told).Run(ReplaceImapAccount(before, std::move(account)));
 +}
@@ -9203,6 +9241,10 @@ index 0000000000000000000000000000000000000000..651b2b310f72d2063b8fca161dfa697e
 +    if (with_passwords) {
 +      entry.Set("password", account.password);
 +    }
++    // Proton Mail Bridge: the pin of its certificate (not a secret)
++    if (!account.pin.empty()) {
++      entry.Set("pin", account.pin);
++    }
 +    accounts.Append(std::move(entry));
 +  }
 +  // P5.80: the Google accounts of the person's list
@@ -9422,6 +9464,9 @@ index 0000000000000000000000000000000000000000..651b2b310f72d2063b8fca161dfa697e
 +      if (const std::string* webmail = entry->FindString("webmail")) {
 +        account.webmail = *webmail;
 +      }
++      if (const std::string* pin = entry->FindString("pin")) {
++        account.pin = *pin;
++      }
 +      if (const std::string* password = entry->FindString("password")) {
 +        account.password = *password;
 +      } else {
@@ -9429,6 +9474,13 @@ index 0000000000000000000000000000000000000000..651b2b310f72d2063b8fca161dfa697e
 +          if (old.email == *email) {
 +            account.password = old.password;
 +          }
++        }
++      }
++      // Proton Mail Bridge: a backup without the pin keeps the one it has here
++      for (const thoron_mail::ImapAccount& old : known) {
++        if (account.pin.empty() && old.email == *email &&
++            old.host == account.host && old.port == account.port) {
++          account.pin = old.pin;
 +        }
 +      }
 +      std::optional<thoron_mail::ImapAccount> checked =
@@ -11458,15 +11510,17 @@ index 0000000000000000000000000000000000000000..753dfc535012eaa8817b1b83f3ec91ac
 +}
 diff --git a/components/thoron_mail/imap_check.cc b/components/thoron_mail/imap_check.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..24a812760e93588f844bcc9e7acaf1d45320c903
+index 0000000000000000000000000000000000000000..24ec4521c9ee4adb5db90c36359721382ac10609
 --- /dev/null
 +++ b/components/thoron_mail/imap_check.cc
-@@ -0,0 +1,308 @@
+@@ -0,0 +1,486 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
 +#include "components/thoron_mail/imap_check.h"
 +
++#include <algorithm>
++#include <string_view>
 +#include <utility>
 +
 +#include "base/command_line.h"
@@ -11479,8 +11533,11 @@ index 0000000000000000000000000000000000000000..24a812760e93588f844bcc9e7acaf1d4
 +#include "base/strings/utf_string_conversions.h"
 +#include "base/task/sequenced_task_runner.h"
 +#include "base/time/time.h"
++#include "net/base/address_list.h"
 +#include "net/base/host_port_pair.h"
++#include "net/base/ip_address.h"
 +#include "net/base/net_errors.h"
++#include "net/cert/x509_certificate.h"
 +#include "net/base/network_anonymization_key.h"
 +#include "net/base/url_util.h"
 +#include "net/traffic_annotation/network_traffic_annotation.h"
@@ -11498,6 +11555,13 @@ index 0000000000000000000000000000000000000000..24a812760e93588f844bcc9e7acaf1d4
 +// What is waiting to be sent is never more than this: a look sends a few
 +// short lines.
 +constexpr size_t kMostPending = 64 * 1024;
++// A server on this computer that says nothing this long after the connection
++// waits for TLS (Proton Mail Bridge set to "SSL"); one that greets in plain
++// text first does it at once (Bridge's default, STARTTLS).
++constexpr base::TimeDelta kSilence = base::Milliseconds(1500);
++// What a server says in plain text before TLS: a greeting and an answer.
++constexpr size_t kMostPlainText = 4096;
++constexpr char kStartTls[] = "s0 STARTTLS\r\n";
 +
 +// For the offline checks: every look goes to this local server instead, in
 +// plain text ("127.0.0.1:<port>"; nothing but a loopback address is taken).
@@ -11592,13 +11656,47 @@ index 0000000000000000000000000000000000000000..24a812760e93588f844bcc9e7acaf1d4
 +  return true;
 +}
 +
++bool IsLocalImapHost(const std::string& host) {
++  return host == "127.0.0.1" || host == "localhost";
++}
++
++bool IsCertificatePin(const std::string& pin) {
++  return pin.size() == 64 && std::ranges::all_of(pin, base::IsHexDigit<char>);
++}
++
 +ImapCheck::ImapCheck(network::mojom::NetworkContext* context,
 +                     const ImapAccount& account,
-+                     Done done)
++                     Done done,
++                     bool trust_new_certificate)
 +    : session_(imap_session(account.user, account.password, kMostMessages)),
 +      done_(std::move(done)),
 +      read_watcher_(FROM_HERE, mojo::SimpleWatcher::ArmingPolicy::MANUAL),
 +      write_watcher_(FROM_HERE, mojo::SimpleWatcher::ArmingPolicy::MANUAL) {
++  // A server on this computer (Proton Mail Bridge): reached directly, and
++  // trusted by the pin of its own certificate (also in the offline checks,
++  // whose local server stands in for servers elsewhere).
++  if (context && IsLocalImapHost(account.host) && account.port > 0 &&
++      account.port <= 65535) {
++    local_ = Local::kGreeting;
++    local_host_ = account.host;
++    local_port_ = account.port;
++    expected_pin_ = base::ToUpperASCII(account.pin);
++    trust_new_certificate_ = trust_new_certificate;
++    context->CreateTCPConnectedSocket(
++        std::nullopt,
++        net::AddressList(net::IPEndPoint(net::IPAddress::IPv4Localhost(),
++                                         static_cast<uint16_t>(account.port))),
++        nullptr, net::MutableNetworkTrafficAnnotationTag(kTrafficAnnotation),
++        tcp_.BindNewPipeAndPassReceiver(), mojo::NullRemote(),
++        base::BindOnce(&ImapCheck::OnConnected, weak_factory_.GetWeakPtr()));
++    // base::Unretained is safe: the remotes and the timers are members.
++    tcp_.set_disconnect_handler(
++        base::BindOnce(&ImapCheck::OnClosed, base::Unretained(this)));
++    timeout_.Start(FROM_HERE, kTimeout,
++                   base::BindOnce(&ImapCheck::Finish, base::Unretained(this),
++                                  "offline"));
++    return;
++  }
 +  GURL url = TestingEndpoint();
 +  // TLS always, but to the offline checks' own local server
 +  const bool tls = !url.is_valid();
@@ -11644,6 +11742,16 @@ index 0000000000000000000000000000000000000000..24a812760e93588f844bcc9e7acaf1d4
 +  }
 +  receive_ = std::move(receive);
 +  send_ = std::move(send);
++  Watch();
++  if (local_ == Local::kGreeting) {
++    // base::Unretained is safe: the timer is a member.
++    silence_.Start(FROM_HERE, kSilence,
++                   base::BindOnce(&ImapCheck::OnSilence,
++                                  base::Unretained(this)));
++  }
++}
++
++void ImapCheck::Watch() {
 +  // base::Unretained is safe: the watchers are members.
 +  read_watcher_.Watch(
 +      receive_.get(),
@@ -11675,27 +11783,145 @@ index 0000000000000000000000000000000000000000..24a812760e93588f844bcc9e7acaf1d4
 +      OnClosed();
 +      return;
 +    }
-+    ImapStep step = session_->on_bytes(
-+        rust::Slice<const uint8_t>(data.data(), data.size()));
++    // copied first: what is read may end the look, or start TLS, which
++    // closes this pipe
++    const std::vector<uint8_t> bytes(data.begin(), data.end());
 +    receive_->EndReadData(data.size());
-+    if (step.done) {
-+      Finish(std::string(session_->problem()));
++    const bool plain =
++        local_ == Local::kGreeting || local_ == Local::kStartTls;
++    base::WeakPtr<ImapCheck> alive = weak_factory_.GetWeakPtr();
++    const bool going = plain ? OnPlainText(bytes) : Feed(bytes);
++    if (!going || !alive || !done_ || !receive_.is_valid()) {
 +      return;
 +    }
-+    if (!step.send.empty()) {
-+      if (pending_.size() + step.send.size() > kMostPending) {
++  }
++}
++
++bool ImapCheck::Feed(base::span<const uint8_t> data) {
++  ImapStep step =
++      session_->on_bytes(rust::Slice<const uint8_t>(data.data(), data.size()));
++  if (step.done) {
++    Finish(std::string(session_->problem()));
++    return false;
++  }
++  if (!step.send.empty()) {
++    if (pending_.size() + step.send.size() > kMostPending) {
++      Finish("protocol");
++      return false;
++    }
++    pending_.append(reinterpret_cast<const char*>(step.send.data()),
++                    step.send.size());
++    // A write that fails ends the look, and `done` may destroy this.
++    base::WeakPtr<ImapCheck> alive = weak_factory_.GetWeakPtr();
++    Write();
++    if (!alive || !done_) {
++      return false;
++    }
++  }
++  return true;
++}
++
++bool ImapCheck::OnPlainText(base::span<const uint8_t> data) {
++  silence_.Stop();
++  plain_.append(reinterpret_cast<const char*>(data.data()), data.size());
++  if (plain_.size() > kMostPlainText) {
++    Finish("protocol");
++    return false;
++  }
++  size_t end;
++  while ((end = plain_.find("\r\n")) != std::string::npos) {
++    const std::string line = base::ToUpperASCII(plain_.substr(0, end));
++    plain_.erase(0, end + 2);
++    if (local_ == Local::kGreeting) {
++      // Bridge's greeting; anything else is not an IMAP server
++      if (!line.starts_with("* OK")) {
 +        Finish("protocol");
-+        return;
++        return false;
 +      }
-+      pending_.append(reinterpret_cast<const char*>(step.send.data()),
-+                      step.send.size());
-+      // A write that fails ends the look, and `done` may destroy this.
++      greeted_ = true;
++      local_ = Local::kStartTls;
++      pending_ = kStartTls;
 +      base::WeakPtr<ImapCheck> alive = weak_factory_.GetWeakPtr();
 +      Write();
 +      if (!alive || !done_) {
-+        return;
++        return false;
 +      }
++    } else if (line.starts_with("S0 OK")) {
++      // Nothing it said in plain text is used after TLS (RFC 3501 6.2.1).
++      plain_.clear();
++      StartTls();
++      return false;
++    } else if (line.starts_with("S0 ")) {
++      // a server here without TLS: its passwords would go in plain text
++      Finish("protocol");
++      return false;
 +    }
++  }
++  return true;
++}
++
++void ImapCheck::OnSilence() {
++  if (local_ == Local::kGreeting && plain_.empty()) {
++    StartTls();
++  }
++}
++
++void ImapCheck::StartTls() {
++  local_ = Local::kUpgrading;
++  silence_.Stop();
++  read_watcher_.Cancel();
++  write_watcher_.Cancel();
++  // the network service sets TLS up once these are closed
++  receive_.reset();
++  send_.reset();
++  pending_.clear();
++  // Its certificate is made by the server itself, so no authority's
++  // signature is asked for; it is checked against the pin instead.
++  auto options = network::mojom::TLSClientSocketOptions::New();
++  options->unsafely_skip_cert_verification = true;
++  options->send_ssl_info = true;
++  tcp_->UpgradeToTLS(
++      net::HostPortPair(local_host_, static_cast<uint16_t>(local_port_)),
++      std::move(options),
++      net::MutableNetworkTrafficAnnotationTag(kTrafficAnnotation),
++      tls_.BindNewPipeAndPassReceiver(), mojo::NullRemote(),
++      base::BindOnce(&ImapCheck::OnTlsReady, weak_factory_.GetWeakPtr()));
++  // base::Unretained is safe: the remote is a member.
++  tls_.set_disconnect_handler(
++      base::BindOnce(&ImapCheck::OnClosed, base::Unretained(this)));
++}
++
++void ImapCheck::OnTlsReady(int32_t net_error,
++                           mojo::ScopedDataPipeConsumerHandle receive,
++                           mojo::ScopedDataPipeProducerHandle send,
++                           const std::optional<net::SSLInfo>& ssl_info) {
++  if (net_error != net::OK || !receive.is_valid() || !send.is_valid()) {
++    Finish("offline");
++    return;
++  }
++  if (!ssl_info || !ssl_info->cert) {
++    Finish("certificate");
++    return;
++  }
++  const net::SHA256HashValue hash =
++      net::X509Certificate::CalculateFingerprint256(
++          ssl_info->cert->cert_buffer());
++  pin_ = base::HexEncode(hash);
++  // the pin kept for it, or, when adding or editing the mailbox, the
++  // certificate it shows now
++  if (expected_pin_.empty() ? !trust_new_certificate_ : pin_ != expected_pin_) {
++    Finish("certificate");
++    return;
++  }
++  local_ = Local::kTls;
++  receive_ = std::move(receive);
++  send_ = std::move(send);
++  Watch();
++  // After STARTTLS the server greets no more: the session starts on a bare
++  // greeting, and asks for the capabilities again over TLS.
++  if (greeted_) {
++    static constexpr char kGreeting[] = "* OK\r\n";
++    Feed(base::as_byte_span(std::string_view(kGreeting)));
 +  }
 +}
 +
@@ -11738,17 +11964,21 @@ index 0000000000000000000000000000000000000000..24a812760e93588f844bcc9e7acaf1d4
 +    return;
 +  }
 +  timeout_.Stop();
++  silence_.Stop();
 +  read_watcher_.Cancel();
 +  write_watcher_.Cancel();
 +  receive_.reset();
 +  send_.reset();
 +  socket_.reset();
 +  factory_.reset();
++  tls_.reset();
++  tcp_.reset();
 +  std::fill(pending_.begin(), pending_.end(), '\0');
 +  pending_.clear();
 +
 +  Result result;
 +  result.problem = std::move(problem);
++  result.pin = pin_;
 +  if (result.problem.empty()) {
 +    result.unread = static_cast<int>(
 +        std::min<uint32_t>(session_->unseen(), 1000000u));
@@ -11772,10 +12002,10 @@ index 0000000000000000000000000000000000000000..24a812760e93588f844bcc9e7acaf1d4
 +}  // namespace thoron_mail
 diff --git a/components/thoron_mail/imap_check.h b/components/thoron_mail/imap_check.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..e3342bbe232d25616cabc3ebbd76cad607733066
+index 0000000000000000000000000000000000000000..4aa2a527cae279ffab15cbaf3608c4ef31ac408b
 --- /dev/null
 +++ b/components/thoron_mail/imap_check.h
-@@ -0,0 +1,111 @@
+@@ -0,0 +1,173 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -11786,6 +12016,7 @@ index 0000000000000000000000000000000000000000..e3342bbe232d25616cabc3ebbd76cad6
 +#include <string>
 +#include <vector>
 +
++#include "base/containers/span.h"
 +#include "base/functional/callback.h"
 +#include "base/memory/weak_ptr.h"
 +#include "base/timer/timer.h"
@@ -11795,8 +12026,11 @@ index 0000000000000000000000000000000000000000..e3342bbe232d25616cabc3ebbd76cad6
 +#include "mojo/public/cpp/system/data_pipe.h"
 +#include "mojo/public/cpp/system/simple_watcher.h"
 +#include "net/base/ip_endpoint.h"
++#include "net/ssl/ssl_info.h"
 +#include "services/network/public/mojom/network_context.mojom-forward.h"
 +#include "services/network/public/mojom/proxy_resolving_socket.mojom.h"
++#include "services/network/public/mojom/tcp_socket.mojom.h"
++#include "services/network/public/mojom/tls_socket.mojom.h"
 +#include "third_party/rust/cxx/v1/cxx.h"
 +
 +namespace thoron_mail {
@@ -11820,11 +12054,21 @@ index 0000000000000000000000000000000000000000..e3342bbe232d25616cabc3ebbd76cad6
 +  // The service's page for reading mail (https), opened from the menu; may be
 +  // empty.
 +  std::string webmail;
++  // A server on this computer (Proton Mail Bridge): the SHA-256 of the
++  // certificate it showed when the mailbox was added, in hex. Such a server
++  // makes its own certificate, which no authority signs; it is trusted by
++  // this pin alone.
++  std::string pin;
 +};
 +
 +// True for a host name a look may connect to: letters, digits, dots and
 +// hyphens, as a mail server's name is.
 +bool IsImapHost(const std::string& host);
++// True for a server on this computer ("127.0.0.1" or "localhost"), as Proton
++// Mail Bridge is.
++bool IsLocalImapHost(const std::string& host);
++// True for a pin as ImapAccount keeps it (64 hex digits).
++bool IsCertificatePin(const std::string& pin);
 +
 +// One look at one mailbox: connects (TLS, through the browser's network
 +// service, so the person's proxy settings hold), signs in, counts the unread
@@ -11832,6 +12076,13 @@ index 0000000000000000000000000000000000000000..e3342bbe232d25616cabc3ebbd76cad6
 +// server sends is read in Rust (imap.rs); this only carries the bytes.
 +// Nothing in the mailbox is changed. The look ends after kTimeout at the
 +// latest.
++//
++// A server on this computer (Proton Mail Bridge) is reached directly, never
++// through a proxy. It starts TLS with STARTTLS when it greets in plain text
++// (Bridge's default), or at once when it waits silently for TLS (Bridge's
++// "SSL"). Its certificate is checked against the account's pin; with no pin,
++// only a look that may trust a new certificate (adding or editing the
++// mailbox) takes it, and gives its pin.
 +class ImapCheck {
 + public:
 +  struct Result {
@@ -11841,23 +12092,37 @@ index 0000000000000000000000000000000000000000..e3342bbe232d25616cabc3ebbd76cad6
 +    ~Result();
 +    // "" when the look went well; else "sign-in" (the name or the password
 +    // was refused), "offline" (no connection, or it ended early), "protocol"
-+    // or "too-much" (the server's answers could not be used).
++    // or "too-much" (the server's answers could not be used), "certificate"
++    // (a server on this computer showed another certificate than its pin).
 +    std::string problem;
 +    int unread = 0;
 +    std::vector<MailMessage> latest;
++    // a server on this computer: the pin of the certificate it showed
++    std::string pin;
 +  };
 +  using Done = base::OnceCallback<void(Result)>;
 +
 +  // Starts the look. `done` runs once, unless this is destroyed first; it may
-+  // destroy this.
++  // destroy this. `trust_new_certificate`: a server on this computer whose
++  // account has no pin yet is trusted with the certificate it shows.
 +  ImapCheck(network::mojom::NetworkContext* context,
 +            const ImapAccount& account,
-+            Done done);
++            Done done,
++            bool trust_new_certificate = false);
 +  ImapCheck(const ImapCheck&) = delete;
 +  ImapCheck& operator=(const ImapCheck&) = delete;
 +  ~ImapCheck();
 +
 + private:
++  // how a server on this computer is being reached
++  enum class Local {
++    kNo,         // a server elsewhere: TLS from the start, through a proxy
++    kGreeting,   // connected in plain text: its greeting, or its silence
++    kStartTls,   // STARTTLS asked for: its answer
++    kUpgrading,  // TLS being set up
++    kTls,        // TLS up: the look itself
++  };
++
 +  void OnConnected(int result,
 +                   const std::optional<net::IPEndPoint>& local,
 +                   const std::optional<net::IPEndPoint>& peer,
@@ -11866,6 +12131,19 @@ index 0000000000000000000000000000000000000000..e3342bbe232d25616cabc3ebbd76cad6
 +  void OnReadable(MojoResult result, const mojo::HandleSignalsState& state);
 +  void OnWritable(MojoResult result, const mojo::HandleSignalsState& state);
 +  void Write();
++  // the server's bytes given to the session; false when the look ended
++  bool Feed(base::span<const uint8_t> data);
++  // a server on this computer: what it says in plain text before TLS; false
++  // when the look ended
++  bool OnPlainText(base::span<const uint8_t> data);
++  // It said nothing: it waits for TLS.
++  void OnSilence();
++  void StartTls();
++  void OnTlsReady(int32_t net_error,
++                  mojo::ScopedDataPipeConsumerHandle receive,
++                  mojo::ScopedDataPipeProducerHandle send,
++                  const std::optional<net::SSLInfo>& ssl_info);
++  void Watch();
 +  // the server closed the connection, or it broke
 +  void OnClosed();
 +  void Finish(std::string problem);
@@ -11874,6 +12152,8 @@ index 0000000000000000000000000000000000000000..e3342bbe232d25616cabc3ebbd76cad6
 +  Done done_;
 +  mojo::Remote<network::mojom::ProxyResolvingSocketFactory> factory_;
 +  mojo::Remote<network::mojom::ProxyResolvingSocket> socket_;
++  mojo::Remote<network::mojom::TCPConnectedSocket> tcp_;
++  mojo::Remote<network::mojom::TLSClientSocket> tls_;
 +  mojo::ScopedDataPipeConsumerHandle receive_;
 +  mojo::ScopedDataPipeProducerHandle send_;
 +  mojo::SimpleWatcher read_watcher_;
@@ -11881,6 +12161,18 @@ index 0000000000000000000000000000000000000000..e3342bbe232d25616cabc3ebbd76cad6
 +  // what is still to be sent
 +  std::string pending_;
 +  base::OneShotTimer timeout_;
++  // a server on this computer: how far, its name and port, what it said in
++  // plain text, whether it greeted that way, the pin it must show, and the
++  // one it showed
++  Local local_ = Local::kNo;
++  std::string local_host_;
++  int local_port_ = 0;
++  std::string plain_;
++  bool greeted_ = false;
++  std::string expected_pin_;
++  bool trust_new_certificate_ = false;
++  std::string pin_;
++  base::OneShotTimer silence_;
 +  base::WeakPtrFactory<ImapCheck> weak_factory_{this};
 +};
 +
@@ -12363,10 +12655,10 @@ index 0000000000000000000000000000000000000000..4c249e10c731f7b7fc3e2bf12a29b82e
 +#endif  // COMPONENTS_THORON_MAIL_MAIL_FEED_H_
 diff --git a/components/thoron_mail/mail_page.cc b/components/thoron_mail/mail_page.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..bb1a74730f6dea814813db76f47ab54530d3783a
+index 0000000000000000000000000000000000000000..af8bc2492afffd5169fa78039c116b6961ca566a
 --- /dev/null
 +++ b/components/thoron_mail/mail_page.cc
-@@ -0,0 +1,2326 @@
+@@ -0,0 +1,2356 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -13002,12 +13294,30 @@ index 0000000000000000000000000000000000000000..bb1a74730f6dea814813db76f47ab545
 +    'Microsoft lässt E-Mail-Programme sich bei diesen Konten nicht mehr mit einem Passwort anmelden. Öffnen Sie Outlook stattdessen im Browser.',
 +    'A Microsoft não permite mais que programas de e-mail entrem nessas contas com senha. Abra o Outlook no navegador.',
 +    'Microsoft больше не позволяет почтовым программам входить в эти аккаунты по паролю. Откройте Outlook в браузере.'],
-+  'Proton Mail has no mailbox access of this kind without its Bridge app, which Thoron does not use yet.': [
-+    'Proton Mail no ofrece este tipo de acceso sin su aplicación Bridge, que Thoron aún no usa.',
-+    "Proton Mail n'offre pas ce type d'accès sans son application Bridge, que Thoron n'utilise pas encore.",
-+    'Proton Mail bietet diesen Zugriff nur mit seiner Bridge-App, die Thoron noch nicht nutzt.',
-+    'O Proton Mail não oferece esse tipo de acesso sem o app Bridge, que o Thoron ainda não usa.',
-+    'Proton Mail не даёт такого доступа без приложения Bridge, которое Thoron пока не использует.'],
++  "Proton Mail is read through Proton Mail Bridge, Proton's own app on this computer: keep it running, and use the password Bridge shows for this address, not your Proton password.": [
++    'Proton Mail se lee a través de Proton Mail Bridge, la aplicación de Proton en este equipo: mantenla abierta y ' +
++        'usa la contraseña que Bridge muestra para esta dirección, no tu contraseña de Proton.',
++    "Proton Mail se lit par Proton Mail Bridge, l'application de Proton sur cet ordinateur : laissez-la ouverte et " +
++        "utilisez le mot de passe que Bridge affiche pour cette adresse, pas votre mot de passe Proton.",
++    'Proton Mail wird über Proton Mail Bridge gelesen, Protons eigene App auf diesem Computer: Lassen Sie sie ' +
++        'laufen und verwenden Sie das Passwort, das Bridge für diese Adresse anzeigt, nicht Ihr Proton-Passwort.',
++    'O Proton Mail é lido pelo Proton Mail Bridge, o app da Proton neste computador: mantenha-o aberto e use a ' +
++        'senha que o Bridge mostra para este endereço, não a sua senha do Proton.',
++    'Proton Mail читается через Proton Mail Bridge, приложение Proton на этом компьютере: держите его запущенным ' +
++        'и используйте пароль, который Bridge показывает для этого адреса, а не пароль Proton.'],
++  'Certificate changed': ['Certificado cambiado', 'Certificat changé', 'Zertifikat geändert', 'Certificado mudou',
++                          'Сертификат изменился'],
++  'Proton Mail Bridge showed another certificate than the one trusted. If you reinstalled Bridge, edit the mailbox and type its Bridge password again to trust the new one.': [
++    'Proton Mail Bridge mostró otro certificado que el de confianza. Si reinstalaste Bridge, edita el buzón y ' +
++        'escribe de nuevo su contraseña de Bridge para confiar en el nuevo.',
++    "Proton Mail Bridge a présenté un autre certificat que celui approuvé. Si vous avez réinstallé Bridge, " +
++        "modifiez la boîte et saisissez à nouveau son mot de passe Bridge pour approuver le nouveau.",
++    'Proton Mail Bridge hat ein anderes Zertifikat gezeigt als das vertraute. Wenn Sie Bridge neu installiert ' +
++        'haben, bearbeiten Sie das Postfach und geben Sie sein Bridge-Passwort erneut ein, um dem neuen zu vertrauen.',
++    'O Proton Mail Bridge mostrou outro certificado que não o confiável. Se você reinstalou o Bridge, edite a ' +
++        'caixa e digite de novo a senha do Bridge para confiar no novo.',
++    'Proton Mail Bridge показал другой сертификат, не тот, которому доверяли. Если вы переустановили Bridge, ' +
++        'измените ящик и снова введите его пароль Bridge, чтобы доверять новому.'],
 +  'The server refused the name or the password.': ['El servidor rechazó el nombre o la contraseña.',
 +                                                   "Le serveur a refusé l'identifiant ou le mot de passe.",
 +                                                   'Der Server hat den Namen oder das Passwort abgelehnt.',
@@ -13428,7 +13738,7 @@ index 0000000000000000000000000000000000000000..bb1a74730f6dea814813db76f47ab545
 +      const warn = make('span', 'warn', '!');
 +      warn.title = t(account.problem === 'sign-in' ?
 +          'Sign-in refused: its password may have changed. Edit it and give the new password.' :
-+          'Could not be reached at the last look.');
++          account.problem === 'certificate' ? CERTIFICATE : 'Could not be reached at the last look.');
 +      row.append(warn);
 +    }
 +    if (account.new) {
@@ -13924,10 +14234,11 @@ index 0000000000000000000000000000000000000000..bb1a74730f6dea814813db76f47ab545
 +  }
 +  if (account) {
 +    if (account.problem) {
-+      const bad = make('span', 'count bad', t(account.problem === 'sign-in' ? 'Password refused' : 'Not reached'));
++      const bad = make('span', 'count bad', t(account.problem === 'sign-in' ? 'Password refused' :
++          account.problem === 'certificate' ? 'Certificate changed' : 'Not reached'));
 +      bad.title = t(account.problem === 'sign-in' ?
 +          'Sign-in refused: its password may have changed. Edit it and give the new password.' :
-+          'Could not be reached at the last look.');
++          account.problem === 'certificate' ? CERTIFICATE : 'Could not be reached at the last look.');
 +      chips.append(bad);
 +    }
 +    if (account.new) {
@@ -14120,7 +14431,11 @@ index 0000000000000000000000000000000000000000..bb1a74730f6dea814813db76f47ab545
 +  fields[0].input.focus();
 +}
 +
++// Proton Mail Bridge's certificate is not the one pinned when its mailbox was added (P5.77)
++const CERTIFICATE = 'Proton Mail Bridge showed another certificate than the one trusted. If you reinstalled ' +
++    'Bridge, edit the mailbox and type its Bridge password again to trust the new one.';
 +const EDIT_ERRORS = {
++  certificate: CERTIFICATE,
 +  missing: 'This account is no longer there.',
 +  exists: 'This address is already in the list.',
 +  bad: 'Check the address.',
@@ -14190,7 +14505,9 @@ index 0000000000000000000000000000000000000000..bb1a74730f6dea814813db76f47ab545
 +  {match: /@(icloud|me|mac)\.com$/, host: 'imap.mail.me.com', hint: 'app',
 +   webmail: () => 'https://www.icloud.com/mail'},
 +  {match: /@(outlook|hotmail|live|msn)\.[a-z.]+$/, blocked: 'microsoft'},
-+  {match: /@(proton|protonmail)\.(me|com|ch)$|@pm\.me$/, blocked: 'proton'},
++  // Proton Mail: its Bridge on this computer (its own certificate is pinned when the mailbox is added)
++  {match: /@(proton|protonmail)\.(me|com|ch)$|@pm\.me$/, host: '127.0.0.1', port: 1143, hint: 'bridge',
++   webmail: () => 'https://mail.proton.me/'},
 +  {match: /@gmx\.[a-z.]+$/, host: 'imap.gmx.com', webmail: () => 'https://www.gmx.com/'},
 +  {match: /@(mail|inbox|list|bk)\.ru$/, host: 'imap.mail.ru', hint: 'app',
 +   webmail: () => 'https://e.mail.ru/inbox/'},
@@ -14206,7 +14523,8 @@ index 0000000000000000000000000000000000000000..bb1a74730f6dea814813db76f47ab545
 +  app: 'This service may ask for an app password, made in its account settings, instead of your normal password.',
 +  microsoft: 'Microsoft no longer lets mail programs sign in to these accounts with a password. Open Outlook in ' +
 +      'the browser instead.',
-+  proton: 'Proton Mail has no mailbox access of this kind without its Bridge app, which Thoron does not use yet.',
++  bridge: "Proton Mail is read through Proton Mail Bridge, Proton's own app on this computer: keep it running, " +
++      'and use the password Bridge shows for this address, not your Proton password.',
 +};
 +const ADD_ERRORS = {
 +  'sign-in': 'The server refused the name or the password.',
@@ -14218,6 +14536,7 @@ index 0000000000000000000000000000000000000000..bb1a74730f6dea814813db76f47ab545
 +  'full': 'No more mailboxes can be added.',
 +  'busy': 'Another mailbox is being added.',
 +  'locked': 'Passwords cannot be kept yet. Try again in a moment.',
++  'certificate': CERTIFICATE,
 +};
 +
 +function serviceOf(email) {
@@ -14236,6 +14555,9 @@ index 0000000000000000000000000000000000000000..bb1a74730f6dea814813db76f47ab545
 +  }
 +  if (!typed.has('imap-webmail')) {
 +    $('imap-webmail').value = service && service.webmail ? service.webmail(email) : '';
++  }
++  if (!typed.has('imap-port')) {
++    $('imap-port').value = String(service && service.port ? service.port : 993);
 +  }
 +  const hint = service ? (service.blocked || service.hint) : '';
 +  $('imap-hint').textContent = hint ? t(HINTS[hint]) : '';
@@ -14537,7 +14859,7 @@ index 0000000000000000000000000000000000000000..bb1a74730f6dea814813db76f47ab545
 +// the form is on the M-Notifier's own page: a menu closes when another window is used (a password manager)
 +$('add-mailbox').addEventListener('click', () => chrome.send('openManage', [true]));
 +$('imap-email').addEventListener('input', fillFromAddress);
-+for (const id of ['imap-host', 'imap-webmail']) {
++for (const id of ['imap-host', 'imap-webmail', 'imap-port']) {
 +  $(id).addEventListener('input', () => typed.add(id));
 +}
 +$('imap-add').addEventListener('click', addMailbox);

@@ -73,7 +73,8 @@ You are not limited to the Google accounts Thoron is signed in to. In the menu c
 - **Gmail** works this way too, but Google accepts only an *app password* here, not your normal password: you
   make one in your Google Account under Security, 2-Step Verification, App passwords.
 - **Outlook, Hotmail and Live** cannot be added this way: Microsoft no longer lets mail programs sign in with a
-  password. **Proton Mail** needs its Bridge app, which Thoron does not use yet.
+  password.
+- **Proton Mail** is read through **Proton Mail Bridge**, Proton's own app (see below).
 - To change a mailbox (a new password, another address or server): open it under Accounts and choose **Edit**.
   Leave the password empty to keep the one it has. A new password, address or server is signed in to first and
   kept only when that works, so a typo changes nothing. Only its mail page is kept at once.
@@ -135,6 +136,24 @@ a setting), and then writes a new backup into that folder, named with the date a
   passwords.
 - **Save one now** writes one at once. If the folder is gone or cannot be written, the Backup tab says so.
 
+## Proton Mail
+
+Proton keeps your mail encrypted, so no mail program reads it directly. Proton's own app, **Proton Mail
+Bridge**, runs on your computer and serves your mailbox to mail programs. Thoron M-Notifier reads it there:
+
+1. Install Proton Mail Bridge from Proton, sign in to it, and keep it running.
+2. In Bridge, open your address's mailbox details and copy the **password Bridge shows** (it is not your Proton
+   password).
+3. In Thoron M-Notifier, **Add by address and password...**, type your Proton address (the server
+   `127.0.0.1` and port `1143` are filled in), paste Bridge's password, and **Add**.
+
+Bridge makes its own certificate for the encrypted connection, which no authority signs. Thoron trusts the one
+Bridge shows when you add the mailbox, and only that one: Thoron connects only to your own computer for it,
+never through a proxy, and sends the password only after the encrypted connection is up. If Bridge is installed
+again and makes a new certificate, the mailbox shows **Certificate changed**: open it, choose **Edit**, type
+Bridge's password again and save, and the new certificate is trusted instead. Bridge's "STARTTLS" (its default)
+and "SSL" settings both work.
+
 ## Coming
 
-Outlook and Hotmail (with Microsoft's own sign-in) and Proton Mail are planned.
+Outlook and Hotmail, with Microsoft's own sign-in, are planned.

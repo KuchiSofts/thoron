@@ -7,6 +7,7 @@ Explanations live in the design docs under `docs/design/`.
 ## [Unreleased]
 
 ### Added
+- **Mail:** Thoron M-Notifier reads Proton Mail through Proton Mail Bridge on your computer. A Proton address fills in Bridge's server and port; Bridge's own certificate is trusted by its fingerprint, taken when you add the mailbox, and a different one later is shown instead of trusted.
 - **Mail:** Thoron M-Notifier can save its backup by itself into a folder you choose (your Google Drive folder, for one) whenever something in it changes, keeping only its newest files there. With a passphrase the backups are sealed and hold the passwords; without one they hold everything else.
 - **Import:** Settings' "Import bookmarks and settings" now lists Thorium, Chrome, Edge, Brave, Vivaldi, Opera and Chromium when they are in your Windows account, and brings over bookmarks, history, saved passwords, search engines, form entries, cookies (so you stay signed in to your sites), and the home page and startup pages. It asks you to close the other browser first and never closes it, works on copies of its files, and leaves out passwords and cookies that Chrome locks to itself. Each import leaves a short report in your profile folder with counts only.
 - **First start:** a welcome page offers to import from another browser and to make Thoron your default browser. Windows asks you to confirm the default on its own page; closing the tab skips both.

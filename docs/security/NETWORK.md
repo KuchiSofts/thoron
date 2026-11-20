@@ -319,6 +319,14 @@ A manifest is read only after its signature holds (`docs/update/MANIFEST.md`), a
 when its length and SHA-256 are the signed manifest's, and what the updater keeps (the highest serial
 it accepted, the key statements it trusts) is in the browser's `Local State`, outside every profile.
 
+### 7.2 Thoron M-Notifier's mailboxes (ROADMAP P5.77)
+
+A fresh profile contacts no mail server. A mailbox the person adds by address and password is looked at on the
+IMAP server they named, over TLS and through the browser's network settings (`thoron_mail_imap`), every few
+minutes (their setting). A Proton Mail mailbox is read from Proton Mail Bridge on the person's own computer:
+`127.0.0.1` only, never through a proxy, TLS with Bridge's own certificate pinned when the mailbox was added
+(design 12.78). Nothing else is contacted for it.
+
 ## 8. Measuring again
 
 ```powershell

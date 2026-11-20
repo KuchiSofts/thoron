@@ -2447,6 +2447,31 @@ response's body. Thoron is the browser, so it does it for every page:
 - **Checked:** `mail_auto_backup_check.py` (off, plain, unchanged, changed, sealed, kept, restart, gone, now)
   with the browser told to look every few seconds and given the folder.
 
+### 12.78 Proton Mail through Proton Mail Bridge (P5.77, 2026-11-20)
+
+- **Why Bridge:** Proton Mail stores mail end-to-end encrypted, so it has no IMAP server on the internet. Its
+  own app, Proton Mail Bridge, decrypts on the person's computer and serves IMAP on `127.0.0.1` (port 1143 by
+  default), with a password of its own for each address and a certificate it makes itself.
+- **Only this computer:** a mailbox whose server is `127.0.0.1` or `localhost` is reached directly by the
+  network service (`CreateTCPConnectedSocket` to 127.0.0.1, never a proxy, never another address).
+- **TLS either way:** Bridge greets in plain text and starts TLS on STARTTLS (its default), or waits silently
+  for TLS ("SSL" in its settings). A greeting gets STARTTLS; 1.5 s of silence starts TLS at once. Nothing the
+  server said in plain text is used after TLS (its capabilities are asked for again), and a server here that
+  refuses STARTTLS is refused: the password is never sent in plain text.
+- **Its certificate:** no authority signs it, so the authority check is skipped for this connection only
+  (`unsafely_skip_cert_verification`, which the network service allows its own callers) and the certificate
+  is checked by its SHA-256 instead. The pin is taken when the mailbox is added, and again only when the person
+  edits the mailbox and types Bridge's password again (Bridge made a new certificate after being installed
+  again). A look with another certificate stops before the password is sent and shows "Certificate changed". A
+  look never trusts a certificate on its own. The pin is kept with the mailbox and in the backup (it is not a
+  secret); a backup without it keeps the pin there is.
+- **The form:** Proton's addresses (`proton.me`, `protonmail.com`, `protonmail.ch`, `pm.me`) fill in
+  `127.0.0.1` and `1143` and say to use Bridge's password; Proton's mail page opens from the menu.
+- **What stays open:** a run against the real Bridge with a Proton account (the owner's), and Outlook/Hotmail.
+- **Checked:** `mail_bridge_check.py` with local stand-ins for Bridge (STARTTLS and SSL, certificates made for
+  the run): the form, both ways in, a wrong password, a server here without TLS (no password sent), a new
+  certificate (shown, no password sent), trusting it again, an edit that keeps the pin, a restart.
+
 ## 13. Credits
 
 The procedural operators and the rest of the filter syntax are uBlock Origin's (with forms from Adblock

@@ -70,6 +70,9 @@ apt-get install -y -qq /tmp/thoron.deb > "$out/apt-install.txt" 2>&1; echo $? > 
 dpkg -L thoron-browser > "$out/files.txt" 2>&1
 while read -r f; do [ -f "$f" ] && echo "$f"; done < "$out/files.txt" > "$out/regular-files.txt"
 dpkg-query -W -f='${Version}' thoron-browser > "$out/version.txt" 2>&1
+# the machine's display (WSLg) comes up a little after the machine starts
+for i in $(seq 90); do [ -S /tmp/.X11-unix/X0 ] && [ -S /mnt/wslg/runtime-dir/wayland-0 ] && break; sleep 1; done
+[ -S /tmp/.X11-unix/X0 ] && echo yes > "$out/display" || echo no > "$out/display"
 step coexists
 apt-get install -y -qq /tmp/upstream.deb > "$out/apt-upstream.txt" 2>&1; echo $? > "$out/upstream_exit"
 dpkg -L thorium-browser > "$out/upstream-files.txt" 2>&1

@@ -46,6 +46,9 @@ apt-get update -qq > "$out/apt-update.txt" 2>&1
 apt-get install -y -qq /tmp/thoron.deb dbus-x11 dbus-user-session xdg-desktop-portal xdg-desktop-portal-gtk \
   dconf-cli dconf-gsettings-backend gsettings-desktop-schemas > "$out/apt-install.txt" 2>&1
 echo $? > "$out/install_exit"
+# the machine's display (WSLg) comes up a little after the machine starts
+for i in $(seq 90); do [ -S /tmp/.X11-unix/X0 ] && [ -S /mnt/wslg/runtime-dir/wayland-0 ] && break; sleep 1; done
+[ -S /tmp/.X11-unix/X0 ] && echo yes > "$out/display" || echo no > "$out/display"
 mkdir -p /home/tester/.config/xdg-desktop-portal
 printf '[preferred]\ndefault=gtk\n' > /home/tester/.config/xdg-desktop-portal/portals.conf
 chown -R tester:tester /home/tester/.config
@@ -58,7 +61,7 @@ runuser -u tester -- env HOME=/home/tester DISPLAY=:0 WAYLAND_DISPLAY=wayland-0 
     sleep 2
     \$portal > '$out/portal.txt' 2>&1 &
     sleep 3
-    python3 -I '$TOOLS/qa/linux_dark_mode_check.py' probe --browser /usr/bin/thoron --out '$out/probe.json' \
+    python3 -I '$TOOLS/qa/linux_dark_mode_check.py' probe --browser /usr/bin/thoron-browser --out '$out/probe.json' \
       > '$out/probe.txt' 2>&1
   "
 echo done > "$out/reached"

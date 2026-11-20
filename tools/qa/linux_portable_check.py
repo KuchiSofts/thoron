@@ -49,6 +49,9 @@ as_tester() { runuser -u tester -- env HOME=/home/tester DISPLAY=:0 WAYLAND_DISP
 dir="/home/tester/__FOLDER__"
 as_tester mkdir -p "$dir"
 as_tester tar -xJf "$TAR" -C "$dir"; echo $? > "$out/unpack_exit"
+# the machine's display (WSLg) comes up a little after the machine starts
+for i in $(seq 90); do [ -S /tmp/.X11-unix/X0 ] && [ -S /mnt/wslg/runtime-dir/wayland-0 ] && break; sleep 1; done
+[ -S /tmp/.X11-unix/X0 ] && echo yes > "$out/display" || echo no > "$out/display"
 pkg="$dir/ThoronPortable"
 start() {  # $1 package folder, $2 name: the launcher with DevTools on 127.0.0.1, until it answers (at most 60 s)
   # (the first start on a freshly made machine takes a while: fonts and caches are made then)

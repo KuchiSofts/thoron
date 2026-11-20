@@ -51,7 +51,8 @@ function WindowsOf($names) {
 }
 function SmartScreenWindow {
   # the warning's window: SmartScreen's own, or (Windows 11) an application frame that holds SmartScreen's content
-  $ids = @(Get-Process -Name 'smartscreen' -ErrorAction SilentlyContinue | ForEach-Object { $_.Id })
+  # (on Windows 11 the warning's content belongs to CHXSmartScreen, inside a frame window Explorer owns)
+  $ids = @(Get-Process -Name 'smartscreen', 'CHXSmartScreen' -ErrorAction SilentlyContinue | ForEach-Object { $_.Id })
   if (-not $ids) { return $null }
   foreach ($w in $A::RootElement.FindAll($T::Children, $C::TrueCondition)) {
     if ($ids -contains $w.Current.ProcessId) { return $w }

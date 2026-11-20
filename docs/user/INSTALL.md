@@ -66,10 +66,10 @@ Good to know:
   own profile and not the one in the folder.
 - Nothing in the folder holds a full path, so the folder can be moved and renamed.
 - No console window opens. The launcher starts the browser and ends.
-- A portable copy still leaves a few traces on the PC: some registry values under `HKCU\Software\Thoron`
-  (the browser engine writes them; an installed Thoron uses the same ones), sometimes a temporary folder,
-  your downloads in the PC's Downloads folder, and what Windows itself records about programs that ran. The
-  details are in [PORTABLE.md](../release/PORTABLE.md#4-what-stays-in-the-folder-and-what-a-portable-copy-leaves-on-the-pc).
+- A portable copy writes nothing into the registry and makes no scheduled task (since 158.0.8127.6503,
+  measured on a clean Windows). What it still leaves on the PC: sometimes a temporary folder, your downloads
+  in the PC's Downloads folder, and what Windows itself records about programs that ran. The details are in
+  [PORTABLE.md](../release/PORTABLE.md#4-what-stays-in-the-folder-and-what-a-portable-copy-leaves-on-the-pc).
 - Saved passwords and sign-ins are locked to your Windows account: read
   [Portable passphrase](PORTABLE_PASSPHRASE.md) before you save any.
 - A portable copy does not update itself yet: see [Updates](UPDATES.md#5-update-a-portable-copy-by-hand).
@@ -148,7 +148,7 @@ Thorium profile over, see [Import](IMPORT.md).
 2. If you want to keep your profile, copy the `User Data` folder somewhere first.
 3. Delete the `ThoronPortable` folder.
 
-The registry values named in section 2 stay behind.
+Nothing of it stays in the registry.
 
 **An installed Thoron:**
 

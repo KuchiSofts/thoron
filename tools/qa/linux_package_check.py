@@ -15,7 +15,8 @@ the plain user `tester`:
                  ~/.config/thorium)
     sandbox      chrome://sandbox, read through DevTools (tools/qa/cdp.py), reports the sandbox as on: the
                  Seccomp-BPF layer and the namespace layer; the page's text is kept as the release's evidence
-    lintian      lintian finds no error in the package
+    lintian      lintian finds no error in the package, with the tags Chromium's own lint step accepts for its
+                 packages (installed into /opt, libraries linked in, a set-user-id sandbox helper)
     upgrade      the same package with a higher version installs over it and leaves the profile byte for
                  byte as it was; Thoron opens it again afterwards
     remove       `apt remove` takes the program and its command away and leaves the person's profile
@@ -73,17 +74,20 @@ step coexists
 apt-get install -y -qq /tmp/upstream.deb > "$out/apt-upstream.txt" 2>&1; echo $? > "$out/upstream_exit"
 dpkg -L thorium-browser > "$out/upstream-files.txt" 2>&1
 while read -r f; do [ -f "$f" ] && echo "$f"; done < "$out/upstream-files.txt" > "$out/upstream-regular-files.txt"
-command -v thoron > "$out/which-thoron.txt"; command -v thorium-browser > "$out/which-thorium.txt"
+command -v thoron-browser > "$out/which-thoron.txt"; command -v thorium-browser > "$out/which-thorium.txt"
 ls /usr/share/applications > "$out/desktop.txt"
-opens thoron thoron
+opens thoron-browser thoron
 opens thorium-browser thorium
 ls -A /home/tester/.config > "$out/config-dirs.txt" 2>&1
 step sandbox
-as_tester python3 -I "$TOOLS/qa/cdp.py" --browser /usr/bin/thoron --work /tmp/cdp --page chrome://sandbox \
+as_tester python3 -I "$TOOLS/qa/cdp.py" --browser /usr/bin/thoron-browser --work /tmp/cdp --page chrome://sandbox \
   --png /tmp/sandbox.png --text "$out/sandbox.txt" > "$out/cdp.txt" 2>&1
 step lintian
 apt-get install -y -qq lintian > "$out/apt-lintian.txt" 2>&1
-lintian --no-tag-display-limit /tmp/thoron.deb > "$out/lintian.txt" 2>&1; echo $? > "$out/lintian_exit"
+# with the tags Chromium's own lint step accepts for its packages (chrome/installer/linux/debian/lint_package.py):
+# a browser that is no distribution's package installs into /opt, links some libraries in, and its sandbox helper
+# is set-user-id
+lintian --no-tag-display-limit --suppress-tags dir-or-file-in-opt,embedded-library,setuid-binary \n  /tmp/thoron.deb > "$out/lintian.txt" 2>&1; echo $? > "$out/lintian_exit"
 step upgrade
 before=$(cd /home/tester/.config/thoron && find . -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum)
 rm -rf /tmp/up && dpkg-deb -R /tmp/thoron.deb /tmp/up
@@ -93,21 +97,21 @@ apt-get install -y -qq /tmp/thoron-up.deb > "$out/apt-upgrade.txt" 2>&1; echo $?
 dpkg-query -W -f='${Version}' thoron-browser > "$out/version-after.txt" 2>&1
 after=$(cd /home/tester/.config/thoron && find . -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum)
 [ "$before" = "$after" ] && echo same > "$out/profile-kept" || echo changed > "$out/profile-kept"
-rm -f "$out/thoron-ran"; opens thoron thoron-again
+opens thoron-browser thoron-again
 if [ "$ONLINE" = 1 ]; then
   step widevine
-  as_tester python3 -I "$TOOLS/qa/widevine_check.py" --browser /usr/bin/thoron --work /tmp/widevine --no-playback \
+  as_tester python3 -I "$TOOLS/qa/widevine_check.py" --browser /usr/bin/thoron-browser --work /tmp/widevine --no-playback \
     > "$out/widevine.txt" 2>&1; echo $? > "$out/widevine_exit"
 fi
 if [ "$NETLOG" = 1 ]; then
   step network
-  as_tester python3 -I "$TOOLS/qa/netlog_hosts.py" --browser /usr/bin/thoron --work /tmp/netlog --seconds 240 --runs 2 \
+  as_tester python3 -I "$TOOLS/qa/netlog_hosts.py" --browser /usr/bin/thoron-browser --work /tmp/netlog --seconds 240 --runs 2 \
     --label "Thoron 158 on Linux" --md "$out/hosts.md" --json "$out/hosts.json" > "$out/netlog.txt" 2>&1
   echo $? > "$out/netlog_exit"
 fi
 step remove
 apt-get remove -y -qq thoron-browser > "$out/apt-remove.txt" 2>&1; echo $? > "$out/remove_exit"
-{ [ -e /opt/kuchisofts/thoron ] && echo program; [ -e /usr/bin/thoron ] && echo command
+{ [ -e /opt/kuchisofts/thoron ] && echo program; [ -e /usr/bin/thoron-browser ] && echo command
   [ -d /home/tester/.config/thoron/Default ] && echo profile; } > "$out/after-remove.txt"
 step done
 """
@@ -174,7 +178,7 @@ def problems(found: Path, online: bool) -> dict[str, list[str]]:
     if both:
         out["coexists"].append(f"files that belong to both packages: {sorted(both)[:5]}")
     if not read(found, "which-thoron.txt") or not read(found, "which-thorium.txt"):
-        out["coexists"].append("`thoron` or `thorium-browser` is not on the PATH")
+        out["coexists"].append("`thoron-browser` or `thorium-browser` is not on the PATH")
     desktop = read(found, "desktop.txt").split()
     if not any(d.startswith("thoron") for d in desktop) or not any(d.startswith("thorium") for d in desktop):
         out["coexists"].append(f"a desktop entry is missing: {[d for d in desktop if 'thor' in d]}")

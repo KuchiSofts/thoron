@@ -95,6 +95,31 @@ switch: the log then held only 1 or 2 downloads a run (those the browser makes i
 The hosts are expected to be the same either way, since both ways take them from the same answer of
 the update check; that is inferred, not measured.
 
+### 2.1 On Linux (2026-11-20)
+
+Measured the same way on the Linux package (`thoron-browser` 158.0.8127.65 for x64, the code of Windows build
+.6503) on a clean Ubuntu 24.04 test machine (`tools/qa/linux_package_check.py --netlog`: two runs of 240 s,
+headless, a throwaway profile, one local page). It is the Windows list as it is since ROADMAP S.15 (no
+sign-in check, no Google AI or search contact, no time service, no optimization guide), with one host more:
+
+| Host | In runs (of 2) | Requests | First at | Asked by | Asked for | Answers |
+|---|---|---|---|---|---|---|
+| redirector.gvt1.com | 2 | 1 | 0.2 | `spellcheck_hunspell_dictionary` (2) | `GET /edgedl/chrome/dict/en-us-10-2.bdic` (2) | `302` (2) |
+| a `*.gvt1.com` cache server (its name depends on the network) | 2 | 1 | 0.4 to 0.5 | `spellcheck_hunspell_dictionary` (2) | `GET /edgedl/chrome/dict/en-us-10-2.bdic` (2) | `200` (2) |
+| update.googleapis.com | 2 | 18 | 60.2 | `update_client` (36) | `POST /service/update2/json` (36) | `200` (36) |
+| edgedl.me.gvt1.com | 2 | 17 | 60.4 | `update_client` (34) | `GET /edgedl/diffgen-puffin/<id>/<...>` (14), the components' files | `200` (34) |
+| ublockorigin.github.io | 2 | 7 | 120.2 | `thoron_adblock_lists` (14) | Thoron adblock's lists (section 7) | `200` (14) |
+| malware-filter.gitlab.io | 2 | 2 | 121.1 to 121.2 | `thoron_adblock_lists` (4) | the phishing and URLhaus lists | `200` (4) |
+| safebrowsing.googleapis.com | 2 | 1 | 154.2 to 171.2 | `safe_browsing_v4_update` (2) | `GET /v4/threatListUpdates:fetch` (2) | `200` (2) |
+
+- **The spelling dictionary.** On Linux the browser checks spelling with its own Hunspell dictionaries, not the
+  system's, and fetches the one for its language from Google's download servers at the first start (Windows uses
+  its own spelling checker, so this request is not made there). Switching spell checking off in Settings
+  (Languages) before the first start avoids it; the dictionary is a public file and the request names only it.
+- **Component updates** start 60 s after the start on Linux (the browser makes the downloads itself; there is no
+  background transfer service), the same hosts and files as on Windows. Widevine is among them only when asked for.
+- What is not measured on Linux yet: a desktop session's own contacts (GNOME or KDE), longer runs, and policies.
+
 ## 3. What the requests carry
 
 Read from the request lines and header names of one run (values are not kept):

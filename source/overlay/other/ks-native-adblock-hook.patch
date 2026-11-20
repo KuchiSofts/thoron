@@ -3189,6 +3189,36 @@ index 4068abe94c19453f23cf39f261c1fb25bd640625..b2ce3dca4ca34e9ecaab07d91066d607
    if (regkey.Open(HKEY_CURRENT_USER, backup_registry_key_.c_str(),
                    KEY_ALL_ACCESS) == ERROR_SUCCESS &&
        regkey.ReadValueDW(
+diff --git a/chrome/installer/linux/debian/build.py b/chrome/installer/linux/debian/build.py
+index d1e21f312ff5fc77ebc4c3d1e508cd1bc649b1d6..8c6bd4c9957b6f2b1afeb3ad295ae25fad425002 100644
+--- a/chrome/installer/linux/debian/build.py
++++ b/chrome/installer/linux/debian/build.py
+@@ -227,6 +227,11 @@ def main():
+         staging_dir / f"usr/share/doc/{inst.context['USR_BIN_SYMLINK_NAME']}"
+     ).chmod(0o755)
+ 
++    # Thoron (ROADMAP P2.9): the copyright file Debian asks every package to carry.
++    doc_dir = staging_dir / f"usr/share/doc/{inst.context['USR_BIN_SYMLINK_NAME']}"
++    shutil.copyfile(pathlib.Path(__file__).parent / "copyright", doc_dir / "copyright")
++    (doc_dir / "copyright").chmod(0o644)
++
+     inst.stage_install_common()
+ 
+     logging.info(f"Staging Debian install files in '{staging_dir}'...")
+diff --git a/chrome/installer/linux/common/installer.py b/chrome/installer/linux/common/installer.py
+index cf7a62ec94dae10ab939ba6cebb2fd2fbced750f..fbb1f97b751bd3a9f95f02983a191bd3da616e94 100644
+--- a/chrome/installer/linux/common/installer.py
++++ b/chrome/installer/linux/common/installer.py
+@@ -106,7 +106,8 @@ def gen_changelog(context, staging_dir, deb_changelog):
+ 
+     gzlog_dir = staging_dir / f"usr/share/doc/{context['PACKAGE']}"
+     gzlog_dir.mkdir(parents=True, exist_ok=True)
+-    gzlog = gzlog_dir / "changelog.gz"
++    # Thoron (ROADMAP P2.9): Debian's name for a package's own changelog.
++    gzlog = gzlog_dir / "changelog.Debian.gz"
+ 
+     with gzlog.open("wb") as f_out:
+         if os.environ.get("VERBOSE"):
 diff --git a/chrome/browser/thoron_portable/BUILD.gn b/chrome/browser/thoron_portable/BUILD.gn
 new file mode 100644
 index 0000000000000000000000000000000000000000..b8fae02cb350362238839392fc99ff8b5a6647b2
@@ -40984,6 +41014,53 @@ index 0000000000000000000000000000000000000000..05d9b3c2fe8f46afc5448b3c22d7568b
 +};
 +
 +#endif  // CHROME_BROWSER_UI_WEBUI_THORON_WELCOME_UI_H_
+diff --git a/chrome/installer/linux/debian/copyright b/chrome/installer/linux/debian/copyright
+new file mode 100644
+index 0000000000000000000000000000000000000000..3aa98a59f78edae4a35537b47fac5adb6458f4b1
+--- /dev/null
++++ b/chrome/installer/linux/debian/copyright
+@@ -0,0 +1,41 @@
++Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
++Upstream-Name: Thoron
++Source: https://github.com/KuchiSofts/thoron
++Comment: Thoron is a web browser built on Thorium (Alexander Frick and the Thorium contributors,
++ https://github.com/Alex313031/thorium) and Chromium (The Chromium Authors, https://www.chromium.org).
++ Thoron is an independent browser and is not affiliated with or endorsed by the Thorium project or Google.
++ The browser contains many libraries with licences of their own (among them GPL-3.0 for the uBlock Origin
++ resources and some filter lists of Thoron adblock); every one is listed with its licence on the browser's
++ own page chrome://credits.
++
++Files: *
++Copyright: 2006-2026 The Chromium Authors
++           2021-2026 Alexander Frick and the Thorium contributors
++           2026 KuchiSofts
++License: BSD-3-Clause
++
++License: BSD-3-Clause
++ Redistribution and use in source and binary forms, with or without
++ modification, are permitted provided that the following conditions are met:
++ .
++ 1. Redistributions of source code must retain the above copyright notice, this
++    list of conditions and the following disclaimer.
++ .
++ 2. Redistributions in binary form must reproduce the above copyright notice,
++    this list of conditions and the following disclaimer in the documentation
++    and/or other materials provided with the distribution.
++ .
++ 3. Neither the name of the copyright holder nor the names of its
++    contributors may be used to endorse or promote products derived from
++    this software without specific prior written permission.
++ .
++ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
++ AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
++ IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
++ DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
++ FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
++ DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
++ SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
++ CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
++ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 diff --git a/chrome/utility/importer/chromium_family_importer_win.cc b/chrome/utility/importer/chromium_family_importer_win.cc
 new file mode 100644
 index 0000000000000000000000000000000000000000..782136cfcbebe06bab002718f55702a374112dec

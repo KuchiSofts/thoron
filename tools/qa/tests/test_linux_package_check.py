@@ -39,7 +39,7 @@ def good() -> dict:
         "thoron-ran": "running", "thorium-ran": "running", "thoron-again-ran": "running",
         "config-dirs.txt": "thoron\nthorium\n", "sandbox.txt": SANDBOX, "lintian.txt": "W: a warning only\n",
         "version.txt": "158.0.8127.6504-1", "version-after.txt": "158.0.8127.6504-1+upgradetest1",
-        "profile-kept": "same",
+        "profile-kept": "same", "remove_exit": "0", "after-remove.txt": "profile",
     }
 
 
@@ -61,6 +61,7 @@ class ProblemsTests(unittest.TestCase):
             "sandbox": {"sandbox.txt": SANDBOX.replace("You are adequately", "You are not adequately")},
             "lintian": {"lintian.txt": "E: thoron-browser: something wrong\n"},
             "upgrade": {"profile-kept": "changed"},
+            "remove": {"after-remove.txt": "program\nprofile"},
         }
         for step, change in cases.items():
             with self.subTest(step):

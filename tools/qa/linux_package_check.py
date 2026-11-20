@@ -18,6 +18,7 @@ the plain user `tester`:
     lintian      lintian finds no error in the package
     upgrade      the same package with a higher version installs over it and leaves the profile byte for
                  byte as it was; Thoron opens it again afterwards
+    remove       `apt remove` takes the program and its command away and leaves the person's profile
     widevine     (--online) tools/qa/widevine_check.py on the installed browser: the module is fetched when
                  asked for and a page gets Widevine keys (no playback: the machine has no sound)
     network      (--netlog) tools/qa/netlog_hosts.py on the installed browser: the hosts a fresh profile
@@ -104,6 +105,10 @@ if [ "$NETLOG" = 1 ]; then
     --label "Thoron 158 on Linux" --md "$out/hosts.md" --json "$out/hosts.json" > "$out/netlog.txt" 2>&1
   echo $? > "$out/netlog_exit"
 fi
+step remove
+apt-get remove -y -qq thoron-browser > "$out/apt-remove.txt" 2>&1; echo $? > "$out/remove_exit"
+{ [ -e /opt/kuchisofts/thoron ] && echo program; [ -e /usr/bin/thoron ] && echo command
+  [ -d /home/tester/.config/thoron/Default ] && echo profile; } > "$out/after-remove.txt"
 step done
 """
 
@@ -149,7 +154,7 @@ def owned_files(listing: str) -> set[str]:
 
 def problems(found: Path, online: bool) -> dict[str, list[str]]:
     out: dict[str, list[str]] = {"install": [], "names": [], "coexists": [], "sandbox": [], "lintian": [],
-                                 "upgrade": []}
+                                 "upgrade": [], "remove": []}
     if online:
         out["widevine"] = []
     if read(found, "reached") != "done":
@@ -193,6 +198,13 @@ def problems(found: Path, online: bool) -> dict[str, list[str]]:
         out["upgrade"].append("Thoron did not open again after the upgrade")
     if online and read(found, "widevine_exit") != "0":
         out["widevine"].append(f"tools/qa/widevine_check.py: {read(found, 'widevine.txt')[-500:]}")
+    left = read(found, "after-remove.txt").split()
+    if read(found, "remove_exit") != "0":
+        out["remove"].append(f"apt could not remove the package: {read(found, 'apt-remove.txt')[-300:]}")
+    if "program" in left or "command" in left:
+        out["remove"].append(f"the removal left Thoron's {' and '.join(x for x in left if x != 'profile')}")
+    if "profile" not in left:
+        out["remove"].append("the removal took the profile with it")
     return out
 
 

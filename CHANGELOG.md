@@ -24,6 +24,7 @@ Explanations live in the design docs under `docs/design/`.
 - **Import:** open windows, tabs and tab groups from Firefox, with each tab's history and pinned tabs; Firefox's own pages stay behind (`tools/migrate/firefox_sessions.py`).
 - **Quality:** Thoron's installer is checked on a clean Windows in Windows Sandbox: install, first start, an update while Thoron runs, uninstall, for one user and for every user of the PC, with the profile kept. Run from a read-only folder, the installer stops with code 109; run it from Downloads.
 - **Releases:** one release can carry several builds of a version (AVX2 and SSE4), with one update manifest that names them all.
+- **Releases:** a Linux release holds the `.deb` and the portable `.tar.xz` made from it, with the updater beside the program.
 - **Releases:** a banner at the top of every release's notes, and a picture for links to the repository.
 - **Quality:** a video check for H.264, HEVC, AV1 and VP9 up to 4K60 on each graphics adapter; on NVIDIA graphics Thoron decodes all of them in hardware and drops about as few frames as Chrome.
 - **Ad blocking:** Thoron adblock's "Restore from file" takes uBlock Origin's own backup: your filters, lists, trusted sites, rules and changed settings come over.

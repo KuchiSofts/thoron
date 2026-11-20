@@ -159,7 +159,7 @@ LINUX_FIXTURES = {
         'RDN="org.chromium.Thorium"\n'),
     L + "common/wrapper": (
         '# Copyright 2026 The Chromium Authors, the AUR, and Alex313031\n'
-        "# Prefer Thorium's bundled libraries.\n"
+        '# Always use our versions of ffmpeg libs.\n'
         'find "$HOME/.config/thorium/Crash Reports/pending/" -mtime +30 \\\n'
         'APPNAME=thorium\n'
         '# DESKTOP="thorium-browser"\n'

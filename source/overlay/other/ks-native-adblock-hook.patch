@@ -21605,10 +21605,10 @@ index 0000000000000000000000000000000000000000..35d8d4d6e1b99357d973bdac332fbba4
 +of the spec ("A signature to test against") is among them, under its own throwaway key.
 diff --git a/components/thoron_update/cli.cc b/components/thoron_update/cli.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..635ce2be3582b2962c043cb10b3f759549c699b8
+index 0000000000000000000000000000000000000000..8440d67a8b2cbb94fa7b84814e0ab5c5731288c9
 --- /dev/null
 +++ b/components/thoron_update/cli.cc
-@@ -0,0 +1,566 @@
+@@ -0,0 +1,568 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -22061,7 +22061,9 @@ index 0000000000000000000000000000000000000000..635ce2be3582b2962c043cb10b3f7595
 +                        const VersionFile& entry,
 +                        const base::FilePath& to) {
 +  const std::optional<int64_t> size = base::GetFileSize(staged.AppendASCII(kUpdaterFile));
-+  if (!size || *size != entry.size || !base::CopyFile(staged.AppendASCII(kUpdaterFile), to)) {
++  if (!size || *size != entry.size || !base::CopyFile(staged.AppendASCII(kUpdaterFile), to) ||
++      !MakeRunnableIfProgram(to)) {
++    base::DeleteFile(to);
 +    return false;
 +  }
 +  // What runs is the copy, so the copy is what is checked.
@@ -22641,10 +22643,10 @@ index 0000000000000000000000000000000000000000..bed3c9004fb5db00bbbcbfc0f0a26fc4
 +}
 diff --git a/components/thoron_update/delta_package.cc b/components/thoron_update/delta_package.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..1b487dca9744d7727840af87b15c1aa3c9d5f46b
+index 0000000000000000000000000000000000000000..0436c0ff83e22afab046dae251791c38e1115455
 --- /dev/null
 +++ b/components/thoron_update/delta_package.cc
-@@ -0,0 +1,348 @@
+@@ -0,0 +1,352 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -22882,7 +22884,8 @@ index 0000000000000000000000000000000000000000..1b487dca9744d7727840af87b15c1aa3
 +                       FileCheck::kOk) {
 +      return Abandon(staged, DeltaResult::kOldFileDiffers);
 +    }
-+    if (!base::CreateDirectory(target->DirName()) || !base::CopyFile(*source, *target)) {
++    if (!base::CreateDirectory(target->DirName()) || !base::CopyFile(*source, *target) ||
++        !MakeRunnableIfProgram(*target)) {
 +      return Abandon(staged, DeltaResult::kIoError);
 +    }
 +    if (CheckFile(*target, PackageFile{std::string(), entry.size, entry.sha256}) != FileCheck::kOk) {
@@ -22948,6 +22951,9 @@ index 0000000000000000000000000000000000000000..1b487dca9744d7727840af87b15c1aa3
 +      if (!base::WriteFile(target, made)) {
 +        return Abandon(staged, DeltaResult::kIoError);
 +      }
++    }
++    if (!MakeRunnableIfProgram(target)) {
++      return Abandon(staged, DeltaResult::kIoError);
 +    }
 +    if (CheckFile(target, PackageFile{std::string(), entry.size, entry.sha256}) != FileCheck::kOk) {
 +      return Abandon(staged, DeltaResult::kNewFileDiffers);
@@ -30107,10 +30113,10 @@ index 0000000000000000000000000000000000000000..750d4e09f63d37834aa6e3af9c6067cb
 +}  // namespace thoron_update
 diff --git a/components/thoron_update/package.cc b/components/thoron_update/package.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..df6f1302c9cf9d867862432b1fb07996b6cc6400
+index 0000000000000000000000000000000000000000..e226a274d586e81bf439c8b2b612b111061a2913
 --- /dev/null
 +++ b/components/thoron_update/package.cc
-@@ -0,0 +1,239 @@
+@@ -0,0 +1,270 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -30349,13 +30355,44 @@ index 0000000000000000000000000000000000000000..df6f1302c9cf9d867862432b1fb07996
 +  return out;
 +}
 +
++bool MakeRunnableIfProgram(const base::FilePath& file) {
++#if BUILDFLAG(IS_POSIX)
++  base::File opened(file, base::File::FLAG_OPEN | base::File::FLAG_READ);
++  if (!opened.IsValid()) {
++    return false;
++  }
++  std::array<uint8_t, 4> start = {};
++  const std::optional<size_t> read = opened.Read(0, start);
++  opened.Close();
++  if (!read) {
++    return false;
++  }
++  const bool elf = *read == 4 && start[0] == 0x7F && start[1] == 'E' &&
++                   start[2] == 'L' && start[3] == 'F';
++  const bool script = *read >= 2 && start[0] == '#' && start[1] == '!';
++  if (!elf && !script) {
++    return true;
++  }
++  return base::SetPosixFilePermissions(
++      file, base::FILE_PERMISSION_READ_BY_USER |
++                base::FILE_PERMISSION_WRITE_BY_USER |
++                base::FILE_PERMISSION_EXECUTE_BY_USER |
++                base::FILE_PERMISSION_READ_BY_GROUP |
++                base::FILE_PERMISSION_EXECUTE_BY_GROUP |
++                base::FILE_PERMISSION_READ_BY_OTHERS |
++                base::FILE_PERMISSION_EXECUTE_BY_OTHERS);
++#else
++  return true;
++#endif
++}
++
 +}  // namespace thoron_update
 diff --git a/components/thoron_update/package.h b/components/thoron_update/package.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..0b4d41d5b367f2ae3cd8bd5767b64a7f98e07fb9
+index 0000000000000000000000000000000000000000..c4235b9113af9bc31653321c5778ab9959e84091
 --- /dev/null
 +++ b/components/thoron_update/package.h
-@@ -0,0 +1,137 @@
+@@ -0,0 +1,145 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -30427,6 +30464,14 @@ index 0000000000000000000000000000000000000000..0b4d41d5b367f2ae3cd8bd5767b64a7f
 +                            const PackageFile& expected,
 +                            const base::FilePath& destination);
 +
++// On Linux, a file the updater writes (a copy, a file made from a delta, one
++// unpacked from a .zip) is made with no right to run it, so a program that comes
++// through an update would not start. This gives the file the rights a program
++// has (rwxr-xr-x) when it is one, an ELF file or a script ("#!"), and leaves any
++// other file as it is. Only the file's first bytes are read. False when it
++// cannot be read or changed; on Windows it does nothing and is true.
++bool MakeRunnableIfProgram(const base::FilePath& file);
++
 +// --- What to download (ROADMAP P4.2) -----------------------------------------
 +
 +struct DownloadStep {
@@ -30495,10 +30540,10 @@ index 0000000000000000000000000000000000000000..0b4d41d5b367f2ae3cd8bd5767b64a7f
 +#endif  // COMPONENTS_THORON_UPDATE_PACKAGE_H_
 diff --git a/components/thoron_update/package_unittest.cc b/components/thoron_update/package_unittest.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..c4629989480b89435554817f8a2ef56e09acc896
+index 0000000000000000000000000000000000000000..9107821eb5be00f267e12f0e1ccafc7ddabf59cb
 --- /dev/null
 +++ b/components/thoron_update/package_unittest.cc
-@@ -0,0 +1,330 @@
+@@ -0,0 +1,361 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -30827,14 +30872,45 @@ index 0000000000000000000000000000000000000000..c4629989480b89435554817f8a2ef56e
 +#endif
 +}
 +
++// A program that comes through an update must start: on Linux the updater's
++// own writes make files that may not be run (rw-------).
++TEST(ThoronUpdateFileTest, AProgramItWroteCanBeRunAndOtherFilesStayAsTheyAre) {
++  base::ScopedTempDir dir;
++  ASSERT_TRUE(dir.CreateUniqueTempDir());
++  const base::FilePath elf = dir.GetPath().AppendASCII("thoron");
++  const base::FilePath script = dir.GetPath().AppendASCII("launcher");
++  const base::FilePath data = dir.GetPath().AppendASCII("resources.pak");
++  const base::FilePath tiny = dir.GetPath().AppendASCII("one");
++  ASSERT_TRUE(base::WriteFile(elf, std::string_view("\x7F" "ELF\x02")));
++  ASSERT_TRUE(base::WriteFile(script, "#!/bin/sh\nexit 0\n"));
++  ASSERT_TRUE(base::WriteFile(data, "PAK not a program"));
++  ASSERT_TRUE(base::WriteFile(tiny, "#"));
++  EXPECT_TRUE(MakeRunnableIfProgram(elf));
++  EXPECT_TRUE(MakeRunnableIfProgram(script));
++  EXPECT_TRUE(MakeRunnableIfProgram(data));
++  EXPECT_TRUE(MakeRunnableIfProgram(tiny));
++#if BUILDFLAG(IS_POSIX)
++  EXPECT_FALSE(MakeRunnableIfProgram(dir.GetPath().AppendASCII("missing")));
++  int mode = 0;
++  ASSERT_TRUE(base::SetPosixFilePermissions(data, 0600));
++  EXPECT_TRUE(MakeRunnableIfProgram(data));
++  ASSERT_TRUE(base::GetPosixFilePermissions(elf, &mode));
++  EXPECT_EQ(mode, 0755);
++  ASSERT_TRUE(base::GetPosixFilePermissions(script, &mode));
++  EXPECT_EQ(mode, 0755);
++  ASSERT_TRUE(base::GetPosixFilePermissions(data, &mode));
++  EXPECT_EQ(mode, 0600);
++#endif
++}
++
 +}  // namespace
 +}  // namespace thoron_update
 diff --git a/components/thoron_update/portable_package.cc b/components/thoron_update/portable_package.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..7165a357730c3db9d5cc1e3c1c1bc68346070596
+index 0000000000000000000000000000000000000000..ce6d8f43ef419af85f4561c114f2a10b8f84bc80
 --- /dev/null
 +++ b/components/thoron_update/portable_package.cc
-@@ -0,0 +1,224 @@
+@@ -0,0 +1,225 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -30850,6 +30926,7 @@ index 0000000000000000000000000000000000000000..7165a357730c3db9d5cc1e3c1c1bc683
 +#include "base/files/file_util.h"
 +#include "base/strings/string_number_conversions.h"
 +#include "base/strings/string_util.h"
++#include "components/thoron_update/package.h"
 +#include "crypto/hash.h"
 +#include "third_party/zlib/google/zip_reader.h"
 +
@@ -30996,7 +31073,7 @@ index 0000000000000000000000000000000000000000..7165a357730c3db9d5cc1e3c1c1bc683
 +                                 : UnpackResult::kIoError);
 +    }
 +    const std::optional<int64_t> size = base::GetFileSize(target);
-+    if (!size) {
++    if (!size || !MakeRunnableIfProgram(target)) {
 +      return Abandon(staged, UnpackResult::kIoError);
 +    }
 +    written += *size;
@@ -43816,10 +43893,10 @@ index 0000000000000000000000000000000000000000..52e83e8ee886a9d137246fac75fe83e4
 +}  // namespace user_data_importer::chromium_family
 diff --git a/components/user_data_importer/chromium_family/open_tabs.cc b/components/user_data_importer/chromium_family/open_tabs.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..24bd70d078c4ef1fb11b6dc0c3f48dd11391b36c
+index 0000000000000000000000000000000000000000..2491ef0c83a100050fdce1bda37af4cefad7b4fe
 --- /dev/null
 +++ b/components/user_data_importer/chromium_family/open_tabs.cc
-@@ -0,0 +1,273 @@
+@@ -0,0 +1,261 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -43877,39 +43954,27 @@ index 0000000000000000000000000000000000000000..24bd70d078c4ef1fb11b6dc0c3f48dd1
 +// browser's own, such as Edge's, Vivaldi's or Opera's, or one an older Chromium
 +// wrote) or cannot read, and everything after it is lost. As Thoron's import
 +// tool does (tools/migrate/sessions.py, prepare_copy), such commands are left
-+// out first: those of an unknown id, then each one the replay stops at, found
-+// by replaying ever shorter beginnings of the file.
++// out first: those of an unknown id, then each one the replay cannot read. The
++// replay calls a command corrupted only when its own contents cannot be read,
++// never because of the commands before it, so each one is replayed alone, once:
++// the work grows with the number of commands, not faster. A file with more
++// commands than a real session has is left to Chromium's replay as it is.
 +void LeaveOutWhatStopsTheReplay(
 +    std::vector<std::unique_ptr<sessions::SessionCommand>>& commands) {
 +  std::erase_if(commands, [](const auto& command) {
 +    return !IsKnownCommand(command->id());
 +  });
-+  constexpr int kMostLeftOut = 64;
-+  for (int left_out = 0; left_out < kMostLeftOut; ++left_out) {
-+    std::vector<std::unique_ptr<sessions::SessionWindow>> windows;
-+    if (Replay(commands, &windows) !=
-+        sessions::SessionReplayResult::kCorruptedCommand) {
-+      return;
-+    }
-+    // The shortest beginning whose replay stops: its last command is the one.
-+    size_t low = 1;
-+    size_t high = commands.size();
-+    while (low < high) {
-+      const size_t middle = low + (high - low) / 2;
-+      std::vector<std::unique_ptr<sessions::SessionCommand>> beginning;
-+      for (size_t i = 0; i < middle; ++i) {
-+        beginning.push_back(commands[i]->Clone());
-+      }
-+      std::vector<std::unique_ptr<sessions::SessionWindow>> unused;
-+      if (Replay(beginning, &unused) ==
-+          sessions::SessionReplayResult::kCorruptedCommand) {
-+        high = middle;
-+      } else {
-+        low = middle + 1;
-+      }
-+    }
-+    commands.erase(commands.begin() + (low - 1));
++  constexpr size_t kMostCommandsChecked = 500'000;
++  if (commands.size() > kMostCommandsChecked) {
++    return;
 +  }
++  std::erase_if(commands, [](const auto& command) {
++    std::vector<std::unique_ptr<sessions::SessionCommand>> alone;
++    alone.push_back(command->Clone());
++    std::vector<std::unique_ptr<sessions::SessionWindow>> unused;
++    return Replay(alone, &unused) ==
++           sessions::SessionReplayResult::kCorruptedCommand;
++  });
 +}
 +
 +// Keeps the tab's web pages only, each without the other browser's page state,
@@ -44174,10 +44239,10 @@ index 0000000000000000000000000000000000000000..7cbbf83aa64e5430c6d2224259b17705
 +#endif  // COMPONENTS_USER_DATA_IMPORTER_CHROMIUM_FAMILY_OPEN_TABS_H_
 diff --git a/components/user_data_importer/chromium_family/open_tabs_fuzzer.cc b/components/user_data_importer/chromium_family/open_tabs_fuzzer.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..36d108b0e1729e047a84e9a4f51999d48f8e3019
+index 0000000000000000000000000000000000000000..3a157b404aa0e99bc135129af8e234417c9f3495
 --- /dev/null
 +++ b/components/user_data_importer/chromium_family/open_tabs_fuzzer.cc
-@@ -0,0 +1,62 @@
+@@ -0,0 +1,68 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -44188,7 +44253,9 @@ index 0000000000000000000000000000000000000000..36d108b0e1729e047a84e9a4f51999d4
 +#include <stddef.h>
 +#include <stdint.h>
 +
++#include "base/at_exit.h"
 +#include "base/check_op.h"
++#include "base/command_line.h"
 +#include "base/compiler_specific.h"
 +#include "base/containers/span.h"
 +#include "base/no_destructor.h"
@@ -44201,8 +44268,12 @@ index 0000000000000000000000000000000000000000..36d108b0e1729e047a84e9a4f51999d4
 +namespace {
 +
 +// Chromium's tab groups name their colours from the resource bundle, which a
-+// browser or utility process loads; here an empty one stands in.
++// browser or utility process loads; here an empty one stands in. It reads the
++// command line, which a process has and a fuzzer must set up first, as it does
++// the at-exit list the session ids' generator registers with.
 +struct Environment {
++  base::AtExitManager at_exit;
++  bool command_line = base::CommandLine::Init(0, nullptr);
 +  ui::ResourceBundle bundle{nullptr};
 +  ui::ResourceBundle::SharedInstanceSwapperForTesting swap{&bundle};
 +};

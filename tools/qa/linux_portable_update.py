@@ -107,7 +107,12 @@ def one_start(package: Path, set_home: bool) -> dict:
 
 
 def cli(program: Path, *args: str) -> tuple[int, str]:
-    done = subprocess.run([str(program), *args], capture_output=True, text=True, timeout=600)
+    """The updater's exit code and output; a program that is not there or does not run is a result too."""
+    try:
+        done = subprocess.run([str(program), *args], capture_output=True, text=True, timeout=600)
+    except (OSError, subprocess.SubprocessError) as exc:
+        listing = sorted(p.name for p in program.parent.parent.iterdir()) if program.parent.parent.is_dir() else []
+        return -1, f"{type(exc).__name__}: {exc}; in {program.parent.parent.name}: {listing}"
     return done.returncode, done.stdout + done.stderr
 
 

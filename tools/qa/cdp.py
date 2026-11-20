@@ -116,7 +116,12 @@ def inspect(browser: Path, work: Path, page: str, settle: float = 4, width: int 
         ws = WebSocket(target["webSocketDebuggerUrl"])
         try:
             text = ws.call("Runtime.evaluate", expression=TEXT_JS, returnByValue=True)["result"].get("value", "")
-            shot = base64.b64decode(ws.call("Page.captureScreenshot", format="png")["data"])
+            # the picture is for a person to look at; on a busy machine it can take too long, and the text,
+            # which the checks read, is not lost for that
+            try:
+                shot = base64.b64decode(ws.call("Page.captureScreenshot", format="png")["data"])
+            except (TimeoutError, OSError):
+                shot = b""
         finally:
             ws.close()
         return {"text": text, "png": shot}
@@ -136,7 +141,10 @@ def main(argv: list[str]) -> int:
         print("cdp: only chrome:// and about: pages are checked", file=sys.stderr)
         return 2
     result = inspect(a.browser, a.work, a.page)
-    a.png.write_bytes(result["png"])
+    if result["png"]:
+        a.png.write_bytes(result["png"])
+    else:
+        print("cdp: no picture (the screenshot took too long)", file=sys.stderr)
     if a.text:
         a.text.write_text(result["text"], encoding="utf-8")
     print(result["text"])

@@ -17,6 +17,18 @@ a fifth of the processor the whole time, so the runs spread as they do; both bro
 | Idle CPU | 0.1 % | 0.0 % |
 | Start-up with 4 profiles, until the profile picker has loaded | 221 ms (23 %) | 242 ms (30 %) |
 
+## Online suites
+
+`tools/qa/online_bench.py`, 3 runs each, each run in a real window with a throwaway profile (browserbench.org).
+
+| Suite (median, higher is better) | Thoron 158 | Chrome 158 |
+|---|---|---|
+| JetStream 2.1 | 313.7 (spread 19 %) | 291.8 (10 %) |
+| Speedometer 3 | 23.6 (11 %) | 20.0 (17 %) |
+
+Against Chrome 157 (2026-11-17) Thoron's JetStream was lower (299 against 358); against Chrome of its own major version
+it is not.
+
 ## Four profiles opening their windows at once
 
 The case #803 is about: four profiles that were open at the last exit, the profile picker off, so the start opens

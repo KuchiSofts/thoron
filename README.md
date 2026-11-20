@@ -6,7 +6,7 @@
 
 **A fast, secure and private browser for Windows, based on Thorium and Chromium.**
 
-[![Status](https://img.shields.io/badge/status-pre--release-F72F8E?style=flat-square)](#roadmap) <!-- progress-badge:start -->[![Roadmap progress](https://img.shields.io/badge/roadmap-75%25-7B2FF7?style=flat-square)](#roadmap)<!-- progress-badge:end --> [![Platforms](https://img.shields.io/badge/platforms-Windows%20first-24292f?style=flat-square)](#platforms) [![CPU](https://img.shields.io/badge/cpu-x64%20%7C%20ARM64-24292f?style=flat-square)](#platforms) [![License](https://img.shields.io/badge/license-BSD--3--Clause-24292f?style=flat-square)](LICENSE.md)
+[![Status](https://img.shields.io/badge/status-pre--release-F72F8E?style=flat-square)](#roadmap) <!-- progress-badge:start -->[![Roadmap progress](https://img.shields.io/badge/roadmap-76%25-7B2FF7?style=flat-square)](#roadmap)<!-- progress-badge:end --> [![Platforms](https://img.shields.io/badge/platforms-Windows%20first-24292f?style=flat-square)](#platforms) [![CPU](https://img.shields.io/badge/cpu-x64%20%7C%20ARM64-24292f?style=flat-square)](#platforms) [![License](https://img.shields.io/badge/license-BSD--3--Clause-24292f?style=flat-square)](LICENSE.md)
 
 [Why Thoron](#why-thoron) · [Features](#features) · [Install and update](#install-and-update) · [Versions](#versions) · [Roadmap](#roadmap) · [Platforms](#platforms) · [Verify](#verifying-downloads) · [Security](#security) · [Contributing](#contributing) · [Credits](#credits) · [Wiki](https://github.com/KuchiSofts/thoron/wiki)
 
@@ -78,13 +78,13 @@ changed in each version is in the [changelog](CHANGELOG.md), one line per change
 Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always current.
 
 <!-- roadmap:start -->
-**Overall:** `███████████████░░░░░` 160 of 212 tasks done (75%) · roadmap updated 2026-11-19
+**Overall:** `███████████████░░░░░` 161 of 212 tasks done (76%) · roadmap updated 2026-11-19
 
 | Area | Progress | Done | Status |
 |---|---|---|---|
 | [P0 - Foundation](ROADMAP.md#p0---foundation) | `████████████████████` | 11/11 | ✅ Done |
 | [P1 - Build environment](ROADMAP.md#p1---build-environment) | `██████████████████░░` | 9/10 | 🔄 In progress |
-| [P2 - First release](ROADMAP.md#p2---first-release) | `█████████████░░░░░░░` | 17/26 | 🔄 In progress |
+| [P2 - First release](ROADMAP.md#p2---first-release) | `██████████████░░░░░░` | 18/26 | 🔄 In progress |
 | [P2b - ARM64](ROADMAP.md#p2b---arm64) | `░░░░░░░░░░░░░░░░░░░░` | 0/5 | 🔄 In progress · ⛔ blocked item |
 | [P3 - Updater v1 + Import](ROADMAP.md#p3---updater-v1--import) | `████████████░░░░░░░░` | 13/22 | 🔄 In progress |
 | [P4 - Updater v2](ROADMAP.md#p4---updater-v2) | `████████████████░░░░` | 9/11 | 🔄 In progress |
@@ -144,7 +144,7 @@ Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always curre
 - [x] **P2.6** Widevine not bundled; fetched by Chromium's component updater at runtime
 - [ ] **P2.7** Variants AVX2 and SSE4 for Windows x64 and Linux x64
 - [ ] **P2.8** Windows packaging: Thoron mini_installer, portable `.zip` with launcher
-- [ ] **P2.9** Linux packaging: `.deb` with an AppArmor profile for user namespaces, plus portable `.tar.xz`
+- [x] **P2.9** Linux packaging: `.deb` with an AppArmor profile for user namespaces, plus portable `.tar.xz`
 - [ ] **P2.10** Signed APT repository on GitHub Pages (fixes the unsigned-repo problem of upstream #1164 and #1049)
 - [ ] **P2.11** Key ceremony: Ed25519 release key (minisign) and APT signing key, offline root, encrypted backups
 - [ ] **P2.12** Release script `tools/release/release.py`: build matrix → package → `SHA256SUMS` → sign → `BUILDINFO` → **draft** GitHub release; sets the version and refuses a non-increasing one with `tools/release/version.py` (P2.14)

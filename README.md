@@ -100,9 +100,9 @@ Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always curre
 - 🔄 **P1.9** Thoron build docs written from scratch and followed end-to-end
 - 🔄 **P2.7** Variants AVX2 and SSE4 for Windows x64 and Linux x64
 - 🔄 **P2.8** Windows packaging: Thoron mini_installer, portable `.zip` with launcher
+- 🔄 **P2.12** Release script `tools/release/release.py`: build matrix → package → `SHA256SUMS` → sign → `BUILDINFO` → **draft** GitHub release; sets the version and refuses a non-increasing one with `tools/release/version.py` (P2.14)
 - 🔄 **P2.13** `tools/release/changelog.py`: release notes generated from commit prefixes, upstream merges (author-credited), the Chromium version diff and security fixes (CVE and severity), patch changes, and issues
 - 🔄 **P2.25** The browser's source in `main`: the patch series for Chromium 158 was only on the build machine; publish it as an overlay on a pinned upstream commit, so that `main` holds everything a release is built from and nothing else
-- 🔄 **P2b.4** Beta programme: ARM issue template and community tester checklist
 
 <details>
 <summary><b>Full task list</b> (generated from <a href="ROADMAP.md">ROADMAP.md</a>)</summary>

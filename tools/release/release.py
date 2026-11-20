@@ -27,6 +27,12 @@
              The release folder then also holds the portable .zip and the licence bundle
              (thoron-<version>-licenses.zip: LICENSE.md, NOTICE, CREDITS.md, the patch licence inventory
              and the GPL text of the build tree), both listed in SHA256SUMS.
+             Linux (--platform linux, --variant linux-x64-avx2 and the like; --src and --out the Linux
+             build's tree and out dir): the package is the .deb chrome/installer/linux:stable_deb wrote
+             (thoron-<version>-<variant>.deb), and the portable .tar.xz is made from it with
+             tools/release/portable_linux.py, the updater (--updater, default thoron_update in the out dir)
+             beside the program; the .deb must be of the release's version. No update manifest is made for
+             Linux yet: its copies do not update themselves from one (ROADMAP P3.23).
              The notes take Thoron's changes from CHANGELOG.md: the section of the version when there is
              one, else what waits under [Unreleased]. They name the source tag, its commit and the
              Chromium tag, and say where the licence texts are.
@@ -92,6 +98,7 @@ from tools.legal import patch_licenses  # noqa: E402
 from tools.legal import unlicensed_patches  # noqa: E402
 from tools.qa import perf_gate  # noqa: E402
 from tools.release import adblock_resources, changelog, delta, package_audit, pe_check, portable  # noqa: E402
+from tools.release import portable_linux  # noqa: E402
 from tools.release import version as ver  # noqa: E402
 from tools.update import manifest as mf  # noqa: E402
 
@@ -99,7 +106,11 @@ _VARIANT = re.compile(r"^(win|linux)-(x64|arm64)-[a-z0-9]+$")
 # The installer the build writes (chrome/installer/mini_installer/BUILD.gn): `thoron_mini_installer.exe`, or
 # with the variant's label in the name (`thoron_AVX2_mini_installer.exe`, `thoron_ARM64_installer.exe`);
 # `mini_installer.exe` is what a build without Thoron's names writes.
-INSTALLERS = {"win": ("thoron_*installer.exe", "mini_installer.exe")}
+INSTALLERS = {"win": ("thoron_*installer.exe", "mini_installer.exe"),
+              # the .deb chrome/installer/linux:stable_deb writes (ROADMAP P2.9)
+              "linux": ("thoron-browser_*.deb",)}
+# the updater's command line in a Linux build's out dir, put beside the program in the portable package
+LINUX_UPDATER = "thoron_update"
 SYMBOLS_SUFFIX = "-symbols"
 _GH_REPO = re.compile(r"^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$")
 _SUM_LINE = re.compile(r"^([0-9a-f]{64})  ([A-Za-z0-9._+~-]+)$")
@@ -180,7 +191,8 @@ def built_installer(out: Path, platform: str) -> Path | None:
         return None
     found = sorted({p for pattern in patterns for p in out.glob(pattern) if p.is_file()})
     if not found:
-        raise ReleaseError(f"{out} holds no installer ({' or '.join(patterns)}); build mini_installer first")
+        target = "mini_installer" if platform == "win" else "chrome/installer/linux:stable_deb"
+        raise ReleaseError(f"{out} holds no installer ({' or '.join(patterns)}); build {target} first")
     if len(found) > 1:
         raise ReleaseError(f"{out} holds more than one installer ({', '.join(p.name for p in found)}); "
                            "remove the ones another configuration left")
@@ -242,10 +254,14 @@ def sevenzip_for(given: str | None, src: Path) -> str:
 
 
 def installer_name(version: str, variant: str) -> str:
+    if variant.startswith("linux-"):
+        return f"thoron-{version}-{variant}.deb"
     return f"thoron-{version}-{variant}-installer.exe"
 
 
 def portable_name(version: str, variant: str) -> str:
+    if variant.startswith("linux-"):
+        return f"thoron-{version}-{variant}-portable.tar.xz"  # as tools/release/portable_linux.py names it
     return f"thoron-{version}-{variant}-portable.zip"       # as tools/release/portable.py names it
 
 
@@ -629,6 +645,24 @@ def add_portable(chrome_bin: Path, dist: Path, version: str, variant: str, launc
 
 # --- credits (ROADMAP L.3) ---------------------------------------------------------------------------------
 
+def add_linux_portable(deb: Path, dist: Path, version: str, variant: str, updater: Path) -> Path:
+    """The Linux portable package, made from the release's own .deb with tools/release/portable_linux.py, the
+    build's updater beside the program (ROADMAP P2.9, P3.12). The .deb must be of the release's version."""
+    found, _ = portable_linux.read_deb(deb)
+    if found != version:
+        raise ReleaseError(f"{deb.name} is version {found}, the release {version}")
+    if not updater.is_file():
+        raise ReleaseError(f"no updater at {updater}; build components/thoron_update:thoron_update_cli")
+    scratch = Path(tempfile.mkdtemp(prefix="linux-portable-", dir=dist.parent))
+    try:
+        made = portable_linux.build(deb, scratch, variant, updater=updater)
+        target = dist / portable_name(version, variant)
+        shutil.move(str(made), target)
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+    return target
+
+
 def read_contributors(path: Path) -> list[dict]:
     """A saved list of upstream's contributors, as GitHub gives it (contributors.py --from-json)."""
     try:
@@ -833,6 +867,8 @@ def assemble(out: Path, dist: Path, version: str, variant: str, buildinfo: Path,
         target = dist / installer_name(version, variant)
         shutil.copy2(installer, target)
         files.append(target)
+    if installer and platform == "linux":
+        files.append(add_linux_portable(installer, dist, version, variant, updater or out / LINUX_UPDATER))
     if chrome_bin is not None and platform == "win":
         files.append(add_portable(chrome_bin, dist, version, variant, launcher or out / portable.BUILT_LAUNCHER,
                                   updater or out / portable.UPDATER))
@@ -1173,8 +1209,9 @@ def manifest_problems(plan: ManifestPlan, version: str, variant: str, private_ke
                    "(--manifest-public-key)")
     if variant not in mf.VARIANTS:
         return out + [f"{variant} is not a variant a manifest can name (known: {', '.join(mf.VARIANTS)})"]
-    if variant.split("-")[0] not in INSTALLERS:
-        return out + [f"no package is made for {variant} yet, so a manifest has nothing to name"]
+    if variant.split("-")[0] != "win":
+        return out + [f"a copy of {variant} does not update itself from a manifest yet (ROADMAP P3.23), so a "
+                      "manifest has nothing to name"]
     stand_ins = {kind: {"full": {"url": download_url(plan.gh_repo, plan.tag, name), "size": 1, "sha256": "0" * 64}}
                  for kind, name in package_names(version, variant).items()}
     try:
@@ -1356,6 +1393,9 @@ def check_prepare_options(a) -> None:
 
 def _prepare(a) -> int:
     check_prepare_options(a)
+    if a.platform == "linux" and a.manifest_key:
+        raise ReleaseError("a Linux copy does not update itself from an update manifest yet (ROADMAP P3.23): "
+                           "prepare a Linux release without --manifest-key")
     now = int(time.time())
     keep_out_of = (a.repo, a.src, a.out, a.dist)
     security = changelog.read_security(a.security) if a.security else None
@@ -1372,7 +1412,8 @@ def _prepare(a) -> int:
     thoron = read_thoron_version(a.src)
     chromium_new = ver.split(version)[0] if read_version(a.src)[1] else None
     chrome_bin = (a.chrome_bin or a.out / CHROME_BIN) if a.platform == "win" else None
-    launcher, updater = a.launcher or a.out / portable.BUILT_LAUNCHER, a.updater or a.out / portable.UPDATER
+    launcher = a.launcher or a.out / portable.BUILT_LAUNCHER
+    updater = a.updater or a.out / (portable.UPDATER if a.platform == "win" else LINUX_UPDATER)
     tags = ver.release_tags(a.repo)
     problems += [f"Thoron version: {p}" for p in thoron_version_problems(thoron, tags)]
     problems += [f"BUILDINFO: {p}" for p in source_problems(info, thoron, chromium_new)]

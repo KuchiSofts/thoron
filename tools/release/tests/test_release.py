@@ -161,6 +161,28 @@ class AssembleTests(unittest.TestCase):
     def tearDown(self):
         self.f.cleanup()
 
+    def linux_out(self, version: str = "158.0.8127.3000") -> None:
+        from tools.release.tests.test_elf_check import elf
+        from tools.release.tests.test_portable_linux import deb, the_deb
+        (self.f.out / "thoron-browser_158.0.8127.3000_AVX2.deb").write_bytes(deb(the_deb(), version=version))
+        (self.f.out / "thoron_update").write_bytes(elf(62))
+
+    def test_a_linux_release_holds_the_deb_and_the_portable_package_made_from_it(self):
+        self.linux_out()
+        files = rel.assemble(self.f.out, self.f.dist, "158.0.8127.3000", "linux-x64-avx2", self.f.buildinfo)
+        self.assertEqual(sorted(p.name for p in files),
+                         ["BUILDINFO-158.0.8127.3000-linux-x64-avx2.json", "SHA256SUMS",
+                          "thoron-158.0.8127.3000-linux-x64-avx2-portable.tar.xz",
+                          "thoron-158.0.8127.3000-linux-x64-avx2.deb"])
+        sums = (self.f.dist / "SHA256SUMS").read_text(encoding="utf-8")
+        self.assertIn("thoron-158.0.8127.3000-linux-x64-avx2-portable.tar.xz", sums)
+        self.assertFalse([p for p in self.f.dist.parent.iterdir() if p.name.startswith("linux-portable-")])
+
+    def test_a_deb_of_another_version_or_no_updater_is_refused(self):
+        self.linux_out(version="158.0.8127.2900")
+        with self.assertRaises(rel.ReleaseError):
+            rel.assemble(self.f.out, self.f.dist, "158.0.8127.3000", "linux-x64-avx2", self.f.buildinfo)
+
     def test_files_names_and_checksums(self):
         files = rel.assemble(self.f.out, self.f.dist, "158.0.8127.3000", "win-x64-avx2", self.f.buildinfo)
         names = sorted(p.name for p in files)
@@ -188,9 +210,10 @@ class AssembleTests(unittest.TestCase):
         self.assertFalse(self.f.dist.exists())
         for name in ("mini_installer.exe", "thoron_ARM64_installer.exe"):
             (self.f.out / name).unlink()
-        with self.assertRaisesRegex(rel.ReleaseError, "no installer"):
+        with self.assertRaisesRegex(rel.ReleaseError, "no installer.*build mini_installer"):
             rel.built_installer(self.f.out, "win")
-        self.assertIsNone(rel.built_installer(self.f.out, "linux"))
+        with self.assertRaisesRegex(rel.ReleaseError, "no installer.*stable_deb"):
+            rel.built_installer(self.f.out, "linux")
 
     def test_symbols_are_kept_beside_the_release_folder_never_in_it(self):
         chrome_bin = self.f.out / "Chrome-bin"
@@ -563,7 +586,8 @@ class ManifestPartsTests(ReleaseTestCase):
 
         self.assertIn("--manifest-key does not belong to the public key", problems(public=ar.keygen()[1])[0])
         self.assertIn("win-x64-avx10 is not a variant a manifest can name", problems(variant="win-x64-avx10")[0])
-        self.assertIn("no package is made for linux-x64-avx2 yet", problems(variant="linux-x64-avx2")[0])
+        self.assertIn("linux-x64-avx2 does not update itself from a manifest yet",
+                      problems(variant="linux-x64-avx2")[0])
         self.assertIn("min_updater_version: must not be higher than version",
                       problems(self.f.plan(min_updater_version=NEXT_BUILD)))
         self.assertIn("expires: must be at most 90 days after published", problems(self.f.plan(valid_days=91)))
@@ -1399,9 +1423,15 @@ class PortableStepTests(GateTestCase):
         self.assertNotIn("SHA256SUMS", self.names())
 
     def test_a_linux_release_folder_gets_no_windows_package(self):
+        from tools.release.tests.test_elf_check import elf
+        from tools.release.tests.test_portable_linux import deb, the_deb
+        (self.f.out / f"thoron-browser_{BUILD}_AVX2.deb").write_bytes(deb(the_deb(), version=BUILD))
+        (self.f.out / "thoron_update").write_bytes(elf(62))
         files = rel.assemble(self.f.out, self.f.dist, BUILD, "linux-x64-avx2", self.f.buildinfo,
                              self.f.out / rel.CHROME_BIN)
-        self.assertEqual([p.name for p in files], [f"BUILDINFO-{BUILD}-linux-x64-avx2.json", "SHA256SUMS"])
+        self.assertEqual(sorted(p.name for p in files),
+                         [f"BUILDINFO-{BUILD}-linux-x64-avx2.json", "SHA256SUMS",
+                          f"thoron-{BUILD}-linux-x64-avx2-portable.tar.xz", f"thoron-{BUILD}-linux-x64-avx2.deb"])
 
 
 class CreditsTests(GateTestCase):

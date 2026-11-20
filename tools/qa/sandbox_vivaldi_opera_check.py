@@ -48,7 +48,8 @@ function Tool($arguments) {
          -NoNewWindow -PassThru -WorkingDirectory $tools
   $null = $p.Handle
   if (-not $p.WaitForExit(300000)) { Stop-Process -Id $p.Id -Force; return @{ exit = 'timeout'; text = '' } }
-  return @{ exit = $p.ExitCode; text = ("$(Get-Content $o -Raw -ErrorAction SilentlyContinue)") }
+  return @{ exit = $p.ExitCode; text = ("$(Get-Content $o -Raw -ErrorAction SilentlyContinue)");
+           errors = ("$(Get-Content $e -Raw -ErrorAction SilentlyContinue)") }
 }
 function CloseAll($name) {
   Get-Process $name -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 } | ForEach-Object { [void]$_.CloseMainWindow() }
@@ -63,10 +64,27 @@ try {
   $one = Join-Path $pages 'thoron-tab-one.html'; $two = Join-Path $pages 'thoron-tab-two.html'
   Set-Content -Encoding ascii $one '<title>thoron-tab-one</title>one'
   Set-Content -Encoding ascii $two '<title>thoron-tab-two</title>two'
-  $urls = @(([uri]$one).AbsoluteUri, ([uri]$two).AbsoluteUri)
+  # the pages of tools/qa/session_golden.py's server, which session_import_check.py serves again on the host
+  $serve = Join-Path $env:TEMP 'serve.py'
+  Set-Content -Encoding ascii $serve @'
+import sys, time
+sys.path.insert(0, r"C:\ThoronTest\in\thoron-main")
+from tools.qa.session_golden import PageServer
+server = PageServer(47640)
+server.__enter__()
+time.sleep(7200)
+'@
+  $server = Start-Process $python -ArgumentList '-I', ('"' + $serve + '"') -PassThru -WindowStyle Hidden
+  Start-Sleep -Seconds 3
+  $urls = @('http://127.0.0.1:47640/p/thoron-tab-one', 'http://127.0.0.1:47640/p/thoron-tab-two')
   $downloads = Join-Path $env:USERPROFILE 'Downloads'
   New-Item -ItemType Directory -Force $downloads | Out-Null
 
+  Mark 'network'
+  # the Sandbox's network may come up a little after logon
+  for ($i = 0; $i -lt 90; $i++) {
+    try { [void][System.Net.Dns]::GetHostAddresses('update.vivaldi.com'); break } catch { Start-Sleep -Seconds 2 }
+  }
   Mark 'vivaldi download'
   $feed = [xml](Invoke-WebRequest -UseBasicParsing 'https://update.vivaldi.com/update/1.0/public/appcast.x64.xml').Content
   $item = $feed.rss.channel.item | Select-Object -First 1
@@ -101,6 +119,19 @@ try {
     CloseAll 'opera'
   }
 
+  Mark 'golden'
+  # each browser's own session (the two pages it was opened with) as golden files, with what describes the machine
+  # taken out (tools/qa/session_golden.py --from-profile): the host restores them in Thoron (session_import_check.py)
+  $vp0 = Join-Path $env:LOCALAPPDATA 'Vivaldi\User Data\Default'
+  $op0 = Join-Path $env:APPDATA 'Opera Software\Opera Stable\Default'
+  if (-not (Test-Path $op0)) { $op0 = Join-Path $env:APPDATA 'Opera Software\Opera Stable' }
+  foreach ($pair in @(@('vivaldi', $vp0), @('opera', $op0))) {
+    $g = Tool @('tools\qa\session_golden.py', '--browser', 'unused', '--work', $env:TEMP, '--out',
+                ('"' + (Join-Path $out ('golden\' + $pair[0])) + '"'), '--from-profile', ('"' + $pair[1] + '"'))
+    $r["$($pair[0])_golden_exit"] = $g.exit
+    $r["$($pair[0])_golden"] = ($g.text + $g.errors)
+  }
+  Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue
   Mark 'detect'
   $d = Tool @('tools\migrate\detect.py', '--json')
   $r.detect_exit = $d.exit
@@ -110,9 +141,11 @@ try {
   $op = Join-Path $env:APPDATA 'Opera Software\Opera Stable\Default'
   if (-not (Test-Path $op)) { $op = Join-Path $env:APPDATA 'Opera Software\Opera Stable' }
   foreach ($pair in @(@('vivaldi', $vp), @('opera', $op))) {
-    $t = Tool @('tools\migrate\sessions.py', 'read', '--profile', $pair[1])
+    # Start-Process joins the arguments with spaces: a path with a space is quoted
+    $t = Tool @('tools\migrate\sessions.py', 'read', '--profile', ('"' + $pair[1] + '"'))
     $r["$($pair[0])_tabs_exit"] = $t.exit
     $r["$($pair[0])_tabs"] = $t.text
+    $r["$($pair[0])_tabs_errors"] = $t.errors
     $r["$($pair[0])_session_files"] = @(Get-ChildItem (Join-Path $pair[1] 'Sessions') -ErrorAction SilentlyContinue | ForEach-Object { $_.Name })
   }
 } catch {

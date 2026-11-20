@@ -86,6 +86,19 @@ class GoldenTests(unittest.TestCase):
                 self.assertEqual(s.read_session(session.read_bytes()), expected["session"])
                 self.assertEqual(s.read_closed(tabs.read_bytes()), expected["closed"])
 
+    def test_vivaldi_and_opera_read_to_their_json(self):
+        # each browser's own session (made in Windows Sandbox by sandbox_vivaldi_opera_check.py): one window with the
+        # two local pages it was opened with; no recently closed list was written
+        for browser in ("vivaldi", "opera"):
+            with self.subTest(browser=browser):
+                folder = GOLDEN / browser
+                expected = json.loads((folder / "expected.json").read_text(encoding="utf-8"))
+                reading = s.read_session(next(folder.glob("Session_*")).read_bytes())
+                self.assertEqual(reading, expected["session"])
+                urls = [n["url"] for w in reading["windows"] for t in w["tabs"] for n in t["navigations"]]
+                self.assertEqual(urls, ["http://127.0.0.1:47640/p/thoron-tab-one",
+                                        "http://127.0.0.1:47640/p/thoron-tab-two"])
+
     def test_the_golden_sessions_hold_what_was_built(self):
         for browser in BROWSERS:
             with self.subTest(browser=browser):

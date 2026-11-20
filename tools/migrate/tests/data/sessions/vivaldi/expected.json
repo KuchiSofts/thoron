@@ -1,0 +1,63 @@
+{
+ "session": {
+  "windows": [
+   {
+    "id": 1017593992,
+    "type": "normal",
+    "show_state": "normal",
+    "bounds": [
+     -4000,
+     -4000,
+     800,
+     600
+    ],
+    "selected_tab": 0,
+    "user_title": "",
+    "app_name": "",
+    "tabs": [
+     {
+      "id": 1017593993,
+      "pinned": false,
+      "group": null,
+      "current": 0,
+      "navigations": [
+       {
+        "index": 0,
+        "url": "http://127.0.0.1:47640/p/thoron-tab-one",
+        "title": ""
+       }
+      ]
+     },
+     {
+      "id": 1017593994,
+      "pinned": false,
+      "group": null,
+      "current": 0,
+      "navigations": [
+       {
+        "index": 0,
+        "url": "http://127.0.0.1:47640/p/thoron-tab-two",
+        "title": ""
+       }
+      ]
+     }
+    ],
+    "groups": []
+   }
+  ],
+  "active_window": 0,
+  "commands": 32,
+  "marker": true,
+  "complete": true,
+  "skipped": {
+   "unknown": 2,
+   "malformed": 12,
+   "over_limit": 0
+  },
+  "unknown_ids": [
+   22
+  ]
+ },
+ "closed": null,
+ "built_with": "the browser's own session"
+}

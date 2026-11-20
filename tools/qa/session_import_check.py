@@ -82,10 +82,18 @@ def reopened_normal(before: str, after: str) -> bool:
     return before == "minimized" and after in ("normal", "default")
 
 
+def saved_as_default(before: str, after: str, live: str | None) -> bool:
+    """A normal window that Windows shows normal while Thoron's own file has its show state as "default" (not saved
+    yet; "default" opens a normal window): seen with Vivaldi's and Opera's sessions, whose windows Thoron restores
+    without a change of place or size that would make it save one."""
+    return before == "normal" and after == "default" and live == "normal"
+
+
 def compare(source: dict, result: dict, page_title=lambda url: None, source_closed: dict | None = None,
-            result_closed: dict | None = None) -> list[str]:
+            result_closed: dict | None = None, live: list | None = None) -> list[str]:
     """Where Thoron's session `result` differs from the imported `source` (both readings of `read_session`).
-    `page_title(url)` is the title the page at `url` has, for a title the source left empty."""
+    `page_title(url)` is the title the page at `url` has, for a title the source left empty; `live` is the state
+    Windows shows each window in (live_show_states), when known."""
     problems = []
     want, got = plain(source), plain(result)
     if len(want) != len(got):
@@ -94,7 +102,9 @@ def compare(source: dict, result: dict, page_title=lambda url: None, source_clos
         for key in ("type", "selected_tab", "groups"):
             if w[key] != g[key]:
                 problems.append(f"window {i}: {key} is {g[key]!r}, not {w[key]!r}")
-        if w["show_state"] != g["show_state"] and not reopened_normal(w["show_state"], g["show_state"]):
+        live_state = live[i] if live and i < len(live) else None
+        if (w["show_state"] != g["show_state"] and not reopened_normal(w["show_state"], g["show_state"])
+                and not saved_as_default(w["show_state"], g["show_state"], live_state)):
             problems.append(f"window {i}: show_state is {g['show_state']!r}, not {w['show_state']!r}")
         if len(w["tabs"]) != len(g["tabs"]):
             problems.append(f"window {i}: {len(g['tabs'])} tab(s), not {len(w['tabs'])}")
@@ -265,7 +275,7 @@ def check_source(browser: Path, work: Path, source: Path) -> list[str]:
     if path.name in imported:
         return problems + ["Thoron did not write a session of its own: the imported file is still the newest"]
     problems += compare(source_session, result, lambda url: golden.TITLE + url.rsplit("/", 1)[-1],
-                        source_closed, result_closed)
+                        source_closed, result_closed, live)
     if _hashes(source) != before:
         problems.append("the source files changed")
     counts = sessions.counts(result)
@@ -276,6 +286,8 @@ def check_source(browser: Path, work: Path, source: Path) -> list[str]:
           f"{sum(len(t['navigations']) for w in result['windows'] for t in w['tabs'])} pages of history and "
           f"{len((result_closed or {}).get('entries', []))} recently closed in Thoron's own session after the restore"
           f"; {done['unlinked_groups']} group(s) unlinked from the source's saved groups")
+    if problems:
+        print(f"      live window states: {live}")
     if reopened:
         print(f"      window(s) {reopened}: minimized in the source; opened as a normal window, or kept minimized "
               f"when it was the active one (Thoron's own restore does both; live states {live})")

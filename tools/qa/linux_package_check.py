@@ -91,7 +91,8 @@ apt-get install -y -qq lintian > "$out/apt-lintian.txt" 2>&1
 # with the tags Chromium's own lint step accepts for its packages (chrome/installer/linux/debian/lint_package.py):
 # a browser that is no distribution's package installs into /opt, links some libraries in, and its sandbox helper
 # is set-user-id
-lintian --no-tag-display-limit --suppress-tags dir-or-file-in-opt,embedded-library,setuid-binary \n  /tmp/thoron.deb > "$out/lintian.txt" 2>&1; echo $? > "$out/lintian_exit"
+lintian --tag-display-limit 0 --suppress-tags dir-or-file-in-opt,embedded-library,setuid-binary \
+  /tmp/thoron.deb > "$out/lintian.txt" 2>&1; echo $? > "$out/lintian_exit"
 step upgrade
 before=$(cd /home/tester/.config/thoron && find . -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum)
 rm -rf /tmp/up && dpkg-deb -R /tmp/thoron.deb /tmp/up
@@ -193,9 +194,13 @@ def problems(found: Path, online: bool) -> dict[str, list[str]]:
     if "thoron" not in dirs or "thorium" not in dirs:
         out["coexists"].append(f"the two profiles are not in their own folders: ~/.config holds {dirs}")
     out["sandbox"] += sandbox_on(read(found, "sandbox.txt"))
-    errors = lintian_errors(read(found, "lintian.txt"))
-    if errors or not read(found, "lintian.txt") and read(found, "lintian_exit") != "0":
-        out["lintian"] += errors[:20] or [f"lintian did not run: {read(found, 'apt-lintian.txt')[-200:]}"]
+    text = read(found, "lintian.txt")
+    errors = lintian_errors(text)
+    # lintian exits 0 with no error, 1 with errors, and 2 when it could not look at the package at all
+    if read(found, "lintian_exit") not in ("0", "1") or "not a readable file" in text:
+        out["lintian"].append(f"lintian did not look at the package (exit {read(found, 'lintian_exit')!r}): "
+                              f"{(text or read(found, 'apt-lintian.txt'))[-200:]}")
+    out["lintian"] += errors[:20]
     if read(found, "upgrade_exit") != "0":
         out["upgrade"].append(f"the higher version did not install: {read(found, 'apt-upgrade.txt')[-400:]}")
     if not read(found, "version-after.txt").endswith("+upgradetest1"):

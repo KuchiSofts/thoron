@@ -81,7 +81,8 @@ grep -q "profile.*__MOVED__\|__MOVED__" "$moved/ThoronPortable/User Data/Local S
 [ -e /home/tester/.config/thoron ] && echo yes >> "$out/config-thoron"
 # the update of the moved copy (tools/qa/linux_portable_update.py), when the package carries its updater
 if [ -x "$moved/ThoronPortable/Application/$(head -n1 "$moved/ThoronPortable/Application/current")/thoron_update" ]; then
-  as_tester python3 -I "$W/tools/qa/linux_portable_update.py" --package "$moved/ThoronPortable" \n    --out "$out/update.json" > "$out/update.txt" 2>&1
+  as_tester python3 -I "$W/tools/qa/linux_portable_update.py" --package "$moved/ThoronPortable" \
+    --out "$out/update.json" > "$out/update.txt" 2>&1
 fi
 echo done > "$out/reached"
 """
@@ -111,6 +112,8 @@ def problems(out: Path) -> dict[str, list[str]]:
         found["moved"].append("after the move the browser did not open on the package's own profile")
     found["sandbox"] += sandbox_on(read(out, "sandbox.txt"))
     update = read(out, "update.json")
+    if not update and read(out, "update.txt"):
+        found["update"] = [f"the update ran and wrote no results: {read(out, 'update.txt')[-300:]}"]
     if update:
         import json
         from tools.qa import linux_portable_update as lu

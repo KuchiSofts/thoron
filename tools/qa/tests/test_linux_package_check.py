@@ -67,6 +67,12 @@ class ProblemsTests(unittest.TestCase):
             with self.subTest(step):
                 self.assertTrue(self.found(change)[step], step)
 
+    def test_lintian_that_could_not_read_the_package_fails(self):
+        found = self.found({"lintian.txt": "n is not a readable file\n", "lintian_exit": "2"})
+        self.assertTrue(found["lintian"])
+        self.assertTrue(self.found({"lintian.txt": "", "lintian_exit": "2"})["lintian"])
+        self.assertFalse(self.found({"lintian.txt": "W: thoron-browser: a warning\n", "lintian_exit": "0"})["lintian"])
+
     def test_a_file_both_packages_own_is_found(self):
         shared = good()["upstream-regular-files.txt"] + "/usr/share/applications/thoron.desktop\n"
         self.assertTrue(self.found({"upstream-regular-files.txt": shared})["coexists"])

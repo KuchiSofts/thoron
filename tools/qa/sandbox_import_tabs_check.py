@@ -11,8 +11,8 @@ colours and collapsed or not), and the made-up pages they show are served again 
 tools/qa/session_golden.py's server. Chrome's profile also lists one extension from the Chrome Web Store (uBlock
 Origin Lite) and one unpacked. Thoron is then started with its DevTools port open on 127.0.0.1, and through it
 Settings' import dialog is used as a person would, by its element ids: for each browser only **Open tabs and tab
-groups** is ticked (for Chrome, **Extensions** too) and Import pressed. Then Thoron exits as from its menu, which
-writes every open window to its own session file, and the steps are checked:
+groups** is ticked (for Chrome, **Extensions** too) and Import pressed. Then Thoron exits as from its menu
+(DevTools' Browser.close), which writes every open window to its own session file, and the steps are checked:
 
     imported     every import ends with success
     the tabs     Thoron's session holds each source window: the same tabs in the same order, each with the same
@@ -93,8 +93,9 @@ function Tool($arguments) {
          -NoNewWindow -PassThru -WorkingDirectory $tools
   $null = $p.Handle
   if (-not $p.WaitForExit(300000)) { Stop-Process -Id $p.Id -Force; return @{ exit = 'timeout'; text = '' } }
-  return @{ exit = $p.ExitCode; text = ("$(Get-Content $o -Raw -ErrorAction SilentlyContinue)");
-           errors = ("$(Get-Content $e -Raw -ErrorAction SilentlyContinue)") }
+  # the tools write UTF-8; the Sandbox's own code page is the PC's, so it is named
+  return @{ exit = $p.ExitCode; text = ("$(Get-Content $o -Raw -Encoding utf8 -ErrorAction SilentlyContinue)");
+           errors = ("$(Get-Content $e -Raw -Encoding utf8 -ErrorAction SilentlyContinue)") }
 }
 # finds the import dialog through the shadow roots of Settings
 $dialog = "const deep = (root, s) => { const f = root.querySelector(s); if (f) return f; for (const e of root.querySelectorAll('*')) if (e.shadowRoot) { const g = deep(e.shadowRoot, s); if (g) return g; } return null; }; const d = deep(document, 'settings-import-data-dialog');"
@@ -170,8 +171,8 @@ time.sleep(7200)
   }
 
   Mark 'exit'
-  $any = Tabs | Select-Object -First 1
-  if ($any) { try { [void](Cdp $any 'Page.navigate' @{ url = 'chrome://quit/' }) } catch {} }
+  # a normal exit of the whole browser through DevTools, as from its menu: every window stays in its session
+  try { $browser = Invoke-RestMethod "http://127.0.0.1:$port/json/version" -TimeoutSec 10; [void](Cdp $browser 'Browser.close' @{}) } catch {}
   $end = (Get-Date).AddSeconds(60); while ((Get-Process thoron -ErrorAction SilentlyContinue) -and (Get-Date) -lt $end) { Start-Sleep -Seconds 1 }
   $r.thoron_left_running = [bool](Get-Process thoron -ErrorAction SilentlyContinue)
   Get-Process thoron -ErrorAction SilentlyContinue | Stop-Process -Force
@@ -283,7 +284,7 @@ def problems(found: dict) -> dict[str, list[str]]:
             out["imported"].append(f"{name}: the import ended with {one.get('status')!r} (chosen {one.get('chosen')!r}, "
                                    f"boxes {one.get('boxes')!r})")
     if found.get("thoron_left_running"):
-        out["the tabs"].append("Thoron did not exit from chrome://quit, so its session may hold less")
+        out["the tabs"].append("Thoron did not exit through DevTools' Browser.close, so its session may hold less")
     out["the tabs"] += compare_tabs(expected_windows(), found.get("session") or "")
     listed = _json(found.get("extensions"), [])
     by_id = {e.get("id"): e for e in listed if isinstance(e, dict)}

@@ -29,6 +29,14 @@ class TreeTests(unittest.TestCase):
         with self.assertRaises(bench.BenchError):
             bench.tree(PROCS, 99)
 
+    def test_a_cycle_of_reused_ids_ends(self):
+        # Windows reuses ids: 30 names 31 as its parent and 31 names 30 (a stuck benchmark run, 2026-11-20)
+        procs = PROCS + [{"pid": 30, "ppid": 31, "ws": 1, "cpu": 0.0}, {"pid": 31, "ppid": 30, "ws": 2, "cpu": 0.0},
+                         {"pid": 32, "ppid": 32, "ws": 4, "cpu": 0.0}]
+        self.assertEqual(sorted(p["pid"] for p in bench.tree(procs, 30)), [30, 31])
+        self.assertEqual(bench.total(procs, 31, "ws"), 3)
+        self.assertEqual([p["pid"] for p in bench.tree(procs, 32)], [32])
+
 
 class StatsTests(unittest.TestCase):
     def test_median_and_spread(self):
@@ -98,6 +106,24 @@ class ProfilesTests(unittest.TestCase):
         self.assertFalse(bench.picker_ready([{"type": "page", "url": "chrome://newtab/"}]))
         self.assertFalse(bench.picker_ready([]))
         self.assertEqual(len(bench.PROFILES), 4)
+
+    def test_four_windows_are_four_pages(self):
+        pages = [{"type": "page", "url": "chrome://newtab/"}] * 3
+        self.assertFalse(bench.profile_windows_ready(pages))
+        self.assertFalse(bench.profile_windows_ready(pages + [{"type": "service_worker", "url": "x"}]))
+        self.assertTrue(bench.profile_windows_ready(pages + [{"type": "page", "url": "about:blank"}]))
+
+    def test_the_four_profiles_open_together(self):
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "Local State").write_text(json.dumps({"profile": {"info_cache": {}}}), encoding="utf-8")
+            bench.windows_template(root)
+            state = json.loads((root / "Local State").read_text(encoding="utf-8"))
+            self.assertIs(state["browser"]["show_profile_picker_on_startup"], False)
+            self.assertEqual(state["profile"]["last_active_profiles"], list(bench.PROFILES))
+            self.assertIn("info_cache", state["profile"])
 
 
 class DevToolsPortTests(unittest.TestCase):

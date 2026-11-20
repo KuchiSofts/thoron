@@ -46,11 +46,16 @@ def tree(procs: list[dict], root: int) -> list[dict]:
     by_pid = {p["pid"]: p for p in procs}
     if root not in by_pid:
         raise BenchError(f"process {root} is not running")
-    out, todo = [], [root]
+    # Windows reuses process ids, so a parent id may name a newer process: two processes can then name each
+    # other as parent. Each process is taken once, or the walk would never end.
+    out, todo, seen = [], [root], {root}
     while todo:
         pid = todo.pop()
         out.append(by_pid[pid])
-        todo += [p["pid"] for p in procs if p["ppid"] == pid and p["pid"] != pid]
+        for p in procs:
+            if p["ppid"] == pid and p["pid"] not in seen:
+                seen.add(p["pid"])
+                todo.append(p["pid"])
     return out
 
 
@@ -270,6 +275,62 @@ def run_startup_profiles(browser: Path, work: Path, runs: int, timeout: float = 
     return values
 
 
+def windows_template(template: Path) -> None:
+    """The four profiles of `template` set to open together, as after an exit with four windows open: no profile
+    picker at start, and the four named as the last ones open (Local State)."""
+    path = template / "Local State"
+    state = json.loads(path.read_text(encoding="utf-8"))
+    state.setdefault("browser", {})["show_profile_picker_on_startup"] = False
+    state.setdefault("profile", {})["last_active_profiles"] = list(PROFILES)
+    path.write_text(json.dumps(state), encoding="utf-8")
+
+
+def profile_windows_ready(listing: list[dict]) -> bool:
+    """Whether the targets DevTools lists hold a page of each of the four profiles' windows (the browser has one
+    DevTools endpoint for all its profiles)."""
+    return sum(1 for t in listing if t.get("type") == "page") >= len(PROFILES)
+
+
+def run_startup_profile_windows(browser: Path, work: Path, runs: int, timeout: float = 60) -> list[float]:
+    """Start-up with 4 profiles that open their windows at once (no picker): the time until the four windows'
+    pages are there. A headless browser opens one profile only, so this start has real windows; they open
+    minimized, out of a person's way."""
+    import urllib.request
+    template = profiles_template(browser, work)
+    windows_template(template)
+    values = []
+    try:
+        for _ in range(runs):
+            profile = Path(tempfile.mkdtemp(prefix="bench-", dir=work))
+            shutil.rmtree(profile)
+            shutil.copytree(template, profile)
+            start = time.perf_counter()
+            proc = subprocess.Popen([str(browser), f"--user-data-dir={profile}", "--no-first-run",
+                                     "--no-default-browser-check", "--start-minimized",
+                                     "--disable-background-networking", "--disable-component-update",
+                                     "--remote-debugging-address=127.0.0.1", "--remote-debugging-port=0"],
+                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            try:
+                port = _port_file(profile, timeout)
+                end = start + timeout
+                while True:
+                    try:
+                        with urllib.request.urlopen(f"http://127.0.0.1:{port}/json/list", timeout=2) as reply:
+                            if profile_windows_ready(json.loads(reply.read())):
+                                values.append((time.perf_counter() - start) * 1000)
+                                break
+                    except OSError:
+                        pass
+                    if time.perf_counter() > end:
+                        raise BenchError(f"the four profiles' windows did not open within {timeout} s")
+                    time.sleep(0.01)
+            finally:
+                _stop(proc, profile)
+    finally:
+        shutil.rmtree(template, ignore_errors=True)
+    return values
+
+
 def _open_tabs(profile: Path, urls: list[str], timeout: float = 30) -> None:
     """Open more tabs through the test profile's DevTools endpoint (127.0.0.1, random port): the headless
     browser does not open several command-line URLs."""
@@ -348,11 +409,25 @@ def main(argv: list[str]) -> int:
     p.add_argument("--warmup", type=int, default=1, help="runs measured first and dropped (default 1)")
     p.add_argument("--profiles", action="store_true", help="also start-up with 4 profiles: until the profile "
                    "picker such a start shows has loaded")
+    p.add_argument("--profile-windows", action="store_true", help="only start-up with 4 profiles that open their "
+                   "windows at once: until the four windows' pages are there (real, minimized windows)")
     p.add_argument("--label", default="")
     p.add_argument("--out", type=Path, required=True)
     p.add_argument("--md", type=Path)
     a = p.parse_args(argv)
     a.work.mkdir(parents=True, exist_ok=True)
+    if a.profile_windows:
+        try:
+            results = {"browser": a.label or a.browser.name, "version": "", "warmup": a.warmup,
+                       "startup_4_profile_windows_ms": summarise(without_warmup(
+                           run_startup_profile_windows(a.browser, a.work, a.runs + a.warmup), a.warmup))}
+        except BenchError as exc:
+            print(f"bench: {exc}", file=sys.stderr)
+            return 1
+        a.out.parent.mkdir(parents=True, exist_ok=True)
+        a.out.write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8")
+        print(json.dumps(results["startup_4_profile_windows_ms"]))
+        return 0
     try:
         results = {"browser": a.label or a.browser.name, "version": "",
                    "warmup": a.warmup,

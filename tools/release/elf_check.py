@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import io
 import lzma
+import re
 import struct
 import sys
 import tarfile
@@ -29,6 +30,8 @@ VARIANTS = {
 }
 MACHINES = {3: "i386", 40: "ARM (32-bit)", 62: "x86-64", 183: "AArch64", 243: "RISC-V"}
 PROGRAM = "opt/kuchisofts/thoron/thoron"
+# the same program in the portable package (tools/release/portable_linux.py): ThoronPortable/Application/<v>/thoron
+PORTABLE_PROGRAM = re.compile(r"(^|/)ThoronPortable/Application/[0-9.]+/thoron$")
 PT_INTERP = 3
 
 
@@ -126,12 +129,13 @@ def check(files, variant: str) -> tuple[list[str], int]:
         if data[:4] != b"\x7fELF":
             continue
         elves += 1
-        program |= name.endswith(PROGRAM) or name == PROGRAM
+        program |= name.endswith(PROGRAM) or name == PROGRAM or bool(PORTABLE_PROGRAM.search(name))
         problems += problems_of(name, data, variant)
     if not elves:
         problems.append("no ELF file in the package")
     elif not program:
-        problems.append(f"the program {PROGRAM} is not in the package")
+        problems.append(f"the program {PROGRAM} (or ThoronPortable/Application/<version>/thoron) is not in the "
+                        "package")
     return problems, elves
 
 

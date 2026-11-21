@@ -82,6 +82,14 @@ class CheckTests(unittest.TestCase):
         self.assertEqual(check.check({"a.txt": b"x"}.items(), "linux-x64")[0], ["no ELF file in the package"])
         self.assertIn("is not in the package", check.check({"opt/x.so": elf(62)}.items(), "linux-x64")[0][0])
 
+    def test_the_portable_package_layout_counts_as_well(self):
+        files = {"ThoronPortable/Application/158.0.8127.65/thoron": elf(183, "/lib/ld-linux-aarch64.so.1"),
+                 "ThoronPortable/Application/158.0.8127.65/thoron_update": elf(183, "/lib/ld-linux-aarch64.so.1"),
+                 "ThoronPortable/thoron": b"#!/bin/sh\n"}
+        self.assertEqual(check.check(files.items(), "linux-arm64"), ([], 2))
+        files.pop("ThoronPortable/Application/158.0.8127.65/thoron")
+        self.assertIn("is not in the package", check.check(files.items(), "linux-arm64")[0][0])
+
     def test_a_deb_is_read_without_unpacking_it(self):
         with tempfile.TemporaryDirectory() as d:
             for xz in (True, False):

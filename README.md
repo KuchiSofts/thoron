@@ -78,14 +78,14 @@ changed in each version is in the [changelog](CHANGELOG.md), one line per change
 Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always current.
 
 <!-- roadmap:start -->
-**Overall:** `███████████████░░░░░` 163 of 213 tasks done (77%) · roadmap updated 2026-11-19
+**Overall:** `███████████████░░░░░` 165 of 213 tasks done (77%) · roadmap updated 2026-11-19
 
 | Area | Progress | Done | Status |
 |---|---|---|---|
 | [P0 - Foundation](ROADMAP.md#p0---foundation) | `████████████████████` | 11/11 | ✅ Done |
 | [P1 - Build environment](ROADMAP.md#p1---build-environment) | `██████████████████░░` | 9/10 | 🔄 In progress |
 | [P2 - First release](ROADMAP.md#p2---first-release) | `██████████████░░░░░░` | 18/26 | 🔄 In progress |
-| [P2b - ARM64](ROADMAP.md#p2b---arm64) | `░░░░░░░░░░░░░░░░░░░░` | 0/5 | 🔄 In progress · ⛔ blocked item |
+| [P2b - ARM64](ROADMAP.md#p2b---arm64) | `████████░░░░░░░░░░░░` | 2/5 | 🔄 In progress · ⛔ blocked item |
 | [P3 - Updater v1 + Import](ROADMAP.md#p3---updater-v1--import) | `█████████████░░░░░░░` | 15/23 | 🔄 In progress |
 | [P4 - Updater v2](ROADMAP.md#p4---updater-v2) | `████████████████░░░░` | 9/11 | 🔄 In progress |
 | [P5 - Quality](ROADMAP.md#p5---quality) | `██████████████████░░` | 73/82 | 🔄 In progress |
@@ -166,8 +166,8 @@ Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always curre
 **P2b - ARM64**
 
 - [ ] **P2b.1** Windows ARM64 build, cross-compiled on the x64 host; installer and portable
-- [ ] **P2b.2** Linux ARM64 build, cross-compiled with the arm64 sysroot; `.deb` and portable
-- [ ] **P2b.3** Emulated smoke tests (qemu-user plus headless for Linux ARM64; static checks for Windows ARM64)
+- [x] **P2b.2** Linux ARM64 build, cross-compiled with the arm64 sysroot; `.deb` and portable
+- [x] **P2b.3** Emulated smoke tests (qemu-user plus headless for Linux ARM64; static checks for Windows ARM64)
 - [ ] **P2b.4** Beta programme: ARM issue template and community tester checklist
 - [ ] **P2b.5** Real-device validation (Windows-on-ARM laptop, ARM64 Linux device); beta label removed
 

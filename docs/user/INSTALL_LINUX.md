@@ -62,10 +62,30 @@ tar -xf thoron-<version>-linux-x64-avx2-portable.tar.xz
   administrator can add a profile for the folder's program (the folder's `README.txt`, "The sandbox",
   says how), or install the `.deb`, which brings its own.
 
-**A newer version:** a Linux portable copy does not update itself from inside Thoron yet (ROADMAP P3.23).
-Unpack the newer package and move your old folder's `User Data` into it (with Thoron closed).
+**A newer version:** a Linux portable copy looks for updates from inside Thoron, but there is no signed
+release for it to find yet (ROADMAP P2.11, P3.23). Until then, unpack the newer package and move your old
+folder's `User Data` into it (with Thoron closed).
 
-## 4. Bring your data over
+## 4. For this user only
+
+The portable folder can also install Thoron for you alone, without administrator rights:
+
+```bash
+./ThoronPortable/install-for-this-user
+```
+
+- The program goes to `~/.local/share/thoron`, with a menu entry (**Thoron**). Its profile is
+  `~/.config/thoron`, as the `.deb`'s, never in the program's folder.
+- A systemd user timer (`thoron-update.timer`) starts Thoron once a day, with no window and a profile folder
+  of its own, to look for an update while Thoron is closed; the look ends by itself. Without a published
+  release key (there is none yet) it finds nothing to install.
+- On Ubuntu 23.10 and later, as for the portable copy, an administrator must allow the sandbox once with an
+  AppArmor profile (the folder's `README.txt`, "The sandbox"); Thoron itself never asks for `sudo`.
+
+**Remove it:** `~/.local/share/thoron/install-for-this-user --remove` takes away the program, the menu
+entry and the timer. Your profile stays in `~/.config/thoron`.
+
+## 5. Bring your data over
 
 Thoron's Settings import reads other browsers in `~/.config` (Thorium, Chrome, Edge, Brave, Vivaldi,
 Opera, Chromium): see [Import](IMPORT.md).

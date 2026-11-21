@@ -140,6 +140,76 @@ class LauncherTests(unittest.TestCase):
             self.assertEqual(subprocess.run([str(root / "thoron")], capture_output=True).returncode, 4)
 
 
+@unittest.skipUnless(shutil.which("sh") and os.name != "nt", "the installer runs on Linux")
+class PerUserInstallTests(unittest.TestCase):
+    """install-for-this-user (P3.10): the program into ~/.local/share/thoron, a menu entry and a systemd user timer,
+    no administrator rights; --remove takes them away and keeps the profile."""
+
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp(prefix="per user é "))
+        self.addCleanup(shutil.rmtree, self.dir, True)
+        self.home = self.dir / "home"
+        self.root = self.dir / "ThoronPortable"
+        program = self.root / "Application" / VERSION / "thoron"
+        program.parent.mkdir(parents=True)
+        program.write_text('#!/bin/sh\nfor a in "$@"; do echo "[$a]"; done\n')
+        program.chmod(0o755)
+        (self.root / "Application" / "current").write_text(VERSION + "\n")
+        (self.root / "variant").write_text("linux-x64-sse4\n")
+        (self.root / "README.txt").write_text("readme\n")
+        (self.root / "User Data").mkdir()
+        (self.root / "User Data" / "Local State").write_text("{}")
+        for name, text in (("thoron", pl.LAUNCHER_TEXT), (pl.INSTALLER, pl.INSTALLER_TEXT)):
+            (self.root / name).write_text(text)
+            (self.root / name).chmod(0o755)
+        # a systemctl that writes down what it is asked
+        self.bin = self.dir / "bin"
+        self.bin.mkdir()
+        (self.bin / "systemctl").write_text('#!/bin/sh\necho "$@" >> "$SYSTEMCTL_LOG"\n')
+        (self.bin / "systemctl").chmod(0o755)
+        self.log = self.dir / "systemctl.log"
+
+    def run_it(self, script: Path, *args: str):
+        env = {"HOME": str(self.home), "PATH": f"{self.bin}:/usr/bin:/bin", "SYSTEMCTL_LOG": str(self.log)}
+        return subprocess.run([str(script), *args], capture_output=True, text=True, env=env)
+
+    def test_it_installs_for_this_user_and_removes_again(self):
+        out = self.run_it(self.root / pl.INSTALLER)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        dest = self.home / ".local/share/thoron"
+        self.assertTrue((dest / "Application" / VERSION / "thoron").is_file())
+        self.assertTrue((dest / pl.PER_USER).is_file())
+        self.assertFalse((dest / "User Data").exists())             # never a profile
+        units = self.home / ".config/systemd/user"
+        service = (units / "thoron-update.service").read_text()
+        self.assertIn(f'ExecStart="{dest}/thoron" --headless=new', service)
+        self.assertIn("--thoron-scheduled-update", service)
+        self.assertIn("OnCalendar=daily", (units / "thoron-update.timer").read_text())
+        self.assertIn(f'Exec="{dest}/thoron" %U',
+                      (self.home / ".local/share/applications/thoron-user.desktop").read_text())
+        self.assertIn("--user enable --now thoron-update.timer", self.log.read_text())
+        # the installed copy's launcher: the usual profile, no profile folder of its own
+        started = self.run_it(dest / "thoron", "x")
+        self.assertEqual(started.returncode, 0, started.stderr)
+        self.assertNotIn("--user-data-dir", started.stdout)
+        self.assertIn("[x]", started.stdout)
+        self.assertFalse((dest / "User Data").exists())
+        # the profile stays when Thoron goes
+        profile = self.home / ".config/thoron"
+        profile.mkdir(parents=True)
+        removed = self.run_it(dest / pl.INSTALLER, "--remove")
+        self.assertEqual(removed.returncode, 0, removed.stderr)
+        self.assertFalse(dest.exists())
+        self.assertFalse((units / "thoron-update.timer").exists())
+        self.assertTrue(profile.is_dir())
+        self.assertIn("--user disable --now thoron-update.timer", self.log.read_text())
+
+    def test_the_installed_copy_does_not_install_itself(self):
+        self.assertEqual(self.run_it(self.root / pl.INSTALLER).returncode, 0)
+        again = self.run_it(self.home / ".local/share/thoron" / pl.INSTALLER)
+        self.assertEqual(again.returncode, 2)
+
+
 class LauncherTextTests(unittest.TestCase):
     def test_it_never_turns_the_sandbox_off_and_passes_arguments_as_they_are(self):
         self.assertNotIn("--no-sandbox", pl.LAUNCHER_TEXT)

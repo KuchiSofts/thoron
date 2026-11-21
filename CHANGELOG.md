@@ -7,6 +7,7 @@ Explanations live in the design docs under `docs/design/`.
 ## [Unreleased]
 
 ### Added
+- **Linux:** the portable folder can install Thoron for the current user only (`install-for-this-user`), with a menu entry and a daily look for updates while Thoron is closed, without administrator rights; `--remove` takes it away and keeps the profile.
 - **Linux SSE4:** Thoron for x64 processors without AVX on Linux too, as a `.deb` and a portable `.tar.xz`, checked on an emulated processor without AVX.
 - **Linux ARM64:** Thoron for 64-bit ARM Linux as a `.deb` and a portable `.tar.xz`, built on an x64 machine and checked under emulation (not yet on an ARM64 PC).
 - **Import on Linux:** Settings' import of Chromium-family browsers works on Linux too: Thorium, Chrome, Edge, Brave, Vivaldi, Opera and Chromium in `~/.config`, with bookmarks, history, saved passwords and cookies (encrypted with Chromium's fixed key or the key the browser keeps in the desktop's keyring, which is only read), search engines, form entries, the home page and startup pages, extensions and open tabs.

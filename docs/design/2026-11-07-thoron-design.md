@@ -272,6 +272,11 @@ Linux has three install types, each with one updater (never both):
 **2. Per-user self-updating install** (`~/.local/share/thoron`)
 - The same delta updater as Windows: Zucchini supports ELF on x64 and ARM64.
 - No root is needed.
+- Built 2026-11-21 (P3.10): the portable folder's `install-for-this-user` copies the program there, adds a menu
+  entry and a systemd user timer whose daily run starts Thoron headless on a profile folder of its own, looks
+  once, installs what it finds and exits. Ubuntu 23.10 and later let only programs named in an AppArmor
+  profile use the user namespaces of the sandbox, so there an administrator allows it once, as for the
+  portable copy; Thoron never asks for root itself, and never runs without its sandbox.
 - It is the recommended choice for users who want small, fast updates.
 
 **3. Portable (`.tar.xz`)**

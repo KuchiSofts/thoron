@@ -3904,10 +3904,10 @@ index 0000000000000000000000000000000000000000..4a52e89eaa320a0965c67a4fdb246ffe
 +}
 diff --git a/chrome/browser/thoron_update/thoron_update_linux.cc b/chrome/browser/thoron_update/thoron_update_linux.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..1848a87bf6778dff4c9f40236d6eeb9f5f06e7ac
+index 0000000000000000000000000000000000000000..d8ef7e199f5668a255f8d8371bd2624fc8d14dd4
 --- /dev/null
 +++ b/chrome/browser/thoron_update/thoron_update_linux.cc
-@@ -0,0 +1,162 @@
+@@ -0,0 +1,208 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -3933,6 +3933,7 @@ index 0000000000000000000000000000000000000000..1848a87bf6778dff4c9f40236d6eeb9f
 +#include "base/version.h"
 +#include "base/version_info/version_info.h"
 +#include "chrome/browser/browser_process.h"
++#include "chrome/browser/lifetime/application_lifetime.h"
 +#include "chrome/browser/upgrade_detector/build_state.h"
 +#include "components/thoron_update/cli.h"
 +#include "content/public/browser/browser_thread.h"
@@ -3972,6 +3973,47 @@ index 0000000000000000000000000000000000000000..1848a87bf6778dff4c9f40236d6eeb9f
 +  g_browser_process->GetBuildState()->SetUpdate(
 +      BuildState::UpdateType::kNormalUpdate, installed,
 +      critical ? std::optional<base::Version>(installed) : std::nullopt);
++}
++
++// The run of the systemd user timer of a per-user install (P3.10): one look
++// that installs what it finds, then the browser exits, also when the look takes
++// too long.
++constexpr char kScheduledUpdateSwitch[] = "thoron-scheduled-update";
++constexpr base::TimeDelta kMostScheduledRun = base::Minutes(20);
++
++bool IsAnswer(thoron_update::UpdateClient::State state) {
++  using State = thoron_update::UpdateClient::State;
++  return state != State::kIdle && state != State::kChecking && state != State::kDownloading &&
++         state != State::kInstalling;
++}
++
++void QuitOnce() {
++  static bool quitting = false;
++  if (quitting) {
++    return;
++  }
++  quitting = true;
++  chrome::AttemptExit();
++}
++
++void RunOnceAndQuit() {
++  if (SelfUpdatingFolder().empty()) {
++    // A copy the package manager installed is updated by it.
++    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(FROM_HERE,
++                                                                base::BindOnce(&QuitOnce));
++    return;
++  }
++  Client()->Check(
++      /*install=*/true,
++      base::BindRepeating([](const thoron_update::UpdateClient::Status& status) {
++        if (IsAnswer(status.state)) {
++          base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
++              FROM_HERE, base::BindOnce(&QuitOnce));
++        }
++      }),
++      /*asked=*/false);
++  base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
++      FROM_HERE, base::BindOnce(&QuitOnce), kMostScheduledRun);
 +}
 +
 +}  // namespace
@@ -4058,11 +4100,15 @@ index 0000000000000000000000000000000000000000..1848a87bf6778dff4c9f40236d6eeb9f
 +}
 +
 +void StartScheduledChecks() {
++  const base::CommandLine& command = *base::CommandLine::ForCurrentProcess();
++  if (command.HasSwitch(kScheduledUpdateSwitch)) {
++    RunOnceAndQuit();
++    return;
++  }
 +  // As on Windows, the switch that keeps the browser from contacting anything
 +  // on its own keeps the updater quiet too; a copy the package manager
 +  // installed looks only when the About page is opened.
-+  if (base::CommandLine::ForCurrentProcess()->HasSwitch("disable-background-networking") ||
-+      SelfUpdatingFolder().empty()) {
++  if (command.HasSwitch("disable-background-networking") || SelfUpdatingFolder().empty()) {
 +    return;
 +  }
 +  base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(

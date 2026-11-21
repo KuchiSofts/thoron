@@ -48,6 +48,9 @@ BROWSER_DIR = "Application"
 PROFILE_DIR = "User Data"
 LAUNCHER = "thoron"
 README = "README.txt"
+# installs the folder's Thoron for the current user (P3.10); the launcher of that copy sees the file `per-user`
+INSTALLER = "install-for-this-user"
+PER_USER = "per-user"
 VARIANT_FILE = "variant"
 CURRENT = "current"
 INSTALLED = "opt/kuchisofts/thoron/"            # where the .deb puts the browser
@@ -83,16 +86,98 @@ case "$current" in
 esac
 program="$here/Application/$current/thoron"
 [ -x "$program" ] || { echo "Thoron: $program is not there." >&2; exit 4; }
-mkdir -p -- "$here/User Data" || { echo "Thoron: cannot make the profile folder in $here." >&2; exit 5; }
 if [ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null)" = 1 ]; then
-  echo "Thoron: this Linux lets only programs with an AppArmor profile use the sandbox. A portable copy has none;" >&2
+  echo "Thoron: this Linux lets only programs with an AppArmor profile use the sandbox. This copy has none;" >&2
   echo "an administrator can add one (README.txt, 'The sandbox'), or install the .deb, which brings its own." >&2
 fi
+# a copy installed for this user (install-for-this-user): the profile is ~/.config/thoron, as the .deb's
+[ ! -f "$here/per-user" ] || exec "$program" "$@"
+mkdir -p -- "$here/User Data" || { echo "Thoron: cannot make the profile folder in $here." >&2; exit 5; }
 # Chromium on Linux keeps its crash reports beside the default profile (~/.config/thoron) whatever the profile
 # folder; this keeps them in the package's own.
 BREAKPAD_DUMP_LOCATION="$here/User Data/Crash Reports"
 export BREAKPAD_DUMP_LOCATION
 exec "$program" --user-data-dir="$here/User Data" "$@"
+"""
+
+
+INSTALLER_TEXT = r"""#!/bin/sh
+# Thoron (ROADMAP P3.10, design 7.5a): installs this folder's Thoron for the current user only, with no
+# administrator rights: the program into ~/.local/share/thoron (the profile is ~/.config/thoron, as the .deb's), a
+# menu entry, and a systemd user timer with which Thoron looks for an update once a day while it is closed.
+#   ./install-for-this-user           install, or put this folder's version in place of an earlier install's
+#   ./install-for-this-user --remove  remove the program, the menu entry and the timer; the profile stays
+set -eu
+here=$(dirname -- "$(readlink -f -- "$0")")
+data=${XDG_DATA_HOME:-$HOME/.local/share}
+config=${XDG_CONFIG_HOME:-$HOME/.config}
+dest="$data/thoron"
+units="$config/systemd/user"
+desktop="$data/applications/thoron-user.desktop"
+if [ "${1:-}" = --remove ]; then
+  systemctl --user disable --now thoron-update.timer > /dev/null 2>&1 || true
+  rm -f -- "$units/thoron-update.timer" "$units/thoron-update.service" "$desktop" \
+    "$data/systemd/timers/stamp-thoron-update.timer"
+  systemctl --user daemon-reload > /dev/null 2>&1 || true
+  rm -rf -- "$dest"
+  echo "Thoron is removed for this user; the profile stays in $config/thoron."
+  exit 0
+fi
+[ "$here" != "$dest" ] || { echo "Thoron: this is the installed copy; run the file of a new folder." >&2; exit 2; }
+current=$(head -n 1 -- "$here/Application/current")
+[ -x "$here/Application/$current/thoron" ] || { echo "Thoron: $here holds no program to install." >&2; exit 4; }
+mkdir -p -- "$dest" "$units" "$data/applications"
+# the program and its versions, never a profile: a portable folder's "User Data" stays where it is
+rm -rf -- "$dest/Application.new"
+cp -a -- "$here/Application" "$dest/Application.new"
+rm -rf -- "$dest/Application.old"
+[ ! -d "$dest/Application" ] || mv -- "$dest/Application" "$dest/Application.old"
+mv -- "$dest/Application.new" "$dest/Application"
+rm -rf -- "$dest/Application.old"
+for f in thoron variant README.txt install-for-this-user; do cp -- "$here/$f" "$dest/$f"; done
+: > "$dest/per-user"
+icon="$dest/Application/$current/product_logo_256.png"
+[ -f "$icon" ] || icon=thoron
+cat > "$desktop" <<DESKTOP
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Thoron
+GenericName=Web Browser
+Exec="$dest/thoron" %U
+Icon=$icon
+Terminal=false
+Categories=Network;WebBrowser;
+MimeType=text/html;x-scheme-handler/http;x-scheme-handler/https;
+StartupWMClass=thoron
+DESKTOP
+cat > "$units/thoron-update.service" <<SERVICE
+[Unit]
+Description=Thoron looks for an update (the copy installed for this user)
+
+[Service]
+Type=oneshot
+ExecStart="$dest/thoron" --headless=new --no-first-run --user-data-dir="$dest/Update/scheduled" --thoron-scheduled-update
+Nice=10
+SERVICE
+cat > "$units/thoron-update.timer" <<TIMER
+[Unit]
+Description=Thoron looks for an update once a day
+
+[Timer]
+OnCalendar=daily
+RandomizedDelaySec=1h
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+TIMER
+if systemctl --user daemon-reload > /dev/null 2>&1 && systemctl --user enable --now thoron-update.timer > /dev/null 2>&1; then
+  echo "Thoron is installed for $(id -un) in $dest, and looks for updates once a day."
+else
+  echo "Thoron is installed for $(id -un) in $dest; this system has no systemd user manager, so it looks for"
+  echo "updates only while it runs."
+fi
 """
 
 
@@ -120,6 +205,12 @@ then `sudo apparmor_parser -r <that file>`. Or install the .deb, which brings it
 
 Variants: linux-x64-avx2 needs a processor with AVX2 (most from 2013 on); linux-x64-sse4 runs on older x64
 ones; linux-arm64-armv8 on 64-bit ARM. The launcher says so and starts nothing on a processor the package cannot run.
+
+For this user only
+`./install-for-this-user` puts this version into ~/.local/share/thoron with a menu entry and a systemd user
+timer, with which Thoron looks for an update once a day while it is closed; no administrator rights are
+needed (but for the sandbox above). That copy keeps its profile in ~/.config/thoron, as the .deb does, and
+`~/.local/share/thoron/install-for-this-user --remove` takes it away again; the profile stays.
 """
 
 
@@ -169,7 +260,8 @@ def build(deb: Path, dist: Path, variant: str, epoch: int = EPOCH, updater: Path
     archive = dist / tar_name(version, variant)
     if updater is not None and not updater.is_file():
         raise PackageError(f"no updater at {updater}")
-    top = [(LAUNCHER, LAUNCHER_TEXT.encode(), 0o755), (README, readme_text(version, variant).encode(), 0o644),
+    top = [(LAUNCHER, LAUNCHER_TEXT.encode(), 0o755), (INSTALLER, INSTALLER_TEXT.encode(), 0o755),
+           (README, readme_text(version, variant).encode(), 0o644),
            (VARIANT_FILE, f"{variant}\n".encode(), 0o644),
            (f"{BROWSER_DIR}/{CURRENT}", f"{version}\n".encode(), 0o644)]
     with lzma.open(archive, "wb", preset=9) as xz, tarfile.open(fileobj=xz, mode="w", format=tarfile.PAX_FORMAT) as tar:
@@ -238,6 +330,13 @@ def audit(archive: Path, variant: str | None = None) -> list[str]:
             problems.append("the launcher is missing or cannot be run")
         elif tar.extractfile(launcher).read().decode() != LAUNCHER_TEXT:
             problems.append("the launcher is not this tool's")
+        installer = items.get(f"{FOLDER}/{INSTALLER}")
+        if not installer or not installer.isfile() or not installer.mode & 0o100:
+            problems.append(f"{INSTALLER} is missing or cannot be run")
+        elif tar.extractfile(installer).read().decode() != INSTALLER_TEXT:
+            problems.append(f"{INSTALLER} is not this tool's")
+        if f"{FOLDER}/{PER_USER}" in items:
+            problems.append(f"the package holds the mark {PER_USER} of an installed copy")
         if not program or not program.isfile() or not program.mode & 0o100:
             problems.append(f"the program Application/{current}/{PROGRAM} is missing or cannot be run")
         if f"{FOLDER}/{PROFILE_DIR}" in items:

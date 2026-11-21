@@ -2238,15 +2238,17 @@ index 6018748f094dd3a1977e5f85c0ac1da95d590c5e..1ecc08f18b241060af0a98016721ac30
      {language::prefs::kAppLanguagePromptShown,
       {syncable_prefs_ids::kAppLanguagePromptShown, syncer::PREFERENCES,
 diff --git a/chrome/browser/chrome_browser_main.cc b/chrome/browser/chrome_browser_main.cc
-index 9aa6f338c73e80ee878c068db1811230ee3e6339..2434649a1ce105d87c831d342139dff6809ad79f 100644
+index 9aa6f338c73e80ee878c068db1811230ee3e6339..a35af638ae680828c9cfaf27b37df063ca38537d 100644
 --- a/chrome/browser/chrome_browser_main.cc
 +++ b/chrome/browser/chrome_browser_main.cc
-@@ -28,6 +28,12 @@
+@@ -28,6 +28,14 @@
  #include "base/trace_event/trace_event.h"
  #include "base/values.h"
  #include "build/branding_buildflags.h"
 +#if BUILDFLAG(IS_WIN) && !BUILDFLAG(GOOGLE_CHROME_BRANDING)
 +#include "chrome/browser/thoron_update/thoron_update_win.h"
++#elif BUILDFLAG(IS_LINUX) && !BUILDFLAG(GOOGLE_CHROME_BRANDING)
++#include "chrome/browser/thoron_update/thoron_update_linux.h"
 +#endif
 +#if BUILDFLAG(IS_WIN) && !BUILDFLAG(GOOGLE_CHROME_BRANDING)
 +#include "chrome/browser/thoron_portable/unlock_win.h"
@@ -2254,7 +2256,7 @@ index 9aa6f338c73e80ee878c068db1811230ee3e6339..2434649a1ce105d87c831d342139dff6
  #include "build/build_config.h"
  #include "chrome/browser/active_use_util.h"
  #include "chrome/browser/after_startup_task_utils.h"
-@@ -1269,6 +1275,14 @@ int ChromeBrowserMainParts::PreCreateThreadsImpl() {
+@@ -1269,6 +1277,14 @@ int ChromeBrowserMainParts::PreCreateThreadsImpl() {
      return CHROME_RESULT_CODE_MISSING_DATA;
    }
  
@@ -2269,13 +2271,16 @@ index 9aa6f338c73e80ee878c068db1811230ee3e6339..2434649a1ce105d87c831d342139dff6
  #if !BUILDFLAG(IS_ANDROID)
    MaybeShowInvalidUserDataDirWarningDialog();
  #endif
-@@ -1733,6 +1747,10 @@ void ChromeBrowserMainParts::PostBrowserStart() {
+@@ -1733,6 +1749,13 @@ void ChromeBrowserMainParts::PostBrowserStart() {
    }
  
    browser_process_->browser_policy_connector()->OnBrowserStarted();
 +#if BUILDFLAG(IS_WIN) && !BUILDFLAG(GOOGLE_CHROME_BRANDING)
 +  // Thoron (P3.20): the updater's looks on its own.
 +  thoron_update_win::StartScheduledChecks();
++#elif BUILDFLAG(IS_LINUX) && !BUILDFLAG(GOOGLE_CHROME_BRANDING)
++  // Thoron (P3.23): the same for a Linux copy that updates itself.
++  thoron_update_linux::StartScheduledChecks();
 +#endif
  
  #if BUILDFLAG(ENABLE_PROCESS_SINGLETON)
@@ -2450,10 +2455,10 @@ index fac481f41cb67c95950bea9647f18d7c13f9d2e6..ae10ea009b385832fdcd61a157b5c34b
                                 base::Unretained(this)));
  }
 diff --git a/chrome/browser/ui/webui/help/BUILD.gn b/chrome/browser/ui/webui/help/BUILD.gn
-index 45aa60407f87a07de21eec49145ffd78db903903..c8d10da963bc12b2dcea0a86f6cada0506de6249 100644
+index 45aa60407f87a07de21eec49145ffd78db903903..23f0eb669dc2c2e4bc35ae1e371bf3a38dce1622 100644
 --- a/chrome/browser/ui/webui/help/BUILD.gn
 +++ b/chrome/browser/ui/webui/help/BUILD.gn
-@@ -66,7 +66,9 @@ source_set("help") {
+@@ -66,12 +66,16 @@ source_set("help") {
          "//ui/gfx",
        ]
      } else {
@@ -2463,6 +2468,14 @@ index 45aa60407f87a07de21eec49145ffd78db903903..c8d10da963bc12b2dcea0a86f6cada05
 +      deps += [ "//chrome/browser/thoron_update" ]
      }
    }
+ 
+   if (is_linux) {
+-    sources = [ "version_updater_basic.cc" ]
++    # Thoron (P3.23): its own updater instead of the basic one.
++    sources = [ "version_updater_thoron_linux.cc" ]
++    deps += [ "//chrome/browser/thoron_update" ]
+   }
+ }
  
 diff --git a/chrome/browser/ui/webui/new_tab_page/new_tab_page_handler.cc b/chrome/browser/ui/webui/new_tab_page/new_tab_page_handler.cc
 index b57d6384773d0cb86893859066b219dec90c6d70..79f4f51a573f145e90604d3ee56549a771cbe63f 100644
@@ -3800,10 +3813,10 @@ index 0000000000000000000000000000000000000000..4d6e2cb314503f70e43c3b1371a3daf6
 +#endif  // CHROME_BROWSER_THORON_PORTABLE_UNLOCK_WIN_H_
 diff --git a/chrome/browser/thoron_update/BUILD.gn b/chrome/browser/thoron_update/BUILD.gn
 new file mode 100644
-index 0000000000000000000000000000000000000000..3d2dec9fdc0945cddceba82c4d6a77fcf38674b3
+index 0000000000000000000000000000000000000000..590d8e3735cdc45c4eed23dd6ad97947288783ab
 --- /dev/null
 +++ b/chrome/browser/thoron_update/BUILD.gn
-@@ -0,0 +1,36 @@
+@@ -0,0 +1,43 @@
 +# Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +# found in the LICENSE file.
 +
@@ -3817,6 +3830,13 @@ index 0000000000000000000000000000000000000000..3d2dec9fdc0945cddceba82c4d6a77fc
 +    sources += [
 +      "thoron_update_win.cc",
 +      "thoron_update_win.h",
++    ]
++  }
++  if (is_linux) {
++    # Thoron (ROADMAP P3.23): a copy that updates itself, and the .deb that apt updates.
++    sources += [
++      "thoron_update_linux.cc",
++      "thoron_update_linux.h",
 +    ]
 +  }
 +  defines = [
@@ -3842,10 +3862,10 @@ index 0000000000000000000000000000000000000000..3d2dec9fdc0945cddceba82c4d6a77fc
 +}
 diff --git a/chrome/browser/thoron_update/args.gni b/chrome/browser/thoron_update/args.gni
 new file mode 100644
-index 0000000000000000000000000000000000000000..926c5df01e418e1ac402cb3caf69fa6515504e9c
+index 0000000000000000000000000000000000000000..4a52e89eaa320a0965c67a4fdb246ffea7907ef7
 --- /dev/null
 +++ b/chrome/browser/thoron_update/args.gni
-@@ -0,0 +1,31 @@
+@@ -0,0 +1,36 @@
 +# Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +# found in the LICENSE file.
 +
@@ -3868,15 +3888,242 @@ index 0000000000000000000000000000000000000000..926c5df01e418e1ac402cb3caf69fa65
 +thoron_update_test_public_key = "9i/S9Os0cVBrrPIeJJEiTNqJucILUa97MBNquyuERHM="
 +
 +# The variant this build is, as the manifest names it.
-+if (current_cpu == "arm64") {
-+  thoron_update_variant = "win-arm64-armv8"
-+} else if (thorium_x86_profile == "avx512_skx") {
-+  thoron_update_variant = "win-x64-avx512"
-+} else if (thorium_x86_profile == "avx2_fma") {
-+  thoron_update_variant = "win-x64-avx2"
++if (is_linux) {
++  _os = "linux"
 +} else {
-+  thoron_update_variant = "win-x64-sse4"
++  _os = "win"
 +}
++if (current_cpu == "arm64") {
++  thoron_update_variant = "$_os-arm64-armv8"
++} else if (thorium_x86_profile == "avx512_skx") {
++  thoron_update_variant = "$_os-x64-avx512"
++} else if (thorium_x86_profile == "avx2_fma") {
++  thoron_update_variant = "$_os-x64-avx2"
++} else {
++  thoron_update_variant = "$_os-x64-sse4"
++}
+diff --git a/chrome/browser/thoron_update/thoron_update_linux.cc b/chrome/browser/thoron_update/thoron_update_linux.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..1848a87bf6778dff4c9f40236d6eeb9f5f06e7ac
+--- /dev/null
++++ b/chrome/browser/thoron_update/thoron_update_linux.cc
+@@ -0,0 +1,162 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "chrome/browser/thoron_update/thoron_update_linux.h"
++
++#include <algorithm>
++#include <optional>
++#include <string>
++
++#include "base/base64.h"
++#include "base/command_line.h"
++#include "base/files/file_path.h"
++#include "base/files/file_util.h"
++#include "base/functional/bind.h"
++#include "base/functional/callback_helpers.h"
++#include "base/no_destructor.h"
++#include "base/path_service.h"
++#include "base/process/launch.h"
++#include "base/process/process.h"
++#include "base/task/single_thread_task_runner.h"
++#include "base/time/default_clock.h"
++#include "base/time/time.h"
++#include "base/version.h"
++#include "base/version_info/version_info.h"
++#include "chrome/browser/browser_process.h"
++#include "chrome/browser/upgrade_detector/build_state.h"
++#include "components/thoron_update/cli.h"
++#include "content/public/browser/browser_thread.h"
++#include "net/base/network_change_notifier.h"
++#include "services/network/public/cpp/shared_url_loader_factory.h"
++
++namespace thoron_update_linux {
++
++namespace {
++
++// The build's own values (chrome/browser/thoron_update/BUILD.gn).
++constexpr char kPublicKey[] = THORON_UPDATE_PUBLIC_KEY;
++constexpr char kManifestUrl[] = THORON_UPDATE_MANIFEST_URL;
++constexpr char kChannel[] = THORON_UPDATE_CHANNEL;
++constexpr char kVariant[] = THORON_UPDATE_VARIANT;
++
++constexpr base::TimeDelta kFirstLook = base::Minutes(10);
++constexpr base::TimeDelta kBetweenLooks = base::Hours(5);
++constexpr base::TimeDelta kMostUpdateTime = base::Minutes(15);
++
++void ScheduledLook() {
++  const base::FilePath folder = SelfUpdatingFolder();
++  if (!folder.empty() &&
++      thoron_update::ReadUpdateMode(folder) == thoron_update::UpdateMode::kAuto) {
++    Client()->Check(/*install=*/true, base::DoNothing(), /*asked=*/false);
++  }
++  base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
++      FROM_HERE, base::BindOnce(&ScheduledLook), kBetweenLooks);
++}
++
++// The relaunch badge (P3.6), as on Windows.
++void TellBuildState(const std::string& version, bool critical) {
++  const base::Version installed(version);
++  if (!installed.IsValid()) {
++    return;
++  }
++  g_browser_process->GetBuildState()->SetUpdate(
++      BuildState::UpdateType::kNormalUpdate, installed,
++      critical ? std::optional<base::Version>(installed) : std::nullopt);
++}
++
++}  // namespace
++
++base::FilePath SelfUpdatingFolder() {
++  base::FilePath exe;
++  base::PathService::Get(base::DIR_EXE, &exe);
++  const base::FilePath parent = exe.DirName();
++  return base::PathExists(parent.AppendASCII("current")) ? parent : base::FilePath();
++}
++
++bool RunSelfUpdate(const base::FilePath& package, bool delta, const std::string& version) {
++  const base::FilePath root = SelfUpdatingFolder();
++  if (root.empty()) {
++    return false;
++  }
++  base::FilePath exe;
++  base::PathService::Get(base::DIR_EXE, &exe);
++  base::CommandLine command(exe.AppendASCII("thoron_update"));
++  command.AppendSwitchPath("root", root);
++  // A delta makes the new version from this one's folder (P4.1); a package
++  // holds it whole.
++  command.AppendSwitchPath(delta ? "apply-delta" : "apply-package", package);
++  command.AppendSwitchASCII("version", version);
++  base::Process process = base::LaunchProcess(command, base::LaunchOptions());
++  if (!process.IsValid()) {
++    return false;
++  }
++  int exit_code = -1;
++  if (!process.WaitForExitWithTimeout(kMostUpdateTime, &exit_code)) {
++    process.Terminate(/*exit_code=*/1, /*wait=*/false);
++    return false;
++  }
++  return exit_code == 0;
++}
++
++thoron_update::UpdateClient::Config ConfigForThisCopy() {
++  thoron_update::UpdateClient::Config config;
++  std::string key;
++  if (base::Base64Decode(kPublicKey, &key) && key.size() == thoron_update::kPublicKeyBytes) {
++    std::copy(key.begin(), key.end(), config.public_key.begin());
++  }
++  config.allowed_hosts = {"github.com"};
++  config.manifest_url = GURL(kManifestUrl);
++  config.channel = kChannel;
++  const std::optional<thoron_update::BuildVersion> version =
++      thoron_update::ParseBuildVersion(version_info::GetVersionNumber());
++  if (version) {
++    config.installed = *version;
++    config.updater = *version;
++  }
++  config.variant =
++      thoron_update::ParseVariant(kVariant).value_or(thoron_update::Variant::kLinuxX64Sse4);
++  config.on_installed = base::BindRepeating(&TellBuildState);
++  // A metered connection: the looks on a schedule download nothing then (P4.3).
++  config.is_metered = base::BindRepeating([] {
++    return net::NetworkChangeNotifier::GetConnectionCost() ==
++           net::NetworkChangeNotifier::CONNECTION_COST_METERED;
++  });
++  const base::FilePath folder = SelfUpdatingFolder();
++  // Both copies that update themselves take the portable package: the per-user
++  // install has the same folder of versions, its profile in ~/.config/thoron.
++  config.kind = thoron_update::Kind::kPortable;
++  if (!folder.empty()) {
++    // Beside the version folders, never in a profile.
++    config.download_dir = folder.AppendASCII("Update");
++    config.install = base::BindRepeating(&RunSelfUpdate);
++  } else {
++    // The .deb: apt owns its files (design 7.5a), and the updater never
++    // changes them.
++    config.by_hand =
++        "this copy was installed by your system's package manager, which also updates it";
++  }
++  return config;
++}
++
++thoron_update::UpdateClient* Client() {
++  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
++  static base::NoDestructor<std::unique_ptr<thoron_update::UpdateClient>> client(
++      std::make_unique<thoron_update::UpdateClient>(
++          ConfigForThisCopy(), g_browser_process->shared_url_loader_factory(),
++          g_browser_process->local_state(), base::DefaultClock::GetInstance()));
++  return client->get();
++}
++
++void StartScheduledChecks() {
++  // As on Windows, the switch that keeps the browser from contacting anything
++  // on its own keeps the updater quiet too; a copy the package manager
++  // installed looks only when the About page is opened.
++  if (base::CommandLine::ForCurrentProcess()->HasSwitch("disable-background-networking") ||
++      SelfUpdatingFolder().empty()) {
++    return;
++  }
++  base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
++      FROM_HERE, base::BindOnce(&ScheduledLook), kFirstLook);
++}
++
++}  // namespace thoron_update_linux
+diff --git a/chrome/browser/thoron_update/thoron_update_linux.h b/chrome/browser/thoron_update/thoron_update_linux.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..ca44afe6fa9f725f57e3e04fbdf05bd183cf8857
+--- /dev/null
++++ b/chrome/browser/thoron_update/thoron_update_linux.h
+@@ -0,0 +1,48 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef CHROME_BROWSER_THORON_UPDATE_THORON_UPDATE_LINUX_H_
++#define CHROME_BROWSER_THORON_UPDATE_THORON_UPDATE_LINUX_H_
++
++#include <string>
++
++#include "components/thoron_update/update_client.h"
++
++namespace base {
++class FilePath;
++}  // namespace base
++
++// The browser's updater on Linux (ROADMAP P3.23), as on Windows
++// (thoron_update_win.h): the update client of this copy, and the looks it takes
++// on its own. A copy that updates itself is one whose version folder sits
++// beside the file `current` (the portable package, and the per-user install of
++// design 7.5a); its own updater (thoron_update) puts a checked release in place,
++// and the next start runs it. A copy installed by the system's package manager
++// (the .deb) is updated by it: the client only says what is out, and looks only
++// when the person opens the About page.
++namespace thoron_update_linux {
++
++// The update client of this copy, made on first use; on the UI thread.
++thoron_update::UpdateClient* Client();
++
++// The client's configuration for this copy. Exposed for tests.
++thoron_update::UpdateClient::Config ConfigForThisCopy();
++
++// The folder with this copy's version folders and `current`, or an empty path
++// for a copy the package manager installed.
++base::FilePath SelfUpdatingFolder();
++
++// The looks the copy takes on its own: a few minutes after the start, then
++// every few hours, in the update mode `auto` only; none for a copy the package
++// manager installed.
++void StartScheduledChecks();
++
++// The update of a copy that updates itself: its own updater unpacks the
++// version's folder of the checked package (thoron_update --apply-package), or
++// makes it from this version's folder with a delta (--apply-delta), and puts it
++// in place.
++bool RunSelfUpdate(const base::FilePath& package, bool delta, const std::string& version);
++
++}  // namespace thoron_update_linux
++
++#endif  // CHROME_BROWSER_THORON_UPDATE_THORON_UPDATE_LINUX_H_
 diff --git a/chrome/browser/thoron_update/thoron_update_win.cc b/chrome/browser/thoron_update/thoron_update_win.cc
 new file mode 100644
 index 0000000000000000000000000000000000000000..bda1e9ed270116f45333d33e2c5a563efb452af7
@@ -6586,6 +6833,90 @@ index 0000000000000000000000000000000000000000..558496fec9e4a001292ba9cbd6982267
 +}  // namespace thoron
 +
 +#endif  // CHROME_BROWSER_UI_VIEWS_TOOLBAR_THORON_WINDOWS_SECURITY_H_
+diff --git a/chrome/browser/ui/webui/help/version_updater_thoron_linux.cc b/chrome/browser/ui/webui/help/version_updater_thoron_linux.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..6df624e2439d260e13e399c4644a681275ee4e35
+--- /dev/null
++++ b/chrome/browser/ui/webui/help/version_updater_thoron_linux.cc
+@@ -0,0 +1,78 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++// The About page's updater on Linux builds without Google's branding
++// (ROADMAP P3.23): the states of Thoron's own update client
++// (chrome/browser/thoron_update), as the page shows them; the same as on
++// Windows (version_updater_thoron_win.cc).
++
++#include <memory>
++#include <string>
++
++#include "base/functional/bind.h"
++#include "base/memory/weak_ptr.h"
++#include "base/strings/utf_string_conversions.h"
++#include "chrome/browser/thoron_update/thoron_update_linux.h"
++#include "chrome/browser/ui/webui/help/version_updater.h"
++
++namespace {
++
++class VersionUpdaterThoron : public VersionUpdater {
++ public:
++  VersionUpdaterThoron() = default;
++  VersionUpdaterThoron(const VersionUpdaterThoron&) = delete;
++  VersionUpdaterThoron& operator=(const VersionUpdaterThoron&) = delete;
++  ~VersionUpdaterThoron() override = default;
++
++  // VersionUpdater:
++  void CheckForUpdate(StatusCallback callback, PromoteCallback) override {
++    callback_ = std::move(callback);
++    // Opening the page is asking: a copy that updates itself installs what it
++    // finds, in every mode; a .deb copy only says what is out.
++    thoron_update_linux::Client()->Check(
++        /*install=*/true,
++        base::BindRepeating(&VersionUpdaterThoron::OnStatus, weak_factory_.GetWeakPtr()));
++  }
++
++ private:
++  void OnStatus(const thoron_update::UpdateClient::Status& status) {
++    using Kind = thoron_update::UpdateClient::PageKind;
++    const thoron_update::UpdateClient::Page page =
++        thoron_update::UpdateClient::ForAboutPage(status);
++    Status shown = FAILED;
++    switch (page.kind) {
++      case Kind::kChecking:
++        shown = CHECKING;
++        break;
++      case Kind::kUpdating:
++        shown = UPDATING;
++        break;
++      case Kind::kRelaunch:
++        shown = NEARLY_UPDATED;
++        break;
++      case Kind::kUpToDate:
++        shown = UPDATED;
++        break;
++      case Kind::kFailed:
++        shown = FAILED;
++        break;
++      case Kind::kFailedDownload:
++        shown = FAILED_DOWNLOAD;
++        break;
++      case Kind::kDisabled:
++        shown = DISABLED;
++        break;
++    }
++    callback_.Run(shown, page.progress, false, false, status.version, 0,
++                  base::UTF8ToUTF16(page.message));
++  }
++
++  StatusCallback callback_;
++  base::WeakPtrFactory<VersionUpdaterThoron> weak_factory_{this};
++};
++
++}  // namespace
++
++std::unique_ptr<VersionUpdater> VersionUpdater::Create(content::WebContents* web_contents) {
++  return std::make_unique<VersionUpdaterThoron>();
++}
 diff --git a/chrome/browser/ui/webui/help/version_updater_thoron_win.cc b/chrome/browser/ui/webui/help/version_updater_thoron_win.cc
 new file mode 100644
 index 0000000000000000000000000000000000000000..1a6b50d5f31156d3373b20fc72eb4f04be80f38f

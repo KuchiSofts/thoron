@@ -264,6 +264,6 @@ A rollback is not offered yet (ROADMAP P3.8). Before you install a newer version
 | The update while Thoron runs, with a relaunch badge | P3.6 |
 | A portable copy updating itself (the swap at its start) | P3.12, P3.20 |
 | The update mode in Settings | P3.20 |
-| Looking for updates on Linux while Thoron is closed (a systemd user timer) | P3.10 |
+| Updates from inside Thoron on Linux (a portable copy, a per-user install with a systemd user timer; a `.deb` copy is updated by apt) | P3.23 |
 | Downloads that resume, pause on metered connections, and work through a proxy | P4.3 |
 | Rollback with the profile snapshot, a warning and your confirmation | P3.8 |

@@ -87,6 +87,14 @@ REQUESTS = (
 
 
 class HostsTests(unittest.TestCase):
+    def test_the_build_is_read_from_the_logs_own_header(self):
+        # ROADMAP S.10: the release gate takes a report of its own build only
+        head = ('{"constants":{"clientInfo":{"cl":"abc-refs/branch-heads/8127@{#1825}",'
+                '"command_line":"\\"thoron.exe\\" --flag=\\"version\\":\\"1.2.3.4\\"","name":"Thoron",'
+                '"version":"158.0.8127.6505","version_mod":""},"logEventTypes":{}},"events":[')
+        self.assertEqual(nh.build_of(head), "158.0.8127.6505")
+        self.assertIsNone(nh.build_of('{"constants":{},"events":[{"params":{"version":"1.2.3.4"}}'))
+
     def test_external_hosts_from_a_truncated_log(self):
         self.assertEqual(nh.hosts(LOG), {"update.googleapis.com": 2, "clients2.google.com": 1,
                                          "accounts.google.com": 1})

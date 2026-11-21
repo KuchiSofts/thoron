@@ -12,6 +12,14 @@ no time request on `clients2.google.com`, and its New Tab page contacts neither 
 NETWORK_REDUCTION.md, section 7). The tables below are those of the build before these changes and are
 measured again before the first release.
 
+**Every release is checked against this page.** `release.py prepare --network-report` takes the measurement of
+the release's own build (`tools/qa/netlog_hosts.py --seconds 240 --json`, as a person starts it: no switch, no
+preference, the local page) and refuses the release when its fresh profile contacted a host this page does not
+name. Measured on 2026-11-21 on build 158.0.8127.6505 (one run of 240 s): `update.googleapis.com`,
+`edgedl.me.gvt1.com`, `clients2.google.com`, `clients2.googleusercontent.com`,
+`chromewebstore.googleapis.com` (extensions other programs registered on that PC), `ublockorigin.github.io`,
+`malware-filter.gitlab.io` and `safebrowsing.googleapis.com`: 8 hosts, all of them below.
+
 ## 1. What was measured, and what was not
 
 - **Build.** Thoron build 158.0.8127.3010 (Chromium 158.0.8127.30), Windows x64, on 2026-11-16.

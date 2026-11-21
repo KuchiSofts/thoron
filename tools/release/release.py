@@ -797,6 +797,38 @@ def sandbox_evidence_problems(evidence: Path | None, version: str, platform: str
     return out
 
 
+# a host as NETWORK.md writes one in backquotes, or the one name Windows' proxy detection looks up
+_DOC_HOST = re.compile(r"`((?:[a-z0-9-]+\.)+[a-z]{2,}|wpad)`")
+
+
+def network_report_problems(report: Path | None, version: str, repo: Path) -> list[str]:
+    """Why the release's network measurement forbids it (ROADMAP S.10): there is none, it is of another build,
+    or a fresh profile of this build contacted a host that docs/security/NETWORK.md does not list (the page
+    must say what reaches out, and why, before a release ships). The report is tools/qa/netlog_hosts.py's
+    --json of this build, with its defaults (no switch, no preference, the local page)."""
+    if report is None:
+        return ["no network measurement of this build: run tools/qa/netlog_hosts.py --seconds 240 --json <file> "
+                "on it and give --network-report"]
+    try:
+        data = json.loads(report.read_text(encoding="utf-8"))
+        runs = data["runs"]
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        return [f"the network report could not be read ({type(exc).__name__})"]
+    out = []
+    if data.get("build") != version:
+        out.append(f"the network report is of build {data.get('build')}, not {version}")
+    if data.get("switches") or data.get("prefs") or data.get("page"):
+        out.append("the network report was measured with switches, preferences or another page: measure the "
+                   "build as it starts for a person")
+    if not runs:
+        out.append("the network report holds no run")
+    documented = set(_DOC_HOST.findall((repo / "docs/security/NETWORK.md").read_text(encoding="utf-8")))
+    seen = sorted({host for run in runs for host in (run.get("hosts") or {})} - documented)
+    if seen:
+        out.append(f"contacted, but not in docs/security/NETWORK.md: {', '.join(seen)}")
+    return out
+
+
 def update_check_problems(report: Path | None, version: str, previous: str, first: bool) -> list[str]:
     """Why it is not shown that the last release's own updater installs this build (THREAT_MODEL U14):
     tools/qa/portable_update_check.py --previous <the last release's portable package> --report, run on this
@@ -1440,6 +1472,7 @@ def _prepare(a) -> int:
     problems += [f"performance: {p}" for p in performance_problems(a.repo, a.bench, thoron)]
     problems += [f"memory: {p}" for p in soak_problems(a.soak, version)]
     problems += [f"sandbox: {p}" for p in sandbox_evidence_problems(a.sandbox_evidence, version, a.platform)]
+    problems += [f"network: {p}" for p in network_report_problems(a.network_report, version, a.repo)]
     if chrome_bin is not None:
         first = ver.latest_thoron(tags) is None
         problems += [f"update: {p}" for p in update_check_problems(a.update_check, version, a.previous, first)]
@@ -1578,6 +1611,9 @@ def main(argv: list[str], run=None) -> int:
     a_.add_argument("--minisign-key", type=Path)
     a_.add_argument("--security", type=Path, help="security.json: the fixes the notes name")
     a_.add_argument("--highlights", type=Path, help="a hand-written opening of the notes")
+    a_.add_argument("--network-report", type=Path,
+                    help="tools/qa/netlog_hosts.py's --json of this build (ROADMAP S.10): every host it contacted "
+                         "must be in docs/security/NETWORK.md")
     a_.add_argument("--sandbox-evidence", type=Path,
                     help="the sandbox evidence of this build: tools/qa/sandbox_check.py's (Windows) or "
                          "linux_apparmor_vm_check.py's (Linux) (ROADMAP S.5); kept with the build's records, "

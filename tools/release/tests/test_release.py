@@ -60,6 +60,10 @@ INVENTORY = patch_licenses.render_table([
 SOAK_REPORT = f"Soak: 8.00 h, 4168 rounds of 6 tabs\nBuild: {BUILD}\nSOAK: PASSED\n"
 SANDBOX_EVIDENCE = (f"Sandbox on (Chrome/{BUILD})\n  Windows reports:\n    renderer 1: Untrusted integrity\n\n"
                     "SANDBOX CHECK: PASSED\n")
+NETWORK_DOC = "| Host | Asked by |\n|---|---|\n| `update.googleapis.com`, `edgedl.me.gvt1.com` | update_client |\n"
+NETWORK_REPORT = json.dumps({"label": "Thoron", "build": BUILD, "seconds": 240, "switches": [], "prefs": {},
+                             "page": None, "runs": [{"hosts": {"update.googleapis.com": 3, "edgedl.me.gvt1.com": 2},
+                                                     "build": BUILD}]})
 LAST_RELEASE = "156.0.8078.28"
 UPDATE_REPORT = (f"Portable update check (tools/qa/portable_update_check.py)\nBuild: {BUILD}\nFrom: {LAST_RELEASE}\n"
                  f"Previous package: thoron-{LAST_RELEASE}-win-x64-avx2-portable.zip\nPORTABLE UPDATE CHECK: PASSED\n")
@@ -392,6 +396,12 @@ class ReleaseFixture(Fixture):
         soak_file.write_text(soak if soak is not None else SOAK_REPORT, encoding="utf-8")
         sandbox_file = self.repo.parent / "sandbox.txt"
         sandbox_file.write_text(kw.pop("sandbox", SANDBOX_EVIDENCE), encoding="utf-8")
+        network_doc = self.repo / "docs" / "security" / "NETWORK.md"
+        if not network_doc.exists():
+            network_doc.parent.mkdir(parents=True, exist_ok=True)
+            network_doc.write_text(NETWORK_DOC, encoding="utf-8")
+        network_file = self.repo.parent / "network.json"
+        network_file.write_text(kw.pop("network", NETWORK_REPORT), encoding="utf-8")
         update_file = self.repo.parent / "update-check.txt"
         update_file.write_text((update if update is not None else UPDATE_REPORT).replace(
             f"From: {LAST_RELEASE}", f"From: {previous}"), encoding="utf-8")
@@ -399,7 +409,7 @@ class ReleaseFixture(Fixture):
                          "--previous", previous, "--buildinfo", self.buildinfo, "--dist", dist or self.dist,
                          "--repo", self.repo, "--since", "v0.1.1", "--chromium-old", "156.0.8078.80",
                          "--bench", bench_file, "--soak", soak_file, "--update-check", update_file,
-                         "--sandbox-evidence", sandbox_file, *more, **kw)
+                         "--sandbox-evidence", sandbox_file, "--network-report", network_file, *more, **kw)
 
     def with_manifest(self, *more) -> tuple:
         return ("--manifest-key", self.keys / "manifest.key", "--manifest-public-key", text(self.public),
@@ -1049,6 +1059,7 @@ class DryRunTests(ReleaseTestCase):
                                         dist=second, previous=BUILD, clock=NOW + 3600,
                                         soak=SOAK_REPORT.replace(BUILD, NEXT_BUILD),
                                         sandbox=SANDBOX_EVIDENCE.replace(BUILD, NEXT_BUILD),
+                                        network=NETWORK_REPORT.replace(BUILD, NEXT_BUILD),
                                         update=UPDATE_REPORT.replace(f"Build: {BUILD}", f"Build: {NEXT_BUILD}"))
         self.assertEqual(code, 0, out + err)
         data = mf.verify(*self.manifest(second), self.f.public, allowed_hosts=HOSTS)
@@ -1919,6 +1930,48 @@ class SandboxGateTests(unittest.TestCase):
             self.assertEqual(rel.sandbox_evidence_problems(evidence, BUILD, "linux"),
                              ["the sandbox check did not pass"])
         self.assertIn("linux_apparmor_vm_check.py", rel.sandbox_evidence_problems(None, BUILD, "linux")[0])
+
+
+class NetworkGateTests(unittest.TestCase):
+    """ROADMAP S.10: every host a fresh profile of the release's build contacts is in NETWORK.md."""
+
+    def problems(self, report, doc: str = NETWORK_DOC):
+        with tempfile.TemporaryDirectory() as d:
+            repo = Path(d)
+            (repo / "docs" / "security").mkdir(parents=True)
+            (repo / "docs" / "security" / "NETWORK.md").write_text(doc, encoding="utf-8")
+            if report is None:
+                return rel.network_report_problems(None, BUILD, repo)
+            path = repo / "network.json"
+            path.write_text(report if isinstance(report, str) else json.dumps(report), encoding="utf-8")
+            return rel.network_report_problems(path, BUILD, repo)
+
+    def report(self, **changes):
+        data = json.loads(NETWORK_REPORT)
+        data.update(changes)
+        return data
+
+    def test_a_measurement_of_this_build_within_the_page_passes(self):
+        self.assertEqual(self.problems(NETWORK_REPORT), [])
+        # a host the page lists that this build no longer contacts is fine
+        self.assertEqual(self.problems(self.report(runs=[{"hosts": {"update.googleapis.com": 1}}])), [])
+
+    def test_what_is_refused(self):
+        self.assertIn("no network measurement", self.problems(None)[0])
+        self.assertEqual(self.problems(self.report(build="158.0.8127.2000")),
+                         [f"the network report is of build 158.0.8127.2000, not {BUILD}"])
+        unknown = self.report(runs=[{"hosts": {"update.googleapis.com": 1, "tracker.example.net": 2}}])
+        self.assertEqual(self.problems(unknown),
+                         ["contacted, but not in docs/security/NETWORK.md: tracker.example.net"])
+        self.assertIn("switches", self.problems(self.report(switches=["--disable-component-update"]))[0])
+        self.assertIn("no run", self.problems(self.report(runs=[]))[0])
+        self.assertIn("could not be read", self.problems("not json")[0])
+
+    def test_hosts_are_read_from_backquotes_only(self):
+        # a host named in prose without backquotes is not taken as listed
+        doc = "Thoron asks tracker.example.net nothing.\n| `update.googleapis.com` | x |\n"
+        unknown = self.report(runs=[{"hosts": {"tracker.example.net": 1}}])
+        self.assertEqual(len(self.problems(unknown, doc)), 1)
 
 
 class SoakGateTests(unittest.TestCase):

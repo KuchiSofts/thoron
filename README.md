@@ -6,7 +6,7 @@
 
 **A fast, secure and private browser for Windows, based on Thorium and Chromium.**
 
-[![Status](https://img.shields.io/badge/status-pre--release-F72F8E?style=flat-square)](#roadmap) <!-- progress-badge:start -->[![Roadmap progress](https://img.shields.io/badge/roadmap-78%25-7B2FF7?style=flat-square)](#roadmap)<!-- progress-badge:end --> [![Platforms](https://img.shields.io/badge/platforms-Windows%20first-24292f?style=flat-square)](#platforms) [![CPU](https://img.shields.io/badge/cpu-x64%20%7C%20ARM64-24292f?style=flat-square)](#platforms) [![License](https://img.shields.io/badge/license-BSD--3--Clause-24292f?style=flat-square)](LICENSE.md)
+[![Status](https://img.shields.io/badge/status-pre--release-F72F8E?style=flat-square)](#roadmap) <!-- progress-badge:start -->[![Roadmap progress](https://img.shields.io/badge/roadmap-79%25-7B2FF7?style=flat-square)](#roadmap)<!-- progress-badge:end --> [![Platforms](https://img.shields.io/badge/platforms-Windows%20first-24292f?style=flat-square)](#platforms) [![CPU](https://img.shields.io/badge/cpu-x64%20%7C%20ARM64-24292f?style=flat-square)](#platforms) [![License](https://img.shields.io/badge/license-BSD--3--Clause-24292f?style=flat-square)](LICENSE.md)
 
 [Why Thoron](#why-thoron) · [Features](#features) · [Install and update](#install-and-update) · [Versions](#versions) · [Roadmap](#roadmap) · [Platforms](#platforms) · [Verify](#verifying-downloads) · [Security](#security) · [Contributing](#contributing) · [Credits](#credits) · [Wiki](https://github.com/KuchiSofts/thoron/wiki)
 
@@ -78,7 +78,7 @@ changed in each version is in the [changelog](CHANGELOG.md), one line per change
 Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always current.
 
 <!-- roadmap:start -->
-**Overall:** `████████████████░░░░` 167 of 213 tasks done (78%) · roadmap updated 2026-11-19
+**Overall:** `████████████████░░░░` 168 of 213 tasks done (79%) · roadmap updated 2026-11-19
 
 | Area | Progress | Done | Status |
 |---|---|---|---|
@@ -89,7 +89,7 @@ Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always curre
 | [P3 - Updater v1 + Import](ROADMAP.md#p3---updater-v1--import) | `██████████████░░░░░░` | 16/23 | 🔄 In progress |
 | [P4 - Updater v2](ROADMAP.md#p4---updater-v2) | `████████████████░░░░` | 9/11 | 🔄 In progress |
 | [P5 - Quality](ROADMAP.md#p5---quality) | `██████████████████░░` | 73/82 | 🔄 In progress |
-| [Security (S)](ROADMAP.md#security-s) | `███████████████░░░░░` | 12/16 | 🔄 In progress |
+| [Security (S)](ROADMAP.md#security-s) | `████████████████░░░░` | 13/16 | 🔄 In progress |
 | [Quality & performance (Q)](ROADMAP.md#quality--performance-q) | `██████████████░░░░░░` | 5/7 | 🔄 In progress |
 | [Docs (D)](ROADMAP.md#docs-d) | `████████████░░░░░░░░` | 6/10 | 🔄 In progress |
 | [Legal & licensing (L)](ROADMAP.md#legal--licensing-l) | `████████░░░░░░░░░░░░` | 3/8 | 🔄 In progress |
@@ -307,7 +307,7 @@ Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always curre
 - [x] **S.7** Every patch carries `Origin:`, `Author:` and `License:` headers (with L.1)
 - [ ] **S.8** Authenticode code signing once a certificate exists
 - [ ] **S.9** Security-release process: watch Chrome Releases, triage, fast-track build within the G2 targets
-- [ ] **S.10** Publish the list of every network endpoint Thoron contacts and why (upstream #126)
+- [x] **S.10** Publish the list of every network endpoint Thoron contacts and why (upstream #126)
 - [x] **S.11** Remove Thorium's hidden Easter-egg WebUI pages (`chrome://eggs`, `chrome://robot`) from Thoron: a professional product with a smaller WebUI attack surface (pairs with S.3)
 - [x] **S.12** Content standards: written policy in `CONTRIBUTING.md`, plus an automatic `adult_content` check in `tools/audit` (added text and file names, `--strict`)
 - [x] **S.13** Inherited history cleaned: three inappropriate image files that upstream added in 2023 and later deleted were purged from every commit; the current tree is unchanged; they were verified absent from the M150 browser build

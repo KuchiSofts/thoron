@@ -7,6 +7,7 @@ Explanations live in the design docs under `docs/design/`.
 ## [Unreleased]
 
 ### Added
+- **Release:** every release is measured for the hosts a fresh profile contacts, and refused when one is not on the published list (`docs/security/NETWORK.md`).
 - **Updates:** `tools/update/manifest.py renew` makes the same release's manifest again with later dates, to sign before the current one expires when no new release came.
 - **Release:** a Linux release needs passing sandbox evidence of its own build, as a Windows one does: `chrome://sandbox` under AppArmor on Ubuntu's own kernel, from `linux_apparmor_vm_check.py --evidence`.
 - **QA tools:** `linux_apparmor_vm_check.py` checks the Linux sandbox under AppArmor on Ubuntu's own kernel, in a VM; `linux_apt_repo_check.py` checks the APT repository with apt; `linux_portable_lock_check.py` checks the Linux portable lock.

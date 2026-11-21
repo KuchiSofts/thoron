@@ -114,6 +114,17 @@ def _clean(host: str) -> str:
     return LOCAL_NETWORK if address.is_private or address.is_link_local else host
 
 
+# the header's clientInfo; its other fields may hold braces ("cl" names a branch like 8127@{#1825}) and quoted
+# text (the command line, its quotes escaped), so the version is the first unescaped "version" key after it
+_CLIENT_VERSION = re.compile(r'"clientInfo"\s*:\s*\{.{0,20000}?[,{]"version"\s*:\s*"(\d+(?:\.\d+){3})"', re.S)
+
+
+def build_of(log_text: str) -> str | None:
+    """The build version the network log's own header names (its constants' clientInfo), or None."""
+    found = _CLIENT_VERSION.search(log_text[:200000])
+    return found.group(1) if found else None
+
+
 def hosts(log_text: str) -> dict[str, int]:
     found = Counter()
     for rx in (_URL, _HOST, _PAIR):
@@ -294,7 +305,7 @@ def _one(browser: Path, profile: Path, log: Path, seconds: float, extra: list[st
         log.unlink(missing_ok=True)
     if not text:
         raise RuntimeError("the browser wrote no network log")
-    return {"hosts": hosts(text), **digest(text, names, launched), "arrived": held}
+    return {"hosts": hosts(text), "build": build_of(text), **digest(text, names, launched), "arrived": held}
 
 
 def capture(browser: Path, work: Path, seconds: float, switches: tuple[str, ...] = (), prefs: dict | None = None,
@@ -469,7 +480,9 @@ def main(argv: list[str]) -> int:
         a.md.write_text(md, encoding="utf-8", newline="\n")
     if a.json:
         a.json.parent.mkdir(parents=True, exist_ok=True)
-        a.json.write_text(json.dumps({"label": a.label, "seconds": a.seconds, "switches": a.switch,
+        builds = sorted({run.get("build") or "unknown" for run in runs})
+        a.json.write_text(json.dumps({"label": a.label, "build": builds[0] if len(builds) == 1 else builds,
+                                      "seconds": a.seconds, "switches": a.switch,
                                       "prefs": dict(a.pref), "page": a.page, "runs": runs}, indent=1) + "\n",
                             encoding="utf-8")
     print(md)

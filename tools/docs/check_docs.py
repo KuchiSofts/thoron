@@ -42,7 +42,8 @@ ALLOW_MARKER = "privacy-check: allow"
 # C:\Users\x, c:/users/x, /c/Users/x (Git Bash), /mnt/c/Users/x (WSL), /Users/x (macOS); not URLs.  privacy-check: allow
 USER_PATH_RE = re.compile(r"(?i)(?:\b[a-z]:[\\/]+|/mnt/[a-z]/|(?<![\w.~])/(?:[a-z]/)?)users[\\/]+(?![<%{$])[^\\/\s]+")
 HOME_RE = re.compile(r"(?i)(?<![\w.~])/home/([^/\s]+)")  # privacy-check: allow
-HOME_ALLOWED = {"user", "alex"}
+# "tester" is the plain account tools/qa/wsl_test_vm.py makes in each throwaway Linux test machine.
+HOME_ALLOWED = {"user", "alex", "tester"}
 EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@([A-Za-z0-9-]+\.)+[A-Za-z]{2,}")
 EMAIL_ALLOWED_RE = re.compile(
     r"(@users\.noreply\.github\.com|@chromium\.org|@example\.(com|org|net)|^git@github\.com|"

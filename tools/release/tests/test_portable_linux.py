@@ -97,7 +97,7 @@ class BuildTests(unittest.TestCase):
         with self.assertRaises(pl.PackageError):
             self.make({"usr/bin/thoron": b"x"})
         with self.assertRaises(pl.PackageError):          # an x64 build in the ARM64 package
-            self.make(variant="linux-arm64")
+            self.make(variant="linux-arm64-armv8")
         with self.assertRaises(pl.PackageError):
             self.make(links={"opt/kuchisofts/thoron/escape": "../../../etc/passwd"})
         with self.assertRaises(pl.PackageError):

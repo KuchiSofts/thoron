@@ -6,7 +6,7 @@ installing, in the same layout as the Windows one (tools/release/portable.py):
     ThoronPortable/
         thoron              the launcher: a POSIX shell script (Linux has no window to hide)
         README.txt
-        variant             "linux-x64-avx2", "linux-x64-sse4" or "linux-arm64" and a line feed
+        variant             "linux-x64-avx2", "linux-x64-sse4" or "linux-arm64-armv8" (as update manifests name them) and a line feed
         Application/
             current         the version that starts, and a line feed
             <version>/      the files the .deb installs into /opt/kuchisofts/thoron, as they are
@@ -53,7 +53,7 @@ CURRENT = "current"
 INSTALLED = "opt/kuchisofts/thoron/"            # where the .deb puts the browser
 PROGRAM = "thoron"
 UPDATER = "thoron_update"                       # the updater's command line, in the version folder
-VARIANTS = {"linux-x64-avx2": "avx2", "linux-x64-sse4": "sse4_2", "linux-arm64": "aarch64"}
+VARIANTS = {"linux-x64-avx2": "avx2", "linux-x64-sse4": "sse4_2", "linux-arm64-armv8": "aarch64"}
 EPOCH = 315532800                               # 1980-01-01 00:00:00 UTC, as the Windows package
 _VERSION = re.compile(r"^\d+(\.\d+){3}$")
 _DEB_VERSION = re.compile(r"^Version:\s*(\d+(?:\.\d+){3})", re.M)
@@ -68,7 +68,7 @@ variant=$(head -n 1 -- "$here/variant" 2>/dev/null)
 case "$variant" in
   linux-x64-avx2) need=avx2 ;;
   linux-x64-sse4) need=sse4_2 ;;
-  linux-arm64) need=aarch64 ;;
+  linux-arm64-armv8) need=aarch64 ;;
   *) echo "Thoron: this package names no variant it knows ($variant)." >&2; exit 3 ;;
 esac
 if [ "$need" = aarch64 ]; then
@@ -119,7 +119,7 @@ the one the .deb installs (/etc/apparmor.d/thoron-browser), with the path of App
 then `sudo apparmor_parser -r <that file>`. Or install the .deb, which brings it.
 
 Variants: linux-x64-avx2 needs a processor with AVX2 (most from 2013 on); linux-x64-sse4 runs on older x64
-ones; linux-arm64 on 64-bit ARM. The launcher says so and starts nothing on a processor the package cannot run.
+ones; linux-arm64-armv8 on 64-bit ARM. The launcher says so and starts nothing on a processor the package cannot run.
 """
 
 
@@ -246,7 +246,7 @@ def audit(archive: Path, variant: str | None = None) -> list[str]:
             elves = [(n, tar.extractfile(i).read()) for n, i in items.items() if i.isfile() and i.size >= 64]
             elf_problems, count = elf_check.check(
                 [(n.replace(f"{FOLDER}/{BROWSER_DIR}/{current}/", elf_check.PROGRAM.rsplit("/", 1)[0] + "/"), d)
-                 for n, d in elves], "linux-arm64" if named == "linux-arm64" else "linux-x64")
+                 for n, d in elves], "linux-arm64" if named == "linux-arm64-armv8" else "linux-x64")
             problems += elf_problems
     return problems
 

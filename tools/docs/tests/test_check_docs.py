@@ -120,6 +120,10 @@ class CheckDocsTests(unittest.TestCase):
         doc = self.write("README.md", "see https://api.github.com/users/octocat and /home/user/x\n")
         self.assertEqual(check_docs.check_private(self.root, [doc], None), [])
 
+    def test_test_machine_account_not_flagged(self):
+        doc = self.write("check.py", "runuser -u tester -- mkdir -p /home/tester/portable\n")
+        self.assertEqual(check_docs.check_private(self.root, [doc], None), [])
+
     def test_private_list_with_bom_or_utf16_is_read(self):
         doc = self.write("README.md", "mentions secretword here\n")
         for encoding in ("utf-8-sig", "utf-16"):

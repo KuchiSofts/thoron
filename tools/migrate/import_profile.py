@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 # Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be found in the LICENSE file.
-"""Import a Thorium profile into Thoron by copying it (design §7.7, ROADMAP P3 import, Windows).
+"""Import a Thorium profile into Thoron by copying it (design §7.7, ROADMAP P3 import, P3.16; Windows and Linux).
 
 The whole `User Data` folder is copied, never moved, and every file is verified by SHA-256. The
 source is only read: Thorium keeps working exactly as before and stays a natural backup. Saved
-passwords and cookies keep working because the DPAPI-wrapped key travels inside the copied
-`Local State` (same Windows user).
+passwords and cookies keep working: on Windows the DPAPI-wrapped key travels inside the copied
+`Local State` (same Windows user); on Linux both browsers keep it in the desktop's keyring under the
+same name, `Chromium Safe Storage` (same Linux user). On Linux the browser's own process-singleton
+links at the top of the folder (`SingletonLock`, `SingletonCookie`, `SingletonSocket`) are left out.
 
 Refused, with nothing changed, when: the source is not a `User Data` folder; either browser is
-running (`lockfile`); the folders overlap; or the destination already holds a profile (a fresh
-install's empty `Crashpad` folder is fine).
+running (`lockfile` on Windows, `SingletonLock` on Linux); the folders overlap; or the destination
+already holds a profile (a fresh install's empty `Crashpad` folder is fine).
 
 After the copy it writes a report (ROADMAP P3.18) beside the destination, `Thoron import report.json`, and prints
 it: for every profile how many bookmarks, history entries, saved passwords, cookies, autofill entries and
@@ -23,6 +25,7 @@ import hashlib
 import json
 import os
 import shutil
+import socket
 import sqlite3
 import sys
 import tempfile
@@ -47,16 +50,42 @@ def _sha256(path: Path) -> str:
 
 
 _REPARSE_POINT = 0x400   # FILE_ATTRIBUTE_REPARSE_POINT: junctions and symbolic links
+# On Linux the browser marks a running profile folder with three links of its own (its process singleton): they
+# name the computer and the process, hold no profile data, and are left out of the copy.
+SINGLETONS = ("SingletonLock", "SingletonCookie", "SingletonSocket")
+
+
+def _running(user_data: Path) -> bool:
+    """Whether a browser has `user_data` open: on Windows its `lockfile`; on Linux its `SingletonLock` link, read
+    the way Chromium reads it ("<host name>-<process id>", a live process of this computer)."""
+    if (user_data / "lockfile").exists():
+        return True
+    lock = user_data / "SingletonLock"
+    if not lock.is_symlink():
+        return False
+    host, _, pid = os.readlink(lock).rpartition("-")
+    if host != socket.gethostname() or not pid.isdigit():
+        return True                     # another computer's lock, or one Thoron cannot read: assume it is in use
+    try:
+        os.kill(int(pid), 0)
+    except ProcessLookupError:
+        return False                    # the browser ended without removing it
+    except OSError:
+        return True
+    return True
 
 
 def _walk_entries(root: Path):
     """Yield (path, is_dir) for everything under root. Any error stops the walk (never a silent skip);
-    junctions and links are refused, so nothing outside the profile can be pulled in."""
+    junctions and links are refused, so nothing outside the profile can be pulled in (the browser's own
+    process-singleton links at the top are no profile data and are left out)."""
     stack = [root]
     while stack:
         folder = stack.pop()
         with os.scandir(folder) as it:
             for entry in it:
+                if folder == root and entry.name in SINGLETONS and entry.is_symlink():
+                    continue
                 st = entry.stat(follow_symlinks=False)
                 if entry.is_symlink() or getattr(st, "st_file_attributes", 0) & _REPARSE_POINT:
                     raise ImportRefused(f"{Path(entry.path)} is a link or junction; refusing to follow it")
@@ -133,9 +162,9 @@ def import_profile(source: Path, dest: Path) -> dict:
     source, dest = Path(source).resolve(), Path(dest).resolve()
     if not (source / "Local State").is_file():
         raise ImportRefused(f"{source} is not a browser 'User Data' folder (no 'Local State')")
-    if (source / "lockfile").exists():
+    if _running(source):
         raise ImportRefused("the source browser is running; close it completely first")
-    if (dest / "lockfile").exists():
+    if _running(dest):
         raise ImportRefused("the destination browser is running; close it completely first")
     if dest == source or source in dest.parents or dest in source.parents:
         raise ImportRefused("the source and destination folders overlap")
@@ -170,7 +199,7 @@ def import_profile(source: Path, dest: Path) -> dict:
     dst_set = {p.relative_to(dest).as_posix() for p in _list(dest)[0]}
     if src_set - dst_set:
         raise VerificationFailed(f"{len(src_set - dst_set)} file(s) missing in the copy; the source is unchanged")
-    if (source / "lockfile").exists() or (dest / "lockfile").exists():
+    if _running(source) or _running(dest):
         raise ImportRefused("a browser was started during the import, so the copy may be inconsistent; "
                             "the source is unchanged, close both browsers and import again into a fresh folder")
     changed = [rel for rel, digest in before.items()

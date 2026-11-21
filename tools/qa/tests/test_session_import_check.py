@@ -137,6 +137,15 @@ class CompareTests(unittest.TestCase):
         result["windows"][0]["show_state"] = "minimized"
         self.assertEqual(len(check.compare(self.source, result, self.title)), 1)
 
+    def test_a_normal_window_saved_as_default_passes_only_while_it_shows_normal(self):
+        result = self.result()
+        result["windows"][0]["show_state"] = "default"
+        self.assertEqual(len(check.compare(self.source, result, self.title)), 1)
+        self.assertEqual(check.compare(self.source, result, self.title, live=["normal", "minimized"]), [])
+        self.assertEqual(len(check.compare(self.source, result, self.title, live=["minimized", None])), 1)
+        self.assertFalse(check.saved_as_default("minimized", "default", "normal"))
+        self.assertFalse(check.saved_as_default("normal", "maximized", "normal"))
+
     def test_the_recently_closed_list_keeps_the_source_s_entries_after_the_exit_s_windows(self):
         result = self.result()
         extra = copy.deepcopy([e for e in self.closed["entries"] if e["kind"] == "window"][0])

@@ -27,6 +27,12 @@
              The release folder then also holds the portable .zip and the licence bundle
              (thoron-<version>-licenses.zip: LICENSE.md, NOTICE, CREDITS.md, the patch licence inventory
              and the GPL text of the build tree), both listed in SHA256SUMS.
+             Linux (--platform linux, --variant linux-x64-avx2 and the like; --src and --out the Linux
+             build's tree and out dir): the package is the .deb chrome/installer/linux:stable_deb wrote
+             (thoron-<version>-<variant>.deb), and the portable .tar.xz is made from it with
+             tools/release/portable_linux.py, the updater (--updater, default thoron_update in the out dir)
+             beside the program; the .deb must be of the release's version. No update manifest is made for
+             Linux yet: its copies do not update themselves from one (ROADMAP P3.23).
              The notes take Thoron's changes from CHANGELOG.md: the section of the version when there is
              one, else what waits under [Unreleased]. They name the source tag, its commit and the
              Chromium tag, and say where the licence texts are.
@@ -92,6 +98,8 @@ from tools.legal import patch_licenses  # noqa: E402
 from tools.legal import unlicensed_patches  # noqa: E402
 from tools.qa import perf_gate  # noqa: E402
 from tools.release import adblock_resources, changelog, delta, package_audit, pe_check, portable  # noqa: E402
+from tools.release import apt_repo  # noqa: E402
+from tools.release import portable_linux  # noqa: E402
 from tools.release import version as ver  # noqa: E402
 from tools.update import manifest as mf  # noqa: E402
 
@@ -99,7 +107,11 @@ _VARIANT = re.compile(r"^(win|linux)-(x64|arm64)-[a-z0-9]+$")
 # The installer the build writes (chrome/installer/mini_installer/BUILD.gn): `thoron_mini_installer.exe`, or
 # with the variant's label in the name (`thoron_AVX2_mini_installer.exe`, `thoron_ARM64_installer.exe`);
 # `mini_installer.exe` is what a build without Thoron's names writes.
-INSTALLERS = {"win": ("thoron_*installer.exe", "mini_installer.exe")}
+INSTALLERS = {"win": ("thoron_*installer.exe", "mini_installer.exe"),
+              # the .deb chrome/installer/linux:stable_deb writes (ROADMAP P2.9)
+              "linux": ("thoron-browser_*.deb",)}
+# the updater's command line in a Linux build's out dir, put beside the program in the portable package
+LINUX_UPDATER = "thoron_update"
 SYMBOLS_SUFFIX = "-symbols"
 _GH_REPO = re.compile(r"^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$")
 _SUM_LINE = re.compile(r"^([0-9a-f]{64})  ([A-Za-z0-9._+~-]+)$")
@@ -180,7 +192,8 @@ def built_installer(out: Path, platform: str) -> Path | None:
         return None
     found = sorted({p for pattern in patterns for p in out.glob(pattern) if p.is_file()})
     if not found:
-        raise ReleaseError(f"{out} holds no installer ({' or '.join(patterns)}); build mini_installer first")
+        target = "mini_installer" if platform == "win" else "chrome/installer/linux:stable_deb"
+        raise ReleaseError(f"{out} holds no installer ({' or '.join(patterns)}); build {target} first")
     if len(found) > 1:
         raise ReleaseError(f"{out} holds more than one installer ({', '.join(p.name for p in found)}); "
                            "remove the ones another configuration left")
@@ -242,10 +255,14 @@ def sevenzip_for(given: str | None, src: Path) -> str:
 
 
 def installer_name(version: str, variant: str) -> str:
+    if variant.startswith("linux-"):
+        return f"thoron-{version}-{variant}.deb"
     return f"thoron-{version}-{variant}-installer.exe"
 
 
 def portable_name(version: str, variant: str) -> str:
+    if variant.startswith("linux-"):
+        return f"thoron-{version}-{variant}-portable.tar.xz"  # as tools/release/portable_linux.py names it
     return f"thoron-{version}-{variant}-portable.zip"       # as tools/release/portable.py names it
 
 
@@ -629,6 +646,24 @@ def add_portable(chrome_bin: Path, dist: Path, version: str, variant: str, launc
 
 # --- credits (ROADMAP L.3) ---------------------------------------------------------------------------------
 
+def add_linux_portable(deb: Path, dist: Path, version: str, variant: str, updater: Path) -> Path:
+    """The Linux portable package, made from the release's own .deb with tools/release/portable_linux.py, the
+    build's updater beside the program (ROADMAP P2.9, P3.12). The .deb must be of the release's version."""
+    found, _ = portable_linux.read_deb(deb)
+    if found != version:
+        raise ReleaseError(f"{deb.name} is version {found}, the release {version}")
+    if not updater.is_file():
+        raise ReleaseError(f"no updater at {updater}; build components/thoron_update:thoron_update_cli")
+    scratch = Path(tempfile.mkdtemp(prefix="linux-portable-", dir=dist.parent))
+    try:
+        made = portable_linux.build(deb, scratch, variant, updater=updater)
+        target = dist / portable_name(version, variant)
+        shutil.move(str(made), target)
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+    return target
+
+
 def read_contributors(path: Path) -> list[dict]:
     """A saved list of upstream's contributors, as GitHub gives it (contributors.py --from-json)."""
     try:
@@ -736,24 +771,61 @@ def soak_problems(soak: Path | None, version: str) -> list[str]:
     return out
 
 
-def sandbox_evidence_problems(evidence: Path | None, version: str) -> list[str]:
+def sandbox_evidence_problems(evidence: Path | None, version: str, platform: str = "win") -> list[str]:
     """Why the release's sandbox evidence forbids it (ROADMAP S.5): there is none, it is of another build, or the
-    check did not pass (tools/qa/sandbox_check.py: what Windows says about each process, what chrome://sandbox
-    and chrome://gpu say, and the negative control with --no-sandbox). The evidence stays with the build's
-    records; it is not published (it holds the process numbers and how the browser was started there)."""
+    check did not pass. Windows: tools/qa/sandbox_check.py (what Windows says about each process, what
+    chrome://sandbox and chrome://gpu say, and the negative control with --no-sandbox). Linux:
+    tools/qa/linux_apparmor_vm_check.py (on Ubuntu's own kernel with AppArmor: the .deb's chrome://sandbox, the
+    portable copy refused without a profile and sandboxed with the README's). The evidence stays with the
+    build's records; it is not published (it holds the process numbers and how the browser was started there)."""
+    linux = platform == "linux"
+    tool = "tools/qa/linux_apparmor_vm_check.py" if linux else "tools/qa/sandbox_check.py"
     if evidence is None:
-        return ["no sandbox evidence of this build: run tools/qa/sandbox_check.py --evidence <file> on it and give "
+        return [f"no sandbox evidence of this build: run {tool} --evidence <file> on it and give "
                 "--sandbox-evidence"]
     try:
         text = evidence.read_text(encoding="utf-8")
     except OSError as exc:
         return [f"the sandbox evidence could not be read ({type(exc).__name__})"]
     out = []
-    seen = re.match(r"Sandbox on \([^/()]*/(\d+(?:\.\d+){3})\)", text)
+    seen = re.match(r"Sandbox on \(linux/(\d+(?:\.\d+){3})\)" if linux else
+                    r"Sandbox on \((?!linux/)[^/()]*/(\d+(?:\.\d+){3})\)", text)
     if not seen or seen.group(1) != version:
         out.append(f"the sandbox evidence is of build {seen.group(1) if seen else 'unknown'}, not {version}")
-    if not re.search(r"^SANDBOX CHECK: PASSED$", text, re.M):
+    if not re.search(r"^LINUX SANDBOX CHECK: PASSED$" if linux else r"^SANDBOX CHECK: PASSED$", text, re.M):
         out.append("the sandbox check did not pass")
+    return out
+
+
+# a host as NETWORK.md writes one in backquotes, or the one name Windows' proxy detection looks up
+_DOC_HOST = re.compile(r"`((?:[a-z0-9-]+\.)+[a-z]{2,}|wpad)`")
+
+
+def network_report_problems(report: Path | None, version: str, repo: Path) -> list[str]:
+    """Why the release's network measurement forbids it (ROADMAP S.10): there is none, it is of another build,
+    or a fresh profile of this build contacted a host that docs/security/NETWORK.md does not list (the page
+    must say what reaches out, and why, before a release ships). The report is tools/qa/netlog_hosts.py's
+    --json of this build, with its defaults (no switch, no preference, the local page)."""
+    if report is None:
+        return ["no network measurement of this build: run tools/qa/netlog_hosts.py --seconds 240 --json <file> "
+                "on it and give --network-report"]
+    try:
+        data = json.loads(report.read_text(encoding="utf-8"))
+        runs = data["runs"]
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        return [f"the network report could not be read ({type(exc).__name__})"]
+    out = []
+    if data.get("build") != version:
+        out.append(f"the network report is of build {data.get('build')}, not {version}")
+    if data.get("switches") or data.get("prefs") or data.get("page"):
+        out.append("the network report was measured with switches, preferences or another page: measure the "
+                   "build as it starts for a person")
+    if not runs:
+        out.append("the network report holds no run")
+    documented = set(_DOC_HOST.findall((repo / "docs/security/NETWORK.md").read_text(encoding="utf-8")))
+    seen = sorted({host for run in runs for host in (run.get("hosts") or {})} - documented)
+    if seen:
+        out.append(f"contacted, but not in docs/security/NETWORK.md: {', '.join(seen)}")
     return out
 
 
@@ -831,8 +903,15 @@ def assemble(out: Path, dist: Path, version: str, variant: str, buildinfo: Path,
     files = []
     if installer:
         target = dist / installer_name(version, variant)
-        shutil.copy2(installer, target)
+        if platform == "linux":
+            # the package named for its variant (thoron-browser-sse4 for the SSE4.2 build), as the APT repository
+            # has it, so that a .deb downloaded by hand never upgrades into the other x64 build (ROADMAP P2.10)
+            target.write_bytes(apt_repo.variant_deb(installer.read_bytes(), variant))
+        else:
+            shutil.copy2(installer, target)
         files.append(target)
+    if installer and platform == "linux":
+        files.append(add_linux_portable(installer, dist, version, variant, updater or out / LINUX_UPDATER))
     if chrome_bin is not None and platform == "win":
         files.append(add_portable(chrome_bin, dist, version, variant, launcher or out / portable.BUILT_LAUNCHER,
                                   updater or out / portable.UPDATER))
@@ -1173,8 +1252,9 @@ def manifest_problems(plan: ManifestPlan, version: str, variant: str, private_ke
                    "(--manifest-public-key)")
     if variant not in mf.VARIANTS:
         return out + [f"{variant} is not a variant a manifest can name (known: {', '.join(mf.VARIANTS)})"]
-    if variant.split("-")[0] not in INSTALLERS:
-        return out + [f"no package is made for {variant} yet, so a manifest has nothing to name"]
+    if variant.split("-")[0] != "win":
+        return out + [f"a copy of {variant} does not update itself from a manifest yet (ROADMAP P3.23), so a "
+                      "manifest has nothing to name"]
     stand_ins = {kind: {"full": {"url": download_url(plan.gh_repo, plan.tag, name), "size": 1, "sha256": "0" * 64}}
                  for kind, name in package_names(version, variant).items()}
     try:
@@ -1356,6 +1436,9 @@ def check_prepare_options(a) -> None:
 
 def _prepare(a) -> int:
     check_prepare_options(a)
+    if a.platform == "linux" and a.manifest_key:
+        raise ReleaseError("a Linux copy does not update itself from an update manifest yet (ROADMAP P3.23): "
+                           "prepare a Linux release without --manifest-key")
     now = int(time.time())
     keep_out_of = (a.repo, a.src, a.out, a.dist)
     security = changelog.read_security(a.security) if a.security else None
@@ -1372,7 +1455,8 @@ def _prepare(a) -> int:
     thoron = read_thoron_version(a.src)
     chromium_new = ver.split(version)[0] if read_version(a.src)[1] else None
     chrome_bin = (a.chrome_bin or a.out / CHROME_BIN) if a.platform == "win" else None
-    launcher, updater = a.launcher or a.out / portable.BUILT_LAUNCHER, a.updater or a.out / portable.UPDATER
+    launcher = a.launcher or a.out / portable.BUILT_LAUNCHER
+    updater = a.updater or a.out / (portable.UPDATER if a.platform == "win" else LINUX_UPDATER)
     tags = ver.release_tags(a.repo)
     problems += [f"Thoron version: {p}" for p in thoron_version_problems(thoron, tags)]
     problems += [f"BUILDINFO: {p}" for p in source_problems(info, thoron, chromium_new)]
@@ -1387,8 +1471,8 @@ def _prepare(a) -> int:
     problems += [f"patch licences: {p}" for p in licence_record_problems(a.repo)]
     problems += [f"performance: {p}" for p in performance_problems(a.repo, a.bench, thoron)]
     problems += [f"memory: {p}" for p in soak_problems(a.soak, version)]
-    if a.platform == "win":            # the Linux half of S.5 comes with the Linux package
-        problems += [f"sandbox: {p}" for p in sandbox_evidence_problems(a.sandbox_evidence, version)]
+    problems += [f"sandbox: {p}" for p in sandbox_evidence_problems(a.sandbox_evidence, version, a.platform)]
+    problems += [f"network: {p}" for p in network_report_problems(a.network_report, version, a.repo)]
     if chrome_bin is not None:
         first = ver.latest_thoron(tags) is None
         problems += [f"update: {p}" for p in update_check_problems(a.update_check, version, a.previous, first)]
@@ -1527,8 +1611,13 @@ def main(argv: list[str], run=None) -> int:
     a_.add_argument("--minisign-key", type=Path)
     a_.add_argument("--security", type=Path, help="security.json: the fixes the notes name")
     a_.add_argument("--highlights", type=Path, help="a hand-written opening of the notes")
-    a_.add_argument("--sandbox-evidence", type=Path, help="tools/qa/sandbox_check.py's evidence of this build "
-                    "(ROADMAP S.5); kept with the build's records, not published")
+    a_.add_argument("--network-report", type=Path,
+                    help="tools/qa/netlog_hosts.py's --json of this build (ROADMAP S.10): every host it contacted "
+                         "must be in docs/security/NETWORK.md")
+    a_.add_argument("--sandbox-evidence", type=Path,
+                    help="the sandbox evidence of this build: tools/qa/sandbox_check.py's (Windows) or "
+                         "linux_apparmor_vm_check.py's (Linux) (ROADMAP S.5); kept with the build's records, "
+                         "not published")
     a_.add_argument("--soak", type=Path, help=f"tools/qa/soak.py's report of an {SOAK_HOURS:g} h run of this "
                     "build (ROADMAP Q.4)")
     a_.add_argument("--update-check", type=Path, help="tools/qa/portable_update_check.py's --report: the last "

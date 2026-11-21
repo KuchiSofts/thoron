@@ -60,6 +60,10 @@ INVENTORY = patch_licenses.render_table([
 SOAK_REPORT = f"Soak: 8.00 h, 4168 rounds of 6 tabs\nBuild: {BUILD}\nSOAK: PASSED\n"
 SANDBOX_EVIDENCE = (f"Sandbox on (Chrome/{BUILD})\n  Windows reports:\n    renderer 1: Untrusted integrity\n\n"
                     "SANDBOX CHECK: PASSED\n")
+NETWORK_DOC = "| Host | Asked by |\n|---|---|\n| `update.googleapis.com`, `edgedl.me.gvt1.com` | update_client |\n"
+NETWORK_REPORT = json.dumps({"label": "Thoron", "build": BUILD, "seconds": 240, "switches": [], "prefs": {},
+                             "page": None, "runs": [{"hosts": {"update.googleapis.com": 3, "edgedl.me.gvt1.com": 2},
+                                                     "build": BUILD}]})
 LAST_RELEASE = "156.0.8078.28"
 UPDATE_REPORT = (f"Portable update check (tools/qa/portable_update_check.py)\nBuild: {BUILD}\nFrom: {LAST_RELEASE}\n"
                  f"Previous package: thoron-{LAST_RELEASE}-win-x64-avx2-portable.zip\nPORTABLE UPDATE CHECK: PASSED\n")
@@ -161,6 +165,39 @@ class AssembleTests(unittest.TestCase):
     def tearDown(self):
         self.f.cleanup()
 
+    def linux_out(self, version: str = "158.0.8127.3000") -> None:
+        from tools.release.tests.test_elf_check import elf
+        from tools.release.tests.test_portable_linux import deb, the_deb
+        (self.f.out / "thoron-browser_158.0.8127.3000_AVX2.deb").write_bytes(deb(the_deb(), version=version))
+        (self.f.out / "thoron_update").write_bytes(elf(62))
+
+    def test_a_linux_release_holds_the_deb_and_the_portable_package_made_from_it(self):
+        self.linux_out()
+        files = rel.assemble(self.f.out, self.f.dist, "158.0.8127.3000", "linux-x64-avx2", self.f.buildinfo)
+        self.assertEqual(sorted(p.name for p in files),
+                         ["BUILDINFO-158.0.8127.3000-linux-x64-avx2.json", "SHA256SUMS",
+                          "thoron-158.0.8127.3000-linux-x64-avx2-portable.tar.xz",
+                          "thoron-158.0.8127.3000-linux-x64-avx2.deb"])
+        sums = (self.f.dist / "SHA256SUMS").read_text(encoding="utf-8")
+        self.assertIn("thoron-158.0.8127.3000-linux-x64-avx2-portable.tar.xz", sums)
+        self.assertFalse([p for p in self.f.dist.parent.iterdir() if p.name.startswith("linux-portable-")])
+
+    def test_the_sse4_release_deb_is_a_package_of_its_own(self):
+        # ROADMAP P2.10: as in the APT repository, so a .deb installed by hand never upgrades into the AVX2 build
+        from tools.release import apt_repo
+        self.linux_out()
+        files = rel.assemble(self.f.out, self.f.dist, "158.0.8127.3000", "linux-x64-sse4", self.f.buildinfo)
+        made = next(p for p in files if p.name.endswith(".deb"))
+        fields = dict(apt_repo.control_of(made.read_bytes()))
+        self.assertEqual(fields["Package"], "thoron-browser-sse4")
+        self.assertIn("thoron-browser", fields["Conflicts"])
+        self.assertIn(made.name, (self.f.dist / "SHA256SUMS").read_text(encoding="utf-8"))
+
+    def test_a_deb_of_another_version_or_no_updater_is_refused(self):
+        self.linux_out(version="158.0.8127.2900")
+        with self.assertRaises(rel.ReleaseError):
+            rel.assemble(self.f.out, self.f.dist, "158.0.8127.3000", "linux-x64-avx2", self.f.buildinfo)
+
     def test_files_names_and_checksums(self):
         files = rel.assemble(self.f.out, self.f.dist, "158.0.8127.3000", "win-x64-avx2", self.f.buildinfo)
         names = sorted(p.name for p in files)
@@ -188,9 +225,10 @@ class AssembleTests(unittest.TestCase):
         self.assertFalse(self.f.dist.exists())
         for name in ("mini_installer.exe", "thoron_ARM64_installer.exe"):
             (self.f.out / name).unlink()
-        with self.assertRaisesRegex(rel.ReleaseError, "no installer"):
+        with self.assertRaisesRegex(rel.ReleaseError, "no installer.*build mini_installer"):
             rel.built_installer(self.f.out, "win")
-        self.assertIsNone(rel.built_installer(self.f.out, "linux"))
+        with self.assertRaisesRegex(rel.ReleaseError, "no installer.*stable_deb"):
+            rel.built_installer(self.f.out, "linux")
 
     def test_symbols_are_kept_beside_the_release_folder_never_in_it(self):
         chrome_bin = self.f.out / "Chrome-bin"
@@ -358,6 +396,12 @@ class ReleaseFixture(Fixture):
         soak_file.write_text(soak if soak is not None else SOAK_REPORT, encoding="utf-8")
         sandbox_file = self.repo.parent / "sandbox.txt"
         sandbox_file.write_text(kw.pop("sandbox", SANDBOX_EVIDENCE), encoding="utf-8")
+        network_doc = self.repo / "docs" / "security" / "NETWORK.md"
+        if not network_doc.exists():
+            network_doc.parent.mkdir(parents=True, exist_ok=True)
+            network_doc.write_text(NETWORK_DOC, encoding="utf-8")
+        network_file = self.repo.parent / "network.json"
+        network_file.write_text(kw.pop("network", NETWORK_REPORT), encoding="utf-8")
         update_file = self.repo.parent / "update-check.txt"
         update_file.write_text((update if update is not None else UPDATE_REPORT).replace(
             f"From: {LAST_RELEASE}", f"From: {previous}"), encoding="utf-8")
@@ -365,7 +409,7 @@ class ReleaseFixture(Fixture):
                          "--previous", previous, "--buildinfo", self.buildinfo, "--dist", dist or self.dist,
                          "--repo", self.repo, "--since", "v0.1.1", "--chromium-old", "156.0.8078.80",
                          "--bench", bench_file, "--soak", soak_file, "--update-check", update_file,
-                         "--sandbox-evidence", sandbox_file, *more, **kw)
+                         "--sandbox-evidence", sandbox_file, "--network-report", network_file, *more, **kw)
 
     def with_manifest(self, *more) -> tuple:
         return ("--manifest-key", self.keys / "manifest.key", "--manifest-public-key", text(self.public),
@@ -563,7 +607,8 @@ class ManifestPartsTests(ReleaseTestCase):
 
         self.assertIn("--manifest-key does not belong to the public key", problems(public=ar.keygen()[1])[0])
         self.assertIn("win-x64-avx10 is not a variant a manifest can name", problems(variant="win-x64-avx10")[0])
-        self.assertIn("no package is made for linux-x64-avx2 yet", problems(variant="linux-x64-avx2")[0])
+        self.assertIn("linux-x64-avx2 does not update itself from a manifest yet",
+                      problems(variant="linux-x64-avx2")[0])
         self.assertIn("min_updater_version: must not be higher than version",
                       problems(self.f.plan(min_updater_version=NEXT_BUILD)))
         self.assertIn("expires: must be at most 90 days after published", problems(self.f.plan(valid_days=91)))
@@ -1014,6 +1059,7 @@ class DryRunTests(ReleaseTestCase):
                                         dist=second, previous=BUILD, clock=NOW + 3600,
                                         soak=SOAK_REPORT.replace(BUILD, NEXT_BUILD),
                                         sandbox=SANDBOX_EVIDENCE.replace(BUILD, NEXT_BUILD),
+                                        network=NETWORK_REPORT.replace(BUILD, NEXT_BUILD),
                                         update=UPDATE_REPORT.replace(f"Build: {BUILD}", f"Build: {NEXT_BUILD}"))
         self.assertEqual(code, 0, out + err)
         data = mf.verify(*self.manifest(second), self.f.public, allowed_hosts=HOSTS)
@@ -1399,9 +1445,15 @@ class PortableStepTests(GateTestCase):
         self.assertNotIn("SHA256SUMS", self.names())
 
     def test_a_linux_release_folder_gets_no_windows_package(self):
+        from tools.release.tests.test_elf_check import elf
+        from tools.release.tests.test_portable_linux import deb, the_deb
+        (self.f.out / f"thoron-browser_{BUILD}_AVX2.deb").write_bytes(deb(the_deb(), version=BUILD))
+        (self.f.out / "thoron_update").write_bytes(elf(62))
         files = rel.assemble(self.f.out, self.f.dist, BUILD, "linux-x64-avx2", self.f.buildinfo,
                              self.f.out / rel.CHROME_BIN)
-        self.assertEqual([p.name for p in files], [f"BUILDINFO-{BUILD}-linux-x64-avx2.json", "SHA256SUMS"])
+        self.assertEqual(sorted(p.name for p in files),
+                         [f"BUILDINFO-{BUILD}-linux-x64-avx2.json", "SHA256SUMS",
+                          f"thoron-{BUILD}-linux-x64-avx2-portable.tar.xz", f"thoron-{BUILD}-linux-x64-avx2.deb"])
 
 
 class CreditsTests(GateTestCase):
@@ -1862,6 +1914,64 @@ class SandboxGateTests(unittest.TestCase):
         self.assertEqual(self.problems(SANDBOX_EVIDENCE.replace("PASSED", "FAILED (2 problem(s))")),
                          ["the sandbox check did not pass"])
         self.assertEqual(len(self.problems("Started with --no-sandbox (Chrome/1.2.3.4)")), 2)
+
+    def test_linux_needs_the_apparmor_checks_evidence(self):
+        linux = (f"Sandbox on (linux/{BUILD}) under AppArmor\nrestrict=1\n== the .deb's chrome://sandbox\n"
+                 "You are adequately sandboxed.\nLINUX SANDBOX CHECK: PASSED\n")
+        with tempfile.TemporaryDirectory() as d:
+            evidence = Path(d) / "sandbox.txt"
+            evidence.write_text(linux, encoding="utf-8")
+            self.assertEqual(rel.sandbox_evidence_problems(evidence, BUILD, "linux"), [])
+            # Windows evidence is no Linux evidence, and the other way round
+            self.assertEqual(len(rel.sandbox_evidence_problems(evidence, BUILD, "win")), 2)
+            evidence.write_text(SANDBOX_EVIDENCE, encoding="utf-8")
+            self.assertEqual(len(rel.sandbox_evidence_problems(evidence, BUILD, "linux")), 2)
+            evidence.write_text(linux.replace("PASSED", "FAILED (1 problem(s))"), encoding="utf-8")
+            self.assertEqual(rel.sandbox_evidence_problems(evidence, BUILD, "linux"),
+                             ["the sandbox check did not pass"])
+        self.assertIn("linux_apparmor_vm_check.py", rel.sandbox_evidence_problems(None, BUILD, "linux")[0])
+
+
+class NetworkGateTests(unittest.TestCase):
+    """ROADMAP S.10: every host a fresh profile of the release's build contacts is in NETWORK.md."""
+
+    def problems(self, report, doc: str = NETWORK_DOC):
+        with tempfile.TemporaryDirectory() as d:
+            repo = Path(d)
+            (repo / "docs" / "security").mkdir(parents=True)
+            (repo / "docs" / "security" / "NETWORK.md").write_text(doc, encoding="utf-8")
+            if report is None:
+                return rel.network_report_problems(None, BUILD, repo)
+            path = repo / "network.json"
+            path.write_text(report if isinstance(report, str) else json.dumps(report), encoding="utf-8")
+            return rel.network_report_problems(path, BUILD, repo)
+
+    def report(self, **changes):
+        data = json.loads(NETWORK_REPORT)
+        data.update(changes)
+        return data
+
+    def test_a_measurement_of_this_build_within_the_page_passes(self):
+        self.assertEqual(self.problems(NETWORK_REPORT), [])
+        # a host the page lists that this build no longer contacts is fine
+        self.assertEqual(self.problems(self.report(runs=[{"hosts": {"update.googleapis.com": 1}}])), [])
+
+    def test_what_is_refused(self):
+        self.assertIn("no network measurement", self.problems(None)[0])
+        self.assertEqual(self.problems(self.report(build="158.0.8127.2000")),
+                         [f"the network report is of build 158.0.8127.2000, not {BUILD}"])
+        unknown = self.report(runs=[{"hosts": {"update.googleapis.com": 1, "tracker.example.net": 2}}])
+        self.assertEqual(self.problems(unknown),
+                         ["contacted, but not in docs/security/NETWORK.md: tracker.example.net"])
+        self.assertIn("switches", self.problems(self.report(switches=["--disable-component-update"]))[0])
+        self.assertIn("no run", self.problems(self.report(runs=[]))[0])
+        self.assertIn("could not be read", self.problems("not json")[0])
+
+    def test_hosts_are_read_from_backquotes_only(self):
+        # a host named in prose without backquotes is not taken as listed
+        doc = "Thoron asks tracker.example.net nothing.\n| `update.googleapis.com` | x |\n"
+        unknown = self.report(runs=[{"hosts": {"tracker.example.net": 1}}])
+        self.assertEqual(len(self.problems(unknown, doc)), 1)
 
 
 class SoakGateTests(unittest.TestCase):

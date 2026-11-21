@@ -262,6 +262,9 @@ Linux has three install types, each with one updater (never both):
 **1. System install (`.deb`)**
 - Updated **only through our signed APT repository**. It is static, hosted on GitHub Pages, and has a
   signed `InRelease` file.
+  - As built (ROADMAP P2.10, 2026-11-21): the packages are too large for Pages (over 100 MB each), so it is a
+    flat repository in a release of its own (tag `apt`), its signed index beside the packages, with a
+    `Valid-Until`; the SSE4.2 build is the package `thoron-browser-sse4` (`docs/release/APT.md`).
   - Upstream's APT repository is unsigned (issues #1164, #1049). Ours never is.
 - `apt` owns these files. Our updater never modifies dpkg-managed files.
 - Downloads are full packages. Delta support via `debdelta` is a later optional improvement.
@@ -272,6 +275,11 @@ Linux has three install types, each with one updater (never both):
 **2. Per-user self-updating install** (`~/.local/share/thoron`)
 - The same delta updater as Windows: Zucchini supports ELF on x64 and ARM64.
 - No root is needed.
+- Built 2026-11-21 (P3.10): the portable folder's `install-for-this-user` copies the program there, adds a menu
+  entry and a systemd user timer whose daily run starts Thoron headless on a profile folder of its own, looks
+  once, installs what it finds and exits. Ubuntu 23.10 and later let only programs named in an AppArmor
+  profile use the user namespaces of the sandbox, so there an administrator allows it once, as for the
+  portable copy; Thoron never asks for root itself, and never runs without its sandbox.
 - It is the recommended choice for users who want small, fast updates.
 
 **3. Portable (`.tar.xz`)**
@@ -420,6 +428,68 @@ The installer, and later Settings, shows **"Import from…"** with:
   - round-trip tests (encrypt, move to a "new PC" with a fresh OS key store, decrypt).
 
   It ships behind a version check, and reading old formats stays supported for good.
+
+#### 7.8.1 As built (ROADMAP P4.9, 2026-11-20, Windows)
+
+- **The key does not change.** Locking takes the key the copy already has (Local State's
+  `os_crypt.encrypted_key`, protected by Windows) and keeps it locked in the file `Thoron Portable Key` in the
+  User Data folder instead; Local State's copy is then removed. Values stay in Chromium's `v10` format, so
+  nothing is encrypted again, and removing the lock puts the key back into Local State.
+- **The key file** (format 1, `components/thoron_portable_key/key_file.h`) holds one passphrase lock
+  (Argon2id, RFC 9106, with its own cost and salt; at least 64 MiB, 3 passes, 4 lanes, at most 1 GiB, 32
+  passes, 16 lanes; setup measures this PC and asks for up to 256 MiB), at most one recovery-key lock
+  (HKDF-SHA256 of 128 random bits) and up to six remembered-PC locks (DPAPI for one Windows account on one
+  PC, kept in the file, so the drive alone opens nothing). Each lock is AES-256-GCM with its kind, cost and
+  salt bound in; the whole file carries an HMAC-SHA256 under a key derived from the profile key, checked
+  once any lock opens. Nothing else is read; the reader is fuzzed.
+- **Passphrase:** at least 12 characters, taken as Unicode NFC in UTF-8 so the same characters typed
+  elsewhere open the copy; the memory that held it is wiped once the key is derived.
+- **Recovery key:** 128 random bits and a 32-bit check, written as eight groups of four characters of
+  Crockford's base 32 (O read as 0, I and L as 1); setup asks for its last group before it locks.
+- **Writing the file** never leaves a copy that cannot be opened: the new file is written whole and
+  flushed beside the old one, the old one moved aside, the new one put in place, the old one removed; a
+  start finishes or undoes whatever a pulled drive left. Every write is read back and opened again before
+  it counts; a failed check puts the previous file back.
+- **At start** (`chrome/browser/thoron_portable`): before os_crypt starts, a copy with a key file is opened
+  with a lock this PC remembers, else Thoron's own Windows dialog asks for the passphrase or the recovery
+  key, before any profile or tab exists; Quit stops the browser. A damaged, changed or too weak key file is
+  said so and the browser quits; it never carries on with another key. A copy marked as locked in Local
+  State whose key file is missing starts only when the person chooses to start without its passwords and
+  sign-ins. While locked, the DPAPI key provider gives the unlocked key and App-Bound encryption is not
+  used.
+- **Settings:** `chrome://thoron-portable` locks, changes the passphrase, makes a new recovery key,
+  remembers or forgets this PC, and removes the lock.
+- **Decided here, as the threat model proposed (questions 5 to 7, the owner may change them):** Windows
+  first, with no keyring entry on Linux yet; only passwords and cookies are locked, and the page says so; the
+  "new key" action (E6) comes later. The review by someone other than the author stays open; Linux came
+  after (7.8.2).
+
+#### 7.8.2 As built on Linux (ROADMAP P4.9, 2026-11-21; the owner's decision of 2026-11-21)
+
+- **A new key, and the values encrypted again.** Chromium on Linux keeps no key per copy (its values are
+  `v10`, under a fixed key anyone can use, or `v11`, under a key from the desktop's keyring), so the lock gives
+  the copy a new random 32-byte key, kept in the same key file (7.8.1). The first start after the lock
+  encrypts every saved password, password note and cookie again with it (`components/thoron_portable_key/
+  reencrypt_linux.h`): for each database a copy beside it, checked by SHA-256; one transaction in which each
+  value is decrypted with the old key, sealed with AES-256-GCM in the Encryptor's own format (tag `t10`, a
+  12-byte nonce), opened again, and read back from its row before the transaction is kept; on any problem the
+  database is put back from its copy in one step. The copies and SQLite's journal are overwritten with zeros
+  before they are deleted, and SQLite in Chromium overwrites what it frees. A value the old keys cannot read
+  (a locked keyring) is left, and the next start tries again.
+- **In the browser** a key provider of Thoron's own gives os_crypt the key under the tag `t10` with the
+  highest precedence and is used for every new value; Chromium's own providers stay for reading.
+- **At start** the copy's launcher (`thoron`, `tools/release/portable_linux.py`) first starts the browser
+  without a question: a PC remembered in the desktop's keyring opens the copy. When the browser says it needs
+  the passphrase (exit 83), the launcher asks (zenity, kdialog or the terminal) and hands what was typed to
+  the browser on its input, never on its command line; 81 means asked again, 82 a key file that cannot be
+  used (the reason shown). The browser checks it in `chrome/browser/thoron_portable/unlock_linux.cc` before
+  os_crypt and any profile.
+- **Remember this PC** keeps a random key as an item of its own in the desktop's keyring (Secret Service:
+  GNOME's keyring, KWallet, KeePassXC), with the profile key sealed with it in the key file; no prompt is ever
+  shown, and with no keyring nothing is kept.
+- **Removing the lock** takes the same path back at the next start, after the passphrase once more: every
+  value under the keyring's key (or Chromium's fixed key where there is none), each read back, and only then
+  the key file goes.
 
 ## 8. Release process and full changelog **[owner]**
 

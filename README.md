@@ -6,7 +6,7 @@
 
 **A fast, secure and private browser for Windows, based on Thorium and Chromium.**
 
-[![Status](https://img.shields.io/badge/status-pre--release-F72F8E?style=flat-square)](#roadmap) <!-- progress-badge:start -->[![Roadmap progress](https://img.shields.io/badge/roadmap-72%25-7B2FF7?style=flat-square)](#roadmap)<!-- progress-badge:end --> [![Platforms](https://img.shields.io/badge/platforms-Windows%20first-24292f?style=flat-square)](#platforms) [![CPU](https://img.shields.io/badge/cpu-x64%20%7C%20ARM64-24292f?style=flat-square)](#platforms) [![License](https://img.shields.io/badge/license-BSD--3--Clause-24292f?style=flat-square)](LICENSE.md)
+[![Status](https://img.shields.io/badge/status-pre--release-F72F8E?style=flat-square)](#roadmap) <!-- progress-badge:start -->[![Roadmap progress](https://img.shields.io/badge/roadmap-79%25-7B2FF7?style=flat-square)](#roadmap)<!-- progress-badge:end --> [![Platforms](https://img.shields.io/badge/platforms-Windows%20first-24292f?style=flat-square)](#platforms) [![CPU](https://img.shields.io/badge/cpu-x64%20%7C%20ARM64-24292f?style=flat-square)](#platforms) [![License](https://img.shields.io/badge/license-BSD--3--Clause-24292f?style=flat-square)](LICENSE.md)
 
 [Why Thoron](#why-thoron) · [Features](#features) · [Install and update](#install-and-update) · [Versions](#versions) · [Roadmap](#roadmap) · [Platforms](#platforms) · [Verify](#verifying-downloads) · [Security](#security) · [Contributing](#contributing) · [Credits](#credits) · [Wiki](https://github.com/KuchiSofts/thoron/wiki)
 
@@ -78,19 +78,19 @@ changed in each version is in the [changelog](CHANGELOG.md), one line per change
 Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always current.
 
 <!-- roadmap:start -->
-**Overall:** `██████████████░░░░░░` 151 of 211 tasks done (72%) · roadmap updated 2026-11-19
+**Overall:** `████████████████░░░░` 168 of 213 tasks done (79%) · roadmap updated 2026-11-19
 
 | Area | Progress | Done | Status |
 |---|---|---|---|
 | [P0 - Foundation](ROADMAP.md#p0---foundation) | `████████████████████` | 11/11 | ✅ Done |
 | [P1 - Build environment](ROADMAP.md#p1---build-environment) | `██████████████████░░` | 9/10 | 🔄 In progress |
-| [P2 - First release](ROADMAP.md#p2---first-release) | `██████████░░░░░░░░░░` | 13/26 | 🔄 In progress |
-| [P2b - ARM64](ROADMAP.md#p2b---arm64) | `░░░░░░░░░░░░░░░░░░░░` | 0/5 | 🔄 In progress · ⛔ blocked item |
-| [P3 - Updater v1 + Import](ROADMAP.md#p3---updater-v1--import) | `██████████░░░░░░░░░░` | 11/21 | 🔄 In progress |
-| [P4 - Updater v2](ROADMAP.md#p4---updater-v2) | `███████████████░░░░░` | 8/11 | 🔄 In progress |
-| [P5 - Quality](ROADMAP.md#p5---quality) | `██████████████████░░` | 72/82 | 🔄 In progress |
-| [Security (S)](ROADMAP.md#security-s) | `██████████████░░░░░░` | 11/16 | 🔄 In progress |
-| [Quality & performance (Q)](ROADMAP.md#quality--performance-q) | `███████████░░░░░░░░░` | 4/7 | 🔄 In progress |
+| [P2 - First release](ROADMAP.md#p2---first-release) | `██████████████░░░░░░` | 18/26 | 🔄 In progress |
+| [P2b - ARM64](ROADMAP.md#p2b---arm64) | `████████░░░░░░░░░░░░` | 2/5 | 🔄 In progress · ⛔ blocked item |
+| [P3 - Updater v1 + Import](ROADMAP.md#p3---updater-v1--import) | `██████████████░░░░░░` | 16/23 | 🔄 In progress |
+| [P4 - Updater v2](ROADMAP.md#p4---updater-v2) | `████████████████░░░░` | 9/11 | 🔄 In progress |
+| [P5 - Quality](ROADMAP.md#p5---quality) | `██████████████████░░` | 73/82 | 🔄 In progress |
+| [Security (S)](ROADMAP.md#security-s) | `████████████████░░░░` | 13/16 | 🔄 In progress |
+| [Quality & performance (Q)](ROADMAP.md#quality--performance-q) | `██████████████░░░░░░` | 5/7 | 🔄 In progress |
 | [Docs (D)](ROADMAP.md#docs-d) | `████████████░░░░░░░░` | 6/10 | 🔄 In progress |
 | [Legal & licensing (L)](ROADMAP.md#legal--licensing-l) | `████████░░░░░░░░░░░░` | 3/8 | 🔄 In progress |
 | [Branding (B)](ROADMAP.md#branding-b) | `███████████████░░░░░` | 3/4 | 🔄 In progress |
@@ -98,10 +98,10 @@ Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always curre
 **What's next**
 
 - 🔄 **P1.9** Thoron build docs written from scratch and followed end-to-end
-- 🔄 **P2.4** Identity patch, Linux: package `thoron-browser`, `.desktop` file, `~/.config/thoron`; the keyring entry stays `Chromium Safe Storage` (shared with Thorium, so imported passwords stay readable)
-- 🔄 **P2.6** Widevine not bundled; fetched by Chromium's component updater at runtime
 - 🔄 **P2.7** Variants AVX2 and SSE4 for Windows x64 and Linux x64
 - 🔄 **P2.8** Windows packaging: Thoron mini_installer, portable `.zip` with launcher
+- 🔄 **P2.10** Signed APT repository on GitHub Pages (fixes the unsigned-repo problem of upstream #1164 and #1049)
+- 🔄 **P2.12** Release script `tools/release/release.py`: build matrix → package → `SHA256SUMS` → sign → `BUILDINFO` → **draft** GitHub release; sets the version and refuses a non-increasing one with `tools/release/version.py` (P2.14)
 - 🔄 **P2.13** `tools/release/changelog.py`: release notes generated from commit prefixes, upstream merges (author-credited), the Chromium version diff and security fixes (CVE and severity), patch changes, and issues
 
 <details>
@@ -139,12 +139,12 @@ Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always curre
 - [x] **P2.1** Branch `ks/M158`; rebase the upstream patch series from 156 to Chromium 158.0.8127.x
 - [x] **P2.2** Audit all upstream changes since `de9a1bc6` with `tools/audit` (S.1)
 - [x] **P2.3** Identity patch, Windows: product name Thoron, `%LOCALAPPDATA%\Thoron`, `HKCU\Software\Thoron`, new app GUID in `chromium_install_modes.h`, ProgIDs, AppUserModelID
-- [ ] **P2.4** Identity patch, Linux: package `thoron-browser`, `.desktop` file, `~/.config/thoron`; the keyring entry stays `Chromium Safe Storage` (shared with Thorium, so imported passwords stay readable)
+- [x] **P2.4** Identity patch, Linux: package `thoron-browser`, `.desktop` file, `~/.config/thoron`; the keyring entry stays `Chromium Safe Storage` (shared with Thorium, so imported passwords stay readable)
 - [x] **P2.5** About page: Thoron version, Chromium version, verbatim disclaimer, links to credits and changelog
-- [ ] **P2.6** Widevine not bundled; fetched by Chromium's component updater at runtime
+- [x] **P2.6** Widevine not bundled; fetched by Chromium's component updater at runtime
 - [ ] **P2.7** Variants AVX2 and SSE4 for Windows x64 and Linux x64
 - [ ] **P2.8** Windows packaging: Thoron mini_installer, portable `.zip` with launcher
-- [ ] **P2.9** Linux packaging: `.deb` with an AppArmor profile for user namespaces, plus portable `.tar.xz`
+- [x] **P2.9** Linux packaging: `.deb` with an AppArmor profile for user namespaces, plus portable `.tar.xz`
 - [ ] **P2.10** Signed APT repository on GitHub Pages (fixes the unsigned-repo problem of upstream #1164 and #1049)
 - [ ] **P2.11** Key ceremony: Ed25519 release key (minisign) and APT signing key, offline root, encrypted backups
 - [ ] **P2.12** Release script `tools/release/release.py`: build matrix → package → `SHA256SUMS` → sign → `BUILDINFO` → **draft** GitHub release; sets the version and refuses a non-increasing one with `tools/release/version.py` (P2.14)
@@ -156,8 +156,8 @@ Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always curre
 - [x] **P2.18** uBlock Origin runs on 158: check whether `chrome.storage.managed.get` also hangs in the release configuration and for normally installed extensions; fix it (patch or configuration); verify cosmetic filtering with a normally installed extension in a visible window
 - [x] **P2.19** Thoron's own COM interface IDs (IElevator, tracing service): regenerate the checked-in MIDL output; needed before system-level installs, which register those interfaces
 - [x] **P2.20** Program and installer file names: `thoron.exe` instead of `thorium.exe`, the installer name, and no Thorium updater remnants (`thor_ver`)
-- [ ] **P2.21** Linux program and package names: `thoron` instead of `thorium` for the binary, the `.deb`/`.rpm` packages, the `.desktop` file and the icons; the developer test shell and the prebuilt `pak` tool are not packaged
-- [ ] **P2.22** Linux dark mode on 158: check whether Chromium 158 follows a GTK theme switch on its own; if not, write Thoron's own fix (the Thorium patch was not carried over, see `docs/build/M158_REBASE.md`)
+- [x] **P2.21** Linux program and package names: `thoron` instead of `thorium` for the binary, the `.deb`/`.rpm` packages, the `.desktop` file and the icons; the developer test shell and the prebuilt `pak` tool are not packaged
+- [x] **P2.22** Linux dark mode on 158: check whether Chromium 158 follows a GTK theme switch on its own; if not, write Thoron's own fix (the Thorium patch was not carried over, see `docs/build/M158_REBASE.md`)
 - [x] **P2.23** Check the hand-ported UI patches in a running 158 build: tab search button on the right (default) and on the left (flag), Thorium 2024 UI, classic omnibox, rectangular tabs, custom tab width, open link in this tab
 - [x] **P2.24** Thoron's own version: `0.MINOR.PATCH`, starting at 0.1.1, shown on the About page, in `chrome://version`, in the installer and as the release tag (`v0.1.1`); the release script gives every release the next number by itself; the four-part build version stays Chromium-based (`158.0.8127.<n>`), because websites, extensions, Chromium's component updates and the installer's upgrade order rely on it
 - [ ] **P2.25** The browser's source in `main`: the patch series for Chromium 158 was only on the build machine; publish it as an overlay on a pinned upstream commit, so that `main` holds everything a release is built from and nothing else
@@ -166,8 +166,8 @@ Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always curre
 **P2b - ARM64**
 
 - [ ] **P2b.1** Windows ARM64 build, cross-compiled on the x64 host; installer and portable
-- [ ] **P2b.2** Linux ARM64 build, cross-compiled with the arm64 sysroot; `.deb` and portable
-- [ ] **P2b.3** Emulated smoke tests (qemu-user plus headless for Linux ARM64; static checks for Windows ARM64)
+- [x] **P2b.2** Linux ARM64 build, cross-compiled with the arm64 sysroot; `.deb` and portable
+- [x] **P2b.3** Emulated smoke tests (qemu-user plus headless for Linux ARM64; static checks for Windows ARM64)
 - [ ] **P2b.4** Beta programme: ARM issue template and community tester checklist
 - [ ] **P2b.5** Real-device validation (Windows-on-ARM laptop, ARM64 Linux device); beta label removed
 
@@ -182,18 +182,20 @@ Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always curre
 - [x] **P3.7** Profile snapshot before major-version updates (critical files of all profiles, verified, last 2 kept, stored next to `User Data`)
 - [x] **P3.8** Rollback: restore N-1 plus the snapshot, with an explicit warning and confirmation
 - [x] **P3.9** About page updater states: checking, downloading %, ready to relaunch, up to date, cannot verify, error
-- [ ] **P3.10** Scheduling without admin rights: Windows per-user task (Limited), Linux systemd user timer, portable only while running
+- [x] **P3.10** Scheduling without admin rights: Windows per-user task (Limited), Linux systemd user timer, portable only while running
 - [x] **P3.11** Update settings (auto / notify-only / off) and CLI `--check --apply --status --rollback`
 - [ ] **P3.12** Portable launcher (a Windows `.exe` replacing the `.bat`; Linux shell launcher) with swap-on-start
-- [ ] **P3.13** Import UI in the installer and in Settings → Import: detected browsers and profiles, per-type checkboxes, a "please close <browser>" prompt (never force-closes)
-- [ ] **P3.14** Chromium-family import engine: copy, never move; verify (hash plus SQLite integrity); bookmarks, history, passwords, cookies, extensions, settings, autofill
-- [ ] **P3.15** Tabs and tab-groups import: our own SNSS session parser (windows, tab order, groups with name, colour and collapsed state, pinned and active tab, per-tab history)
+- [x] **P3.13** Import UI in the installer and in Settings → Import: detected browsers and profiles, per-type checkboxes, a "please close <browser>" prompt (never force-closes)
+- [x] **P3.14** Chromium-family import engine: copy, never move; verify (hash plus SQLite integrity); bookmarks, history, passwords, cookies, extensions, settings, autofill
+- [x] **P3.15** Tabs and tab-groups import: our own SNSS session parser (windows, tab order, groups with name, colour and collapsed state, pinned and active tab, per-tab history)
 - [ ] **P3.16** Linux keyring check: Thoron keeps the `Chromium Safe Storage` entry that Thorium uses, so no key migration is needed; prove it on import
 - [x] **P3.17** Guided Chrome password import (Chrome's own CSV export → import → secure delete); never bypasses app-bound encryption
 - [x] **P3.18** Import report (counts per type, what was skipped and why; no secrets)
 - [ ] **P3.19** One installer for good, `ThoronSetup.exe`: a small program that never changes with a release; it reads the signed update manifest, downloads the newest full installer, checks the signature and the SHA-256, and runs it
 - [ ] **P3.20** Updates from inside the browser, Windows: a check on a schedule and from the About page, the signed manifest (P3.3), a verified download (P3.4), then Chromium's own installer applies the new version while the browser runs and the About page offers to relaunch; `User Data` is never opened by the update
 - [x] **P3.21** First run on Windows: offers to import from the browsers it finds (P3.13, P3.14) and to make Thoron the default browser for web links and for the file types a browser opens; where Windows wants the person to confirm, it opens Windows' own page for it and takes nothing over silently
+- [x] **P3.22** Open tabs and tab groups in Settings' own import: the importer of Chromium-family browsers (P3.14) brings the source's last session too (its newest `Session_` and `Tabs_` files, copied and checked as `tools/migrate/sessions.py import` does, restored once at the next start), with its own checkbox
+- [ ] **P3.23** Updates from inside the browser, Linux: a portable copy and a per-user install (`~/.local/share/thoron`, design 7.5a) look for releases while they run as on Windows (P3.20) and put a verified one in place with their own updater (`thoron_update --apply-package` or `--apply-delta`, the swap of P3.12); the per-user install has the systemd user timer of P3.10 for when Thoron is closed; a `.deb` copy is updated by apt only (P2.10) and its About page says so
 
 **P4 - Updater v2**
 
@@ -206,7 +208,7 @@ Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always curre
 - [x] **P4.7** Signing-key rotation (the old key signs the new key's statement)
 - [x] **P4.8** Firefox import: bookmarks, history and passwords via Chromium's importer; tabs and groups from `sessionstore.jsonlz4`
 - [ ] **P4.9** Portable passphrase encryption: Argon2id-wrapped profile key, remember-this-PC (DPAPI/libsecret), recovery key, read support for old formats
-- [ ] **P4.10** Upstream portable adoption: copy → verify → encrypt the copy → verify decryption → use; original untouched
+- [x] **P4.10** Upstream portable adoption: copy → verify → encrypt the copy → verify decryption → use; original untouched
 - [x] **P4.11** Optional APT delta support (`debdelta`)
 
 **P5 - Quality**
@@ -220,7 +222,7 @@ Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always curre
 - [ ] **P5.7** HEVC/AV1 playback regression (#1271) and NVIDIA frame drops (#1285)
 - [ ] **P5.8** Passwords not saved (#137, #684, #1199)
 - [x] **P5.9** Random logouts and lost sessions (#1005, #458)
-- [ ] **P5.10** Slow start-up with multiple profiles (#803)
+- [x] **P5.10** Slow start-up with multiple profiles (#803)
 - [x] **P5.11** Evaluate an AVX-512 variant (performance gain versus stability)
 - [ ] **P5.12** Linux hardware video acceleration (VA-API) on current Ubuntu (#1231)
 - [x] **P5.13** Native ad blocking, spike: link `adblock-rust` into a 158 build, block with EasyList, measure (throwaway)
@@ -300,12 +302,12 @@ Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always curre
 - [ ] **S.2** Threat model for the updater, import and portable encryption (`docs/security/THREAT_MODEL.md`)
 - [x] **S.3** Remove `'unsafe-inline'` from the Thorium authors WebUI page CSP
 - [x] **S.4** Review every flag that weakens security (for example `allow-insecure-downloads`, `disable-web-security`, `disable-encryption`); each must stay opt-in and carry a warning
-- [ ] **S.5** Sandbox verification every release (Windows sandbox; Linux AppArmor and user namespaces)
+- [x] **S.5** Sandbox verification every release (Windows sandbox; Linux AppArmor and user namespaces)
 - [x] **S.6** Enable GitHub Issues and private vulnerability reporting for the repository, before the docs that link to them go public (part of P0.11)
 - [x] **S.7** Every patch carries `Origin:`, `Author:` and `License:` headers (with L.1)
 - [ ] **S.8** Authenticode code signing once a certificate exists
 - [ ] **S.9** Security-release process: watch Chrome Releases, triage, fast-track build within the G2 targets
-- [ ] **S.10** Publish the list of every network endpoint Thoron contacts and why (upstream #126)
+- [x] **S.10** Publish the list of every network endpoint Thoron contacts and why (upstream #126)
 - [x] **S.11** Remove Thorium's hidden Easter-egg WebUI pages (`chrome://eggs`, `chrome://robot`) from Thoron: a professional product with a smaller WebUI attack surface (pairs with S.3)
 - [x] **S.12** Content standards: written policy in `CONTRIBUTING.md`, plus an automatic `adult_content` check in `tools/audit` (added text and file names, `--strict`)
 - [x] **S.13** Inherited history cleaned: three inappropriate image files that upstream added in 2023 and later deleted were purged from every commit; the current tree is unchanged; they were verified absent from the M150 browser build
@@ -320,7 +322,7 @@ Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always curre
 - [x] **Q.3** Regression gate in the release script (a release is blocked until any regression is explained)
 - [x] **Q.4** Memory-leak soak test (8 h of tab churn; memory-growth threshold)
 - [ ] **Q.5** Crash triage process (local Crashpad dumps; symbol publication decision)
-- [ ] **Q.6** Test VMs: Windows 11 x64, Ubuntu 24.04 and 26.04 x64, clean snapshots
+- [x] **Q.6** Test VMs: Windows 11 x64, Ubuntu 24.04 and 26.04 x64, clean snapshots
 - [x] **Q.7** Profile compatibility gate: a new version is first started offline on a copy of real profiles, and `tools/qa/profile_check.py` must report 1:1 (windows, tabs, pinned tabs, tab groups with names and colours, saved passwords, bookmarks, enabled extensions, cookies within normal expiry, cookie encryption unchanged, no new app-bound key); it never decrypts or prints secrets
 
 **Docs (D)**

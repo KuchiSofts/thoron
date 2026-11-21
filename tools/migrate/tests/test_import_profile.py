@@ -5,6 +5,7 @@ import shutil
 import os
 import tempfile
 import time
+import socket
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -132,6 +133,48 @@ class ImportTests(unittest.TestCase):
         with contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(ip.main(["--from", str(self.src), "--to", str(self.dst)]), 1)   # now refused
 
+
+
+@unittest.skipIf(os.name == "nt", "Linux's process-singleton links")
+class LinuxSingletonTests(unittest.TestCase):
+    """On Linux the browser marks its folder with three links (ROADMAP P3.16)."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.src = self.tmp / "thorium"
+        (self.src / "Default").mkdir(parents=True)
+        (self.src / "Local State").write_text("{}", encoding="utf-8")
+        (self.src / "Default" / "Preferences").write_text("{}", encoding="utf-8")
+        old = time.time() - 3600
+        for f in (self.src / "Local State", self.src / "Default" / "Preferences"):
+            os.utime(f, (old, old))
+
+    def link(self, name: str, target: str) -> None:
+        os.symlink(target, self.src / name)
+
+    def test_the_links_of_a_closed_browser_are_left_out(self):
+        self.link("SingletonLock", f"{socket.gethostname()}-999999999")     # no such process
+        self.link("SingletonCookie", "1234567890")
+        self.link("SingletonSocket", "/tmp/.org.chromium.Chromium.x/SingletonSocket")
+        ip.import_profile(self.src, self.tmp / "thoron")
+        self.assertTrue((self.tmp / "thoron" / "Default" / "Preferences").is_file())
+        self.assertFalse(any((self.tmp / "thoron" / n).is_symlink() or (self.tmp / "thoron" / n).exists()
+                             for n in ip.SINGLETONS))
+
+    def test_a_running_browser_or_another_computer_s_lock_refuses(self):
+        self.link("SingletonLock", f"{socket.gethostname()}-{os.getpid()}")   # this process: alive
+        with self.assertRaises(ip.ImportRefused):
+            ip.import_profile(self.src, self.tmp / "thoron")
+        os.unlink(self.src / "SingletonLock")
+        self.link("SingletonLock", "another-computer-123")
+        with self.assertRaises(ip.ImportRefused):
+            ip.import_profile(self.src, self.tmp / "thoron")
+
+    def test_another_link_is_still_refused(self):
+        self.link("Bookmarks", "/etc/passwd")
+        with self.assertRaises(ip.ImportRefused):
+            ip.import_profile(self.src, self.tmp / "thoron")
 
 
 class JustWrittenTests(unittest.TestCase):

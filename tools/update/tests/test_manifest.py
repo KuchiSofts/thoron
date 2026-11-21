@@ -989,6 +989,24 @@ class BuildTests(unittest.TestCase):
         self.assertEqual((data["published"], data["expires"]), ("2026-12-01T12:00:00Z", "2026-12-31T12:00:00Z"))
         self.assertEqual(mf.parse(self.build(valid_days=7), allowed_hosts=HOSTS)["expires"], "2026-12-08T12:00:00Z")
 
+    def test_the_same_release_is_renewed_with_later_dates_and_a_higher_serial(self):
+        # ROADMAP P3.2: signed again before the manifest expires when no new release came
+        old = self.build()
+        later = PUBLISHED + 25 * 86400
+        new = mf.parse(mf.renew(old, published=later, allowed_hosts=HOSTS), allowed_hosts=HOSTS)
+        before = mf.parse(old, allowed_hosts=HOSTS)
+        self.assertGreater(new["serial"], before["serial"])
+        self.assertEqual((new["published"], new["expires"]), ("2026-12-26T12:00:00Z", "2027-01-25T12:00:00Z"))
+        for same in ("channel", "version", "thoron_version", "critical", "min_updater_version", "packages"):
+            self.assertEqual(new[same], before[same], same)
+        self.assertEqual(mf.succession_problems(new, before), [])
+        # the same day twice: still a higher serial
+        twice = mf.parse(mf.renew(mf.renew(old, published=later, allowed_hosts=HOSTS), published=later + 60,
+                                  allowed_hosts=HOSTS), allowed_hosts=HOSTS)
+        self.assertEqual(twice["serial"], new["serial"] + 1)
+        with self.assertRaises(mf.ManifestError):  # never dated before the one it replaces
+            mf.renew(old, published=PUBLISHED - 86400, allowed_hosts=HOSTS)
+
     def test_what_is_not_valid_is_not_built(self):
         for name, changes, message in (
                 ("no version", {"version": "newest"}, "version: must be a build version"),
@@ -1086,6 +1104,19 @@ class CommandLineTests(unittest.TestCase):
     def sign(self, *more, clock: int = NOW) -> tuple[int, str, str]:
         return self.run_tool("sign", self.manifest, "--key", "release.key", "--public-key", self.public_text,
                              *more, clock=clock)
+
+    def test_renew_then_sign_after_the_one_it_replaces(self):
+        # ROADMAP P3.2: the same release signed again before its manifest expires
+        renewed = self.manifest.with_name("update-renewed.json")
+        code, out, _ = self.run_tool("renew", self.manifest, "--out", renewed, clock=NOW + 20 * 86400)
+        self.assertEqual(code, 0, out)
+        self.assertIn("renewed", out)
+        code, out, _ = self.run_tool("sign", renewed, "--key", "release.key", "--public-key", self.public_text,
+                                     "--previous", self.manifest, clock=NOW + 20 * 86400)
+        self.assertEqual(code, 0, out)
+        code, out, _ = self.run_tool("verify", renewed, "--public-key", self.public_text, clock=NOW + 20 * 86400,)
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.run_tool("renew", self.manifest, "--out", renewed)[0], 1)  # never overwritten
 
     def test_example_prints_the_example_and_writes_it_byte_for_byte(self):
         code, out, _ = self.run_tool("example")

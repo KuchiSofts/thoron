@@ -52,7 +52,8 @@ def run(src: Path) -> None:
         raise OSError("gn not found in buildtools or PATH; gnrt needs it to format BUILD.gn files")
     gnrt = src / "out" / "gnrt" / "target" / "release" / ("gnrt.exe" if os.name == "nt" else "gnrt")
     if not gnrt.is_file():
-        subprocess.run([sys.executable, "tools/crates/run_gnrt.py", "--", "help"], cwd=src, env=env, check=True,
+        # builds gnrt; "help" goes to gnrt itself (a "--" before it reaches gnrt too and is refused on Linux)
+        subprocess.run([sys.executable, "tools/crates/run_gnrt.py", "help"], cwd=src, env=env, check=True,
                        capture_output=True)
     # Newer gnrt (158.0.8127.65 on) writes the README files in this same step and stops when a patched crate's
     # licence file is not there yet: the crates are downloaded by then, so it goes on with the patches.

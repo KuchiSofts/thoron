@@ -64,6 +64,11 @@ Component: adblock-rust (native ad blocking, in development)
   Licence:   MPL-2.0 (source files unmodified; https://github.com/brave/adblock-rust, version 0.13.3)
   With:      MIT or Apache-2.0 crates it depends on, listed in CREDITS.md
 
+Component: Argon2 reference implementation (the passphrase of portable copies, in development)
+  Copyright: Daniel Dinu, Dmitry Khovratovich, Jean-Philippe Aumasson and Samuel Neves
+  Licence:   CC0 1.0 or Apache-2.0, at the user's option; Thoron takes it under Apache-2.0 (source files
+             unmodified; https://github.com/P-H-C/phc-winner-argon2, release 20190702)
+
 Component: uBlock Origin (bundled, unmodified, as a separate extension)
   Copyright: Raymond Hill and contributors
   Licence:   GPL-3.0

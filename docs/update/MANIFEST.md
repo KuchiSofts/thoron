@@ -416,6 +416,7 @@ For signing and for checking by hand there is a command line:
 ```
 py -3 -I tools/update/manifest.py validate update.json
 py -3 -I tools/update/manifest.py sign update.json --key <private key file> --public-key <base64> --previous <the last update.json>
+py -3 -I tools/update/manifest.py renew update.json --out update-renewed.json [--valid-days 30]
 py -3 -I tools/update/manifest.py verify update.json --public-key <base64>
 py -3 -I tools/update/manifest.py verify update.json --public-key <base64> --installed 158.0.8127.3000 --variant win-x64-avx2 --kind installed
 py -3 -I tools/update/manifest.py example --out example.json
@@ -438,8 +439,10 @@ py -3 -I tools/update/manifest.py example --out example.json
 - The tool never overwrites a file. Of a file that is no manifest (another file given by mistake), a
   message names at most the keys, never the content.
 - A manifest is good for 30 days. Sign a new one (the same release, new dates, the next serial) at every
-  release and, when there is none, at the latest a week before the current one expires; the two new
-  files take the place of the old ones in the newest release. When none is signed in time, every copy
+  release and, when there is none, at the latest a week before the current one expires: `renew` writes it
+  from the current one (published now, a higher serial, a later `expires`; the release and its packages
+  as they were), then `sign --previous <the current one>` signs it; the two new files take the place of
+  the old ones in the newest release. When none is signed in time, every copy
   shows "cannot verify updates" until one is.
 - Write the file once and leave it alone: an editor or a transfer that changes line ends breaks the
   signature. `build()` and `example --out` write the bytes as they must be; redirecting the output of

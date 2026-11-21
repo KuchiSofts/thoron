@@ -425,8 +425,7 @@ LINUX_EDITS = {
                     ('RDN="org.chromium.Thorium"', 'RDN="org.kuchisofts.Thoron"', 1)],
         "forbid": [r"thorium-browser|/thorium\b|org\.chromium\.Thorium|alex313031@|thorium\.rocks"]},
     _L + "common/wrapper": {
-        "replace": [("# Prefer Thorium's bundled libraries.", "# Prefer Thoron's bundled libraries.", 1),
-                    ("$HOME/.config/thorium/Crash Reports", "$HOME/.config/thoron/Crash Reports", 1),
+        "replace": [("$HOME/.config/thorium/Crash Reports", "$HOME/.config/thoron/Crash Reports", 1),
                     ("APPNAME=thorium\n", "APPNAME=thoron\n", 1),
                     ('# DESKTOP="thorium-browser"', '# DESKTOP="thoron-browser"', 1),
                     ('TITLE="Thorium Browser"', 'TITLE="Thoron"', 1),

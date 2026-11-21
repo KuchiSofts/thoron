@@ -570,8 +570,10 @@ def sanitize_closed(data: bytes) -> bytes:
     return sessions.rewrite(data, change)
 
 
-def make(browser: Path, work: Path, out: Path, port: int = PORT) -> list[str]:
-    """Build the session in `browser`, copy its files to `out` and check them; the problems found."""
+def make(browser: Path, work: Path, out: Path, port: int = PORT, devtools_only: bool = False) -> list[str]:
+    """Build the session in `browser`, copy its files to `out` and check them; the problems found. With
+    `devtools_only` the test extension is not used: for a browser whose tab groups are its own (Vivaldi's tab stacks,
+    Opera's tab islands), the session is windows, tabs and history only."""
     work.mkdir(parents=True, exist_ok=True)
     root = Path(tempfile.mkdtemp(prefix="golden-", dir=work))
     profile, extension = root / "profile", root / "extension"
@@ -588,8 +590,10 @@ def make(browser: Path, work: Path, out: Path, port: int = PORT) -> list[str]:
         try:
             dt_port = devtools_port(profile)
             time.sleep(2)
-            worker = find_worker(dt_port, limit=8)
-            if worker is None:
+            worker = None if devtools_only else find_worker(dt_port, limit=8)
+            if devtools_only:
+                print("note: built through DevTools alone, as asked: no pinned tab and no groups")
+            elif worker is None:
                 try:
                     proc.call("Extensions.loadUnpacked", path=str(extension))
                     worker = find_worker(dt_port)
@@ -608,11 +612,22 @@ def make(browser: Path, work: Path, out: Path, port: int = PORT) -> list[str]:
             proc.close_pipes()
     if problems:
         return problems
-    found = profile / "Default"
+    reading, problems = write_golden(profile / "Default", out, "extension" if worker is not None else "devtools")
+    if reading is not None:
+        problems += plan_problems(expected_plan(base, worker is not None),
+                                  shape(reading["session"], reading["closed"]))
+    if not problems:
+        shutil.rmtree(root, ignore_errors=True)
+    return problems
+
+
+def write_golden(found: Path, out: Path, built_with: str) -> tuple[dict | None, list[str]]:
+    """The newest session files of the profile folder `found`, with what describes the PC taken out, copied to `out`
+    with their reading as `expected.json`; the reading and the problems found."""
     session_path, session, notes = sessions.newest(found, "Session")
     tabs_path, closed, more = sessions.newest(found, "Tabs")
     if session_path is None:
-        return [f"the browser wrote no session ({notes + more})"]
+        return None, [f"the browser wrote no session ({notes + more})"]
     out.mkdir(parents=True, exist_ok=True)
     for old in list(out.glob("Session_*")) + list(out.glob("Tabs_*")):
         old.unlink()
@@ -623,12 +638,9 @@ def make(browser: Path, work: Path, out: Path, port: int = PORT) -> list[str]:
         clean_tabs = sanitize_closed(tabs_path.read_bytes())
         (out / tabs_path.name).write_bytes(clean_tabs)
         reading["closed"] = sessions.read_closed(clean_tabs)
-    reading["built_with"] = "extension" if worker is not None else "devtools"
-    problems += plan_problems(expected_plan(base, worker is not None), shape(reading["session"], reading["closed"]))
+    reading["built_with"] = built_with
     (out / "expected.json").write_text(json.dumps(reading, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
-    if not problems:
-        shutil.rmtree(root, ignore_errors=True)
-    return problems
+    return reading, []
 
 
 def main(argv: list[str]) -> int:
@@ -637,11 +649,21 @@ def main(argv: list[str]) -> int:
     p.add_argument("--work", required=True, type=Path, help="scratch folder for the throwaway profile")
     p.add_argument("--out", required=True, type=Path, help="folder for the golden files")
     p.add_argument("--port", type=int, default=PORT, help="port of the local page server")
+    p.add_argument("--devtools-only", action="store_true",
+                   help="windows, tabs and history only, without the test extension's pinned tab and groups")
+    p.add_argument("--from-profile", type=Path, help="take the session a browser already wrote in this profile "
+                   "folder (for a browser whose tab groups are its own: Vivaldi, Opera) instead of building one")
     a = p.parse_args(argv)
+    if a.from_profile:
+        _, problems = write_golden(a.from_profile.resolve(), a.out.resolve(), "the browser's own session")
+        for problem in problems:
+            print(problem)
+        print("SESSION GOLDEN: MADE" if not problems else f"SESSION GOLDEN: FAILED ({len(problems)} problem(s))")
+        return 0 if not problems else 1
     if sys.platform != "win32":
         print("SESSION GOLDEN: not on Windows, nothing made")
         return 0
-    problems = make(a.browser.resolve(), a.work.resolve(), a.out.resolve(), a.port)
+    problems = make(a.browser.resolve(), a.work.resolve(), a.out.resolve(), a.port, a.devtools_only)
     for problem in problems:
         print(problem)
     print("SESSION GOLDEN: MADE" if not problems else f"SESSION GOLDEN: FAILED ({len(problems)} problem(s))")

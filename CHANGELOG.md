@@ -7,6 +7,7 @@ Explanations live in the design docs under `docs/design/`.
 ## [Unreleased]
 
 ### Added
+- **QA tools:** `linux_keyring_check.py --desktop kde` checks saved passwords with KDE's KWallet (5 and 6) on the Ubuntu test machines, the wallet opened as at sign-in, without a person: a Thorium profile copied into Thoron keeps its passwords readable, and both share one key in the wallet.
 - **Release:** every release is measured for the hosts a fresh profile contacts, and refused when one is not on the published list (`docs/security/NETWORK.md`).
 - **Updates:** `tools/update/manifest.py renew` makes the same release's manifest again with later dates, to sign before the current one expires when no new release came.
 - **Release:** a Linux release needs passing sandbox evidence of its own build, as a Windows one does: `chrome://sandbox` under AppArmor on Ubuntu's own kernel, from `linux_apparmor_vm_check.py --evidence`.

@@ -1,5 +1,5 @@
 # Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be found in the LICENSE file.
-"""Saved passwords on Linux with GNOME's keyring (ROADMAP P3.16, P5.8): the reading of the probe's results."""
+"""Saved passwords on Linux with GNOME's keyring or KDE's KWallet (ROADMAP P3.16, P5.8): the reading of the probe's results."""
 import unittest
 
 from tools.qa import linux_keyring_check as check
@@ -42,6 +42,30 @@ class ProblemsTests(unittest.TestCase):
         self.assertTrue(check.problems(good(), {"chromium": KEYRING + KEYRING})["one key"])
         own = KEYRING.replace("chromium", "thoron")
         self.assertTrue(check.problems(good(), {"chromium": KEYRING, "thoron": own})["one key"])
+
+
+class WalletTests(unittest.TestCase):
+    """KDE's KWallet: gdbus's replies of folderList and entryList."""
+    FOLDERS = "(['Chromium Keys'],)\n"
+    KEYS = "(['Chromium Safe Storage'],)\n"
+
+    def test_a_good_wallet_passes(self):
+        self.assertEqual(check.wallet_problems(self.FOLDERS, self.KEYS), [])
+        found = check.problems(good(), wallet=check.wallet_problems(self.FOLDERS, self.KEYS))
+        self.assertEqual({k: v for k, v in found.items() if v}, {})
+
+    def test_a_missing_or_doubled_key_and_a_folder_of_its_own_fail(self):
+        self.assertTrue(check.wallet_problems("(@as [],)", self.KEYS))
+        self.assertTrue(check.wallet_problems(self.FOLDERS, "(@as [],)"))
+        self.assertTrue(check.wallet_problems(self.FOLDERS, "(['Chromium Safe Storage', 'Other'],)"))
+        self.assertTrue(check.wallet_problems("(['Chromium Keys', 'Thoron Keys'],)", self.KEYS))
+        self.assertTrue(check.wallet_problems("(['Chromium Keys', 'Thorium Keys'],)", self.KEYS))
+        self.assertTrue(check.problems(good(), wallet=["x"])["one key"])
+
+    def test_the_desktop_store_gives_no_switch(self):
+        self.assertIn("--store desktop", check.KDE_SESSION)
+        self.assertIn("pamOpen", check.KDE_SESSION)
+        self.assertIn("Prompt on Open=false", check.KDE_SESSION)
 
 
 if __name__ == "__main__":

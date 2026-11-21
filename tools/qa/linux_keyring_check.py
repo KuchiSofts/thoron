@@ -90,11 +90,11 @@ class Browser:
     """A browser started headless (no window is needed: the password page works the same) with DevTools on
     127.0.0.1 and GNOME's keyring for passwords."""
 
-    def __init__(self, program: str, profile: Path):
+    def __init__(self, program: str, profile: Path, store: str = "gnome-libsecret"):
         self.profile = profile
         (profile / "DevToolsActivePort").unlink(missing_ok=True)
         self.proc = subprocess.Popen([program, f"--user-data-dir={profile}", "--no-first-run",
-                                      "--no-default-browser-check", "--password-store=gnome-libsecret", "--headless=new",
+                                      "--no-default-browser-check", f"--password-store={store}", "--headless=new",
                                       "--remote-debugging-address=127.0.0.1", "--remote-debugging-port=0",
                                       "about:blank"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                      start_new_session=True)

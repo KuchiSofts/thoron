@@ -7,6 +7,7 @@ Explanations live in the design docs under `docs/design/`.
 ## [Unreleased]
 
 ### Added
+- **Linux SSE4:** Thoron for x64 processors without AVX on Linux too, as a `.deb` and a portable `.tar.xz`, checked on an emulated processor without AVX.
 - **Linux ARM64:** Thoron for 64-bit ARM Linux as a `.deb` and a portable `.tar.xz`, built on an x64 machine and checked under emulation (not yet on an ARM64 PC).
 - **Import on Linux:** Settings' import of Chromium-family browsers works on Linux too: Thorium, Chrome, Edge, Brave, Vivaldi, Opera and Chromium in `~/.config`, with bookmarks, history, saved passwords and cookies (encrypted with Chromium's fixed key or the key the browser keeps in the desktop's keyring, which is only read), search engines, form entries, the home page and startup pages, extensions and open tabs.
 - **Portable:** a portable copy can lock its saved passwords and sign-ins with a passphrase on `chrome://thoron-portable`: they open on any PC once it is typed into Thoron's own window at start, with a recovery key to write down and an optional "Remember this PC". Nothing is encrypted again, and the lock can be removed. Windows only for now.

@@ -14,6 +14,11 @@ reason for each are in docs/update/MANIFEST.md; this file is the reference the C
                                              writes <manifest>.sig; signs nothing a copy would refuse
                                              today, nothing that goes back from the manifest before it,
                                              and nothing with a key other than the one copies hold
+    renew     <manifest> --out <new manifest> [--valid-days 30]
+                                             the same release in a new manifest: published now, a higher
+                                             serial, a later expires; the release and its packages as they
+                                             were (sign it then with --previous <manifest>), so a channel
+                                             with no new release is not left with an expired manifest
     verify    <manifest> --public-key <base64> [--signature <file>] [--now <time>]
               [--installed <build version> --variant win-x64-avx2 --kind installed]
                                              the signature first, then the manifest, then its dates;
@@ -679,6 +684,18 @@ def build(*, channel: str, version: str, thoron_version: str, critical: bool, mi
     return raw
 
 
+def renew(previous_raw: bytes, *, published: int, allowed_hosts, valid_days: int = DEFAULT_VALID_DAYS) -> bytes:
+    """The same release in a new manifest, ready to sign: published at `published`, a higher serial, expiring
+    `valid_days` later; channel, versions, critical, minimum updater and packages as the manifest before it
+    has them. Copies take it as the channel's current manifest (it may follow the one before it); without it a
+    channel that has no new release before the old manifest expires leaves its copies unable to check."""
+    previous = parse(previous_raw, allowed_hosts=allowed_hosts)
+    return build(channel=previous["channel"], version=previous["version"],
+                 thoron_version=previous["thoron_version"], critical=previous["critical"],
+                 min_updater_version=previous["min_updater_version"], packages=previous["packages"],
+                 published=published, allowed_hosts=allowed_hosts, valid_days=valid_days, previous=previous)
+
+
 def example() -> bytes:
     """A valid manifest with made-up packages: the example of docs/update/MANIFEST.md."""
     new, old = "158.0.8127.4500", "158.0.8127.3000"
@@ -777,6 +794,16 @@ def _run(a) -> int:
         if a.installed and not (a.variant and a.kind):
             raise ValueError("--installed goes with --variant and --kind")
     raw = a.manifest.read_bytes()
+    if a.command == "renew":
+        try:
+            made = renew(raw, published=int(time.time()), allowed_hosts=hosts, valid_days=a.valid_days)
+        except ManifestError as exc:
+            return _refused(exc)
+        if not _write_new(a.out, made):
+            return 1
+        print(f"manifest: renewed, {_summary(parse(made, allowed_hosts=hosts))}; sign it with --previous "
+              f"{a.manifest.name}")
+        return 0
     if a.command == "validate":
         print(f"manifest: OK, {_summary(parse(raw, allowed_hosts=hosts))}")
         return 0
@@ -901,6 +928,9 @@ def main(argv: list[str]) -> int:
     before.add_argument("--previous", type=Path, help="the manifest this one replaces: it must not go back")
     before.add_argument("--first", action="store_true", help="the channel has no manifest yet")
     s.add_argument("--out", type=Path, help="the signature file (default: <manifest>.sig)")
+    r = sub.add_parser("renew", help="the same release in a new manifest with later dates, ready to sign")
+    r.add_argument("--out", type=Path, required=True, help="the new manifest (never overwritten)")
+    r.add_argument("--valid-days", type=int, default=DEFAULT_VALID_DAYS, help="days until it expires")
     k = sub.add_parser("key-statement", help="write a key statement: the old key signs the new public key (P4.7)")
     k.add_argument("--old-key", type=Path, required=True, help="the old private key file (base64 of 32 bytes)")
     k.add_argument("--new-public-key", required=True, help="the new public key, base64 of 32 bytes")
@@ -918,7 +948,7 @@ def main(argv: list[str]) -> int:
     c.add_argument("--updater", help="the updater's build version (default: the installed version)")
     c.add_argument("--variant", choices=VARIANTS)
     c.add_argument("--kind", choices=KINDS)
-    for command in (v, s, c):
+    for command in (v, s, c, r):
         command.add_argument("manifest", type=Path)
         command.add_argument("--host", action="append", help="a host packages may come from (default: github.com)")
     a = p.parse_args(argv)

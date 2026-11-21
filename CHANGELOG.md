@@ -7,6 +7,7 @@ Explanations live in the design docs under `docs/design/`.
 ## [Unreleased]
 
 ### Added
+- **Updates:** `tools/update/manifest.py renew` makes the same release's manifest again with later dates, to sign before the current one expires when no new release came.
 - **Release:** a Linux release needs passing sandbox evidence of its own build, as a Windows one does: `chrome://sandbox` under AppArmor on Ubuntu's own kernel, from `linux_apparmor_vm_check.py --evidence`.
 - **QA tools:** `linux_apparmor_vm_check.py` checks the Linux sandbox under AppArmor on Ubuntu's own kernel, in a VM; `linux_apt_repo_check.py` checks the APT repository with apt; `linux_portable_lock_check.py` checks the Linux portable lock.
 - **Linux:** Thoron's own signed APT repository for the `.deb` installs, made by `tools/release/apt_repo.py`: apt checks its index against Thoron's key alone (`Signed-By`), refuses a changed or expired index, and the SSE4.2 build is the package `thoron-browser-sse4`, so an update never swaps it for the AVX2 build. It goes live with the first release, once the signing key exists.

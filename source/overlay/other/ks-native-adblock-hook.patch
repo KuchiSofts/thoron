@@ -47331,10 +47331,10 @@ index 0000000000000000000000000000000000000000..546649543677970e457b9f4dd3565247
 +}  // namespace user_data_importer::chromium_family
 diff --git a/components/user_data_importer/chromium_family/password_decryptor_linux.cc b/components/user_data_importer/chromium_family/password_decryptor_linux.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..1cb9eac127c5eec96e3d1a051f03cde3b45b99d2
+index 0000000000000000000000000000000000000000..19d4aadd08248030d13087c56b0a643798a1b195
 --- /dev/null
 +++ b/components/user_data_importer/chromium_family/password_decryptor_linux.cc
-@@ -0,0 +1,253 @@
+@@ -0,0 +1,368 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -47375,10 +47375,22 @@ index 0000000000000000000000000000000000000000..1cb9eac127c5eec96e3d1a051f03cde3
 +constexpr char kServiceInterface[] = "org.freedesktop.Secret.Service";
 +constexpr char kItemInterface[] = "org.freedesktop.Secret.Item";
 +constexpr char kSessionInterface[] = "org.freedesktop.Secret.Session";
++// KDE's KWallet (org.kde.KWallet): since KWallet 6.24 ksecretd keeps the
++// wallets behind kwalletd6; before, kwalletd6 (KWallet 6) or kwalletd5
++// (KWallet 5) kept them.
++constexpr std::array<std::pair<const char*, const char*>, 3> kKWallets = {{
++    {"org.kde.ksecretd", "/ksecretd"},
++    {"org.kde.kwalletd6", "/modules/kwalletd6"},
++    {"org.kde.kwalletd5", "/modules/kwalletd5"},
++}};
++constexpr char kKWalletInterface[] = "org.kde.KWallet";
++constexpr char kKWalletAppId[] = "Thoron";
 +// A keyring that does not answer within this is taken as not there.
 +constexpr int kTimeoutMs = 5000;
 +// A secret longer than this is not a browser's key.
 +constexpr size_t kMostSecretBytes = 4096;
++
++using Attributes = std::vector<std::pair<std::string, std::string>>;
 +
 +std::unique_ptr<dbus::Response> Call(dbus::ObjectProxy* proxy,
 +                                     dbus::MethodCall* call) {
@@ -47389,24 +47401,26 @@ index 0000000000000000000000000000000000000000..1cb9eac127c5eec96e3d1a051f03cde3
 +  return std::move(result.value());
 +}
 +
-+// The secret an unlocked item of `application` holds: read with the "plain"
++// The secret an unlocked item with `attributes` holds: read with the "plain"
 +// algorithm of a session of the local bus, as Chromium does. Nothing is made,
 +// changed or unlocked.
 +std::optional<std::string> SecretOf(dbus::Bus* bus,
 +                                    const dbus::ObjectPath& session,
-+                                    const std::string& application) {
++                                    const Attributes& attributes) {
 +  dbus::ObjectProxy* service =
 +      bus->GetObjectProxy(kService, dbus::ObjectPath(kServicePath));
 +  dbus::MethodCall search(kServiceInterface, "SearchItems");
 +  dbus::MessageWriter writer(&search);
-+  dbus::MessageWriter attributes(nullptr);
-+  writer.OpenArray("{ss}", &attributes);
-+  dbus::MessageWriter entry(nullptr);
-+  attributes.OpenDictEntry(&entry);
-+  entry.AppendString("application");
-+  entry.AppendString(application);
-+  attributes.CloseContainer(&entry);
-+  writer.CloseContainer(&attributes);
++  dbus::MessageWriter array(nullptr);
++  writer.OpenArray("{ss}", &array);
++  for (const auto& [name, value] : attributes) {
++    dbus::MessageWriter entry(nullptr);
++    array.OpenDictEntry(&entry);
++    entry.AppendString(name);
++    entry.AppendString(value);
++    array.CloseContainer(&entry);
++  }
++  writer.CloseContainer(&array);
 +  std::unique_ptr<dbus::Response> found = Call(service, &search);
 +  if (!found) {
 +    return std::nullopt;
@@ -47439,8 +47453,82 @@ index 0000000000000000000000000000000000000000..1cb9eac127c5eec96e3d1a051f03cde3
 +  return std::string(base::as_string_view(value));
 +}
 +
++// The secret of one of `entries` (folder, entry) in KDE's wallet, through
++// KWallet's own interface, as Chromium reads it, but only from a wallet that
++// is open already (as after the person signed in): a closed wallet is not
++// opened, so KWallet shows no password dialog, and a KWallet that does not run
++// is not started.
++std::optional<std::string> KWalletSecret(dbus::Bus* bus,
++                                         const Attributes& entries) {
++  if (entries.empty()) {
++    return std::nullopt;
++  }
++  for (const auto& [name, path] : kKWallets) {
++    if (bus->GetServiceOwnerAndBlock(name, dbus::Bus::SUPPRESS_ERRORS)
++            .empty()) {
++      continue;
++    }
++    dbus::ObjectProxy* kwallet =
++        bus->GetObjectProxy(name, dbus::ObjectPath(path));
++    dbus::MethodCall network(kKWalletInterface, "networkWallet");
++    std::unique_ptr<dbus::Response> named = Call(kwallet, &network);
++    std::string wallet;
++    if (!named || !dbus::MessageReader(named.get()).PopString(&wallet) ||
++        wallet.empty()) {
++      continue;
++    }
++    dbus::MethodCall is_open(kKWalletInterface, "isOpen");
++    dbus::MessageWriter(&is_open).AppendString(wallet);
++    std::unique_ptr<dbus::Response> open_reply = Call(kwallet, &is_open);
++    bool open = false;
++    if (!open_reply || !dbus::MessageReader(open_reply.get()).PopBool(&open) ||
++        !open) {
++      continue;
++    }
++    dbus::MethodCall open_call(kKWalletInterface, "open");
++    dbus::MessageWriter open_writer(&open_call);
++    open_writer.AppendString(wallet);
++    open_writer.AppendInt64(0);
++    open_writer.AppendString(kKWalletAppId);
++    std::unique_ptr<dbus::Response> opened = Call(kwallet, &open_call);
++    int32_t handle = -1;
++    if (!opened || !dbus::MessageReader(opened.get()).PopInt32(&handle) ||
++        handle < 0) {
++      continue;
++    }
++    std::optional<std::string> secret;
++    for (const auto& [folder, key] : entries) {
++      dbus::MethodCall read(kKWalletInterface, "readPassword");
++      dbus::MessageWriter read_writer(&read);
++      read_writer.AppendInt32(handle);
++      read_writer.AppendString(folder);
++      read_writer.AppendString(key);
++      read_writer.AppendString(kKWalletAppId);
++      std::unique_ptr<dbus::Response> value = Call(kwallet, &read);
++      std::string text;
++      if (value && dbus::MessageReader(value.get()).PopString(&text) &&
++          !text.empty() && text.size() <= kMostSecretBytes) {
++        secret = std::move(text);
++        break;
++      }
++    }
++    dbus::MethodCall close(kKWalletInterface, "close");
++    dbus::MessageWriter close_writer(&close);
++    close_writer.AppendInt32(handle);
++    close_writer.AppendBool(false);
++    close_writer.AppendString(kKWalletAppId);
++    Call(kwallet, &close);
++    if (secret) {
++      return secret;
++    }
++  }
++  return std::nullopt;
++}
++
 +// The first secret found under one of `applications`, from the session bus's
-+// Secret Service; none when there is no bus, no service, or no unlocked item.
++// Secret Service, then under KWallet's names for them (in the Secret Service,
++// which KWallet 6 serves too, and in an open KDE wallet); none when there is no
++// bus, no keyring, or no unlocked item.
 +std::optional<std::string> KeyringSecret(
 +    const std::vector<std::string>& applications) {
 +  // The bus works on this thread's task runner, which the import's thread has
@@ -47454,6 +47542,8 @@ index 0000000000000000000000000000000000000000..1cb9eac127c5eec96e3d1a051f03cde3
 +  scoped_refptr<dbus::Bus> bus =
 +      base::MakeRefCounted<dbus::Bus>(std::move(options));
 +  std::optional<std::string> secret;
++  const Attributes kwallet_entries =
++      PasswordKey::KWalletEntriesFor(applications);
 +  if (bus->Connect()) {
 +    dbus::ObjectProxy* service =
 +        bus->GetObjectProxy(kService, dbus::ObjectPath(kServicePath));
@@ -47469,14 +47559,25 @@ index 0000000000000000000000000000000000000000..1cb9eac127c5eec96e3d1a051f03cde3
 +      if (reader.PopVariant(&output) && reader.PopObjectPath(&session) &&
 +          session.IsValid()) {
 +        for (const std::string& application : applications) {
-+          secret = SecretOf(bus.get(), session, application);
++          secret = SecretOf(bus.get(), session, {{"application", application}});
 +          if (secret) {
 +            break;
 +          }
 +        }
++        // KWallet's entries, as KWallet 6 shows them in the Secret Service.
++        for (const auto& [folder, key] : kwallet_entries) {
++          if (secret) {
++            break;
++          }
++          secret =
++              SecretOf(bus.get(), session, {{"server", folder}, {"user", key}});
++        }
 +        dbus::MethodCall close(kSessionInterface, "Close");
 +        Call(bus->GetObjectProxy(kService, session), &close);
 +      }
++    }
++    if (!secret) {
++      secret = KWalletSecret(bus.get(), kwallet_entries);
 +    }
 +  }
 +  bus->ShutdownAndBlock();
@@ -47529,6 +47630,20 @@ index 0000000000000000000000000000000000000000..1cb9eac127c5eec96e3d1a051f03cde3
 +    names.push_back("chrome");
 +  }
 +  return names;
++}
++
++// static
++std::vector<std::pair<std::string, std::string>> PasswordKey::KWalletEntriesFor(
++    const std::vector<std::string>& applications) {
++  std::vector<std::pair<std::string, std::string>> entries;
++  for (const std::string& application : applications) {
++    if (application == "chromium") {
++      entries.emplace_back("Chromium Keys", "Chromium Safe Storage");
++    } else if (application == "chrome") {
++      entries.emplace_back("Chrome Keys", "Chrome Safe Storage");
++    }
++  }
++  return entries;
 +}
 +
 +// static
@@ -47590,10 +47705,10 @@ index 0000000000000000000000000000000000000000..1cb9eac127c5eec96e3d1a051f03cde3
 +}  // namespace user_data_importer::chromium_family
 diff --git a/components/user_data_importer/chromium_family/password_decryptor_linux.h b/components/user_data_importer/chromium_family/password_decryptor_linux.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..6a6ea58140f057df37db9c1be4b80a2c55f4603e
+index 0000000000000000000000000000000000000000..e140d8cd00c2c658e18a07f3f24b004d1f6cc6e8
 --- /dev/null
 +++ b/components/user_data_importer/chromium_family/password_decryptor_linux.h
-@@ -0,0 +1,85 @@
+@@ -0,0 +1,94 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -47606,6 +47721,7 @@ index 0000000000000000000000000000000000000000..6a6ea58140f057df37db9c1be4b80a2c
 +#include <optional>
 +#include <string>
 +#include <string_view>
++#include <utility>
 +#include <vector>
 +
 +#include "base/containers/span.h"
@@ -47619,9 +47735,10 @@ index 0000000000000000000000000000000000000000..6a6ea58140f057df37db9c1be4b80a2c
 +// (components/os_crypt/async): "v10" values with a fixed key (a browser without
 +// a desktop keyring, or started with --password-store=basic), "v11" values with
 +// a key made from a secret the browser keeps in the desktop's keyring (the
-+// Secret Service of GNOME and others). Both are AES-128-CBC with an IV of 16
-+// spaces. The keyring is only read: an entry is looked up, never made or
-+// changed, and a locked keyring is not unlocked (no prompt is shown).
++// Secret Service of GNOME and others, or KDE's KWallet). Both are AES-128-CBC
++// with an IV of 16 spaces. The keyring is only read: an entry is looked up,
++// never made or changed, a locked keyring is not unlocked and a closed wallet
++// is not opened (no prompt is shown).
 +
 +namespace user_data_importer::chromium_family {
 +
@@ -47654,6 +47771,13 @@ index 0000000000000000000000000000000000000000..6a6ea58140f057df37db9c1be4b80a2c
 +  static std::vector<std::string> ApplicationNamesFor(
 +      const base::FilePath& user_data);
 +
++  // KDE's KWallet keeps the secret in a folder of the wallet instead: the
++  // folder and entry Chromium uses for each of `applications` it knows
++  // ("Chromium Keys" and "Chromium Safe Storage", "Chrome Keys" and "Chrome
++  // Safe Storage" in Google's builds; freedesktop_secret_key_provider.h).
++  static std::vector<std::pair<std::string, std::string>> KWalletEntriesFor(
++      const std::vector<std::string>& applications);
++
 +  // PBKDF2-HMAC-SHA1 of `password` with Chromium's salt "saltysalt", one
 +  // iteration, 16 bytes: how Chromium makes the key of both prefixes.
 +  static std::array<uint8_t, 16> DeriveKey(std::string_view password);
@@ -47681,10 +47805,10 @@ index 0000000000000000000000000000000000000000..6a6ea58140f057df37db9c1be4b80a2c
 +#endif  // COMPONENTS_USER_DATA_IMPORTER_CHROMIUM_FAMILY_PASSWORD_DECRYPTOR_LINUX_H_
 diff --git a/components/user_data_importer/chromium_family/password_decryptor_linux_unittest.cc b/components/user_data_importer/chromium_family/password_decryptor_linux_unittest.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..0637a700a68e9d964f324024e8a05b44209cccbf
+index 0000000000000000000000000000000000000000..1e70a775df0411380b0aefdcc604f6df5206257e
 --- /dev/null
 +++ b/components/user_data_importer/chromium_family/password_decryptor_linux_unittest.cc
-@@ -0,0 +1,104 @@
+@@ -0,0 +1,118 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -47785,6 +47909,20 @@ index 0000000000000000000000000000000000000000..0637a700a68e9d964f324024e8a05b44
 +  EXPECT_EQ(PasswordKey::ApplicationNamesFor(
 +                base::FilePath("/home/a/.config/thorium")),
 +            (Names{"chromium", "chrome"}));
++}
++
++TEST(ThoronPasswordDecryptorLinuxTest, KWalletKeepsTheSecretInChromiumsFolder) {
++  using Entries = std::vector<std::pair<std::string, std::string>>;
++  EXPECT_EQ(PasswordKey::KWalletEntriesFor(PasswordKey::ApplicationNamesFor(
++                base::FilePath("/home/a/.config/thorium"))),
++            (Entries{{"Chromium Keys", "Chromium Safe Storage"},
++                     {"Chrome Keys", "Chrome Safe Storage"}}));
++  EXPECT_EQ(PasswordKey::KWalletEntriesFor(PasswordKey::ApplicationNamesFor(
++                base::FilePath("/home/a/.config/google-chrome"))),
++            (Entries{{"Chrome Keys", "Chrome Safe Storage"},
++                     {"Chromium Keys", "Chromium Safe Storage"}}));
++  // Names Thoron has not seen a browser use in KWallet are not guessed.
++  EXPECT_EQ(PasswordKey::KWalletEntriesFor({"brave", "vivaldi"}), Entries{});
 +}
 +
 +}  // namespace

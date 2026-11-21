@@ -54,5 +54,20 @@ class ProblemsTest(unittest.TestCase):
         self.assertTrue(got["untouched"])
 
 
+class KdeTest(unittest.TestCase):
+    """--desktop kde runs this check's own probe in the KDE session of linux_keyring_check.py."""
+
+    def test_the_kde_session_runs_the_check_it_is_given(self):
+        from tools.qa import linux_keyring_check as keyring
+        self.assertIn('CHECK="${5:-linux_keyring_check.py}"', keyring.KDE_SCRIPT)
+        self.assertIn('"$TOOLS/qa/$CHECK" probe', keyring.KDE_SESSION)
+        self.assertIn("openssl", keyring.KDE_SCRIPT)          # this probe writes a "v10" value with it
+
+    def test_the_probe_takes_the_store(self):
+        import inspect
+        self.assertIn("store", inspect.signature(c.probe).parameters)
+        self.assertIn("desktop", inspect.signature(c.run_machine).parameters)
+
+
 if __name__ == "__main__":
     unittest.main()

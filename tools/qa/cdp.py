@@ -99,15 +99,15 @@ class WebSocket:
         self.sock.close()
 
 
-def inspect(browser: Path, work: Path, page: str, settle: float = 4, width: int = 1280, height: int = 1600) -> dict:
+def inspect(browser: Path, work: Path, page: str, settle: float = 4, width: int = 1280, height: int = 1600,
+            start_wait: float = 30) -> dict:
     work.mkdir(parents=True, exist_ok=True)
     profile = Path(tempfile.mkdtemp(prefix="cdp-", dir=work))
     proc = _launch(browser, profile, ["about:blank", f"--window-size={width},{height}"], devtools=True)
     try:
         port_file = profile / "DevToolsActivePort"
-        for _ in range(150):
-            if port_file.is_file():
-                break
+        end = time.monotonic() + start_wait
+        while time.monotonic() < end and not (port_file.is_file() and port_file.read_text(encoding="utf-8").strip()):
             time.sleep(0.2)
         port = int(port_file.read_text(encoding="utf-8").splitlines()[0])
         req = urllib.request.Request(f"http://127.0.0.1:{port}/json/new?{page}", method="PUT")
@@ -136,11 +136,13 @@ def main(argv: list[str]) -> int:
     p.add_argument("--page", required=True)
     p.add_argument("--png", type=Path, required=True)
     p.add_argument("--text", type=Path)
+    p.add_argument("--start-wait", type=float, default=30, help="seconds to wait for the browser to start")
+    p.add_argument("--settle", type=float, default=4, help="seconds the page gets before it is read")
     a = p.parse_args(argv)
     if not a.page.startswith(("chrome://", "about:")):
         print("cdp: only chrome:// and about: pages are checked", file=sys.stderr)
         return 2
-    result = inspect(a.browser, a.work, a.page)
+    result = inspect(a.browser, a.work, a.page, settle=a.settle, start_wait=a.start_wait)
     if result["png"]:
         a.png.write_bytes(result["png"])
     else:

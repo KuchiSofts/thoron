@@ -20,7 +20,9 @@ The results come back on the VM's second serial port. Nothing of this PC goes in
 the check's own tools.
 
     py -3 -I tools/qa/linux_apparmor_vm_check.py --deb <thoron-browser_*.deb> --archive <portable .tar.xz>
-        --root <test machines folder> --work <scratch> [--machine thoron-test-2404]
+        --root <test machines folder> --work <scratch> [--machine thoron-test-2404] [--evidence <file>]
+With --evidence the file `release.py prepare --sandbox-evidence` asks of a Linux release (ROADMAP S.5) is written:
+the build's version, the kernel's AppArmor state and the chrome://sandbox texts; it stays with the build's records.
 Exit status 0 only when every step passes.
 """
 from __future__ import annotations
@@ -172,6 +174,18 @@ def problems(found: dict[str, str]) -> dict[str, list[str]]:
     return out
 
 
+def evidence_text(found: dict[str, str], version: str, failed: int) -> str:
+    """The release's sandbox evidence (release.py sandbox_evidence_problems, platform linux)."""
+    def part(title: str, name: str, lines: int = 40) -> str:
+        return f"== {title}\n" + "\n".join(found.get(name, "").splitlines()[:lines]) + "\n"
+    return (f"Sandbox on (linux/{version}) under AppArmor, Ubuntu's own kernel in a VM\n"
+            + part("the system", "system.txt")
+            + part("the .deb's chrome://sandbox", "sandbox-deb.txt")
+            + part("the portable copy without a profile (it must refuse)", "portable-stderr.txt", 4)
+            + part("the portable copy with the README's profile: chrome://sandbox", "sandbox-readme.txt")
+            + f"LINUX SANDBOX CHECK: {'PASSED' if not failed else f'FAILED ({failed} problem(s))'}\n")
+
+
 def run_machine(name: str, root: Path, work: Path, deb: Path, archive: Path) -> tuple[dict[str, list[str]], dict]:
     from tools.qa import linux_package_check as lp
     from tools.qa import wsl_test_vm as vm
@@ -211,6 +225,7 @@ def main(argv: list[str]) -> int:
     p.add_argument("--root", type=Path, required=True)
     p.add_argument("--work", type=Path, required=True)
     p.add_argument("--machine", default="thoron-test-2404")
+    p.add_argument("--evidence", type=Path, help="write the release's sandbox evidence (ROADMAP S.5) here")
     a = p.parse_args(argv)
     issues_by_step, found = run_machine(a.machine, a.root, a.work.resolve(), a.deb.resolve(), a.archive.resolve())
     failed = 0
@@ -222,6 +237,11 @@ def main(argv: list[str]) -> int:
     if found.get("system.txt"):
         print("VM: " + " ".join(found["system.txt"].split()))
     print(f"LINUX APPARMOR VM CHECK: {'PASSED' if not failed else f'FAILED ({failed} problem(s))'}")
+    if a.evidence and found:
+        from tools.release import apt_repo
+        version = dict(apt_repo.control_of(a.deb.read_bytes()))["Version"].split("-")[0].split(":")[-1]
+        a.evidence.write_text(evidence_text(found, version, failed), encoding="utf-8")
+        print(f"evidence: {a.evidence}")
     return 1 if failed else 0
 
 

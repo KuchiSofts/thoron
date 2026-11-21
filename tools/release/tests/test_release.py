@@ -1904,6 +1904,22 @@ class SandboxGateTests(unittest.TestCase):
                          ["the sandbox check did not pass"])
         self.assertEqual(len(self.problems("Started with --no-sandbox (Chrome/1.2.3.4)")), 2)
 
+    def test_linux_needs_the_apparmor_checks_evidence(self):
+        linux = (f"Sandbox on (linux/{BUILD}) under AppArmor\nrestrict=1\n== the .deb's chrome://sandbox\n"
+                 "You are adequately sandboxed.\nLINUX SANDBOX CHECK: PASSED\n")
+        with tempfile.TemporaryDirectory() as d:
+            evidence = Path(d) / "sandbox.txt"
+            evidence.write_text(linux, encoding="utf-8")
+            self.assertEqual(rel.sandbox_evidence_problems(evidence, BUILD, "linux"), [])
+            # Windows evidence is no Linux evidence, and the other way round
+            self.assertEqual(len(rel.sandbox_evidence_problems(evidence, BUILD, "win")), 2)
+            evidence.write_text(SANDBOX_EVIDENCE, encoding="utf-8")
+            self.assertEqual(len(rel.sandbox_evidence_problems(evidence, BUILD, "linux")), 2)
+            evidence.write_text(linux.replace("PASSED", "FAILED (1 problem(s))"), encoding="utf-8")
+            self.assertEqual(rel.sandbox_evidence_problems(evidence, BUILD, "linux"),
+                             ["the sandbox check did not pass"])
+        self.assertIn("linux_apparmor_vm_check.py", rel.sandbox_evidence_problems(None, BUILD, "linux")[0])
+
 
 class SoakGateTests(unittest.TestCase):
     """ROADMAP Q.4: a release needs a passing 8-hour soak test of its own build."""

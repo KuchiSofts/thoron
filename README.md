@@ -78,7 +78,7 @@ changed in each version is in the [changelog](CHANGELOG.md), one line per change
 Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always current.
 
 <!-- roadmap:start -->
-**Overall:** `████████████████░░░░` 166 of 213 tasks done (78%) · roadmap updated 2026-11-19
+**Overall:** `████████████████░░░░` 167 of 213 tasks done (78%) · roadmap updated 2026-11-19
 
 | Area | Progress | Done | Status |
 |---|---|---|---|
@@ -89,7 +89,7 @@ Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always curre
 | [P3 - Updater v1 + Import](ROADMAP.md#p3---updater-v1--import) | `██████████████░░░░░░` | 16/23 | 🔄 In progress |
 | [P4 - Updater v2](ROADMAP.md#p4---updater-v2) | `████████████████░░░░` | 9/11 | 🔄 In progress |
 | [P5 - Quality](ROADMAP.md#p5---quality) | `██████████████████░░` | 73/82 | 🔄 In progress |
-| [Security (S)](ROADMAP.md#security-s) | `██████████████░░░░░░` | 11/16 | 🔄 In progress |
+| [Security (S)](ROADMAP.md#security-s) | `███████████████░░░░░` | 12/16 | 🔄 In progress |
 | [Quality & performance (Q)](ROADMAP.md#quality--performance-q) | `██████████████░░░░░░` | 5/7 | 🔄 In progress |
 | [Docs (D)](ROADMAP.md#docs-d) | `████████████░░░░░░░░` | 6/10 | 🔄 In progress |
 | [Legal & licensing (L)](ROADMAP.md#legal--licensing-l) | `████████░░░░░░░░░░░░` | 3/8 | 🔄 In progress |
@@ -302,7 +302,7 @@ Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always curre
 - [ ] **S.2** Threat model for the updater, import and portable encryption (`docs/security/THREAT_MODEL.md`)
 - [x] **S.3** Remove `'unsafe-inline'` from the Thorium authors WebUI page CSP
 - [x] **S.4** Review every flag that weakens security (for example `allow-insecure-downloads`, `disable-web-security`, `disable-encryption`); each must stay opt-in and carry a warning
-- [ ] **S.5** Sandbox verification every release (Windows sandbox; Linux AppArmor and user namespaces)
+- [x] **S.5** Sandbox verification every release (Windows sandbox; Linux AppArmor and user namespaces)
 - [x] **S.6** Enable GitHub Issues and private vulnerability reporting for the repository, before the docs that link to them go public (part of P0.11)
 - [x] **S.7** Every patch carries `Origin:`, `Author:` and `License:` headers (with L.1)
 - [ ] **S.8** Authenticode code signing once a certificate exists

@@ -250,6 +250,7 @@ Commands are run from the repository root in the build window of
 | Release configuration | `tools/build/release_args.py check` (also run by `release.py prepare`) | No difference from Thoron's choices, no Google API keys in `args.gn` |
 | Version | `tools/release/version.py check` (also run by `release.py prepare`) | Higher than the last release |
 | Sandbox (ROADMAP S.5) | `tools/qa/sandbox_check.py --evidence <file>`, given to `release.py prepare --sandbox-evidence` | Every renderer, the GPU process and each utility process that declares a sandbox run sandboxed as Windows itself reports it, `chrome://sandbox` and `chrome://gpu` agree, and the control run with `--no-sandbox` is caught; the evidence is of this build. It stays with the build's records and is not published |
+| Sandbox on Linux (ROADMAP S.5) | `tools/qa/linux_apparmor_vm_check.py --evidence <file>`, given to `release.py prepare --sandbox-evidence` for a Linux release | On Ubuntu's own kernel with AppArmor (its cloud image in a VM): the `.deb`'s `chrome://sandbox` reads "You are adequately sandboxed", the portable copy without a profile refuses to run without its sandbox, and with the README's profile it is sandboxed; the evidence is of this build. It stays with the build's records |
 | The product's name, no build for tests | `release.py prepare` | The English strings name Thoron and none of the About page's lines name Chromium; the browser does not trust the updater's test key |
 | Thoron version | `release.py prepare` (the next one: `tools/release/version.py next`) | The next version after the newest release tag; `0.1.1` when there is none |
 | Source and licences (ROADMAP **L.2**) | `release.py prepare` and `publish` | The build record names the source tag, its commit and the Chromium tag; the licence bundle holds the GPL text |
@@ -331,7 +332,7 @@ and the cause becomes a roadmap task.
 [ ] The release folder holds the installer, the portable .zip, BUILDINFO and the licence bundle
 [ ] SHA256SUMS signed and the signature verified
 [ ] update.json signed (critical for class A and E) and verified with manifest.py verify
-[ ] Linux: linux_package_check.py and linux_apparmor_vm_check.py: PASSED (chrome://sandbox kept as evidence)
+[ ] Linux: linux_package_check.py PASSED; linux_apparmor_vm_check.py --evidence PASSED, given to prepare --sandbox-evidence
 [ ] Linux: apt_repo.py build from the release's .deb files; its files ready for the release `apt` (docs/release/APT.md)
 [ ] release.py publish --version <Thoron version>: draft created
 [ ] The owner has read and published the draft

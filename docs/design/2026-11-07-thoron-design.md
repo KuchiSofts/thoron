@@ -262,6 +262,9 @@ Linux has three install types, each with one updater (never both):
 **1. System install (`.deb`)**
 - Updated **only through our signed APT repository**. It is static, hosted on GitHub Pages, and has a
   signed `InRelease` file.
+  - As built (ROADMAP P2.10, 2026-11-21): the packages are too large for Pages (over 100 MB each), so it is a
+    flat repository in a release of its own (tag `apt`), its signed index beside the packages, with a
+    `Valid-Until`; the SSE4.2 build is the package `thoron-browser-sse4` (`docs/release/APT.md`).
   - Upstream's APT repository is unsigned (issues #1164, #1049). Ours never is.
 - `apt` owns these files. Our updater never modifies dpkg-managed files.
 - Downloads are full packages. Delta support via `debdelta` is a later optional improvement.

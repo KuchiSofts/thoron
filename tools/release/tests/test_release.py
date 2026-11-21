@@ -178,6 +178,17 @@ class AssembleTests(unittest.TestCase):
         self.assertIn("thoron-158.0.8127.3000-linux-x64-avx2-portable.tar.xz", sums)
         self.assertFalse([p for p in self.f.dist.parent.iterdir() if p.name.startswith("linux-portable-")])
 
+    def test_the_sse4_release_deb_is_a_package_of_its_own(self):
+        # ROADMAP P2.10: as in the APT repository, so a .deb installed by hand never upgrades into the AVX2 build
+        from tools.release import apt_repo
+        self.linux_out()
+        files = rel.assemble(self.f.out, self.f.dist, "158.0.8127.3000", "linux-x64-sse4", self.f.buildinfo)
+        made = next(p for p in files if p.name.endswith(".deb"))
+        fields = dict(apt_repo.control_of(made.read_bytes()))
+        self.assertEqual(fields["Package"], "thoron-browser-sse4")
+        self.assertIn("thoron-browser", fields["Conflicts"])
+        self.assertIn(made.name, (self.f.dist / "SHA256SUMS").read_text(encoding="utf-8"))
+
     def test_a_deb_of_another_version_or_no_updater_is_refused(self):
         self.linux_out(version="158.0.8127.2900")
         with self.assertRaises(rel.ReleaseError):

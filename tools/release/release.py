@@ -98,6 +98,7 @@ from tools.legal import patch_licenses  # noqa: E402
 from tools.legal import unlicensed_patches  # noqa: E402
 from tools.qa import perf_gate  # noqa: E402
 from tools.release import adblock_resources, changelog, delta, package_audit, pe_check, portable  # noqa: E402
+from tools.release import apt_repo  # noqa: E402
 from tools.release import portable_linux  # noqa: E402
 from tools.release import version as ver  # noqa: E402
 from tools.update import manifest as mf  # noqa: E402
@@ -865,7 +866,12 @@ def assemble(out: Path, dist: Path, version: str, variant: str, buildinfo: Path,
     files = []
     if installer:
         target = dist / installer_name(version, variant)
-        shutil.copy2(installer, target)
+        if platform == "linux":
+            # the package named for its variant (thoron-browser-sse4 for the SSE4.2 build), as the APT repository
+            # has it, so that a .deb downloaded by hand never upgrades into the other x64 build (ROADMAP P2.10)
+            target.write_bytes(apt_repo.variant_deb(installer.read_bytes(), variant))
+        else:
+            shutil.copy2(installer, target)
         files.append(target)
     if installer and platform == "linux":
         files.append(add_linux_portable(installer, dist, version, variant, updater or out / LINUX_UPDATER))

@@ -331,6 +331,7 @@ and the cause becomes a roadmap task.
 [ ] The release folder holds the installer, the portable .zip, BUILDINFO and the licence bundle
 [ ] SHA256SUMS signed and the signature verified
 [ ] update.json signed (critical for class A and E) and verified with manifest.py verify
+[ ] Linux: apt_repo.py build from the release's .deb files; its files ready for the release `apt` (docs/release/APT.md)
 [ ] release.py publish --version <Thoron version>: draft created
 [ ] The owner has read and published the draft
 [ ] Wiki published; advisory published (class E, F); issue closed

@@ -7,6 +7,7 @@ Explanations live in the design docs under `docs/design/`.
 ## [Unreleased]
 
 ### Added
+- **Linux:** Thoron's own signed APT repository for the `.deb` installs, made by `tools/release/apt_repo.py`: apt checks its index against Thoron's key alone (`Signed-By`), refuses a changed or expired index, and the SSE4.2 build is the package `thoron-browser-sse4`, so an update never swaps it for the AVX2 build. It goes live with the first release, once the signing key exists.
 - **Linux:** the portable folder can install Thoron for the current user only (`install-for-this-user`), with a menu entry and a daily look for updates while Thoron is closed, without administrator rights; `--remove` takes it away and keeps the profile.
 - **Linux SSE4:** Thoron for x64 processors without AVX on Linux too, as a `.deb` and a portable `.tar.xz`, checked on an emulated processor without AVX.
 - **Linux ARM64:** Thoron for 64-bit ARM Linux as a `.deb` and a portable `.tar.xz`, built on an x64 machine and checked under emulation (not yet on an ARM64 PC).

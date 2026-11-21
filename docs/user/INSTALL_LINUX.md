@@ -8,7 +8,7 @@ Thoron for Linux x64 (Ubuntu 24.04 and newer, and other Debian-based systems) co
   the folder.
 
 **There is no public release yet.** Until the first one, these packages exist only for people who build
-Thoron themselves ([build guide](../build/LINUX.md)). ARM64 follows later (ROADMAP P2b.2).
+Thoron themselves ([build guide](../build/LINUX.md)).
 
 ## 1. Which package fits your processor
 
@@ -18,6 +18,7 @@ Each package is made for one kind of processor, named in its file name:
 |---|---|
 | `AVX2` (`linux-x64-avx2`) | Most x64 processors from 2013 on |
 | `SSE4` (`linux-x64-sse4`) | Older x64 processors |
+| `arm64` (`linux-arm64-armv8`) | 64-bit ARM (checked under emulation so far, not yet on an ARM64 PC) |
 
 To see whether yours has AVX2, run `grep -m1 -o avx2 /proc/cpuinfo`: it prints `avx2` when it has. The
 portable launcher checks this too and starts nothing on a processor its package cannot run.
@@ -25,8 +26,11 @@ portable launcher checks this too and starts nothing on a processor its package 
 ## 2. The `.deb` package
 
 ```bash
-sudo apt install ./thoron-browser_<version>_AVX2.deb
+sudo apt install ./thoron-<version>-linux-x64-avx2.deb
 ```
+
+The SSE4 build is the package `thoron-browser-sse4` (the AVX2 build and the ARM64 one are `thoron-browser`).
+The two x64 packages exclude each other, so an update never swaps one for the other.
 
 - The program goes to `/opt/kuchisofts/thoron`; start it from the menu (**Thoron**) or with
   `thoron-browser`.
@@ -40,8 +44,31 @@ sudo apt install ./thoron-browser_<version>_AVX2.deb
 - Saved passwords use your desktop's keyring (GNOME's, under the name `Chromium Safe Storage`, the same as
   Thorium's), so a profile brought over from Thorium keeps its passwords readable.
 
-**A newer version:** install the newer `.deb` the same way. Updates through apt from Thoron's own signed
-repository come later (ROADMAP P2.10).
+**A newer version:** install the newer `.deb` the same way, or let apt bring it from Thoron's signed
+repository (section 2a).
+
+### 2a. Updates through apt
+
+Thoron's APT repository is signed with Thoron's own key, and apt trusts that key for this repository only
+([how it is made](../release/APT.md)). **It goes live with the first release**, once the owner's signing key
+exists (ROADMAP P2.10, P2.11); until then these steps have nothing to fetch.
+
+```bash
+curl -fsSLo /tmp/thoron-archive-keyring.gpg https://github.com/KuchiSofts/thoron/releases/download/apt/thoron-archive-keyring.gpg
+gpg --show-keys /tmp/thoron-archive-keyring.gpg   # its fingerprint must be the one in Thoron's README
+sudo install -m 0644 /tmp/thoron-archive-keyring.gpg /usr/share/keyrings/thoron-archive-keyring.gpg
+sudo tee /etc/apt/sources.list.d/thoron.sources > /dev/null <<'EOF'
+Types: deb
+URIs: https://github.com/KuchiSofts/thoron/releases/download/
+Suites: apt/
+Signed-By: /usr/share/keyrings/thoron-archive-keyring.gpg
+EOF
+sudo apt update
+sudo apt install thoron-browser        # or thoron-browser-sse4 on an x64 processor without AVX2
+```
+
+apt then refuses an index that is not signed by that key, one that was changed, and one past its expiry
+date, so an old index cannot be served again to hold back an update.
 
 **Remove it:** `sudo apt remove thoron-browser`. Your profile stays in `~/.config/thoron`; delete that
 folder yourself only if you want your bookmarks, passwords and history gone for good.

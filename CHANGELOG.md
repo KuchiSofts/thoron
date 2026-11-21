@@ -7,6 +7,7 @@ Explanations live in the design docs under `docs/design/`.
 ## [Unreleased]
 
 ### Added
+- **Import on Linux:** Settings' import of Chromium-family browsers works on Linux too: Thorium, Chrome, Edge, Brave, Vivaldi, Opera and Chromium in `~/.config`, with bookmarks, history, saved passwords and cookies (encrypted with Chromium's fixed key or the key the browser keeps in the desktop's keyring, which is only read), search engines, form entries, the home page and startup pages, extensions and open tabs.
 - **Portable:** a portable copy can lock its saved passwords and sign-ins with a passphrase on `chrome://thoron-portable`: they open on any PC once it is typed into Thoron's own window at start, with a recovery key to write down and an optional "Remember this PC". Nothing is encrypted again, and the lock can be removed. Windows only for now.
 - **Portable:** `tools/migrate/adopt_portable.py` takes over an upstream Thorium portable folder, which keeps its passwords and cookies unprotected, into a Thoron portable copy: it copies and checks every file, leaves the original as it was, protects the key at once and checks that every saved password and cookie still opens; then lock the copy with a passphrase.
 - **Mail:** Thoron M-Notifier reads Proton Mail through Proton Mail Bridge on your computer. A Proton address fills in Bridge's server and port; Bridge's own certificate is trusted by its fingerprint, taken when you add the mailbox, and a different one later is shown instead of trusted.

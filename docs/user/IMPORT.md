@@ -31,8 +31,9 @@ export (section 4). For cookies there is no such way, so sign in to your sites a
 2. In Thoron open **Settings**, then **Import bookmarks and settings** (or type
    `chrome://settings/importData` into the address bar). At the first start, the welcome page's
    **Import...** opens the same dialog.
-3. Pick the browser in the list. It names each one found in your own Windows account, with the profile's
-   name when it has several, such as "Brave (Work)". Thoron never lists itself.
+3. Pick the browser in the list. It names each one found in your own account (on Windows in your
+   `AppData`, on Linux in `~/.config`), with the profile's name when it has several, such as
+   "Brave (Work)". Thoron never lists itself.
 4. Leave ticked what you want, and choose **Import**.
 
 If that browser still runs, Thoron asks you to close it, and imports nothing until you have; it never
@@ -42,7 +43,8 @@ What it does: it copies the files it needs (`Bookmarks`, `History`, `Login Data`
 browser's `Local State`, and a database's `-wal` file when the browser did not close cleanly) into a temporary
 folder, checks each database copy with SQLite and leaves out one that is damaged, reads the copies and
 deletes them at the end. The other browser's files are only read.
-The bookmarks go into a folder of their own, "Imported from" and the browser's name. Saved passwords and
+The bookmarks go into a folder of their own, "Imported from" and the browser's name (while Thoron's bookmarks
+bar is still empty they go straight onto it, as Chromium does). Saved passwords and
 cookies (**Cookies and site sign-ins**) come over when they belong to your Windows account; those that
 Chrome locks to itself (app-bound encryption) are left out and never forced. Cookies that end when the
 other browser closes, and expired ones, are left out; a cookie Thoron already has for the same site, name
@@ -69,6 +71,8 @@ only such pages is left out, and so are app and pop-up windows. Pages load fresh
 what you had typed into a form, where you had scrolled to and a page that came from sending a form stay
 behind. At most 500 tabs in 50 windows come over. For Thorium's whole profile, or with the browsers
 closed, sections 2 and 3 bring the tabs too.
+
+**On Linux** the same import works with the browsers in `~/.config` (Thorium, Chrome, Edge, Brave, Vivaldi, Opera, Chromium). Saved passwords and cookies there are encrypted either with Chromium's fixed key (a browser without a desktop keyring, or started with `--password-store=basic`) or with a key the browser keeps in your desktop's keyring (GNOME's keyring and others that offer the Secret Service): Thoron reads that key from the keyring, as the browser itself does, while your keyring is unlocked. It only reads it: it never adds, changes or unlocks anything there, and a locked keyring is left alone (those passwords are then counted as not readable in the report). KDE's KWallet is not read yet. A browser still runs while its `SingletonLock` names a running process on this computer.
 
 **The report.** Each import writes `Thoron import report.json` into the Thoron profile's folder (for an
 installed Thoron, `%LOCALAPPDATA%\Thoron\User Data\Default`), replacing the one before: when, from which
@@ -292,5 +296,4 @@ lists, own filters, trusted sites and switches with the file's. Thoron's own phi
 | What | Stage |
 |---|---|
 | Open tabs and tab groups in Settings' own import | P3.22 |
-| The import on Linux (Settings) | P3.14 |
 | Linux: passwords imported from Thorium readable | P3.16 |

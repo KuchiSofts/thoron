@@ -97,7 +97,75 @@ mkdir -p -- "$here/User Data" || { echo "Thoron: cannot make the profile folder 
 # folder; this keeps them in the package's own.
 BREAKPAD_DUMP_LOCATION="$here/User Data/Crash Reports"
 export BREAKPAD_DUMP_LOCATION
-exec "$program" --user-data-dir="$here/User Data" "$@"
+# a copy locked with a passphrase (ROADMAP P4.9): asked for here and handed to the browser on its input, never on its
+# command line. The browser stops with 81 for a passphrase that does not open the copy (asked again), 82 when the
+# copy cannot be unlocked (said on stderr) and 83 when it was started without what was asked here.
+desktop() { [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ] && command -v "$1" > /dev/null 2>&1; }
+say() {
+  echo "Thoron: $1" >&2
+  if desktop zenity; then zenity --error --title=Thoron --text="$1" 2> /dev/null
+  elif desktop kdialog; then kdialog --title Thoron --error "$1" 2> /dev/null
+  fi
+}
+data="$here/User Data"
+# a second start while this copy is open goes to the open browser, which needs no passphrase
+lock=$(readlink -- "$data/SingletonLock" 2>/dev/null)
+if [ -n "$lock" ] && [ "${lock%-*}" = "$(uname -n)" ] && kill -0 "${lock##*-}" 2>/dev/null; then
+  exec "$program" --user-data-dir="$data" "$@"
+fi
+if [ ! -f "$data/Thoron Portable Key" ]; then
+  if grep -q '"thoron_portable":{[^}]*"locked":true' "$data/Local State" 2>/dev/null; then
+    text="This copy was locked with a passphrase, and its key file \"Thoron Portable Key\" is missing. Put it back from a backup of this copy, or start Thoron without its saved passwords and sign-ins."
+    if desktop zenity; then
+      zenity --question --title=Thoron --text="$text" --ok-label="Start without them" --cancel-label=Quit 2> /dev/null || exit 0
+    elif desktop kdialog; then
+      kdialog --title Thoron --yesno "$text" --yes-label "Start without them" --no-label Quit 2> /dev/null || exit 0
+    else
+      say "$text Start it with --thoron-portable-start-without-key to do without them."
+      exit 82
+    fi
+    exec "$program" --user-data-dir="$data" --thoron-portable-start-without-key "$@"
+  fi
+  exec "$program" --user-data-dir="$data" "$@"
+fi
+ask() {
+  prompt="This copy of Thoron is locked. Type its passphrase, or its recovery key:"
+  if desktop zenity; then
+    zenity --entry --hide-text --title=Thoron --text="$prompt" 2> /dev/null
+  elif desktop kdialog; then
+    kdialog --title Thoron --password "$prompt" 2> /dev/null
+  elif [ -t 0 ]; then
+    printf '%s ' "$prompt" >&2
+    stty -echo 2> /dev/null; IFS= read -r typed; stty echo 2> /dev/null; printf '\n' >&2
+    printf '%s' "$typed"
+  else
+    echo "Thoron: this copy is locked; start it from a desktop or a terminal to type its passphrase." >&2
+    return 1
+  fi
+}
+# first without a question: a PC remembered in this user's keyring opens the copy, and 83 means the passphrase is
+# needed
+"$program" --user-data-dir="$data" "$@" < /dev/null
+rc=$?
+tries=0
+while [ "$rc" = 83 ] || [ "$rc" = 81 ]; do
+  if [ "$rc" = 81 ]; then
+    tries=$((tries + 1))
+    echo "Thoron: that passphrase does not open this copy." >&2
+    [ "$tries" -lt 5 ] || { say "that passphrase does not open this copy."; exit 81; }
+  fi
+  secret=$(ask) || exit 0
+  # printf is built into the shell, so what was typed is in no process's command line
+  printf 'passphrase\n%s' "$secret" | "$program" --user-data-dir="$data" --thoron-portable-secret-fd=0 "$@"
+  rc=$?
+  secret=
+done
+if [ "$rc" = 82 ]; then
+  why=$(head -c 2000 -- "$data/Thoron Unlock Problem" 2>/dev/null)
+  rm -f -- "$data/Thoron Unlock Problem"
+  say "${why:-this copy cannot be unlocked.}"
+fi
+exit "$rc"
 """
 
 
@@ -211,6 +279,15 @@ For this user only
 timer, with which Thoron looks for an update once a day while it is closed; no administrator rights are
 needed (but for the sandbox above). That copy keeps its profile in ~/.config/thoron, as the .deb does, and
 `~/.local/share/thoron/install-for-this-user --remove` takes it away again; the profile stays.
+
+A passphrase
+chrome://thoron-portable locks this copy's saved passwords and cookies with a passphrase, with a recovery key
+to write down. From the next start the `thoron` file asks for it (a desktop dialog with zenity or kdialog, or in
+the terminal) and hands it to Thoron on its input, never on its command line; a PC remembered in the desktop's
+keyring ("Remember this PC" on that page) is not asked. The first start after the lock
+encrypts the saved passwords and cookies again with the copy's own key, after a checked copy of each database,
+which is wiped once every value reads back. Keep the file "User Data/Thoron Portable Key" with the copy and in
+its backups: without it and without the passphrase they cannot be opened.
 """
 
 

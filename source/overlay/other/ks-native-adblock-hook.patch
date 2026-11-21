@@ -2133,7 +2133,7 @@ index af9b6f1dc58174281ec64b74c578a3639888ce86..198ab30e882fb2fd51c0b88e79088925
                            /*edge_padding=*/trailing_decorations_edge_padding);
  
 diff --git a/chrome/browser/prefs/browser_prefs.cc b/chrome/browser/prefs/browser_prefs.cc
-index fdd05fad32252be538eef299e830625a6a3c96ba..7ddba1b55f091ce7e85c0bd33e99b75469055221 100644
+index fdd05fad32252be538eef299e830625a6a3c96ba..a4ef0d158913e1aa112fcf40e33c7319448c169d 100644
 --- a/chrome/browser/prefs/browser_prefs.cc
 +++ b/chrome/browser/prefs/browser_prefs.cc
 @@ -3,6 +3,7 @@
@@ -2144,7 +2144,7 @@ index fdd05fad32252be538eef299e830625a6a3c96ba..7ddba1b55f091ce7e85c0bd33e99b754
  
  #include <array>
  #include <optional>
-@@ -1715,6 +1716,11 @@ std::string GetCountry() {
+@@ -1715,6 +1716,16 @@ std::string GetCountry() {
  }
  
  void RegisterLocalState(PrefRegistrySimple* registry) {
@@ -2153,10 +2153,15 @@ index fdd05fad32252be538eef299e830625a6a3c96ba..7ddba1b55f091ce7e85c0bd33e99b754
 +  thoron_update::UpdateClient::RegisterPrefs(registry);
 +  // Thoron (ROADMAP P4.9): this portable copy was locked with a passphrase.
 +  registry->RegisterBooleanPref("thoron_portable.locked", false);
++  // Thoron (ROADMAP P4.9, Linux): a locked copy's values still wait to be
++  // encrypted again with its own key.
++  registry->RegisterBooleanPref("thoron_portable.reencrypt_pending", false);
++  // Thoron (ROADMAP P4.9, Linux): the lock goes at the next start.
++  registry->RegisterBooleanPref("thoron_portable.remove_pending", false);
    // Call outs to individual subsystems that register Local State (browser-wide)
    // prefs en masse. See RegisterProfilePrefs for per-profile prefs. Please
    // keep this list alphabetized.
-@@ -2049,6 +2055,53 @@ void RegisterLocalState(PrefRegistrySimple* registry) {
+@@ -2049,6 +2060,53 @@ void RegisterLocalState(PrefRegistrySimple* registry) {
  void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry,
                            const std::string& locale) {
    TRACE_EVENT0("browser", "chrome::RegisterProfilePrefs");
@@ -2238,10 +2243,10 @@ index 6018748f094dd3a1977e5f85c0ac1da95d590c5e..1ecc08f18b241060af0a98016721ac30
      {language::prefs::kAppLanguagePromptShown,
       {syncable_prefs_ids::kAppLanguagePromptShown, syncer::PREFERENCES,
 diff --git a/chrome/browser/chrome_browser_main.cc b/chrome/browser/chrome_browser_main.cc
-index 9aa6f338c73e80ee878c068db1811230ee3e6339..a35af638ae680828c9cfaf27b37df063ca38537d 100644
+index 9aa6f338c73e80ee878c068db1811230ee3e6339..075eaf6a84514fa262b3e4cf3dcc882c7ab81148 100644
 --- a/chrome/browser/chrome_browser_main.cc
 +++ b/chrome/browser/chrome_browser_main.cc
-@@ -28,6 +28,14 @@
+@@ -28,6 +28,17 @@
  #include "base/trace_event/trace_event.h"
  #include "base/values.h"
  #include "build/branding_buildflags.h"
@@ -2253,10 +2258,13 @@ index 9aa6f338c73e80ee878c068db1811230ee3e6339..a35af638ae680828c9cfaf27b37df063
 +#if BUILDFLAG(IS_WIN) && !BUILDFLAG(GOOGLE_CHROME_BRANDING)
 +#include "chrome/browser/thoron_portable/unlock_win.h"
 +#endif
++#if BUILDFLAG(IS_LINUX) && !BUILDFLAG(GOOGLE_CHROME_BRANDING)
++#include "chrome/browser/thoron_portable/unlock_linux.h"
++#endif
  #include "build/build_config.h"
  #include "chrome/browser/active_use_util.h"
  #include "chrome/browser/after_startup_task_utils.h"
-@@ -1269,6 +1277,14 @@ int ChromeBrowserMainParts::PreCreateThreadsImpl() {
+@@ -1269,6 +1280,22 @@ int ChromeBrowserMainParts::PreCreateThreadsImpl() {
      return CHROME_RESULT_CODE_MISSING_DATA;
    }
  
@@ -2268,10 +2276,18 @@ index 9aa6f338c73e80ee878c068db1811230ee3e6339..a35af638ae680828c9cfaf27b37df063
 +  }
 +#endif
 +
++#if BUILDFLAG(IS_LINUX) && !BUILDFLAG(GOOGLE_CHROME_BRANDING)
++  // Thoron (ROADMAP P4.9): a locked portable copy that could not be unlocked
++  // stops with the code its launcher reads (unlock_linux.h).
++  if (thoron_portable::QuitBeforeStart()) {
++    return thoron_portable::QuitExitCode();
++  }
++#endif
++
  #if !BUILDFLAG(IS_ANDROID)
    MaybeShowInvalidUserDataDirWarningDialog();
  #endif
-@@ -1733,6 +1749,13 @@ void ChromeBrowserMainParts::PostBrowserStart() {
+@@ -1733,6 +1760,13 @@ void ChromeBrowserMainParts::PostBrowserStart() {
    }
  
    browser_process_->browser_policy_connector()->OnBrowserStarted();
@@ -2898,7 +2914,7 @@ index ea4e17cea3c0591eec351d1c8bfe6dc1bec30284..e935c3ab9a9eb268b47383f33ae7edc3
  }
  
 diff --git a/components/os_crypt/async/browser/BUILD.gn b/components/os_crypt/async/browser/BUILD.gn
-index e39729b48373e18b611273d3e74fe0405abf2ace..6b377600d8022a0c0a672066354d7aaf59600c6a 100644
+index e39729b48373e18b611273d3e74fe0405abf2ace..dd50528c8e93ec6d6077a7fb5a9e32bb35be1179 100644
 --- a/components/os_crypt/async/browser/BUILD.gn
 +++ b/components/os_crypt/async/browser/BUILD.gn
 @@ -8,6 +8,8 @@ component("browser") {
@@ -2910,6 +2926,15 @@ index e39729b48373e18b611273d3e74fe0405abf2ace..6b377600d8022a0c0a672066354d7aaf
    ]
  
    public_deps = [
+@@ -98,6 +100,8 @@ if ((is_posix || is_fuchsia) && !is_apple) {
+     sources = [
+       "posix_key_provider.cc",
+       "posix_key_provider.h",
++      "thoron_portable_key_provider.cc",
++      "thoron_portable_key_provider.h",
+     ]
+     deps = [
+       ":key_provider_interface",
 diff --git a/chrome/browser/chrome_browser_main_win.cc b/chrome/browser/chrome_browser_main_win.cc
 index 77844751fad6de3fec9e1103176e29a994d1b24c..d137afb0f9dbf4a8c0566c45107152e10e9b09dc 100644
 --- a/chrome/browser/chrome_browser_main_win.cc
@@ -2939,6 +2964,75 @@ index 77844751fad6de3fec9e1103176e29a994d1b24c..d137afb0f9dbf4a8c0566c45107152e1
    // Initialize the OSCrypt.
    bool os_crypt_init = os_crypt_async::Init(local_state);
    // TODO(crbug.com/574803658): CHECK-exclusion: Convert to a CHECK once we are
+diff --git a/chrome/browser/chrome_browser_main_linux.cc b/chrome/browser/chrome_browser_main_linux.cc
+index 2eba856cf188a8dd5a4b4346b15af9fe3ae1918d..fb08dd553a15b4f6546caeb63a69fa86b5e631a6 100644
+--- a/chrome/browser/chrome_browser_main_linux.cc
++++ b/chrome/browser/chrome_browser_main_linux.cc
+@@ -30,6 +30,9 @@
+ #include "chrome/browser/profiles/profile_attributes_storage.h"
+ #include "chrome/browser/profiles/profile_manager.h"
+ #include "chrome/browser/shell_integration_linux.h"
++#include "base/path_service.h"
++#include "chrome/browser/thoron_portable/unlock_linux.h"
++#include "chrome/common/chrome_paths.h"
+ #include "chrome/browser/ui/ui_features.h"
+ #include "ui/ozone/public/ozone_platform.h"
+ #if BUILDFLAG(USE_DBUS)
+@@ -94,6 +97,20 @@ void ChromeBrowserMainPartsLinux::PostCreateMainMessageLoop() {
+ #endif  // BUILDFLAG(USE_DBUS)
+ #endif  // !BUILDFLAG(IS_CHROMEOS)
+ 
++#if BUILDFLAG(IS_LINUX)
++  // Thoron (ROADMAP P4.9): a portable copy locked with a passphrase is
++  // unlocked here, with what its launcher asked for, before os_crypt's key
++  // providers are made and before any profile opens; a pending encryption
++  // of its values with its own key is finished here too.
++  {
++    base::FilePath thoron_user_data_dir;
++    if (base::PathService::Get(chrome::DIR_USER_DATA, &thoron_user_data_dir)) {
++      thoron_portable::UnlockIfLocked(thoron_user_data_dir,
++                                      g_browser_process->local_state());
++    }
++  }
++#endif  // BUILDFLAG(IS_LINUX)
++
+   ChromeBrowserMainPartsPosix::PostCreateMainMessageLoop();
+ }
+ 
+diff --git a/chrome/browser/browser_process_impl.cc b/chrome/browser/browser_process_impl.cc
+index 3c239c749d67e210eaf75a8255f1f3380b8f1b01..ee70da7fc9523fed492ee3485902b903aaec9d84 100644
+--- a/chrome/browser/browser_process_impl.cc
++++ b/chrome/browser/browser_process_impl.cc
+@@ -285,6 +285,8 @@ void OnLocalStatePrefsLoaded();
+ 
+ #if BUILDFLAG(IS_POSIX) && !BUILDFLAG(IS_MAC)
+ #include "components/os_crypt/async/browser/posix_key_provider.h"
++#include "components/os_crypt/async/browser/thoron_portable_key_provider.h"
++#include "components/os_crypt/async/browser/thoron_profile_key.h"
+ #endif
+ 
+ #if BUILDFLAG(IS_MAC)
+@@ -1683,6 +1685,20 @@ void BrowserProcessImpl::PreMainMessageLoopRun() {
+           password_store, l10n_util::GetStringUTF8(IDS_PRODUCT_NAME), nullptr));
+ #endif  // BUILDFLAG(IS_LINUX)
+ 
++#if BUILDFLAG(IS_LINUX)
++  // Thoron (ROADMAP P4.9): a locked portable copy's own key, unlocked at the
++  // start, comes first: every new value uses it; the others read the rest.
++  if (os_crypt_async::IsThoronProfileLocked()) {
++    if (std::optional<std::vector<uint8_t>> key =
++            os_crypt_async::GetThoronProfileKey()) {
++      providers.emplace_back(
++          /*precedence=*/20u,
++          std::make_unique<os_crypt_async::ThoronPortableKeyProvider>(
++              std::move(*key)));
++    }
++  }
++#endif  // BUILDFLAG(IS_LINUX)
++
+ #if BUILDFLAG(IS_POSIX) && !BUILDFLAG(IS_MAC)
+   // On other POSIX systems, this is the only key provider. On Linux, it is used
+   // as a fallback.
 diff --git a/services/preferences/tracked/device_id_win.cc b/services/preferences/tracked/device_id_win.cc
 index d00feb7f4126425ea86c805669db7000fa205bf6..e1852acffd2a6876b4bc73b6f87ea44d92977fd0 100644
 --- a/services/preferences/tracked/device_id_win.cc
@@ -3234,16 +3328,16 @@ index cf7a62ec94dae10ab939ba6cebb2fd2fbced750f..fbb1f97b751bd3a9f95f02983a191bd3
          if os.environ.get("VERBOSE"):
 diff --git a/chrome/browser/thoron_portable/BUILD.gn b/chrome/browser/thoron_portable/BUILD.gn
 new file mode 100644
-index 0000000000000000000000000000000000000000..b8fae02cb350362238839392fc99ff8b5a6647b2
+index 0000000000000000000000000000000000000000..440edcedaca570591c119ac4548a83b867fe0c41
 --- /dev/null
 +++ b/chrome/browser/thoron_portable/BUILD.gn
-@@ -0,0 +1,23 @@
+@@ -0,0 +1,36 @@
 +# Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +# found in the LICENSE file.
 +
 +# The passphrase of a portable copy in the browser (ROADMAP P4.9): the unlock
-+# window before the browser starts. Windows only for now; elsewhere the target
-+# is empty.
++# before the browser starts (on Windows in Thoron's own window, on Linux with
++# what the copy's launcher asked for). Elsewhere the target is empty.
 +source_set("thoron_portable") {
 +  sources = []
 +  if (is_win) {
@@ -3258,6 +3352,19 @@ index 0000000000000000000000000000000000000000..b8fae02cb350362238839392fc99ff8b
 +      "//components/os_crypt/async/browser",
 +      "//components/prefs",
 +      "//components/thoron_portable_key",
++    ]
++  }
++  if (is_linux) {
++    sources += [
++      "unlock_linux.cc",
++      "unlock_linux.h",
++    ]
++    deps = [
++      "//base",
++      "//components/os_crypt/async/browser",
++      "//components/prefs",
++      "//components/thoron_portable_key",
++      "//components/user_data_importer/chromium_family",
 +    ]
 +  }
 +}
@@ -3585,6 +3692,396 @@ index 0000000000000000000000000000000000000000..1cea786b720e055cb3a73bdda04c5916
 +}  // namespace thoron_portable
 +
 +#endif  // CHROME_BROWSER_THORON_PORTABLE_UNLOCK_DIALOG_WIN_H_
+diff --git a/chrome/browser/thoron_portable/unlock_linux.cc b/chrome/browser/thoron_portable/unlock_linux.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..bbb5587e2b50e0bca049e4e85620fd66582e4f73
+--- /dev/null
++++ b/chrome/browser/thoron_portable/unlock_linux.cc
+@@ -0,0 +1,322 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "chrome/browser/thoron_portable/unlock_linux.h"
++
++#include <fcntl.h>
++#include <unistd.h>
++
++#include <array>
++#include <cstdio>
++#include <memory>
++#include <optional>
++#include <string>
++#include <string_view>
++#include <vector>
++
++#include "base/command_line.h"
++#include "base/files/file_enumerator.h"
++#include "base/files/file_path.h"
++#include "base/files/file_util.h"
++#include "base/no_destructor.h"
++#include "base/posix/eintr_wrapper.h"
++#include "base/strings/string_number_conversions.h"
++#include "base/strings/utf_string_conversions.h"
++#include "components/os_crypt/async/browser/thoron_profile_key.h"
++#include "components/prefs/pref_service.h"
++#include "components/thoron_portable_key/key_file.h"
++#include "components/thoron_portable_key/key_store.h"
++#include "components/thoron_portable_key/local_state_key.h"
++#include "components/thoron_portable_key/os_key_store.h"
++#include "components/thoron_portable_key/recovery_key.h"
++#include "components/thoron_portable_key/reencrypt_linux.h"
++#include "components/thoron_portable_key/secret_bytes.h"
++#include "components/user_data_importer/chromium_family/password_decryptor_linux.h"
++
++namespace thoron_portable {
++
++namespace {
++
++namespace tpk = thoron_portable_key;
++
++bool g_quit = false;
++int g_exit_code = 0;
++base::FilePath* g_user_data_dir = nullptr;
++
++// A secret longer than this is not one a person typed.
++constexpr size_t kMostSecretBytes = 4096;
++
++UnlockResult Quit(int code, std::string_view message) {
++  if (!message.empty()) {
++    fprintf(stderr, "Thoron: %.*s\n", static_cast<int>(message.size()), message.data());
++    // for the launcher's dialog when no terminal shows stderr; it holds no secret
++    if (code == kExitCannotUnlock && g_user_data_dir) {
++      base::WriteFile(g_user_data_dir->Append(kProblemFile), message);
++    }
++  }
++  g_quit = true;
++  g_exit_code = code;
++  return UnlockResult::kQuit;
++}
++
++std::string_view ReadProblemText(const tpk::StoredKeyFile& stored) {
++  if (stored.problem == tpk::StoreProblem::kUnreadable) {
++    return "this copy's key file (\"Thoron Portable Key\" in its User Data folder) cannot be read, so its "
++           "saved passwords and sign-ins stay locked. Check that the drive is not damaged or full, then start "
++           "Thoron again.";
++  }
++  switch (stored.read_problem) {
++    case tpk::ReadProblem::kNewerFormat:
++      return "this copy's key file was written by a newer Thoron. Open this copy with that Thoron or a newer one.";
++    case tpk::ReadProblem::kTooWeak:
++    case tpk::ReadProblem::kTooCostly:
++      return "this copy's key file asks for a passphrase check outside what Thoron allows, so someone may have "
++             "changed it. Put back the file \"Thoron Portable Key\" from a backup of this copy.";
++    default:
++      return "this copy's key file is damaged, so its saved passwords and sign-ins cannot be opened. Put back "
++             "the file \"Thoron Portable Key\" from a backup of this copy. Thoron changed nothing.";
++  }
++}
++
++// What the launcher wrote on the pipe, or nothing.
++std::optional<std::pair<bool, std::string>> ReadSecret() {
++  const base::CommandLine& command = *base::CommandLine::ForCurrentProcess();
++  int fd = -1;
++  if (!base::StringToInt(command.GetSwitchValueASCII(kSecretFdSwitch), &fd) || fd < 0) {
++    return std::nullopt;
++  }
++  std::string text;
++  std::array<char, 512> chunk;
++  while (text.size() <= kMostSecretBytes) {
++    const ssize_t n = HANDLE_EINTR(read(fd, chunk.data(), chunk.size()));
++    if (n <= 0) {
++      break;
++    }
++    text.append(chunk.data(), static_cast<size_t>(n));
++  }
++  if (fd <= STDERR_FILENO) {
++    // the browser's input (the launcher's pipe): /dev/null takes its place, so
++    // the number is never handed to a file the browser opens later
++    const int null_fd = HANDLE_EINTR(open("/dev/null", O_RDONLY | O_CLOEXEC));
++    if (null_fd >= 0) {
++      dup2(null_fd, fd);
++      IGNORE_EINTR(close(null_fd));
++    }
++  } else {
++    IGNORE_EINTR(close(fd));
++  }
++  const size_t newline = text.find('\n');
++  if (text.size() > kMostSecretBytes || newline == std::string::npos) {
++    std::fill(text.begin(), text.end(), '\0');
++    return std::nullopt;
++  }
++  const bool recovery = std::string_view(text).substr(0, newline) == "recovery";
++  std::string secret = text.substr(newline + 1);
++  std::fill(text.begin(), text.end(), '\0');
++  while (!secret.empty() && (secret.back() == '\n' || secret.back() == '\r')) {
++    secret.pop_back();
++  }
++  return std::make_pair(recovery, std::move(secret));
++}
++
++// Every profile folder of the copy: a folder of User Data with Preferences.
++std::vector<base::FilePath> ProfileFolders(const base::FilePath& user_data_dir) {
++  std::vector<base::FilePath> out;
++  base::FileEnumerator folders(user_data_dir, /*recursive=*/false, base::FileEnumerator::DIRECTORIES);
++  for (base::FilePath folder = folders.Next(); !folder.empty(); folder = folders.Next()) {
++    if (base::PathExists(folder.Append(FILE_PATH_LITERAL("Preferences")))) {
++      out.push_back(folder);
++    }
++  }
++  return out;
++}
++
++// Every profile folder's values back under Chromium's own Linux key, for the
++// removal of the lock; true once nothing of the copy's key is left.
++bool ReturnToChromium(const base::FilePath& user_data_dir, const tpk::SecretBytes& key) {
++  user_data_importer::chromium_family::PasswordKey chromium =
++      user_data_importer::chromium_family::PasswordKey::ForUserData(user_data_dir);
++  // the keyring's key where the desktop has one, Chromium's fixed key otherwise
++  const bool keyring = chromium.has_keyring_key();
++  const base::span<const uint8_t, 16> chromium_key = keyring ? chromium.keyring_key() : chromium.fixed_key();
++  bool finished = true;
++  tpk::ReencryptCounts counts;
++  for (const base::FilePath& profile : ProfileFolders(user_data_dir)) {
++    if (tpk::ReturnProfileToChromium(profile, key.span().first<32>(), chromium_key, keyring ? "v11" : "v10",
++                                     &counts) != tpk::ReencryptResult::kDone) {
++      finished = false;
++    }
++  }
++  chromium.Clear();
++  if (!finished || counts.unreadable != 0) {
++    fprintf(stderr,
++            "Thoron: the lock stays for now: %d value(s) are back under this PC's key, %d could not be; Thoron "
++            "tries again at its next start.\n",
++            counts.passwords + counts.cookies, counts.unreadable);
++    return false;
++  }
++  return true;
++}
++
++// The pending encryption of the copy's values with its key (the owner's
++// decision of 2026-11-21): every profile, a checked copy of each database
++// first; it stays pending until no value is left that the old keys still open.
++void FinishReencryption(const base::FilePath& user_data_dir, PrefService* local_state,
++                        const tpk::SecretBytes& key) {
++  if (!local_state || !local_state->GetBoolean(kReencryptPendingPref) || key.span().size() != 32) {
++    return;
++  }
++  user_data_importer::chromium_family::PasswordKey old =
++      user_data_importer::chromium_family::PasswordKey::ForUserData(user_data_dir);
++  auto read_old = [&old](base::span<const uint8_t> value) -> std::optional<std::string> {
++    std::string plain;
++    if (user_data_importer::chromium_family::DecryptPasswordValue(old, value, &plain) !=
++        user_data_importer::chromium_family::DecryptResult::kOk) {
++      return std::nullopt;
++    }
++    return plain;
++  };
++  const base::span<const uint8_t, 32> new_key(key.span().first<32>());
++  bool finished = true;
++  tpk::ReencryptCounts counts;
++  for (const base::FilePath& profile : ProfileFolders(user_data_dir)) {
++    if (tpk::ReencryptProfile(profile, read_old, new_key, &counts) != tpk::ReencryptResult::kDone) {
++      finished = false;
++    }
++  }
++  old.Clear();
++  if (finished && counts.unreadable == 0) {
++    local_state->SetBoolean(kReencryptPendingPref, false);
++    local_state->CommitPendingWrite();
++  } else {
++    fprintf(stderr,
++            "Thoron: %d password(s) and %d cookie(s) are encrypted with this copy's key; %d value(s) could not "
++            "be read with the old keys yet (a locked keyring?), so Thoron tries again at its next start.\n",
++            counts.passwords, counts.cookies, counts.unreadable);
++  }
++}
++
++// The copy opened with `key`: the lock removed when that is pending (every value
++// back under Chromium's key first), or the key given to os_crypt and the
++// pending encryption with it finished.
++UnlockResult Opened(const base::FilePath& user_data_dir, PrefService* local_state, const tpk::SecretBytes& key) {
++  if (local_state && local_state->GetBoolean(kRemovePendingPref) && ReturnToChromium(user_data_dir, key)) {
++    if (tpk::RemoveKeyFile(user_data_dir)) {
++      local_state->SetBoolean(kLockedPref, false);
++      local_state->SetBoolean(kReencryptPendingPref, false);
++      local_state->SetBoolean(kRemovePendingPref, false);
++      local_state->CommitPendingWrite();
++      return UnlockResult::kNotLocked;
++    }
++    fprintf(stderr, "Thoron: the key file could not be removed; the copy stays locked.\n");
++  }
++  os_crypt_async::SetThoronProfileLocked();
++  os_crypt_async::SetThoronProfileKey(key.span());
++  FinishReencryption(user_data_dir, local_state, key);
++  return UnlockResult::kUnlocked;
++}
++
++}  // namespace
++
++UnlockResult UnlockIfLocked(const base::FilePath& user_data_dir, PrefService* local_state) {
++  static base::NoDestructor<base::FilePath> folder(user_data_dir);
++  g_user_data_dir = folder.get();
++  base::DeleteFile(user_data_dir.Append(kProblemFile));
++  if (!tpk::HasKeyFile(user_data_dir)) {
++    if (local_state && local_state->GetBoolean(kLockedPref)) {
++      // The key file is gone: put back from a backup, or start without what it
++      // kept locked, which the launcher asks the person about.
++      if (!base::CommandLine::ForCurrentProcess()->HasSwitch("thoron-portable-start-without-key")) {
++        return Quit(kExitCannotUnlock,
++                    "this copy was locked with a passphrase and its key file \"Thoron Portable Key\" is missing. "
++                    "Put it back from a backup of this copy, or start Thoron without its saved passwords and "
++                    "sign-ins.");
++      }
++      local_state->SetBoolean(kLockedPref, false);
++      local_state->SetBoolean(kReencryptPendingPref, false);
++    }
++    return UnlockResult::kNotLocked;
++  }
++  tpk::StoredKeyFile stored = tpk::ReadKeyFile(user_data_dir);
++  if (stored.problem == tpk::StoreProblem::kNoKeyFile) {
++    return UnlockResult::kNotLocked;
++  }
++  if (!stored.file) {
++    return Quit(kExitCannotUnlock, ReadProblemText(stored));
++  }
++  // A PC remembered in this user's keyring opens the copy without a question
++  // (the launcher's first try gives no passphrase).
++  {
++    std::unique_ptr<tpk::OsKeyStore> store = tpk::CreateOsKeyStore();
++    tpk::OpenProblem remembered = tpk::OpenProblem::kNoLock;
++    if (std::optional<tpk::SecretBytes> key = tpk::OpenOnThisPc(*stored.file, *store, &remembered)) {
++      if (std::optional<std::pair<bool, std::string>> unused = ReadSecret()) {
++        std::fill(unused->second.begin(), unused->second.end(), '\0');
++      }
++      return Opened(user_data_dir, local_state, *key);
++    }
++    if (remembered == tpk::OpenProblem::kChanged) {
++      return Quit(kExitCannotUnlock,
++                  "this copy's key file was changed by someone who could not open it, so Thoron does not trust "
++                  "it. Put back the file \"Thoron Portable Key\" from a backup of this copy.");
++    }
++  }
++  std::optional<std::pair<bool, std::string>> typed = ReadSecret();
++  if (!typed) {
++    return Quit(kExitNeedsSecret,
++                "this copy is locked with a passphrase: start it with its launcher (the file thoron in its "
++                "folder), which asks for it.");
++  }
++  tpk::OpenProblem problem = tpk::OpenProblem::kWrongSecret;
++  std::optional<tpk::SecretBytes> key;
++  if (typed->first) {
++    std::optional<tpk::SecretBytes> recovery = tpk::ParseRecoveryKey(typed->second);
++    if (recovery) {
++      key = tpk::OpenWithRecoveryKey(*stored.file, *recovery, &problem);
++    }
++  } else {
++    // PassphraseFromTyped() wipes what it was given once it has read it.
++    std::u16string as_typed = base::UTF8ToUTF16(typed->second);
++    if (std::optional<tpk::SecretBytes> passphrase = tpk::PassphraseFromTyped(as_typed)) {
++      key = tpk::OpenWithPassphrase(*stored.file, std::move(*passphrase), &problem);
++    }
++    std::fill(as_typed.begin(), as_typed.end(), u'\0');
++    // The launcher has one field: what does not open the copy as a passphrase
++    // may be its recovery key (eight groups of four characters).
++    if (!key && problem != tpk::OpenProblem::kChanged) {
++      if (std::optional<tpk::SecretBytes> recovery = tpk::ParseRecoveryKey(typed->second)) {
++        tpk::OpenProblem recovery_problem = tpk::OpenProblem::kWrongSecret;
++        key = tpk::OpenWithRecoveryKey(*stored.file, *recovery, &recovery_problem);
++        if (!key && recovery_problem == tpk::OpenProblem::kChanged) {
++          problem = recovery_problem;
++        }
++      }
++    }
++  }
++  std::fill(typed->second.begin(), typed->second.end(), '\0');
++  if (!key) {
++    switch (problem) {
++      case tpk::OpenProblem::kChanged:
++        return Quit(kExitCannotUnlock,
++                    "this copy's key file was changed by someone who could not open it, so Thoron does not trust "
++                    "it. Put back the file \"Thoron Portable Key\" from a backup of this copy.");
++      case tpk::OpenProblem::kCannotDerive:
++        return Quit(kExitWrongSecret,
++                    "Thoron could not get the memory it needs to check the passphrase. Close other programs and "
++                    "try again.");
++      default:
++        return Quit(kExitWrongSecret, "");
++    }
++  }
++  return Opened(user_data_dir, local_state, *key);
++}
++
++bool QuitBeforeStart() {
++  return g_quit;
++}
++
++int QuitExitCode() {
++  return g_exit_code;
++}
++
++}  // namespace thoron_portable
+diff --git a/chrome/browser/thoron_portable/unlock_linux.h b/chrome/browser/thoron_portable/unlock_linux.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..0ad2a810f7f3ee72564363e496f9f5ccc4911b69
+--- /dev/null
++++ b/chrome/browser/thoron_portable/unlock_linux.h
+@@ -0,0 +1,56 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef CHROME_BROWSER_THORON_PORTABLE_UNLOCK_LINUX_H_
++#define CHROME_BROWSER_THORON_PORTABLE_UNLOCK_LINUX_H_
++
++class PrefService;
++
++namespace base {
++class FilePath;
++}  // namespace base
++
++// Thoron (ROADMAP P4.9, Linux): a portable copy locked with a passphrase, as on
++// Windows (unlock_win.h), but the copy's launcher asks for the passphrase (a
++// desktop dialog, or the terminal) and hands what was typed to the browser on a
++// pipe; the browser checks it before os_crypt starts. Linux keeps no key of its
++// own per copy, so locking gave the copy a new key, and its saved passwords and
++// cookies are encrypted again with it at the first start after the lock
++// (kReencryptPendingPref; components/thoron_portable_key/reencrypt_linux.h).
++namespace thoron_portable {
++
++// Local State: this copy was locked with a passphrase (as on Windows).
++inline constexpr char kLockedPref[] = "thoron_portable.locked";
++// Local State: the copy's values still wait to be encrypted again with its key.
++inline constexpr char kReencryptPendingPref[] = "thoron_portable.reencrypt_pending";
++// Local State: the lock goes at the next start (chrome://thoron-portable).
++inline constexpr char kRemovePendingPref[] = "thoron_portable.remove_pending";
++// The launcher's pipe: "passphrase\n<what was typed>" or "recovery\n<...>".
++inline constexpr char kSecretFdSwitch[] = "thoron-portable-secret-fd";
++// In User Data, why the copy cannot be unlocked, for the launcher to show.
++inline constexpr char kProblemFile[] = "Thoron Unlock Problem";
++
++// The exit codes the launcher reads (above Chromium's own, which end at 43:
++// chrome/common/chrome_result_codes.h).
++inline constexpr int kExitWrongSecret = 81;   // ask again
++inline constexpr int kExitCannotUnlock = 82;  // said on stderr; do not ask again
++inline constexpr int kExitNeedsSecret = 83;   // started without the launcher's pipe
++
++enum class UnlockResult {
++  kNotLocked,  // no key file: the copy keeps Chromium's own keys
++  kUnlocked,   // the profile key is given to os_crypt
++  kQuit,       // the browser stops with QuitExitCode()
++};
++
++// Called before os_crypt's key providers are made
++// (ChromeBrowserMainPartsLinux::PostCreateMainMessageLoop).
++UnlockResult UnlockIfLocked(const base::FilePath& user_data_dir, PrefService* local_state);
++
++// True after UnlockIfLocked() gave kQuit, and the exit code the browser stops
++// with then.
++bool QuitBeforeStart();
++int QuitExitCode();
++
++}  // namespace thoron_portable
++
++#endif  // CHROME_BROWSER_THORON_PORTABLE_UNLOCK_LINUX_H_
 diff --git a/chrome/browser/thoron_portable/unlock_win.cc b/chrome/browser/thoron_portable/unlock_win.cc
 new file mode 100644
 index 0000000000000000000000000000000000000000..68a73b6f75a783b6afaa481a5f7066049909686a
@@ -11750,10 +12247,10 @@ index 0000000000000000000000000000000000000000..4799c6d350ece531f3e38ba1be3ceb20
 +#endif  // CHROME_BROWSER_UI_WEBUI_THORON_MAIL_UI_H_
 diff --git a/chrome/browser/ui/webui/thoron_portable_ui.cc b/chrome/browser/ui/webui/thoron_portable_ui.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..f08520330ec20a441e22fb5de7c3a48c54c36ddb
+index 0000000000000000000000000000000000000000..68972175fa48eecacdacd6b04953ecc273a34958
 --- /dev/null
 +++ b/chrome/browser/ui/webui/thoron_portable_ui.cc
-@@ -0,0 +1,771 @@
+@@ -0,0 +1,872 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -11765,11 +12262,13 @@ index 0000000000000000000000000000000000000000..f08520330ec20a441e22fb5de7c3a48c
 +#include <utility>
 +
 +#include "base/files/file_path.h"
++#include "base/files/file_util.h"
 +#include "base/functional/bind.h"
 +#include "base/memory/ref_counted_memory.h"
 +#include "base/memory/weak_ptr.h"
 +#include "base/path_service.h"
 +#include "base/strings/string_util.h"
++#include "base/task/sequenced_task_runner.h"
 +#include "base/strings/utf_string_conversions.h"
 +#include "base/task/thread_pool.h"
 +#include "base/values.h"
@@ -11788,6 +12287,7 @@ index 0000000000000000000000000000000000000000..f08520330ec20a441e22fb5de7c3a48c
 +#include "components/thoron_portable_key/secret_bytes.h"
 +#include "content/public/browser/url_data_source.h"
 +#include "content/public/browser/web_ui.h"
++#include "crypto/random.h"
 +#include "content/public/browser/web_ui_message_handler.h"
 +#include "content/public/common/url_constants.h"
 +
@@ -11819,10 +12319,23 @@ index 0000000000000000000000000000000000000000..f08520330ec20a441e22fb5de7c3a48c
 +    "This copy's key file was changed since Thoron opened it, so Thoron "
 +    "leaves it alone. Restart Thoron.";
 +
++std::string ForThisSystem(std::string text);
++
 +bool IsPortableCopy() {
 +#if BUILDFLAG(IS_WIN)
 +  return thoron_update_win::ConfigForThisCopy().kind ==
 +         thoron_update::Kind::kPortable;
++#elif BUILDFLAG(IS_LINUX)
++  // The portable package's layout (tools/release/portable_linux.py): the
++  // program in ThoronPortable/Application/<version>/, beside `current`, the
++  // launcher one folder up; a copy installed for one user has the mark
++  // `per-user` there and keeps its profile in ~/.config instead.
++  base::FilePath exe;
++  base::PathService::Get(base::DIR_EXE, &exe);
++  const base::FilePath package = exe.DirName().DirName();
++  return base::PathExists(exe.DirName().AppendASCII("current")) &&
++         base::PathExists(package.AppendASCII("thoron")) &&
++         !base::PathExists(package.AppendASCII("per-user"));
 +#else
 +  return false;
 +#endif
@@ -12044,9 +12557,9 @@ index 0000000000000000000000000000000000000000..f08520330ec20a441e22fb5de7c3a48c
 +                           : tpk::ForgetThisPc(*stored.file, *store);
 +  if (!changed) {
 +    return WithState(folder,
-+                     remember ? "This PC cannot be remembered: Windows keeps "
-+                                "no key for this account, or the copy "
-+                                "remembers as many PCs as it can."
++                     remember ? ForThisSystem("This PC cannot be remembered: Windows keeps "
++                                              "no key for this account, or the copy "
++                                              "remembers as many PCs as it can.")
 +                              : "",
 +                     "");
 +  }
@@ -12055,8 +12568,8 @@ index 0000000000000000000000000000000000000000..f08520330ec20a441e22fb5de7c3a48c
 +    return WithState(folder, kWriteProblem, "");
 +  }
 +  return WithState(folder, "",
-+                   remember ? "This PC is remembered for this Windows account: "
-+                              "the copy opens here without the passphrase."
++                   remember ? ForThisSystem("This PC is remembered for this Windows account: "
++                                            "the copy opens here without the passphrase.")
 +                            : "This PC is forgotten: the copy asks for the "
 +                              "passphrase here again.");
 +}
@@ -12081,6 +12594,35 @@ index 0000000000000000000000000000000000000000..f08520330ec20a441e22fb5de7c3a48c
 +      removed ? "The lock is removed. This copy's passwords and sign-ins open "
 +                "again only on this PC and this Windows account."
 +              : "");
++}
++
++// The page's words about Windows, said for Linux (where the desktop's keyring
++// remembers a PC and the lock cannot be removed yet).
++std::string ForThisSystem(std::string text) {
++#if BUILDFLAG(IS_LINUX)
++  static constexpr std::pair<std::string_view, std::string_view> kLinux[] = {
++      {"locked by Windows for your account on this PC.",
++       "locked by the desktop's keyring for your account on this PC."},
++      {"Today this copy's saved passwords and sign-ins (cookies) open only on this PC and this Windows\n"
++       "account.",
++       "Today this copy's saved passwords and sign-ins (cookies) are protected only by this desktop's\n"
++       "keyring, or, where there is none, by Chromium's fixed key, which anyone can use."},
++      {"Remember this PC for\nthis Windows account (no passphrase here)",
++       "Remember this PC for\nthis user, in the desktop's keyring (no passphrase here)"},
++      {"Without the lock, this copy's\npasswords and sign-ins open only on this PC and this Windows account, as "
++       "an installed Thoron's do.",
++       "Without the lock, this copy's\npasswords and sign-ins are protected by this PC's keyring again (or, "
++       "where there is none, by Chromium's fixed key, which anyone can use). The lock goes at the next start, "
++       "once every value is back."},
++      {"This PC is remembered for this Windows account:", "This PC is remembered in the desktop keyring for this user:"},
++      {"This PC cannot be remembered: Windows keeps no key for this account,",
++       "This PC cannot be remembered: the desktop's keyring is locked or not there,"},
++  };
++  for (const auto& [from, to] : kLinux) {
++    base::ReplaceSubstringsAfterOffset(&text, 0, from, to);
++  }
++#endif
++  return text;
 +}
 +
 +std::string Page() {
@@ -12225,7 +12767,7 @@ index 0000000000000000000000000000000000000000..f08520330ec20a441e22fb5de7c3a48c
 +                        const content::WebContents::Getter& wc_getter,
 +                        GotDataCallback callback) override {
 +    std::move(callback).Run(base::MakeRefCounted<base::RefCountedString>(
-+        url.path() == kScriptPath ? std::string(kScript) : Page()));
++        ForThisSystem(url.path() == kScriptPath ? std::string(kScript) : Page())));
 +  }
 +};
 +
@@ -12259,10 +12801,8 @@ index 0000000000000000000000000000000000000000..f08520330ec20a441e22fb5de7c3a48c
 +  // Runs `task` away from the UI thread (it reads and writes files and
 +  // derives keys), then shows its result.
 +  void Run(base::OnceCallback<Result()> task) {
-+    base::ThreadPool::PostTaskAndReplyWithResult(
++    tasks_->PostTaskAndReplyWithResult(
 +        FROM_HERE,
-+        {base::MayBlock(), base::TaskPriority::USER_BLOCKING,
-+         base::TaskShutdownBehavior::BLOCK_SHUTDOWN},
 +        std::move(task),
 +        base::BindOnce(&ThoronPortableHandler::Show,
 +                       weak_factory_.GetWeakPtr()));
@@ -12373,18 +12913,26 @@ index 0000000000000000000000000000000000000000..f08520330ec20a441e22fb5de7c3a48c
 +      return;
 +    }
 +    PrefService* local_state = g_browser_process->local_state();
++#if BUILDFLAG(IS_LINUX)
++    // Linux keeps no key of its own per copy: the lock gives the copy a new
++    // one, and the next start encrypts its passwords and cookies again with it
++    // (unlock_linux.cc; the owner's decision of 2026-11-21).
++    std::vector<uint8_t> fresh(32);
++    crypto::RandBytes(fresh);
++    std::optional<tpk::SecretBytes> key(std::in_place, fresh);
++    tpk::Wipe(fresh);
++#else
 +    std::optional<tpk::SecretBytes> key = tpk::UnprotectLocalStateKey(
 +        local_state->GetString(tpk::kLocalStateKeyPref));
++#endif
 +    if (!key) {
 +      ShowProblem(
 +          "Thoron cannot read this copy's key on this PC, so it cannot lock "
 +          "it here.");
 +      return;
 +    }
-+    base::ThreadPool::PostTaskAndReplyWithResult(
++    tasks_->PostTaskAndReplyWithResult(
 +        FROM_HERE,
-+        {base::MayBlock(), base::TaskPriority::USER_BLOCKING,
-+         base::TaskShutdownBehavior::BLOCK_SHUTDOWN},
 +        base::BindOnce(&Lock, folder_, std::move(*key), std::move(*passphrase),
 +                       std::exchange(pending_recovery_, std::nullopt),
 +                       args[1].is_bool() && args[1].GetBool()),
@@ -12393,6 +12941,25 @@ index 0000000000000000000000000000000000000000..f08520330ec20a441e22fb5de7c3a48c
 +  }
 +
 +  void OnLocked(Result result) {
++#if BUILDFLAG(IS_LINUX)
++    if (result.problem.empty() && result.locked) {
++      PrefService* local_state = g_browser_process->local_state();
++      local_state->SetBoolean(kLockedPref, true);
++      local_state->SetBoolean("thoron_portable.reencrypt_pending", true);
++      local_state->CommitPendingWrite();
++      result.message =
++          "This copy is locked with your passphrase. Close Thoron and start it "
++          "again: it asks for the passphrase, then encrypts this copy's saved "
++          "passwords and cookies with the copy's new key (a checked copy of "
++          "each database is made first, and removed once every value reads "
++          "back).";
++      if (IsJavascriptAllowed()) {
++        CallJavascriptFunction("thoronPortableLocked");
++      }
++    }
++    Show(std::move(result));
++    return;
++#else
 +    if (result.problem.empty() && result.locked) {
 +      PrefService* local_state = g_browser_process->local_state();
 +      std::optional<tpk::SecretBytes> key = tpk::UnprotectLocalStateKey(
@@ -12408,6 +12975,7 @@ index 0000000000000000000000000000000000000000..f08520330ec20a441e22fb5de7c3a48c
 +      }
 +    }
 +    Show(std::move(result));
++#endif
 +  }
 +
 +  void Change(const base::ListValue& args) {
@@ -12474,14 +13042,40 @@ index 0000000000000000000000000000000000000000..f08520330ec20a441e22fb5de7c3a48c
 +      ShowProblem(kWrongPassphrase);
 +      return;
 +    }
-+    base::ThreadPool::PostTaskAndReplyWithResult(
++    tasks_->PostTaskAndReplyWithResult(
 +        FROM_HERE,
-+        {base::MayBlock(), base::TaskPriority::USER_BLOCKING,
-+         base::TaskShutdownBehavior::BLOCK_SHUTDOWN},
 +        base::BindOnce(&OpenForRemoval, folder_, std::move(*passphrase)),
++#if BUILDFLAG(IS_LINUX)
++        base::BindOnce(&ThoronPortableHandler::OnOpenedForRemovalLinux,
++                       weak_factory_.GetWeakPtr()));
++#else
 +        base::BindOnce(&ThoronPortableHandler::OnOpenedForRemoval,
 +                       weak_factory_.GetWeakPtr()));
++#endif
 +  }
++
++#if BUILDFLAG(IS_LINUX)
++  // On Linux the copy's values are under its own key while the browser runs,
++  // so they go back to Chromium's key at the next start, before any profile
++  // opens (unlock_linux.cc); the key file goes only once every value is back.
++  void OnOpenedForRemovalLinux(Result result) {
++    if (!result.key) {
++      Show(std::move(result));
++      return;
++    }
++    result.key.reset();
++    PrefService* local_state = g_browser_process->local_state();
++    local_state->SetBoolean("thoron_portable.remove_pending", true);
++    local_state->CommitPendingWrite();
++    result.message =
++        "The lock goes at the next start. Close Thoron and start it again, "
++        "and type the passphrase once more: Thoron then encrypts this copy's "
++        "saved passwords and cookies with this PC's keyring (or, where there "
++        "is none, with Chromium's fixed key, which anyone can use), checks "
++        "each one, and removes the key file.";
++    Show(std::move(result));
++  }
++#endif
 +
 +  // The key goes back into Local State first; only once that is written is
 +  // the key file removed, so the key is never in neither.
@@ -12508,6 +13102,10 @@ index 0000000000000000000000000000000000000000..f08520330ec20a441e22fb5de7c3a48c
 +
 +  const base::FilePath folder_;
 +  const bool portable_ = IsPortableCopy();
++  // One sequence for the work away from the UI thread: the desktop keyring's
++  // D-Bus calls on Linux need one (os_key_store_linux.cc).
++  const scoped_refptr<base::SequencedTaskRunner> tasks_ = base::ThreadPool::CreateSequencedTaskRunner(
++      {base::MayBlock(), base::TaskPriority::USER_BLOCKING, base::TaskShutdownBehavior::BLOCK_SHUTDOWN});
 +  std::optional<tpk::SecretBytes> pending_recovery_;
 +  base::WeakPtrFactory<ThoronPortableHandler> weak_factory_{this};
 +};
@@ -12877,6 +13475,95 @@ index 0000000000000000000000000000000000000000..31302324f071b2ba170d45bd3d0c1b26
 +}  // namespace installer
 +
 +#endif  // CHROME_INSTALLER_SETUP_THORON_UPDATE_TASK_H_
+diff --git a/components/os_crypt/async/browser/thoron_portable_key_provider.cc b/components/os_crypt/async/browser/thoron_portable_key_provider.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..eb8479460dc66720efe10b7e34239ace37712105
+--- /dev/null
++++ b/components/os_crypt/async/browser/thoron_portable_key_provider.cc
+@@ -0,0 +1,39 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "components/os_crypt/async/browser/thoron_portable_key_provider.h"
++
++#include <algorithm>
++#include <utility>
++
++#include "base/types/expected.h"
++#include "components/os_crypt/async/common/algorithm.mojom.h"
++#include "components/os_crypt/async/common/encryptor.h"
++
++namespace os_crypt_async {
++
++namespace {
++constexpr char kTag[] = "t10";
++}  // namespace
++
++ThoronPortableKeyProvider::ThoronPortableKeyProvider(std::vector<uint8_t> key)
++    : key_(std::move(key)) {}
++
++ThoronPortableKeyProvider::~ThoronPortableKeyProvider() {
++  std::fill(key_.begin(), key_.end(), 0);
++}
++
++void ThoronPortableKeyProvider::GetKey(KeyCallback callback) {
++  if (key_.size() != Encryptor::Key::kAES256GCMKeySize) {
++    // Never "permanently unavailable": that could have the values dropped.
++    std::move(callback).Run(kTag, base::unexpected(KeyError::kTemporarilyUnavailable));
++    return;
++  }
++  std::move(callback).Run(kTag, Encryptor::Key(key_, mojom::Algorithm::kAES256GCM));
++}
++
++bool ThoronPortableKeyProvider::UseForEncryption() {
++  return true;
++}
++
++}  // namespace os_crypt_async
+diff --git a/components/os_crypt/async/browser/thoron_portable_key_provider.h b/components/os_crypt/async/browser/thoron_portable_key_provider.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..a1a8624cddb65aeaa56236066044611e4d5c0f1e
+--- /dev/null
++++ b/components/os_crypt/async/browser/thoron_portable_key_provider.h
+@@ -0,0 +1,38 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef COMPONENTS_OS_CRYPT_ASYNC_BROWSER_THORON_PORTABLE_KEY_PROVIDER_H_
++#define COMPONENTS_OS_CRYPT_ASYNC_BROWSER_THORON_PORTABLE_KEY_PROVIDER_H_
++
++#include <stdint.h>
++
++#include <vector>
++
++#include "components/os_crypt/async/browser/key_provider.h"
++
++namespace os_crypt_async {
++
++// Thoron (ROADMAP P4.9, Linux): the key of a portable copy locked with a
++// passphrase, unlocked at the start (chrome/browser/thoron_portable). Its values
++// are AES-256-GCM under the tag "t10" (components/thoron_portable_key/
++// reencrypt_linux.h, kPortableKeyTag); it is used for every new value, and the
++// providers of Chromium's own Linux keys stay for reading what is not encrypted
++// again.
++class ThoronPortableKeyProvider : public KeyProvider {
++ public:
++  explicit ThoronPortableKeyProvider(std::vector<uint8_t> key);
++  ThoronPortableKeyProvider(const ThoronPortableKeyProvider&) = delete;
++  ThoronPortableKeyProvider& operator=(const ThoronPortableKeyProvider&) = delete;
++  ~ThoronPortableKeyProvider() override;
++
++  // KeyProvider:
++  void GetKey(KeyCallback callback) override;
++  bool UseForEncryption() override;
++
++ private:
++  std::vector<uint8_t> key_;
++};
++
++}  // namespace os_crypt_async
++
++#endif  // COMPONENTS_OS_CRYPT_ASYNC_BROWSER_THORON_PORTABLE_KEY_PROVIDER_H_
 diff --git a/components/os_crypt/async/browser/thoron_profile_key.cc b/components/os_crypt/async/browser/thoron_profile_key.cc
 new file mode 100644
 index 0000000000000000000000000000000000000000..a8e2cdf6435dde72735842a8fbb4edf2137b8e79
@@ -18678,13 +19365,14 @@ index 0000000000000000000000000000000000000000..439b57ba15ac7add9eaad2d691ad9cf9
 +#endif  // COMPONENTS_THORON_MAIL_MAIL_SOUNDS_H_
 diff --git a/components/thoron_portable_key/BUILD.gn b/components/thoron_portable_key/BUILD.gn
 new file mode 100644
-index 0000000000000000000000000000000000000000..6c57a92995331e714ab1e9f0d7ad8b8932547c72
+index 0000000000000000000000000000000000000000..1f9ed16d91ad142b37be9b123fa4d7a80e51e59a
 --- /dev/null
 +++ b/components/thoron_portable_key/BUILD.gn
-@@ -0,0 +1,83 @@
+@@ -0,0 +1,111 @@
 +# Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +# found in the LICENSE file.
 +
++import("//build/config/features.gni")
 +import("//testing/libfuzzer/fuzzer_test.gni")
 +import("//testing/test.gni")
 +
@@ -18711,6 +19399,7 @@ index 0000000000000000000000000000000000000000..6c57a92995331e714ab1e9f0d7ad8b89
 +  deps = [
 +    "//base",
 +    "//base:i18n",
++    "//build/config/linux/dbus:buildflags",
 +    "//crypto",
 +    "//third_party/argon2",
 +    "//third_party/boringssl",
@@ -18718,6 +19407,22 @@ index 0000000000000000000000000000000000000000..6c57a92995331e714ab1e9f0d7ad8b89
 +  ]
 +  if (is_win) {
 +    libs = [ "crypt32.lib" ]
++  }
++  if (is_linux && use_dbus) {
++    # Thoron (ROADMAP P4.9): "Remember this PC" with the desktop's keyring.
++    sources += [
++      "os_key_store_linux.cc",
++      "os_key_store_linux.h",
++    ]
++    deps += [ "//dbus" ]
++  }
++  if (is_linux) {
++    # Thoron (ROADMAP P4.9): a locked Linux copy's values encrypted again.
++    sources += [
++      "reencrypt_linux.cc",
++      "reencrypt_linux.h",
++    ]
++    deps += [ "//sql" ]
 +  }
 +}
 +
@@ -18735,9 +19440,19 @@ index 0000000000000000000000000000000000000000..6c57a92995331e714ab1e9f0d7ad8b89
 +    ":thoron_portable_key",
 +    "//base",
 +    "//base/test:test_support",
++    "//build/config/linux/dbus:buildflags",
 +    "//crypto",
 +    "//testing/gtest",
 +  ]
++  if (is_linux) {
++    sources += [ "reencrypt_linux_unittest.cc" ]
++    deps += [
++      "//components/os_crypt/async/browser",
++      "//components/os_crypt/async/browser:posix_key_provider",
++      "//components/os_crypt/async/common",
++      "//sql",
++    ]
++  }
 +}
 +
 +test("thoron_portable_key_unittests") {
@@ -18767,16 +19482,25 @@ index 0000000000000000000000000000000000000000..6c57a92995331e714ab1e9f0d7ad8b89
 +}
 diff --git a/components/thoron_portable_key/DEPS b/components/thoron_portable_key/DEPS
 new file mode 100644
-index 0000000000000000000000000000000000000000..b940ea5e70efbf6addb319ede358a4b7dc03fdd3
+index 0000000000000000000000000000000000000000..701e32ed8e28ada1f10cb4d684ed8b8351275c58
 --- /dev/null
 +++ b/components/thoron_portable_key/DEPS
-@@ -0,0 +1,6 @@
+@@ -0,0 +1,15 @@
 +include_rules = [
 +  "+crypto",
++  "+dbus",
++  "+sql",
 +  "+third_party/argon2/src/include",
 +  "+third_party/boringssl/src/include",
 +  "+third_party/icu/source/common/unicode",
 +]
++
++specific_include_rules = {
++  # the engine's values checked against the browser's own Encryptor
++  "reencrypt_linux_unittest\.cc": [
++    "+components/os_crypt/async",
++  ],
++}
 diff --git a/components/thoron_portable_key/README.md b/components/thoron_portable_key/README.md
 new file mode 100644
 index 0000000000000000000000000000000000000000..4aec38d136c65e476ddc18cbf4f94a9f7d632797
@@ -20963,10 +21687,10 @@ index 0000000000000000000000000000000000000000..cc4b210662965521ecfbd3340124acbe
 +}  // namespace thoron_portable_key
 diff --git a/components/thoron_portable_key/os_key_store.cc b/components/thoron_portable_key/os_key_store.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..9918cf78c1b3408cbee0e9b069683ca87fe85d25
+index 0000000000000000000000000000000000000000..c5e0a9337da52e6caed400bf5dab3cf29f7cddfb
 --- /dev/null
 +++ b/components/thoron_portable_key/os_key_store.cc
-@@ -0,0 +1,105 @@
+@@ -0,0 +1,112 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -20976,11 +21700,16 @@ index 0000000000000000000000000000000000000000..9918cf78c1b3408cbee0e9b069683ca8
 +
 +#include "base/compiler_specific.h"
 +#include "build/build_config.h"
++#include "build/config/linux/dbus/buildflags.h"
 +
 +#if BUILDFLAG(IS_WIN)
 +#include <windows.h>
 +
 +#include <dpapi.h>
++#endif
++
++#if BUILDFLAG(IS_LINUX) && BUILDFLAG(USE_DBUS)
++#include "components/thoron_portable_key/os_key_store_linux.h"
 +#endif
 +
 +namespace thoron_portable_key {
@@ -21066,6 +21795,8 @@ index 0000000000000000000000000000000000000000..9918cf78c1b3408cbee0e9b069683ca8
 +std::unique_ptr<OsKeyStore> CreateOsKeyStore() {
 +#if BUILDFLAG(IS_WIN)
 +  return std::make_unique<DpapiKeyStore>();
++#elif BUILDFLAG(IS_LINUX) && BUILDFLAG(USE_DBUS)
++  return CreateSecretServiceKeyStore();
 +#else
 +  return std::make_unique<NoKeyStore>();
 +#endif
@@ -21074,10 +21805,10 @@ index 0000000000000000000000000000000000000000..9918cf78c1b3408cbee0e9b069683ca8
 +}  // namespace thoron_portable_key
 diff --git a/components/thoron_portable_key/os_key_store.h b/components/thoron_portable_key/os_key_store.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..26117e17f1e89153cfa659e7f8c398755dff85cb
+index 0000000000000000000000000000000000000000..2bfc8497cc23b28e071818ae7dc3661ceaf0cd4c
 --- /dev/null
 +++ b/components/thoron_portable_key/os_key_store.h
-@@ -0,0 +1,45 @@
+@@ -0,0 +1,47 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -21096,7 +21827,8 @@ index 0000000000000000000000000000000000000000..26117e17f1e89153cfa659e7f8c39875
 +namespace thoron_portable_key {
 +
 +// What the system keeps for the person signed in to this PC, for "Remember
-+// this PC" (design 7.8): on Windows, DPAPI for the current Windows account.
++// this PC" (design 7.8): on Windows, DPAPI for the current Windows account; on
++// Linux, the desktop's keyring.
 +// What it protects opens only for that account on that PC (or with its
 +// password and its keys), so the protected copy may travel with the portable
 +// copy without giving the profile key to whoever holds the drive.
@@ -21116,19 +21848,374 @@ index 0000000000000000000000000000000000000000..26117e17f1e89153cfa659e7f8c39875
 +      base::span<const uint8_t> blob) = 0;
 +};
 +
-+// The system's store: DPAPI on Windows; elsewhere one that is not available
-+// (Linux's libsecret is not used yet).
++// The system's store: DPAPI on Windows, the desktop's keyring through the
++// Secret Service on Linux (os_key_store_linux.h); elsewhere one that is not
++// available.
 +std::unique_ptr<OsKeyStore> CreateOsKeyStore();
 +
 +}  // namespace thoron_portable_key
 +
 +#endif  // COMPONENTS_THORON_PORTABLE_KEY_OS_KEY_STORE_H_
+diff --git a/components/thoron_portable_key/os_key_store_linux.cc b/components/thoron_portable_key/os_key_store_linux.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..bee40a76d494be0d46d31ad4dc83ee1f63a39112
+--- /dev/null
++++ b/components/thoron_portable_key/os_key_store_linux.cc
+@@ -0,0 +1,293 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "components/thoron_portable_key/os_key_store_linux.h"
++
++#include <stdlib.h>
++
++#include <algorithm>
++#include <string>
++#include <string_view>
++#include <utility>
++
++#include "base/memory/scoped_refptr.h"
++#include "base/strings/string_number_conversions.h"
++#include "base/strings/string_view_util.h"
++#include "base/task/sequenced_task_runner.h"
++#include "crypto/aead.h"
++#include "crypto/random.h"
++#include "dbus/bus.h"
++#include "dbus/message.h"
++#include "dbus/object_path.h"
++#include "dbus/object_proxy.h"
++
++namespace thoron_portable_key {
++
++namespace {
++
++constexpr size_t kTagSize = 4;
++constexpr size_t kNonceSize = 12;
++constexpr size_t kItemKeySize = 32;
++
++constexpr char kService[] = "org.freedesktop.secrets";
++constexpr char kServicePath[] = "/org/freedesktop/secrets";
++constexpr char kDefaultCollection[] = "/org/freedesktop/secrets/aliases/default";
++constexpr char kServiceInterface[] = "org.freedesktop.Secret.Service";
++constexpr char kCollectionInterface[] = "org.freedesktop.Secret.Collection";
++constexpr char kItemInterface[] = "org.freedesktop.Secret.Item";
++constexpr char kSessionInterface[] = "org.freedesktop.Secret.Session";
++constexpr int kTimeoutMs = 5000;
++
++std::vector<uint8_t> AssociatedData(base::span<const uint8_t> id) {
++  std::vector<uint8_t> out(kSecretServiceBlobTag, kSecretServiceBlobTag + kTagSize);
++  out.insert(out.end(), id.begin(), id.end());
++  return out;
++}
++
++std::unique_ptr<dbus::Response> Call(dbus::ObjectProxy* proxy, dbus::MethodCall* call) {
++  auto result = proxy->CallMethodAndBlock(call, kTimeoutMs);
++  if (!result.has_value()) {
++    return nullptr;
++  }
++  return std::move(result.value());
++}
++
++void AppendAttributes(dbus::MessageWriter* writer, const std::string& id_hex) {
++  dbus::MessageWriter attributes(nullptr);
++  writer->OpenArray("{ss}", &attributes);
++  for (const auto& [name, value] : {std::pair<std::string, std::string>(
++                                        "application", kSecretServiceApplication),
++                                    std::pair<std::string, std::string>(kSecretServiceIdAttribute, id_hex)}) {
++    dbus::MessageWriter entry(nullptr);
++    attributes.OpenDictEntry(&entry);
++    entry.AppendString(name);
++    entry.AppendString(value);
++    attributes.CloseContainer(&entry);
++  }
++  writer->CloseContainer(&attributes);
++}
++
++// A private connection to the session bus with a "plain" session of the
++// Secret Service (the secret travels on the local bus only, as Chromium's own
++// keyring code sends it), for one Protect() or Unprotect().
++class Session {
++ public:
++  Session() {
++    // The bus needs a task runner on this sequence (the browser's start and
++    // the page's sequenced tasks have one).
++    if (!getenv("DBUS_SESSION_BUS_ADDRESS") || !base::SequencedTaskRunner::HasCurrentDefault()) {
++      return;
++    }
++    dbus::Bus::Options options;
++    options.bus_type = dbus::Bus::SESSION;
++    options.connection_type = dbus::Bus::PRIVATE;
++    bus_ = base::MakeRefCounted<dbus::Bus>(std::move(options));
++    if (!bus_->Connect()) {
++      return;
++    }
++    dbus::MethodCall open(kServiceInterface, "OpenSession");
++    dbus::MessageWriter writer(&open);
++    writer.AppendString("plain");
++    writer.AppendVariantOfString(std::string());
++    std::unique_ptr<dbus::Response> opened = Call(service(), &open);
++    if (!opened) {
++      return;
++    }
++    dbus::MessageReader reader(opened.get());
++    dbus::MessageReader output(nullptr);
++    if (!reader.PopVariant(&output) || !reader.PopObjectPath(&session_) || !session_.IsValid()) {
++      session_ = dbus::ObjectPath();
++    }
++  }
++  Session(const Session&) = delete;
++  Session& operator=(const Session&) = delete;
++  ~Session() {
++    if (!bus_) {
++      return;
++    }
++    if (session_.IsValid()) {
++      dbus::MethodCall close(kSessionInterface, "Close");
++      Call(bus_->GetObjectProxy(kService, session_), &close);
++    }
++    bus_->ShutdownAndBlock();
++  }
++
++  bool ok() const { return bus_ && session_.IsValid(); }
++
++  // A new item in the default collection holding `secret`; false when the
++  // collection is locked (a prompt would be needed: none is shown) or missing.
++  bool Create(const std::string& id_hex, base::span<const uint8_t> secret) {
++    dbus::MethodCall create(kCollectionInterface, "CreateItem");
++    dbus::MessageWriter writer(&create);
++    dbus::MessageWriter properties(nullptr);
++    writer.OpenArray("{sv}", &properties);
++    {
++      dbus::MessageWriter entry(nullptr);
++      properties.OpenDictEntry(&entry);
++      entry.AppendString("org.freedesktop.Secret.Item.Label");
++      entry.AppendVariantOfString("Thoron portable copy: this PC");
++      properties.CloseContainer(&entry);
++    }
++    {
++      dbus::MessageWriter entry(nullptr);
++      properties.OpenDictEntry(&entry);
++      entry.AppendString("org.freedesktop.Secret.Item.Attributes");
++      dbus::MessageWriter variant(nullptr);
++      entry.OpenVariant("a{ss}", &variant);
++      AppendAttributes(&variant, id_hex);
++      entry.CloseContainer(&variant);
++      properties.CloseContainer(&entry);
++    }
++    writer.CloseContainer(&properties);
++    AppendSecret(&writer, secret);
++    writer.AppendBool(false);  // never replace another item
++    std::unique_ptr<dbus::Response> made =
++        Call(bus_->GetObjectProxy(kService, dbus::ObjectPath(kDefaultCollection)), &create);
++    if (!made) {
++      return false;
++    }
++    dbus::MessageReader reader(made.get());
++    dbus::ObjectPath item;
++    dbus::ObjectPath prompt;
++    return reader.PopObjectPath(&item) && reader.PopObjectPath(&prompt) && item.IsValid() &&
++           item.value() != "/";
++  }
++
++  // The secret of the unlocked item with `id_hex`, or nothing.
++  std::optional<SecretBytes> Find(const std::string& id_hex) {
++    dbus::MethodCall search(kServiceInterface, "SearchItems");
++    dbus::MessageWriter writer(&search);
++    AppendAttributes(&writer, id_hex);
++    std::unique_ptr<dbus::Response> found = Call(service(), &search);
++    if (!found) {
++      return std::nullopt;
++    }
++    dbus::MessageReader reader(found.get());
++    std::vector<dbus::ObjectPath> unlocked;
++    if (!reader.PopArrayOfObjectPaths(&unlocked) || unlocked.empty()) {
++      return std::nullopt;
++    }
++    dbus::MethodCall get(kItemInterface, "GetSecret");
++    dbus::MessageWriter get_writer(&get);
++    get_writer.AppendObjectPath(session_);
++    std::unique_ptr<dbus::Response> secret = Call(bus_->GetObjectProxy(kService, unlocked.front()), &get);
++    if (!secret) {
++      return std::nullopt;
++    }
++    // (o session, ay parameters, ay value, s content type)
++    dbus::MessageReader secret_reader(secret.get());
++    dbus::MessageReader fields(nullptr);
++    dbus::ObjectPath secret_session;
++    base::span<const uint8_t> parameters;
++    base::span<const uint8_t> value;
++    if (!secret_reader.PopStruct(&fields) || !fields.PopObjectPath(&secret_session) ||
++        !fields.PopArrayOfBytes(&parameters) || !fields.PopArrayOfBytes(&value) ||
++        value.size() != kItemKeySize) {
++      return std::nullopt;
++    }
++    return SecretBytes(value);
++  }
++
++ private:
++  dbus::ObjectProxy* service() { return bus_->GetObjectProxy(kService, dbus::ObjectPath(kServicePath)); }
++
++  void AppendSecret(dbus::MessageWriter* writer, base::span<const uint8_t> secret) {
++    dbus::MessageWriter fields(nullptr);
++    writer->OpenStruct(&fields);
++    fields.AppendObjectPath(session_);
++    fields.AppendArrayOfBytes(base::span<const uint8_t>());
++    fields.AppendArrayOfBytes(secret);
++    fields.AppendString("application/octet-stream");
++    writer->CloseContainer(&fields);
++  }
++
++  scoped_refptr<dbus::Bus> bus_;
++  dbus::ObjectPath session_;
++};
++
++class SecretServiceKeyStore : public OsKeyStore {
++ public:
++  // Only whether a session bus is there: a quick look, as the page asks it on
++  // its thread; Protect() says whether the keyring took the key.
++  bool IsAvailable() const override { return getenv("DBUS_SESSION_BUS_ADDRESS") != nullptr; }
++
++  std::optional<std::vector<uint8_t>> Protect(base::span<const uint8_t> secret) override {
++    Session session;
++    if (!session.ok()) {
++      return std::nullopt;
++    }
++    std::array<uint8_t, kSecretServiceIdSize> id;
++    crypto::RandBytes(id);
++    SecretBytes item_key(kItemKeySize);
++    crypto::RandBytes(item_key.span());
++    if (!session.Create(base::HexEncode(id), item_key.span())) {
++      return std::nullopt;
++    }
++    return SealForThisPc(item_key.span().first<kItemKeySize>(), id, secret);
++  }
++
++  std::optional<SecretBytes> Unprotect(base::span<const uint8_t> blob) override {
++    const std::optional<std::array<uint8_t, kSecretServiceIdSize>> id = IdOfBlob(blob);
++    if (!id) {
++      return std::nullopt;
++    }
++    Session session;
++    if (!session.ok()) {
++      return std::nullopt;
++    }
++    std::optional<SecretBytes> item_key = session.Find(base::HexEncode(*id));
++    if (!item_key) {
++      return std::nullopt;
++    }
++    return OpenForThisPc(item_key->span(), blob);
++  }
++};
++
++}  // namespace
++
++std::vector<uint8_t> SealForThisPc(base::span<const uint8_t, 32> item_key,
++                                   base::span<const uint8_t, kSecretServiceIdSize> id,
++                                   base::span<const uint8_t> secret) {
++  std::array<uint8_t, kNonceSize> nonce;
++  crypto::RandBytes(nonce);
++  const std::vector<uint8_t> sealed =
++      crypto::aead::Seal(crypto::aead::AES_256_GCM, item_key, secret, nonce, AssociatedData(id));
++  std::vector<uint8_t> out = AssociatedData(id);
++  out.insert(out.end(), nonce.begin(), nonce.end());
++  out.insert(out.end(), sealed.begin(), sealed.end());
++  return out;
++}
++
++std::optional<std::array<uint8_t, kSecretServiceIdSize>> IdOfBlob(base::span<const uint8_t> blob) {
++  if (blob.size() < kTagSize + kSecretServiceIdSize + kNonceSize + 16 ||
++      base::as_string_view(blob.first(kTagSize)) != kSecretServiceBlobTag) {
++    return std::nullopt;
++  }
++  std::array<uint8_t, kSecretServiceIdSize> id;
++  std::ranges::copy(blob.subspan(kTagSize, kSecretServiceIdSize), id.begin());
++  return id;
++}
++
++std::optional<SecretBytes> OpenForThisPc(base::span<const uint8_t> item_key,
++                                         base::span<const uint8_t> blob) {
++  const std::optional<std::array<uint8_t, kSecretServiceIdSize>> id = IdOfBlob(blob);
++  if (!id || item_key.size() != kItemKeySize) {
++    return std::nullopt;
++  }
++  const size_t head = kTagSize + kSecretServiceIdSize;
++  std::optional<std::vector<uint8_t>> plain = crypto::aead::Open(
++      crypto::aead::AES_256_GCM, item_key, blob.subspan(head + kNonceSize), blob.subspan(head, kNonceSize),
++      AssociatedData(*id));
++  if (!plain) {
++    return std::nullopt;
++  }
++  SecretBytes secret(*plain);
++  Wipe(*plain);
++  return secret;
++}
++
++std::unique_ptr<OsKeyStore> CreateSecretServiceKeyStore() {
++  return std::make_unique<SecretServiceKeyStore>();
++}
++
++}  // namespace thoron_portable_key
+diff --git a/components/thoron_portable_key/os_key_store_linux.h b/components/thoron_portable_key/os_key_store_linux.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..d5cba83aad2050f67bd7a104194dde0271ac1f41
+--- /dev/null
++++ b/components/thoron_portable_key/os_key_store_linux.h
+@@ -0,0 +1,49 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef COMPONENTS_THORON_PORTABLE_KEY_OS_KEY_STORE_LINUX_H_
++#define COMPONENTS_THORON_PORTABLE_KEY_OS_KEY_STORE_LINUX_H_
++
++#include <stdint.h>
++
++#include <array>
++#include <memory>
++#include <optional>
++#include <vector>
++
++#include "base/containers/span.h"
++#include "components/thoron_portable_key/os_key_store.h"
++#include "components/thoron_portable_key/secret_bytes.h"
++
++// "Remember this PC" on Linux (ROADMAP P4.9; threat model E5): the desktop's
++// keyring through the Secret Service (org.freedesktop.secrets: GNOME's keyring,
++// KDE's KWallet 5.97 and later, KeePassXC), which opens for the person signed
++// in. Protect() keeps a new random key in the keyring as an item of its own and
++// gives back the secret sealed with it; Unprotect() finds the item again by the
++// id in the blob. The blob alone (in the key file on the drive) opens nothing.
++namespace thoron_portable_key {
++
++inline constexpr char kSecretServiceBlobTag[] = "TSS1";
++inline constexpr size_t kSecretServiceIdSize = 16;
++
++// The keyring's item: its "application" attribute, and the attribute that
++// holds the blob's id in hex.
++inline constexpr char kSecretServiceApplication[] = "thoron-portable";
++inline constexpr char kSecretServiceIdAttribute[] = "thoron-copy";
++
++// The blob's format, apart from the keyring, for tests: the tag, the id, a
++// nonce and `secret` sealed with AES-256-GCM under `item_key` (the tag and id
++// as associated data).
++std::vector<uint8_t> SealForThisPc(base::span<const uint8_t, 32> item_key,
++                                   base::span<const uint8_t, kSecretServiceIdSize> id,
++                                   base::span<const uint8_t> secret);
++// The id a blob names, or nullopt for anything else (a Windows blob, say).
++std::optional<std::array<uint8_t, kSecretServiceIdSize>> IdOfBlob(base::span<const uint8_t> blob);
++std::optional<SecretBytes> OpenForThisPc(base::span<const uint8_t> item_key,
++                                         base::span<const uint8_t> blob);
++
++std::unique_ptr<OsKeyStore> CreateSecretServiceKeyStore();
++
++}  // namespace thoron_portable_key
++
++#endif  // COMPONENTS_THORON_PORTABLE_KEY_OS_KEY_STORE_LINUX_H_
 diff --git a/components/thoron_portable_key/os_key_store_unittest.cc b/components/thoron_portable_key/os_key_store_unittest.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..89c83d939b7d034a458f3cea53aacd9836e7d2fc
+index 0000000000000000000000000000000000000000..c329a392b9a2ee2a95fb94a7494b75ace3e10bd2
 --- /dev/null
 +++ b/components/thoron_portable_key/os_key_store_unittest.cc
-@@ -0,0 +1,56 @@
+@@ -0,0 +1,116 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -21137,11 +22224,22 @@ index 0000000000000000000000000000000000000000..89c83d939b7d034a458f3cea53aacd98
 +#include <stdint.h>
 +
 +#include <algorithm>
++#include <array>
 +#include <memory>
++#include <optional>
++#include <string>
 +#include <vector>
 +
 +#include "build/build_config.h"
++#include "build/config/linux/dbus/buildflags.h"
 +#include "testing/gtest/include/gtest/gtest.h"
++
++#if BUILDFLAG(IS_LINUX) && BUILDFLAG(USE_DBUS)
++#include <stdlib.h>
++
++#include "base/test/task_environment.h"
++#include "components/thoron_portable_key/os_key_store_linux.h"
++#endif
 +
 +namespace thoron_portable_key {
 +namespace {
@@ -21171,6 +22269,55 @@ index 0000000000000000000000000000000000000000..89c83d939b7d034a458f3cea53aacd98
 +  changed[changed.size() - 5] ^= 0x01;
 +  EXPECT_FALSE(store->Unprotect(changed));
 +  EXPECT_FALSE(store->Unprotect(std::vector<uint8_t>{1, 2, 3}));
++}
++
++#elif BUILDFLAG(IS_LINUX) && BUILDFLAG(USE_DBUS)
++
++// The blob of the desktop's keyring: it opens with its item's key only, not
++// once changed, and names its item by an id; a Windows blob names none.
++TEST(ThoronOsKeyStoreTest, SecretServiceBlob) {
++  std::array<uint8_t, 32> item_key;
++  item_key.fill(3);
++  std::array<uint8_t, kSecretServiceIdSize> id;
++  id.fill(9);
++  const std::vector<uint8_t> secret(32, 0x5a);
++  const std::vector<uint8_t> blob = SealForThisPc(item_key, id, secret);
++  EXPECT_EQ(blob.size(), 4u + 16u + 12u + 32u + 16u);
++  EXPECT_EQ(std::search(blob.begin(), blob.end(), secret.begin(), secret.end()), blob.end());
++  ASSERT_TRUE(IdOfBlob(blob));
++  EXPECT_EQ(*IdOfBlob(blob), id);
++  std::optional<SecretBytes> opened = OpenForThisPc(item_key, blob);
++  ASSERT_TRUE(opened);
++  EXPECT_TRUE(std::ranges::equal(opened->span(), secret));
++
++  std::array<uint8_t, 32> other_key;
++  other_key.fill(4);
++  EXPECT_FALSE(OpenForThisPc(other_key, blob));
++  for (size_t at : {size_t{5}, size_t{25}, blob.size() - 1}) {
++    std::vector<uint8_t> changed = blob;
++    changed[at] ^= 0x01;
++    EXPECT_FALSE(OpenForThisPc(item_key, changed)) << at;
++  }
++  EXPECT_FALSE(IdOfBlob(std::vector<uint8_t>(80, 1)));  // a DPAPI blob, say
++}
++
++// Without a session bus nothing is kept anywhere, and nothing opens.
++TEST(ThoronOsKeyStoreTest, SecretServiceWithoutABusKeepsNothing) {
++  base::test::TaskEnvironment tasks;
++  const char* bus = getenv("DBUS_SESSION_BUS_ADDRESS");
++  const std::string saved = bus ? bus : "";
++  unsetenv("DBUS_SESSION_BUS_ADDRESS");
++  std::unique_ptr<OsKeyStore> store = CreateOsKeyStore();
++  EXPECT_FALSE(store->IsAvailable());
++  EXPECT_FALSE(store->Protect(std::vector<uint8_t>(32, 1)));
++  std::array<uint8_t, 32> item_key;
++  item_key.fill(3);
++  std::array<uint8_t, kSecretServiceIdSize> id;
++  id.fill(9);
++  EXPECT_FALSE(store->Unprotect(SealForThisPc(item_key, id, std::vector<uint8_t>(32, 1))));
++  if (bus) {
++    setenv("DBUS_SESSION_BUS_ADDRESS", saved.c_str(), 1);
++  }
 +}
 +
 +#else
@@ -21459,6 +22606,737 @@ index 0000000000000000000000000000000000000000..1e6b8e21f07ad5fbd5bbee8e60f56f21
 +  std::string with_symbol = text;
 +  with_symbol[1] = '*';
 +  EXPECT_FALSE(ParseRecoveryKey(with_symbol));
++}
++
++}  // namespace
++}  // namespace thoron_portable_key
+diff --git a/components/thoron_portable_key/reencrypt_linux.cc b/components/thoron_portable_key/reencrypt_linux.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..3e51b14ea9caa9ae6dd9eaf88135b972d71c065b
+--- /dev/null
++++ b/components/thoron_portable_key/reencrypt_linux.cc
+@@ -0,0 +1,357 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "components/thoron_portable_key/reencrypt_linux.h"
++
++#include <algorithm>
++#include <array>
++#include <string_view>
++#include <vector>
++
++#include "base/containers/span.h"
++#include "base/files/file.h"
++#include "base/files/file_path.h"
++#include "base/files/file_util.h"
++#include "base/strings/cstring_view.h"
++#include "base/strings/string_view_util.h"
++#include "base/functional/function_ref.h"
++#include "crypto/aead.h"
++#include "crypto/aes_cbc.h"
++#include "crypto/hash.h"
++#include "crypto/random.h"
++#include "sql/database.h"
++#include "sql/statement.h"
++#include "sql/transaction.h"
++
++namespace thoron_portable_key {
++
++namespace {
++
++constexpr size_t kTagSize = 3;
++constexpr size_t kNonceSize = 12;
++constexpr char kBackupSuffix[] = ".thoron-before-lock";
++inline constexpr sql::Database::Tag kDatabaseTag{"ThoronPortableKey"};
++// Chromium's Linux values ("v10", "v11"): AES-128-CBC with sixteen spaces as the
++// IV (components/os_crypt/async/browser/posix_key_provider.cc).
++constexpr std::array<uint8_t, 16> kChromiumIv = {' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ',
++                                                 ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '};
++
++// The tables and columns Chromium keeps encrypted values in, by database.
++struct Column {
++  const char* table;
++  const char* column;
++  bool password;  // counted as a password (or note), else as a cookie
++};
++
++struct Place {
++  base::FilePath::StringViewType file;  // relative to the profile folder
++  std::vector<Column> columns;
++};
++
++std::vector<Place> Places() {
++  const std::vector<Column> logins = {{"logins", "password_value", true},
++                                      {"password_notes", "value", true}};
++  return {{FILE_PATH_LITERAL("Login Data"), logins},
++          {FILE_PATH_LITERAL("Login Data For Account"), logins},
++          {FILE_PATH_LITERAL("Network/Cookies"), {{"cookies", "encrypted_value", false}}},
++          {FILE_PATH_LITERAL("Cookies"), {{"cookies", "encrypted_value", false}}}};
++}
++
++std::optional<std::array<uint8_t, crypto::hash::kSha256Size>> HashOf(const base::FilePath& file) {
++  std::optional<std::vector<uint8_t>> bytes = base::ReadFileToBytes(file);
++  if (!bytes) {
++    return std::nullopt;
++  }
++  return crypto::hash::Sha256(*bytes);
++}
++
++// Writes the database's last changes into the file itself (a browser that
++// ended cleanly leaves none), so the file alone is the whole database.
++bool Checkpoint(const base::FilePath& file) {
++  sql::Database db(sql::DatabaseOptions(), kDatabaseTag);
++  if (!db.Open(file)) {
++    return false;
++  }
++  const bool done = db.Execute("PRAGMA wal_checkpoint(TRUNCATE)");
++  db.Close();
++  return done;
++}
++
++// A file that held values the old keys open (a copy, SQLite's journal): its
++// bytes are overwritten with zeros before it is deleted, so its blocks on the
++// drive no longer hold them (a flash drive may still keep older blocks of its
++// own; docs/security/THREAT_MODEL.md, E11).
++void WipeAndDelete(const base::FilePath& path) {
++  {
++    base::File file(path, base::File::FLAG_OPEN | base::File::FLAG_WRITE);
++    if (file.IsValid()) {
++      const int64_t length = file.GetLength();
++      const std::vector<uint8_t> zeros(64 * 1024, 0);
++      for (int64_t at = 0; at < length;) {
++        const size_t chunk = static_cast<size_t>(std::min<int64_t>(length - at, zeros.size()));
++        if (!file.WriteAndCheck(at, base::span(zeros).first(chunk))) {
++          break;
++        }
++        at += chunk;
++      }
++      file.Flush();
++    }
++  }
++  base::DeleteFile(path);
++}
++
++base::FilePath SideFile(const base::FilePath& file, const char* suffix) {
++  // SQLite's side files are named after the database with a suffix, no dot.
++  return base::FilePath(file.value() + suffix);
++}
++
++bool MakeBackup(const base::FilePath& file, const base::FilePath& backup) {
++  WipeAndDelete(backup);  // one an interrupted start left
++  if (!Checkpoint(file) || !base::CopyFile(file, backup)) {
++    return false;
++  }
++  const auto a = HashOf(file);
++  const auto b = HashOf(backup);
++  return a && b && *a == *b;
++}
++
++// The database put back from its copy, in one step (a copy beside it, then
++// renamed over it), so an end in between leaves one or the other whole.
++void Restore(const base::FilePath& file, const base::FilePath& backup) {
++  for (const char* suffix : {"-wal", "-shm", "-journal"}) {
++    WipeAndDelete(SideFile(file, suffix));
++  }
++  const base::FilePath restored(file.value() + ".thoron-restore");
++  if (base::CopyFile(backup, restored) && !base::ReplaceFile(restored, file, nullptr)) {
++    WipeAndDelete(restored);
++  }
++}
++
++bool HasPortableTag(base::span<const uint8_t> value) {
++  return value.size() > kTagSize &&
++         base::as_string_view(value.first(kTagSize)) == kPortableKeyTag;
++}
++
++// How each value is turned: `done` tells a value already in the new form, `read`
++// gives the plain text of one in the old form, `seal` makes the new value and
++// `open` reads a new value back.
++struct Transform {
++  base::FunctionRef<bool(base::span<const uint8_t>)> done;
++  base::FunctionRef<std::optional<std::string>(base::span<const uint8_t>)> read;
++  base::FunctionRef<std::string(std::string_view)> seal;
++  base::FunctionRef<std::optional<std::string>(base::span<const uint8_t>)> open;
++};
++
++// One database: every value of its columns turned in one transaction, each new
++// value read back from its row before the transaction is kept.
++ReencryptResult TransformDatabase(const base::FilePath& file,
++                                  const std::vector<Column>& columns,
++                                  const Transform& how,
++                                  ReencryptCounts* counts) {
++  sql::Database db(sql::DatabaseOptions(), kDatabaseTag);
++  if (!db.Open(file)) {
++    return ReencryptResult::kDatabaseFailed;
++  }
++  // The journal (the old pages, while the change is made) stays after the
++  // commit, so it can be overwritten before it goes (TransformProfile); SQLite
++  // in Chromium overwrites freed parts of the database itself (secure delete).
++  {
++    sql::Statement mode(db.GetUniqueStatement("PRAGMA journal_mode=PERSIST"));
++    if (!mode.Step()) {
++      return ReencryptResult::kDatabaseFailed;
++    }
++  }
++  sql::Transaction transaction(&db);
++  if (!transaction.Begin()) {
++    return ReencryptResult::kDatabaseFailed;
++  }
++  ReencryptCounts found;
++  for (const Column& column : columns) {
++    if (!db.DoesTableExist(base::cstring_view(column.table)) ||
++        !db.DoesColumnExist(base::cstring_view(column.table), base::cstring_view(column.column))) {
++      continue;
++    }
++    std::vector<std::pair<int64_t, std::string>> changes;
++    {
++      sql::Statement select(db.GetUniqueStatement(
++          std::string("SELECT rowid, ") + column.column + " FROM " + column.table));
++      while (select.Step()) {
++        base::span<const uint8_t> value = select.ColumnBlob(1);
++        if (value.empty()) {
++          continue;
++        }
++        if (how.done(value)) {
++          ++found.already;
++          continue;
++        }
++        std::optional<std::string> plain = how.read(value);
++        if (!plain) {
++          ++found.unreadable;
++          continue;
++        }
++        std::string sealed = how.seal(*plain);
++        std::optional<std::string> back = how.open(base::as_byte_span(sealed));
++        const bool same = back && *back == *plain;
++        std::fill(plain->begin(), plain->end(), '\0');
++        if (back) {
++          std::fill(back->begin(), back->end(), '\0');
++        }
++        if (!same) {
++          return ReencryptResult::kCheckFailed;
++        }
++        changes.emplace_back(select.ColumnInt64(0), std::move(sealed));
++        (column.password ? found.passwords : found.cookies) += 1;
++      }
++      if (!select.Succeeded()) {
++        return ReencryptResult::kDatabaseFailed;
++      }
++    }
++    for (const auto& [rowid, sealed] : changes) {
++      sql::Statement update(db.GetUniqueStatement(
++          std::string("UPDATE ") + column.table + " SET " + column.column + " = ? WHERE rowid = ?"));
++      update.BindBlob(0, base::as_byte_span(sealed));
++      update.BindInt64(1, rowid);
++      if (!update.Run()) {
++        return ReencryptResult::kDatabaseFailed;
++      }
++    }
++    // Read back what is now in each changed row: the new value, which opens.
++    for (const auto& [rowid, sealed] : changes) {
++      sql::Statement again(db.GetUniqueStatement(
++          std::string("SELECT ") + column.column + " FROM " + column.table + " WHERE rowid = ?"));
++      again.BindInt64(0, rowid);
++      if (!again.Step() || base::as_string_view(again.ColumnBlob(0)) != sealed ||
++          !how.done(again.ColumnBlob(0)) || !how.open(again.ColumnBlob(0))) {
++        return ReencryptResult::kCheckFailed;
++      }
++    }
++  }
++  if (!transaction.Commit()) {
++    return ReencryptResult::kDatabaseFailed;
++  }
++  counts->passwords += found.passwords;
++  counts->cookies += found.cookies;
++  counts->already += found.already;
++  counts->unreadable += found.unreadable;
++  return ReencryptResult::kDone;
++}
++
++// Every database of the profile, each with a checked copy first (see
++// ReencryptProfile in the header).
++ReencryptResult TransformProfile(const base::FilePath& profile,
++                                 const Transform& how,
++                                 ReencryptCounts* counts) {
++  std::vector<base::FilePath> backups;
++  ReencryptResult result = ReencryptResult::kDone;
++  for (const Place& place : Places()) {
++    const base::FilePath file = profile.Append(place.file);
++    if (!base::PathExists(file)) {
++      continue;
++    }
++    const base::FilePath backup(file.value() + kBackupSuffix);
++    if (!MakeBackup(file, backup)) {
++      WipeAndDelete(backup);
++      result = ReencryptResult::kBackupFailed;
++      break;
++    }
++    backups.push_back(backup);
++    result = TransformDatabase(file, place.columns, how, counts);
++    if (result != ReencryptResult::kDone) {
++      Restore(file, backup);
++      break;
++    }
++    WipeAndDelete(SideFile(file, "-journal"));
++  }
++  // The copies hold the values in their old form. When a later database
++  // failed, the earlier ones are turned already and read back fine, so their
++  // copies go too; the failed one was put back from its copy.
++  for (const base::FilePath& backup : backups) {
++    WipeAndDelete(backup);
++  }
++  return result;
++}
++
++}  // namespace
++
++std::string EncryptWithPortableKey(base::span<const uint8_t, 32> key,
++                                   std::string_view plaintext) {
++  std::array<uint8_t, kNonceSize> nonce = {};
++  crypto::RandBytes(nonce);
++  std::vector<uint8_t> sealed = crypto::aead::Seal(
++      crypto::aead::AES_256_GCM, key, base::as_byte_span(plaintext), nonce, {});
++  std::string out(kPortableKeyTag);
++  out.append(base::as_string_view(nonce));
++  out.append(base::as_string_view(sealed));
++  return out;
++}
++
++std::optional<std::string> DecryptWithPortableKey(base::span<const uint8_t, 32> key,
++                                                  base::span<const uint8_t> value) {
++  if (!HasPortableTag(value) || value.size() < kTagSize + kNonceSize) {
++    return std::nullopt;
++  }
++  const base::span<const uint8_t> nonce = value.subspan(kTagSize, kNonceSize);
++  std::optional<std::vector<uint8_t>> plain =
++      crypto::aead::Open(crypto::aead::AES_256_GCM, key,
++                         value.subspan(kTagSize + kNonceSize), nonce, {});
++  if (!plain) {
++    return std::nullopt;
++  }
++  return std::string(plain->begin(), plain->end());
++}
++
++ReencryptResult ReencryptProfile(const base::FilePath& profile,
++                                 ReadOldValue read_old,
++                                 base::span<const uint8_t, 32> new_key,
++                                 ReencryptCounts* counts) {
++  auto done = [](base::span<const uint8_t> value) { return HasPortableTag(value); };
++  auto seal = [new_key](std::string_view plain) { return EncryptWithPortableKey(new_key, plain); };
++  auto open = [new_key](base::span<const uint8_t> value) {
++    return DecryptWithPortableKey(new_key, value);
++  };
++  return TransformProfile(profile, Transform{done, read_old, seal, open}, counts);
++}
++
++std::string EncryptForChromiumLinux(base::span<const uint8_t, 16> key,
++                                    std::string_view prefix,
++                                    std::string_view plaintext) {
++  std::string out(prefix);
++  out.append(base::as_string_view(crypto::aes_cbc::Encrypt(key, kChromiumIv, base::as_byte_span(plaintext))));
++  return out;
++}
++
++std::optional<std::string> DecryptForChromiumLinux(base::span<const uint8_t, 16> key,
++                                                   std::string_view prefix,
++                                                   base::span<const uint8_t> value) {
++  if (value.size() <= prefix.size() || base::as_string_view(value.first(prefix.size())) != prefix) {
++    return std::nullopt;
++  }
++  std::optional<std::vector<uint8_t>> plain =
++      crypto::aes_cbc::Decrypt(key, kChromiumIv, value.subspan(prefix.size()));
++  if (!plain) {
++    return std::nullopt;
++  }
++  return std::string(plain->begin(), plain->end());
++}
++
++ReencryptResult ReturnProfileToChromium(const base::FilePath& profile,
++                                        base::span<const uint8_t, 32> portable_key,
++                                        base::span<const uint8_t, 16> chromium_key,
++                                        std::string_view prefix,
++                                        ReencryptCounts* counts) {
++  // Anything not of the copy's key is Chromium's already (or unreadable to it
++  // anyway) and stays as it is.
++  auto done = [](base::span<const uint8_t> value) { return !HasPortableTag(value); };
++  auto read = [portable_key](base::span<const uint8_t> value) {
++    return DecryptWithPortableKey(portable_key, value);
++  };
++  auto seal = [chromium_key, prefix](std::string_view plain) {
++    return EncryptForChromiumLinux(chromium_key, prefix, plain);
++  };
++  auto open = [chromium_key, prefix](base::span<const uint8_t> value) {
++    return DecryptForChromiumLinux(chromium_key, prefix, value);
++  };
++  return TransformProfile(profile, Transform{done, read, seal, open}, counts);
++}
++
++}  // namespace thoron_portable_key
+diff --git a/components/thoron_portable_key/reencrypt_linux.h b/components/thoron_portable_key/reencrypt_linux.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..c2b2eeccf131f414e13a0f806acc024563d6a4e2
+--- /dev/null
++++ b/components/thoron_portable_key/reencrypt_linux.h
+@@ -0,0 +1,98 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef COMPONENTS_THORON_PORTABLE_KEY_REENCRYPT_LINUX_H_
++#define COMPONENTS_THORON_PORTABLE_KEY_REENCRYPT_LINUX_H_
++
++#include <stdint.h>
++
++#include <optional>
++#include <string>
++#include <string_view>
++
++#include "base/containers/span.h"
++#include "base/functional/function_ref.h"
++
++namespace base {
++class FilePath;
++}  // namespace base
++
++// Thoron (ROADMAP P4.9, Linux): a portable copy locked with a passphrase on
++// Linux. Chromium keeps no key of its own per copy there (its values are "v10",
++// a fixed key, or "v11", a key from the desktop's keyring), so locking gives the
++// copy a new random key and its saved passwords and cookies are encrypted again
++// with it (the owner's decision of 2026-11-21: with a backup first, each value
++// read back). The new values are as Chromium's Encryptor writes them for an
++// AES-256-GCM key: the tag kPortableKeyTag, a 12-byte nonce, the sealed text.
++
++namespace thoron_portable_key {
++
++inline constexpr char kPortableKeyTag[] = "t10";
++
++struct ReencryptCounts {
++  int passwords = 0;   // passwords and password notes encrypted again
++  int cookies = 0;     // cookies encrypted again
++  int already = 0;     // values that had the portable key already
++  int unreadable = 0;  // values neither old key reads: left as they were
++};
++
++enum class ReencryptResult {
++  kDone,            // every value encrypted again and read back; no copy left
++  kBackupFailed,    // a database's copy could not be made or checked
++  kDatabaseFailed,  // a database could not be read or written
++  kCheckFailed,     // a value did not read back as it was
++};
++
++// Reads a value of Chromium's Linux keys ("v10", "v11"): its plain text, or
++// nothing when the value is not one of them or does not decrypt.
++using ReadOldValue =
++    base::FunctionRef<std::optional<std::string>(base::span<const uint8_t>)>;
++
++// Encrypts again, with `new_key` (32 bytes), the saved passwords and password
++// notes (Login Data, Login Data For Account) and the cookies (Network/Cookies,
++// or the older Cookies) of the profile folder `profile`, with the browser not
++// running. For each database that is there: a copy beside it
++// ("<name>.thoron-before-lock"), checked byte for byte; then one transaction in
++// which each value is encrypted again and read back with the new key; on any
++// problem the database is put back from its copy and nothing after it is
++// touched. Once every database is done the copies are removed: they hold the
++// values in a form that opens without the passphrase.
++ReencryptResult ReencryptProfile(const base::FilePath& profile,
++                                 ReadOldValue read_old,
++                                 base::span<const uint8_t, 32> new_key,
++                                 ReencryptCounts* counts);
++
++// The way back, when the lock is removed: every value of the copy's key
++// encrypted again with one of Chromium's own Linux keys, `chromium_key` (16
++// bytes: PBKDF2 of the keyring's secret, or of Chromium's fixed password) under
++// `prefix` ("v11" or "v10"), the same way: a checked copy of each database
++// first, each new value read back, the copies wiped. Values of Chromium's keys
++// stay as they are.
++ReencryptResult ReturnProfileToChromium(const base::FilePath& profile,
++                                        base::span<const uint8_t, 32> portable_key,
++                                        base::span<const uint8_t, 16> chromium_key,
++                                        std::string_view prefix,
++                                        ReencryptCounts* counts);
++
++// A value of Chromium's Linux keys ("v10"/"v11" and AES-128-CBC), and its plain
++// text again, or nothing.
++std::string EncryptForChromiumLinux(base::span<const uint8_t, 16> key,
++                                    std::string_view prefix,
++                                    std::string_view plaintext);
++std::optional<std::string> DecryptForChromiumLinux(base::span<const uint8_t, 16> key,
++                                                   std::string_view prefix,
++                                                   base::span<const uint8_t> value);
++
++// A value encrypted with `key` as Chromium's Encryptor writes it (for tests and
++// the engine).
++std::string EncryptWithPortableKey(base::span<const uint8_t, 32> key,
++                                   std::string_view plaintext);
++
++// The plain text of a value of the portable key, or nothing.
++std::optional<std::string> DecryptWithPortableKey(
++    base::span<const uint8_t, 32> key,
++    base::span<const uint8_t> value);
++
++}  // namespace thoron_portable_key
++
++#endif  // COMPONENTS_THORON_PORTABLE_KEY_REENCRYPT_LINUX_H_
+diff --git a/components/thoron_portable_key/reencrypt_linux_unittest.cc b/components/thoron_portable_key/reencrypt_linux_unittest.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..7a38ab3540b19b365cb43291f0ab7ff91461abeb
+--- /dev/null
++++ b/components/thoron_portable_key/reencrypt_linux_unittest.cc
+@@ -0,0 +1,258 @@
++// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "components/thoron_portable_key/reencrypt_linux.h"
++
++#include <array>
++#include <optional>
++#include <string>
++#include <vector>
++
++#include "base/containers/span.h"
++#include "base/files/file_path.h"
++#include "base/files/file_enumerator.h"
++#include "base/files/file_util.h"
++#include "base/run_loop.h"
++#include "base/test/bind.h"
++#include "base/files/scoped_temp_dir.h"
++#include "base/strings/cstring_view.h"
++#include "base/strings/string_util.h"
++#include "base/strings/string_view_util.h"
++#include "base/test/task_environment.h"
++#include "components/os_crypt/async/browser/os_crypt_async.h"
++#include "components/os_crypt/async/browser/thoron_portable_key_provider.h"
++#include "components/os_crypt/async/common/encryptor.h"
++#include "sql/database.h"
++#include "sql/statement.h"
++#include "testing/gtest/include/gtest/gtest.h"
++
++namespace thoron_portable_key {
++namespace {
++
++inline constexpr sql::Database::Tag kTag{"ThoronPortableKey"};
++
++// A stand-in for Chromium's Linux keys: "old:<text>" reads as <text>.
++std::optional<std::string> ReadOld(base::span<const uint8_t> value) {
++  const std::string_view text = base::as_string_view(value);
++  if (!base::StartsWith(text, "old:")) {
++    return std::nullopt;
++  }
++  return std::string(text.substr(4));
++}
++
++class ThoronReencryptTest : public ::testing::Test {
++ protected:
++  void SetUp() override {
++    ASSERT_TRUE(dir_.CreateUniqueTempDir());
++    key_.fill(7);
++  }
++
++  base::FilePath Make(const char* name, const std::vector<std::string>& statements) {
++    const base::FilePath file = dir_.GetPath().Append(name);
++    EXPECT_TRUE(base::CreateDirectory(file.DirName()));
++    sql::Database db(sql::DatabaseOptions(), kTag);
++    EXPECT_TRUE(db.Open(file));
++    for (const std::string& s : statements) {
++      EXPECT_TRUE(db.Execute(s)) << s;
++    }
++    return file;
++  }
++
++  void Insert(const base::FilePath& file, base::cstring_view sql, const std::string& value) {
++    sql::Database db(sql::DatabaseOptions(), kTag);
++    ASSERT_TRUE(db.Open(file));
++    sql::Statement s(db.GetUniqueStatement(sql));
++    s.BindBlob(0, base::as_byte_span(value));
++    ASSERT_TRUE(s.Run());
++  }
++
++  std::vector<std::string> Values(const base::FilePath& file, base::cstring_view sql) {
++    sql::Database db(sql::DatabaseOptions(), kTag);
++    EXPECT_TRUE(db.Open(file));
++    sql::Statement s(db.GetUniqueStatement(sql));
++    std::vector<std::string> out;
++    while (s.Step()) {
++      out.emplace_back(base::as_string_view(s.ColumnBlob(0)));
++    }
++    return out;
++  }
++
++  base::ScopedTempDir dir_;
++  std::array<uint8_t, 32> key_;
++};
++
++TEST_F(ThoronReencryptTest, PasswordsNotesAndCookiesAreEncryptedAgainAndReadBack) {
++  const base::FilePath login = Make(
++      "Login Data", {"CREATE TABLE logins (id INTEGER PRIMARY KEY, password_value BLOB)",
++                     "CREATE TABLE password_notes (id INTEGER PRIMARY KEY, value BLOB)"});
++  Insert(login, "INSERT INTO logins (password_value) VALUES (?)", "old:hunter2");
++  Insert(login, "INSERT INTO logins (password_value) VALUES (?)", "garbage that reads as nothing");
++  Insert(login, "INSERT INTO logins (password_value) VALUES (?)",
++         EncryptWithPortableKey(key_, "done already"));
++  Insert(login, "INSERT INTO password_notes (value) VALUES (?)", "old:a note");
++  const base::FilePath cookies = Make(
++      "Network/Cookies", {"CREATE TABLE cookies (host_key TEXT, encrypted_value BLOB)"});
++  Insert(cookies, "INSERT INTO cookies (host_key, encrypted_value) VALUES ('a', ?)", "old:cookie");
++
++  ReencryptCounts counts;
++  ASSERT_EQ(ReencryptProfile(dir_.GetPath(), ReadOld, key_, &counts), ReencryptResult::kDone);
++  EXPECT_EQ(counts.passwords, 2);
++  EXPECT_EQ(counts.cookies, 1);
++  EXPECT_EQ(counts.already, 1);
++  EXPECT_EQ(counts.unreadable, 1);
++
++  std::vector<std::string> plain;
++  for (const std::string& v : Values(login, "SELECT password_value FROM logins ORDER BY id")) {
++    const std::optional<std::string> p = DecryptWithPortableKey(key_, base::as_byte_span(v));
++    plain.push_back(p ? *p : "(" + v.substr(0, 7) + ")");
++  }
++  EXPECT_EQ(plain, (std::vector<std::string>{"hunter2", "(garbage)", "done already"}));
++  const std::vector<std::string> notes = Values(login, "SELECT value FROM password_notes");
++  ASSERT_EQ(notes.size(), 1u);
++  EXPECT_EQ(DecryptWithPortableKey(key_, base::as_byte_span(notes[0])), "a note");
++  const std::vector<std::string> jar = Values(cookies, "SELECT encrypted_value FROM cookies");
++  ASSERT_EQ(jar.size(), 1u);
++  EXPECT_EQ(DecryptWithPortableKey(key_, base::as_byte_span(jar[0])), "cookie");
++  // no copy of the old values is left behind
++  EXPECT_FALSE(base::PathExists(dir_.GetPath().Append("Login Data.thoron-before-lock")));
++  EXPECT_FALSE(base::PathExists(dir_.GetPath().Append("Network/Cookies.thoron-before-lock")));
++}
++
++TEST_F(ThoronReencryptTest, ADatabaseThatCannotBeReadIsLeftAsItWas) {
++  const base::FilePath login = Make(
++      "Login Data", {"CREATE TABLE logins (id INTEGER PRIMARY KEY, password_value BLOB)"});
++  Insert(login, "INSERT INTO logins (password_value) VALUES (?)", "old:hunter2");
++  const base::FilePath cookies = dir_.GetPath().Append("Cookies");
++  ASSERT_TRUE(base::WriteFile(cookies, "this is not a database, and stays as it is"));
++
++  ReencryptCounts counts;
++  const ReencryptResult result = ReencryptProfile(dir_.GetPath(), ReadOld, key_, &counts);
++  EXPECT_NE(result, ReencryptResult::kDone);
++  std::string text;
++  ASSERT_TRUE(base::ReadFileToString(cookies, &text));
++  EXPECT_EQ(text, "this is not a database, and stays as it is");
++  EXPECT_FALSE(base::PathExists(dir_.GetPath().Append("Cookies.thoron-before-lock")));
++  EXPECT_FALSE(base::PathExists(dir_.GetPath().Append("Login Data.thoron-before-lock")));
++}
++
++TEST_F(ThoronReencryptTest, TheFormatIsTheEncryptorsAndAnotherKeyDoesNotOpenIt) {
++  const std::string sealed = EncryptWithPortableKey(key_, "secret");
++  EXPECT_EQ(sealed.substr(0, 3), kPortableKeyTag);
++  EXPECT_EQ(sealed.size(), 3u + 12u + 6u + 16u);  // tag, nonce, text, GCM tag
++  EXPECT_EQ(DecryptWithPortableKey(key_, base::as_byte_span(sealed)), "secret");
++  std::array<uint8_t, 32> other;
++  other.fill(8);
++  EXPECT_EQ(DecryptWithPortableKey(other, base::as_byte_span(sealed)), std::nullopt);
++  std::string changed = sealed;
++  changed.back() ^= 1;
++  EXPECT_EQ(DecryptWithPortableKey(key_, base::as_byte_span(changed)), std::nullopt);
++  EXPECT_EQ(DecryptWithPortableKey(key_, base::as_byte_span(std::string("v10abc"))), std::nullopt);
++}
++
++// Nothing the old keys open is left in any file of the profile: not in the
++// database (SQLite overwrites what it frees), its journal or the copies.
++TEST_F(ThoronReencryptTest, NoOldValueIsLeftInAnyFile) {
++  const base::FilePath login = Make(
++      "Login Data", {"CREATE TABLE logins (id INTEGER PRIMARY KEY, password_value BLOB)"});
++  // a value a little shorter than the new one, so the row grows and moves
++  Insert(login, "INSERT INTO logins (password_value) VALUES (?)", "old:MARKER-of-the-old-value");
++  // a copy an interrupted start left behind
++  ASSERT_TRUE(base::WriteFile(dir_.GetPath().Append("Login Data.thoron-before-lock"),
++                              "old:MARKER-of-the-old-value in a stale copy"));
++
++  ReencryptCounts counts;
++  ASSERT_EQ(ReencryptProfile(dir_.GetPath(), ReadOld, key_, &counts), ReencryptResult::kDone);
++  EXPECT_EQ(counts.passwords, 1);
++  base::FileEnumerator files(dir_.GetPath(), /*recursive=*/true, base::FileEnumerator::FILES);
++  std::vector<std::string> names;
++  for (base::FilePath f = files.Next(); !f.empty(); f = files.Next()) {
++    names.push_back(f.BaseName().value());
++    std::string bytes;
++    ASSERT_TRUE(base::ReadFileToString(f, &bytes));
++    EXPECT_EQ(bytes.find("MARKER-of-the-old-value"), std::string::npos) << f;
++  }
++  EXPECT_EQ(names, std::vector<std::string>{"Login Data"});
++}
++
++// The browser's Encryptor, with Thoron's provider as the browser makes it on
++// Linux, opens the engine's values and writes values the engine opens.
++TEST_F(ThoronReencryptTest, TheBrowsersEncryptorReadsAndWritesTheSameValues) {
++  base::test::TaskEnvironment tasks;
++  std::vector<std::pair<size_t, std::unique_ptr<os_crypt_async::KeyProvider>>> providers;
++  providers.emplace_back(20u, std::make_unique<os_crypt_async::ThoronPortableKeyProvider>(
++                                  std::vector<uint8_t>(key_.begin(), key_.end())));
++  os_crypt_async::OSCryptAsync crypt(std::move(providers));
++  scoped_refptr<os_crypt_async::Encryptor> encryptor;
++  base::RunLoop loop;
++  crypt.GetInstance(base::BindLambdaForTesting([&](scoped_refptr<os_crypt_async::Encryptor> e) {
++    encryptor = std::move(e);
++    loop.Quit();
++  }));
++  loop.Run();
++  ASSERT_TRUE(encryptor);
++  std::string plain;
++  ASSERT_TRUE(encryptor->DecryptString(EncryptWithPortableKey(key_, "from the engine"), &plain));
++  EXPECT_EQ(plain, "from the engine");
++  std::string sealed;
++  ASSERT_TRUE(encryptor->EncryptString("from the browser", &sealed));
++  EXPECT_EQ(sealed.substr(0, 3), kPortableKeyTag);
++  EXPECT_EQ(DecryptWithPortableKey(key_, base::as_byte_span(sealed)), "from the browser");
++}
++
++// Removing the lock: each value of the copy's key goes back under Chromium's key,
++// read back; Chromium's own values stay as they are; no copy is left.
++TEST_F(ThoronReencryptTest, RemovingTheLockPutsEveryValueBackUnderChromiumsKey) {
++  const base::FilePath login = Make(
++      "Login Data", {"CREATE TABLE logins (id INTEGER PRIMARY KEY, password_value BLOB)"});
++  Insert(login, "INSERT INTO logins (password_value) VALUES (?)", EncryptWithPortableKey(key_, "hunter2"));
++  Insert(login, "INSERT INTO logins (password_value) VALUES (?)", "v10 as Chromium wrote it");
++  const base::FilePath cookies = Make(
++      "Network/Cookies", {"CREATE TABLE cookies (host_key TEXT, encrypted_value BLOB)"});
++  Insert(cookies, "INSERT INTO cookies (host_key, encrypted_value) VALUES ('a', ?)",
++         EncryptWithPortableKey(key_, "cookie"));
++  std::array<uint8_t, 16> chromium_key;
++  chromium_key.fill(5);
++
++  ReencryptCounts counts;
++  ASSERT_EQ(ReturnProfileToChromium(dir_.GetPath(), key_, chromium_key, "v11", &counts), ReencryptResult::kDone);
++  EXPECT_EQ(counts.passwords, 1);
++  EXPECT_EQ(counts.cookies, 1);
++  EXPECT_EQ(counts.already, 1);
++  const std::vector<std::string> values = Values(login, "SELECT password_value FROM logins ORDER BY id");
++  ASSERT_EQ(values.size(), 2u);
++  EXPECT_EQ(values[0].substr(0, 3), "v11");
++  EXPECT_EQ(DecryptForChromiumLinux(chromium_key, "v11", base::as_byte_span(values[0])), "hunter2");
++  EXPECT_EQ(values[1], "v10 as Chromium wrote it");
++  const std::vector<std::string> jar = Values(cookies, "SELECT encrypted_value FROM cookies");
++  ASSERT_EQ(jar.size(), 1u);
++  EXPECT_EQ(DecryptForChromiumLinux(chromium_key, "v11", base::as_byte_span(jar[0])), "cookie");
++  EXPECT_FALSE(base::PathExists(dir_.GetPath().Append("Login Data.thoron-before-lock")));
++  EXPECT_FALSE(base::PathExists(dir_.GetPath().Append("Network/Cookies.thoron-before-lock")));
++
++  // and a lock again after it: the same values under a portable key once more
++  ReencryptCounts again;
++  auto read = [&chromium_key](base::span<const uint8_t> v) {
++    return DecryptForChromiumLinux(chromium_key, "v11", v);
++  };
++  ASSERT_EQ(ReencryptProfile(dir_.GetPath(), read, key_, &again), ReencryptResult::kDone);
++  EXPECT_EQ(again.passwords, 1);
++  EXPECT_EQ(again.unreadable, 1);  // the "v10" stand-in opens with neither
++}
++
++// Chromium's own Linux format, pinned by a vector OpenSSL made: AES-128-CBC with
++// PKCS#7 padding and sixteen spaces as the IV, under Chromium's fixed key
++// (PBKDF2-HMAC-SHA1 of "peanuts" with "saltysalt", one round, 16 bytes).
++TEST_F(ThoronReencryptTest, ChromiumsFormatIsOpenSslsAes128Cbc) {
++  const std::array<uint8_t, 16> fixed_key = {0xfd, 0x62, 0x1f, 0xe5, 0xa2, 0xb4, 0x02, 0x53,
++                                             0x9d, 0xfa, 0x14, 0x7c, 0xa9, 0x27, 0x27, 0x78};
++  const std::array<uint8_t, 16> vector = {0x37, 0xf3, 0x31, 0xb8, 0xd6, 0xaf, 0xe7, 0xed,
++                                          0x0b, 0x38, 0x77, 0x1e, 0xe5, 0x7c, 0x38, 0x17};
++  std::string expected = "v10";
++  expected.append(base::as_string_view(vector));
++  EXPECT_EQ(EncryptForChromiumLinux(fixed_key, "v10", "made-up-secret"), expected);
++  EXPECT_EQ(DecryptForChromiumLinux(fixed_key, "v10", base::as_byte_span(expected)), "made-up-secret");
++  EXPECT_EQ(DecryptForChromiumLinux(fixed_key, "v11", base::as_byte_span(expected)), std::nullopt);
 +}
 +
 +}  // namespace
@@ -41186,16 +43064,19 @@ index cf586ad49722dc7ce8df41dd3b4d23f1fee7746e..a0b2bb38f13a512bda6f78dcf31ff645
  
  <enum name="InactiveFrameDisallowActivationReason">
 diff --git a/tools/metrics/histograms/metadata/sql/histograms.xml b/tools/metrics/histograms/metadata/sql/histograms.xml
-index f6d7473a753334fed648b94b1e1fbcf2d1a0dad6..51e964416b4fe17e1d4d44568dfde43d72e720a2 100644
+index f6d7473a753334fed648b94b1e1fbcf2d1a0dad6..3849ba762afbc80c798339708f607377fb6073b8 100644
 --- a/tools/metrics/histograms/metadata/sql/histograms.xml
 +++ b/tools/metrics/histograms/metadata/sql/histograms.xml
-@@ -101,6 +101,9 @@ chromium-metrics-reviews@google.com.
+@@ -101,6 +101,12 @@ chromium-metrics-reviews@google.com.
    <variant name="SQLiteDiagnostics" summary="SQLiteDiagnostics"/>
    <variant name="TabStateStorage" summary="TabStateStorage"/>
    <variant name="Test" summary="Test"/>
 +  <!-- Thoron (ROADMAP P3.14): reads copies of a Chromium-family browser's
 +       Bookmarks/History/Login Data/Web Data during an import. -->
 +  <variant name="ThoronChromiumImport" summary="ThoronChromiumImport"/>
++  <!-- Thoron (ROADMAP P4.9): encrypts a locked Linux portable copy's Login Data
++       and Cookies again with its own key. -->
++  <variant name="ThoronPortableKey" summary="ThoronPortableKey"/>
    <variant name="Thumbnail" summary="Thumbnail"/>
    <variant name="TopSites" summary="TopSites"/>
    <variant name="TrustTokens" summary="TrustTokens"/>

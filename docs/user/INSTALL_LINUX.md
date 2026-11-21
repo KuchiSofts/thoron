@@ -61,6 +61,8 @@ tar -xf thoron-<version>-linux-x64-avx2-portable.tar.xz
   profile use the sandbox. A portable copy has none, and Thoron never runs without its sandbox. An
   administrator can add a profile for the folder's program (the folder's `README.txt`, "The sandbox",
   says how), or install the `.deb`, which brings its own.
+- `chrome://thoron-portable` locks the copy's saved passwords and cookies with a passphrase; from then on the
+  `thoron` file asks for it at each start ([Portable passphrase](PORTABLE_PASSPHRASE.md#5-on-linux)).
 
 **A newer version:** a Linux portable copy looks for updates from inside Thoron, but there is no signed
 release for it to find yet (ROADMAP P2.11, P3.23). Until then, unpack the newer package and move your old

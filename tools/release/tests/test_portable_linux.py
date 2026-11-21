@@ -210,11 +210,129 @@ class PerUserInstallTests(unittest.TestCase):
         self.assertEqual(again.returncode, 2)
 
 
+@unittest.skipUnless(shutil.which("sh") and os.name != "nt", "the launcher runs on Linux")
+class LockedLauncherTests(unittest.TestCase):
+    """A copy locked with a passphrase (P4.9 on Linux): the launcher first starts the browser without a question (a
+    PC remembered in the keyring opens it), asks when it says 83, hands what was typed to the browser on its input
+    (never its command line), asks again for 81, shows the browser's reason for 82."""
+
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp(prefix="locked é "))
+        self.addCleanup(shutil.rmtree, self.dir, True)
+        self.root = self.dir / "ThoronPortable"
+        self.data = self.root / "User Data"
+        program = self.root / "Application" / VERSION / "thoron"
+        program.parent.mkdir(parents=True)
+        # a browser that writes down its arguments and its input, then stops with the next code of CODES
+        program.write_text(
+            '#!/bin/sh\n'
+            'printf "ARGS" >> "$LOG"; for a in "$@"; do printf " [%s]" "$a" >> "$LOG"; done; echo >> "$LOG"\n'
+            'case "$*" in *--thoron-portable-secret-fd=0*) printf "INPUT %s\\n" "$(cat | tr "\\n" "|")" >> "$LOG" ;; esac\n'
+            'code=$(head -n 1 "$CODES"); sed -i 1d "$CODES"\n'
+            '[ "$code" != 82 ] || printf "the key file is damaged." > "$PROBLEM"\n'
+            'exit "${code:-0}"\n')
+        program.chmod(0o755)
+        (self.root / "Application" / "current").write_text(VERSION + "\n")
+        (self.root / "variant").write_text("linux-x64-sse4\n")
+        self.data.mkdir()
+        (self.data / "Thoron Portable Key").write_bytes(b"key file")
+        (self.root / "thoron").write_text(pl.LAUNCHER_TEXT)
+        (self.root / "thoron").chmod(0o755)
+        # a zenity that types the next line of TYPED, or says no when it is "CANCEL"
+        self.bin = self.dir / "bin"
+        self.bin.mkdir()
+        (self.bin / "zenity").write_text(
+            '#!/bin/sh\n'
+            'printf "ZENITY" >> "$LOG"; for a in "$@"; do printf " [%s]" "$a" >> "$LOG"; done; echo >> "$LOG"\n'
+            'case "$*" in *--entry*) ;; *) exit 0 ;; esac\n'
+            'line=$(head -n 1 "$TYPED"); sed -i 1d "$TYPED"\n'
+            '[ "$line" != CANCEL ] || exit 1\n'
+            'printf "%s\\n" "$line"\n')
+        (self.bin / "zenity").chmod(0o755)
+        self.log = self.dir / "log"
+        self.log.write_text("")
+
+    def run_it(self, typed: list, codes: list):
+        (self.dir / "typed").write_text("".join(f"{t}\n" for t in typed))
+        (self.dir / "codes").write_text("".join(f"{c}\n" for c in codes))
+        env = {"PATH": f"{self.bin}:/usr/bin:/bin", "DISPLAY": ":99", "LOG": str(self.log),
+               "TYPED": str(self.dir / "typed"), "CODES": str(self.dir / "codes"),
+               "PROBLEM": str(self.data / "Thoron Unlock Problem")}
+        return subprocess.run([str(self.root / "thoron"), "--flag", "two words"], capture_output=True, text=True,
+                              env=env, stdin=subprocess.DEVNULL)
+
+    def lines(self, start: str) -> list:
+        return [line for line in self.log.read_text().splitlines() if line.startswith(start)]
+
+    def test_what_was_typed_goes_on_the_input_and_a_wrong_one_is_asked_again(self):
+        out = self.run_it(["wrong passphrase", "the right passphrase"], [83, 81, 0])
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertEqual(self.lines("INPUT"), ["INPUT passphrase|wrong passphrase", "INPUT passphrase|the right passphrase"])
+        args = self.lines("ARGS")
+        self.assertEqual(len(args), 3)
+        self.assertNotIn("secret-fd", args[0])  # the first try, without a question
+        for line in args[1:]:
+            self.assertIn("[--thoron-portable-secret-fd=0] [--flag] [two words]", line)
+            self.assertNotIn("passphrase]", line)
+        self.assertEqual(len(self.lines("ZENITY")), 2)
+
+    def test_a_remembered_pc_opens_the_copy_without_a_question(self):
+        out = self.run_it([], [0])
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertEqual(self.lines("ZENITY"), [])
+        self.assertEqual(len(self.lines("ARGS")), 1)
+        self.assertEqual(self.lines("INPUT"), [])
+
+    def test_quitting_the_question_starts_nothing(self):
+        out = self.run_it(["CANCEL"], [83])
+        self.assertEqual(out.returncode, 0)
+        self.assertEqual(len(self.lines("ARGS")), 1)  # only the first try
+        self.assertEqual(self.lines("INPUT"), [])
+
+    def test_five_wrong_ones_stop_with_81(self):
+        out = self.run_it([f"wrong {n}" for n in range(5)], [83] + [81] * 5)
+        self.assertEqual(out.returncode, 81)
+        self.assertEqual(len(self.lines("ARGS")), 6)
+        self.assertEqual(len(self.lines("INPUT")), 5)
+
+    def test_the_browsers_reason_is_shown_when_the_copy_cannot_be_unlocked(self):
+        out = self.run_it([], [82])  # a damaged key file: said at the first try
+        self.assertEqual(out.returncode, 82)
+        self.assertTrue(any("[--error]" in line and "[--text=the key file is damaged.]" in line
+                            for line in self.lines("ZENITY")))
+        self.assertFalse((self.data / "Thoron Unlock Problem").exists())
+
+    def test_a_missing_key_file_of_a_locked_copy_asks_before_starting_without_it(self):
+        (self.data / "Thoron Portable Key").unlink()
+        (self.data / "Local State").write_text('{"thoron_portable":{"locked":true}}')
+        out = self.run_it([], [0])
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertTrue(any("[--question]" in line for line in self.lines("ZENITY")))
+        self.assertIn("[--thoron-portable-start-without-key]", self.lines("ARGS")[0])
+        self.assertEqual(self.lines("INPUT"), [])
+
+    def test_a_copy_that_was_never_locked_starts_without_a_question(self):
+        (self.data / "Thoron Portable Key").unlink()
+        (self.data / "Local State").write_text('{"thoron_portable":{"locked":false}}')
+        out = self.run_it([], [0])
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertEqual(self.lines("ZENITY"), [])
+        self.assertNotIn("start-without-key", self.lines("ARGS")[0])
+
+
 class LauncherTextTests(unittest.TestCase):
     def test_it_never_turns_the_sandbox_off_and_passes_arguments_as_they_are(self):
         self.assertNotIn("--no-sandbox", pl.LAUNCHER_TEXT)
-        self.assertIn('exec "$program" --user-data-dir="$here/User Data" "$@"', pl.LAUNCHER_TEXT)
+        self.assertIn('data="$here/User Data"', pl.LAUNCHER_TEXT)
+        self.assertIn('exec "$program" --user-data-dir="$data" "$@"', pl.LAUNCHER_TEXT)
         self.assertNotIn("eval", pl.LAUNCHER_TEXT)
+
+    def test_the_exit_codes_are_the_browsers(self):
+        # chrome/browser/thoron_portable/unlock_linux.h: 81 ask again, 82 cannot unlock, 83 the passphrase is needed
+        # (Chromium's own end at 43)
+        self.assertIn('while [ "$rc" = 83 ] || [ "$rc" = 81 ]; do', pl.LAUNCHER_TEXT)
+        self.assertIn('if [ "$rc" = 82 ]; then', pl.LAUNCHER_TEXT)
+        self.assertNotIn("--thoron-portable-secret-fd=0 \"$secret\"", pl.LAUNCHER_TEXT)
 
 
 if __name__ == "__main__":

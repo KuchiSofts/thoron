@@ -458,7 +458,35 @@ The installer, and later Settings, shows **"Import from…"** with:
   remembers or forgets this PC, and removes the lock.
 - **Decided here, as the threat model proposed (questions 5 to 7, the owner may change them):** Windows
   first, with no keyring entry on Linux yet; only passwords and cookies are locked, and the page says so; the
-  "new key" action (E6) comes later. Linux and the review by someone other than the author stay open.
+  "new key" action (E6) comes later. The review by someone other than the author stays open; Linux came
+  after (7.8.2).
+
+#### 7.8.2 As built on Linux (ROADMAP P4.9, 2026-11-21; the owner's decision of 2026-11-21)
+
+- **A new key, and the values encrypted again.** Chromium on Linux keeps no key per copy (its values are
+  `v10`, under a fixed key anyone can use, or `v11`, under a key from the desktop's keyring), so the lock gives
+  the copy a new random 32-byte key, kept in the same key file (7.8.1). The first start after the lock
+  encrypts every saved password, password note and cookie again with it (`components/thoron_portable_key/
+  reencrypt_linux.h`): for each database a copy beside it, checked by SHA-256; one transaction in which each
+  value is decrypted with the old key, sealed with AES-256-GCM in the Encryptor's own format (tag `t10`, a
+  12-byte nonce), opened again, and read back from its row before the transaction is kept; on any problem the
+  database is put back from its copy in one step. The copies and SQLite's journal are overwritten with zeros
+  before they are deleted, and SQLite in Chromium overwrites what it frees. A value the old keys cannot read
+  (a locked keyring) is left, and the next start tries again.
+- **In the browser** a key provider of Thoron's own gives os_crypt the key under the tag `t10` with the
+  highest precedence and is used for every new value; Chromium's own providers stay for reading.
+- **At start** the copy's launcher (`thoron`, `tools/release/portable_linux.py`) first starts the browser
+  without a question: a PC remembered in the desktop's keyring opens the copy. When the browser says it needs
+  the passphrase (exit 83), the launcher asks (zenity, kdialog or the terminal) and hands what was typed to
+  the browser on its input, never on its command line; 81 means asked again, 82 a key file that cannot be
+  used (the reason shown). The browser checks it in `chrome/browser/thoron_portable/unlock_linux.cc` before
+  os_crypt and any profile.
+- **Remember this PC** keeps a random key as an item of its own in the desktop's keyring (Secret Service:
+  GNOME's keyring, KWallet, KeePassXC), with the profile key sealed with it in the key file; no prompt is ever
+  shown, and with no keyring nothing is kept.
+- **Removing the lock** takes the same path back at the next start, after the passphrase once more: every
+  value under the keyring's key (or Chromium's fixed key where there is none), each read back, and only then
+  the key file goes.
 
 ## 8. Release process and full changelog **[owner]**
 

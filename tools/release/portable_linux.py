@@ -113,21 +113,43 @@ lock=$(readlink -- "$data/SingletonLock" 2>/dev/null)
 if [ -n "$lock" ] && [ "${lock%-*}" = "$(uname -n)" ] && kill -0 "${lock##*-}" 2>/dev/null; then
   exec "$program" --user-data-dir="$data" "$@"
 fi
+# a locked copy without its key file: the person chooses (the key file put back from a backup, or a start without what
+# it kept locked, which the browser then sets aside, not deleted)
+without_key() {
+  text="$1"; shift
+  if desktop zenity; then
+    zenity --question --title=Thoron --text="$text" --ok-label="Start without them" --cancel-label=Quit 2> /dev/null || exit 0
+  elif desktop kdialog; then
+    kdialog --title Thoron --yesno "$text" --yes-label "Start without them" --no-label Quit 2> /dev/null || exit 0
+  else
+    say "$text Start it with --thoron-portable-start-without-key to do without them."
+    exit 82
+  fi
+  exec "$program" --user-data-dir="$data" --thoron-portable-start-without-key "$@"
+}
 if [ ! -f "$data/Thoron Portable Key" ]; then
   if grep -q '"thoron_portable":{[^}]*"locked":true' "$data/Local State" 2>/dev/null; then
-    text="This copy was locked with a passphrase, and its key file \"Thoron Portable Key\" is missing. Put it back from a backup of this copy, or start Thoron without its saved passwords and sign-ins."
-    if desktop zenity; then
-      zenity --question --title=Thoron --text="$text" --ok-label="Start without them" --cancel-label=Quit 2> /dev/null || exit 0
-    elif desktop kdialog; then
-      kdialog --title Thoron --yesno "$text" --yes-label "Start without them" --no-label Quit 2> /dev/null || exit 0
-    else
-      say "$text Start it with --thoron-portable-start-without-key to do without them."
-      exit 82
-    fi
-    exec "$program" --user-data-dir="$data" --thoron-portable-start-without-key "$@"
+    without_key "This copy was locked with a passphrase, and its key file \"Thoron Portable Key\" is missing. Put it back from a backup of this copy, or start Thoron without its saved passwords and sign-ins." "$@"
   fi
-  exec "$program" --user-data-dir="$data" "$@"
+  # A copy that is not locked. The browser stops with 82 only when it finds a lock's values with no key file while
+  # Local State says unlocked (the key file was taken and Local State edited): the same question, with its reason.
+  "$program" --user-data-dir="$data" "$@"
+  rc=$?
+  if [ "$rc" = 82 ]; then
+    why=$(head -c 2000 -- "$data/Thoron Unlock Problem" 2>/dev/null)
+    rm -f -- "$data/Thoron Unlock Problem"
+    without_key "${why:-This copy's key file is missing.}" "$@"
+  fi
+  exit "$rc"
 fi
+# A locked copy's crash reports may hold its key: they stay off the drive, in this user's own runtime folder (in
+# memory, gone at sign-out), or in a private temporary folder.
+if [ -n "${XDG_RUNTIME_DIR:-}" ] && [ -d "$XDG_RUNTIME_DIR" ] && [ -O "$XDG_RUNTIME_DIR" ]; then
+  BREAKPAD_DUMP_LOCATION="$XDG_RUNTIME_DIR/thoron-crash-reports"
+else
+  BREAKPAD_DUMP_LOCATION=$(mktemp -d "${TMPDIR:-/tmp}/thoron-crash-reports.XXXXXX") || BREAKPAD_DUMP_LOCATION=/dev/null
+fi
+export BREAKPAD_DUMP_LOCATION
 ask() {
   prompt="This copy of Thoron is locked. Type its passphrase, or its recovery key:"
   if desktop zenity; then

@@ -228,6 +228,7 @@ class LockedLauncherTests(unittest.TestCase):
             '#!/bin/sh\n'
             'printf "ARGS" >> "$LOG"; for a in "$@"; do printf " [%s]" "$a" >> "$LOG"; done; echo >> "$LOG"\n'
             'case "$*" in *--thoron-portable-secret-fd=0*) printf "INPUT %s\\n" "$(cat | tr "\\n" "|")" >> "$LOG" ;; esac\n'
+            'printf "DUMPS %s\\n" "$BREAKPAD_DUMP_LOCATION" >> "$LOG"\n'
             'code=$(head -n 1 "$CODES"); sed -i 1d "$CODES"\n'
             '[ "$code" != 82 ] || printf "the key file is damaged." > "$PROBLEM"\n'
             'exit "${code:-0}"\n')
@@ -318,6 +319,31 @@ class LockedLauncherTests(unittest.TestCase):
         self.assertEqual(out.returncode, 0, out.stderr)
         self.assertEqual(self.lines("ZENITY"), [])
         self.assertNotIn("start-without-key", self.lines("ARGS")[0])
+        # an unlocked copy keeps its crash reports in its own folder
+        self.assertEqual(self.lines("DUMPS"), [f"DUMPS {self.data / 'Crash Reports'}"])
+
+    def test_a_lock_taken_without_the_passphrase_asks_at_once(self):
+        # no key file and Local State says unlocked, but the browser finds a lock's values: it stops with 82, and the
+        # launcher asks at once, with the browser's reason, whether to start without them
+        (self.data / "Thoron Portable Key").unlink()
+        (self.data / "Local State").write_text('{"thoron_portable":{"locked":false}}')
+        out = self.run_it([], [82, 0])
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertTrue(any("[--question]" in line and "[--text=the key file is damaged.]" in line
+                            for line in self.lines("ZENITY")))
+        args = self.lines("ARGS")
+        self.assertEqual(len(args), 2)
+        self.assertIn("[--thoron-portable-start-without-key] [--flag] [two words]", args[1])
+        self.assertFalse((self.data / "Thoron Unlock Problem").exists())
+
+    def test_a_locked_copys_crash_reports_stay_off_the_drive(self):
+        out = self.run_it([], [0])
+        self.assertEqual(out.returncode, 0, out.stderr)
+        dumps = self.lines("DUMPS")
+        self.assertEqual(len(dumps), 1)
+        self.addCleanup(shutil.rmtree, dumps[0][len("DUMPS "):], True)
+        self.assertNotIn(str(self.dir), dumps[0])
+        self.assertTrue(dumps[0].startswith("DUMPS /"), dumps[0])
 
 
 class LauncherTextTests(unittest.TestCase):

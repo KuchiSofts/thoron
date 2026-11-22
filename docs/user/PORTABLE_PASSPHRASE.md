@@ -86,22 +86,34 @@ locks the same way, on `chrome://thoron-portable`, with these differences:
   recovery key in the same field. What you type goes to Thoron on its input, never on its command line, so other
   programs on the PC do not see it in the list of processes. Start the copy with that file, not with the program
   inside `Application`, which only says it is locked.
-- **The first start after the lock encrypts the saved passwords and cookies again.** Linux keeps no key of its
-  own for a portable copy, so the lock gives the copy a new key. At that start Thoron first makes a copy of each
-  database, checks that the copy is the same, encrypts every value again, reads each one back, and only then
-  wipes the copy (it overwrites it before deleting it). If anything fails, the database is put back from its copy
-  and Thoron tries again at its next start. A value the old keys cannot read (with the desktop's keyring locked,
-  say) waits for a later start, and Thoron says so in the terminal.
+- **The first start after the lock encrypts the saved passwords, cookies and cards again** (and sign-in tokens
+  and Autofill's other saved values). Linux keeps no key of its own for a portable copy, so the lock gives the
+  copy a new key. At that start Thoron first makes a copy of each database, checks that the copy is the same,
+  encrypts every value again, reads each one back, and only then wipes the copy (it overwrites it before deleting
+  it). If anything fails, the database is put back from its copy and Thoron tries again at its next start. A value
+  the old keys cannot read (with the desktop's keyring locked, or one saved on another PC's keyring) is left as it
+  is and waited for at later starts, and Thoron says so in the terminal; it is never encrypted again as something
+  it is not.
 - **Remember this PC** keeps a key in the desktop's keyring for your user (GNOME's keyring, KDE's KWallet, or
   another Secret Service such as KeePassXC). Tick it when you lock, or choose **Remember this PC** on the page
   later. A start then asks nothing while that keyring is unlocked (it is, once you have signed in to the
-  desktop). **Forget this PC** on the page takes it out of the copy; the keyring keeps an entry named
-  "Thoron portable copy: this PC", which you can delete there.
+  desktop). **Forget this PC** on the page takes it out of the copy and deletes its entry in the keyring
+  ("Thoron portable copy: this PC") too. With the keyring locked it cannot, and the page says so.
 - **Removing the lock** takes one more start: on the page, type the passphrase and choose **Remove the lock**,
   then close Thoron and start it again with the passphrase once more. At that start Thoron puts every saved
-  password and cookie back under the desktop's keyring (or, where there is none, Chromium's fixed key, which
-  anyone can use), the same careful way (a checked copy first, each value read back), and only then removes
-  the key file. If anything fails, the lock stays and the next start tries again.
+  password, cookie and card back under Chromium's own key for Linux, which anyone can use, as an unlocked copy
+  has them, the same careful way (a checked copy first, each value read back), and only then removes the key
+  file. If anything fails, the lock stays and the next start tries again. The copy keeps its former key in its
+  `Local State` file, only to read anything else still under it; if you lock the copy again later, it takes that
+  key again. Only the page can ask for the removal: a `Local State` changed by someone else does not remove the
+  lock.
+- **Without its key file** (lost, or taken away), a locked copy does not start as if it had never been locked,
+  also when someone changed its `Local State` to say so: the `thoron` file asks whether to start without its saved
+  passwords and sign-ins. If you choose to, Thoron sets the databases that hold them aside, next to the new ones
+  (`Login Data.thoron-without-key` and so on), and does not delete them: put the key file back and those files in
+  place to have them again.
+- **Crash reports** of a locked copy stay off the drive: they go into your user's runtime folder on the PC (kept
+  in memory, gone when you sign out), because they may hold the copy's key.
 - **What was saved before the lock** was protected only by the desktop's keyring or by Chromium's fixed key
   (when there is no keyring), which anyone can use. Thoron overwrites what it can, but a flash drive may keep
   older blocks of its own. Lock a new copy before you save passwords in it, or change those passwords after

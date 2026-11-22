@@ -362,6 +362,7 @@ Explanations live in the design docs under `docs/design/`.
 - **Repository:** the unused copy of the upstream Thorium M138 tree and the Sponsor button are gone; credits stay.
 
 ### Security
+- **Portable passphrase:** fixes from a separate read of the lock's code. On Linux only someone who opened the copy can have its lock removed, cards and sign-in tokens are locked too, nothing saved while locked is lost when the lock goes, a value read with another PC's keyring key is never re-encrypted as garbage, a taken key file is noticed, crash reports stay off the drive and "Forget this PC" deletes the keyring entry; on both systems a damaged key file no longer costs the good copy beside it.
 
 - **Portable:** a portable copy no longer creates an empty `HKCU\Software\Google\Chrome\Extensions` key on the PC. Thoron still reads extensions that other programs register there when the key exists, and sees a key made later at its next start.
 - **Chromium:** updated to 158.0.8127.65 (from 158.0.8127.30), with the fixes Chrome's 158 branch has received since; Chrome names them when 158 reaches its full stable release.

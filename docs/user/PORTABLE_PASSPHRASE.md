@@ -68,6 +68,7 @@ All on `chrome://thoron-portable` in the unlocked copy:
   that every saved password and cookie still opens. Then start the Thoron copy and lock it here. The original
   still holds them unprotected: delete it yourself once you are sure (deleted files on a USB drive can often be
   recovered).
+- **Crash reports:** a locked copy writes none on Windows, because they would be on its drive and may hold its key. Unlocked, it keeps them in its own folder as before ([crash reports](../qa/CRASH_TRIAGE.md)).
 
 Until a release has the lock:
 

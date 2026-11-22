@@ -345,14 +345,21 @@ def run(browser: Path, work: Path) -> list[str]:
             found.append("quit: the key file changed")
         report("quit", found, f"said {said!r}, exit {code}")
 
-        # recovery
+        # recovery; a locked copy writes no crash reports (they would be on its drive and may hold its key), where
+        # the unlocked copy had its Crashpad folder
+        unlocked_reports = (user_data / "Crashpad").is_dir()
+        shutil.rmtree(user_data / "Crashpad", ignore_errors=True)
         proc = start()
         unlock(proc, recovery.replace("-", "").lower(), recovery=True)
         session = Session(proc, user_data)
         found = [] if cookie_seen(session) else ["recovery: the cookie is not readable"]
         session.close()
         session = None
-        report("recovery", found, "opened with the recovery key")
+        if not unlocked_reports:
+            found.append("recovery: the unlocked copy had no Crashpad folder to compare with")
+        if (user_data / "Crashpad").exists():
+            found.append("recovery: the locked copy made a Crashpad folder on its drive")
+        report("recovery", found, "opened with the recovery key; no crash reports while locked")
 
         # remember
         proc = start()

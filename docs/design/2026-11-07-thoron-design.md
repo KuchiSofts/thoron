@@ -507,7 +507,8 @@ The installer, and later Settings, shows **"Import from…"** with:
   - a lock's values with no key file, while Local State says unlocked, stop the start like a missing key file,
     and a start without the key file sets those databases aside (`<name>.thoron-without-key`), never deletes
     them;
-  - a locked copy's crash reports go to the user's runtime folder, not the drive; "Forget this PC" deletes the
+  - a locked copy's crash reports go to the user's runtime folder, not the drive (on Windows a locked copy
+    writes none: its browser starts no crash handler while the key file is there); "Forget this PC" deletes the
     keyring's item; a damaged key file beside a good one a write left does not cost the good one.
 
 ## 8. Release process and full changelog **[owner]**

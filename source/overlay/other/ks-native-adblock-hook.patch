@@ -2829,6 +2829,32 @@ index a8fb5de0b5a99198c901e81a2df54d7fcb9c7dd2..d134439f071fcda8430f589b0d23c950
  #endif
        ;
  
+diff --git a/chrome/app/chrome_crash_reporter_client_win.cc b/chrome/app/chrome_crash_reporter_client_win.cc
+index 8a7a65bb2abf76a097deb247c73f5052f5b775fc..349879a8e2979373c0596e3aedea5ce4a3b15270 100644
+--- a/chrome/app/chrome_crash_reporter_client_win.cc
++++ b/chrome/app/chrome_crash_reporter_client_win.cc
+@@ -24,6 +24,7 @@
+ #include "base/win/current_module.h"
+ #include "chrome/chrome_elf/chrome_elf_constants.h"
+ #include "chrome/install_static/install_util.h"
++#include "chrome/install_static/thoron_portable.h"
+ #include "chrome/install_static/user_data_dir.h"
+ #include "components/crash/core/app/crashpad.h"
+ #include "components/metrics/system_profile_user_stream.h"
+@@ -62,6 +63,13 @@ void ChromeCrashReporterClient::InitializeCrashReportingForProcess() {
+       metrics::SystemProfileUserStream::Get().Initialize();
+     }
+ 
++    // Thoron (ROADMAP P4.9): a portable copy locked with a passphrase writes no
++    // crash reports: they would be on its drive and may hold its key. Its
++    // other processes then find no handler and report nothing either.
++    if (process_type.empty() &&
++        install_static::IsLockedThoronPortableCopy(user_data_dir)) {
++      return;
++    }
+     // TODO(wfh): Add a DCHECK for success. See https://crbug.com/40226723.
+     std::ignore = crash_reporter::InitializeCrashpadWithEmbeddedHandler(
+         /*initial_client=*/process_type.empty(),
 diff --git a/components/os_crypt/async/browser/os_crypt_win.cc b/components/os_crypt/async/browser/os_crypt_win.cc
 index b9ca04d92910f19f2443de18014cf1cb14ae5928..1b1c11ffdde13577df3ee67b98beda85bf1901ef 100644
 --- a/components/os_crypt/async/browser/os_crypt_win.cc
@@ -13316,10 +13342,10 @@ index 0000000000000000000000000000000000000000..9e5e387de3edc6f7812c8b79681d6b3a
 +#endif  // CHROME_BROWSER_UI_WEBUI_THORON_PORTABLE_UI_H_
 diff --git a/chrome/install_static/thoron_portable.cc b/chrome/install_static/thoron_portable.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..8cfe004889b05c73ccc02bd546966d332e1c7c48
+index 0000000000000000000000000000000000000000..4b5ce49a6862ab075c6c0c6a048d46955a007df9
 --- /dev/null
 +++ b/chrome/install_static/thoron_portable.cc
-@@ -0,0 +1,49 @@
+@@ -0,0 +1,57 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -13368,18 +13394,28 @@ index 0000000000000000000000000000000000000000..8cfe004889b05c73ccc02bd546966d33
 +  return LooksPortable();
 +}
 +
++bool IsLockedThoronPortableCopy(const std::wstring& user_data_dir) {
++  if (user_data_dir.empty() || !IsThoronPortableCopy()) {
++    return false;
++  }
++  const std::wstring key = user_data_dir + L"\\Thoron Portable Key";
++  return Exists(key) || Exists(key + L".new") || Exists(key + L".old");
++}
++
 +}  // namespace install_static
 diff --git a/chrome/install_static/thoron_portable.h b/chrome/install_static/thoron_portable.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..a2e6d2ab60a2aedd0f7c694eb777ff9d5a5acbec
+index 0000000000000000000000000000000000000000..0b333a31d95c997519a2f2e81acad366c46ce2a3
 --- /dev/null
 +++ b/chrome/install_static/thoron_portable.h
-@@ -0,0 +1,21 @@
+@@ -0,0 +1,28 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
 +#ifndef CHROME_INSTALL_STATIC_THORON_PORTABLE_H_
 +#define CHROME_INSTALL_STATIC_THORON_PORTABLE_H_
++
++#include <string>
 +
 +namespace install_static {
 +
@@ -13392,6 +13428,11 @@ index 0000000000000000000000000000000000000000..a2e6d2ab60a2aedd0f7c694eb777ff9d
 +// not written for it. Windows APIs only, so chrome_elf may use it in DllMain
 +// (no further DLL is loaded).
 +bool IsThoronPortableCopy();
++
++// Thoron (ROADMAP P4.9): a portable copy locked with a passphrase: its
++// `user_data_dir` holds the lock's key file ("Thoron Portable Key", or the
++// copy a write leaves beside it). Windows APIs only, as above.
++bool IsLockedThoronPortableCopy(const std::wstring& user_data_dir);
 +
 +}  // namespace install_static
 +

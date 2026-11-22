@@ -24,7 +24,7 @@ folder of section 2 and the log must show no request that carries it.
 | Install | Folder |
 |---|---|
 | Windows, installed | `%LOCALAPPDATA%\Thoron\User Data\Crashpad\reports` |
-| Windows, portable | `Crashpad\reports` in the profile folder inside the portable folder |
+| Windows, portable | `Crashpad\reports` in the profile folder inside the portable folder; none while the copy is locked with a passphrase (they would be on its drive and may hold its key) |
 | Linux | `~/.config/thoron/Crash Reports` (new dumps in `pending`) |
 | Any build started with `--user-data-dir=<folder>` | `<folder>\Crashpad\reports` on Windows, `<folder>/Crash Reports` on Linux |
 

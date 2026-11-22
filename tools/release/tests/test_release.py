@@ -256,6 +256,54 @@ class AssembleTests(unittest.TestCase):
                                            ["mini_installer.exe"]))
         self.assertFalse((self.f.dist.parent / "dist-symbols").exists())
 
+    def test_a_signer_signs_the_release_copies_before_the_checksums(self):
+        # S.8: a stand-in for authenticode.py sign that marks the files it is given
+        signed = []
+
+        def signer(files):
+            for f in files:
+                signed.append(f)
+                f.write_bytes(f.read_bytes() + b"+signed")
+        rel.assemble(self.f.out, self.f.dist, "158.0.8127.3000", "win-x64-avx2", self.f.buildinfo, signer=signer)
+        installer = self.f.dist / "thoron-158.0.8127.3000-win-x64-avx2-installer.exe"
+        self.assertEqual(signed, [installer])
+        self.assertEqual(installer.read_bytes(), b"installer bytes+signed")
+        self.assertEqual((self.f.out / "mini_installer.exe").read_bytes(), b"installer bytes")  # the build's own
+        self.assertEqual(rel.checksum_problems(self.f.dist), [])        # the sums are of the signed bytes
+
+    def test_the_signing_command_is_the_one_written_in_its_file(self):
+        command_file = Path(self.f.tmp.name) / "sign.json"
+        command_file.write_text(json.dumps(["py", "-3", "-I", "authenticode.py", "sign", "--thumbprint", "AB"]),
+                                encoding="utf-8")
+        calls = []
+
+        class Done:
+            def __init__(self, code):
+                self.returncode, self.stdout, self.stderr = code, "", "SignTool Error: no certificate"
+        signer = rel.authenticode_signer(command_file, run=lambda c, **k: calls.append(c) or Done(0))
+        signer([Path("a.exe"), Path("b.dll")])
+        self.assertEqual(calls, [["py", "-3", "-I", "authenticode.py", "sign", "--thumbprint", "AB", "a.exe", "b.dll"]])
+        failing = rel.authenticode_signer(command_file, run=lambda c, **k: Done(1))
+        with self.assertRaisesRegex(rel.ReleaseError, "signing stopped with 1"):
+            failing([Path("a.exe")])
+        command_file.write_text('{"not": "a list"}', encoding="utf-8")
+        with self.assertRaisesRegex(rel.ReleaseError, "JSON list"):
+            rel.authenticode_signer(command_file)
+
+    def test_a_signed_copy_leaves_the_build_file_as_it_was(self):
+        copy = rel.signed_copy(self.f.out / "thoron_update.exe", Path(self.f.tmp.name) / "signed",
+                               lambda files: [f.write_bytes(b"signed") for f in files])
+        self.assertEqual(copy.read_bytes(), b"signed")
+        self.assertNotEqual((self.f.out / "thoron_update.exe").read_bytes(), b"signed")
+
+    def test_unsigned_programs_are_named(self):
+        (self.f.out / "Chrome-bin").mkdir()
+        (self.f.out / "Chrome-bin" / "thoron.exe").write_bytes(b"MZ")
+        found = rel.signature_problems([self.f.out / "Chrome-bin"],
+                                       check=lambda files: {f: "not signed as Windows trusts it (NotSigned)"
+                                                            for f in files})
+        self.assertEqual(found, ["thoron.exe: not signed as Windows trusts it (NotSigned)"])
+
     def test_refuses_to_overwrite_an_existing_release_folder(self):
         rel.assemble(self.f.out, self.f.dist, "158.0.8127.3000", "win-x64-avx2", self.f.buildinfo)
         with self.assertRaises(rel.ReleaseError):

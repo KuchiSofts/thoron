@@ -210,6 +210,8 @@ The release configuration is upstream's `other\AVX2\win_AVX2_args.gn` with Thoro
 choices applied by `tools/build/release_args.py` (no RLZ tracking library, no bundled Widevine,
 no Google API keys; every choice and its reason is in [`RELEASE_ARGS.md`](RELEASE_ARGS.md)).
 Widevine itself stays enabled, and the browser downloads it from Google when a site needs it.
+A release signed with Thoron's certificate adds `thoron_authenticode_command_file` to `args.gn`, so the
+installer's archive step signs what it packs ([`docs/release/SIGNING.md`](../release/SIGNING.md)).
 
 ```powershell
 cd $env:THORON_BUILD_ROOT\chromium\src

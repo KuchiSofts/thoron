@@ -99,6 +99,7 @@ from tools.legal import unlicensed_patches  # noqa: E402
 from tools.qa import perf_gate  # noqa: E402
 from tools.release import adblock_resources, changelog, delta, package_audit, pe_check, portable  # noqa: E402
 from tools.release import apt_repo  # noqa: E402
+from tools.release import authenticode  # noqa: E402
 from tools.release import portable_linux  # noqa: E402
 from tools.release import version as ver  # noqa: E402
 from tools.update import manifest as mf  # noqa: E402
@@ -885,14 +886,98 @@ def wiki_commands(gh_repo: str) -> list[str]:
     return [f"{tool} --dry-run", tool]
 
 
+def authenticode_signer(command_file: Path, run=subprocess.run):
+    """What signs files with Authenticode (ROADMAP S.8): the command a person wrote in `command_file`, a JSON list
+    of strings (tools/release/authenticode.py sign ..., the file the installer's archive step takes too, GN's
+    thoron_authenticode_command_file), the files appended. It signs and checks each file, or stops the release."""
+    try:
+        command = json.loads(command_file.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise ReleaseError(f"--authenticode-command: {exc}") from None
+    if not isinstance(command, list) or not command or not all(isinstance(part, str) for part in command):
+        raise ReleaseError("--authenticode-command names a file holding a JSON list of strings")
+
+    def signer(files: list[Path]) -> None:
+        if not files:
+            return
+        done = run(command + [str(f) for f in files], capture_output=True, text=True)
+        if done.returncode != 0:
+            raise ReleaseError(f"signing stopped with {done.returncode}: "
+                               f"{((done.stdout or '') + (done.stderr or '')).strip()[-400:]}")
+    return signer
+
+
+def signed_copy(path: Path, into: Path, signer) -> Path:
+    """A signed copy of `path` in `into`: the build's own file is never changed (the build would make it again)."""
+    into.mkdir(parents=True, exist_ok=True)
+    copy = into / path.name
+    shutil.copy2(path, copy)
+    signer([copy])
+    return copy
+
+
+def signature_problems(files: list[Path], check=authenticode.check) -> list[str]:
+    """Each of `files` (programs and libraries, or folders of them) that is not signed, trusted and timestamped."""
+    found = check(authenticode.files_of(files))
+    return [f"{path.name}: {why}" for path, why in found.items()]
+
+
+def assemble_windows(out: Path, dist: Path, version: str, variant: str, chrome_bin: Path, launcher: Path | None,
+                     updater: Path | None, deltas_from, zucchini, delta_reports, installed_from, sevenzip, work,
+                     signer, signed_dir: Path | None) -> list[Path]:
+    """A Windows release's portable package, ThoronSetup.exe and deltas (assemble), signed when `signer` is given."""
+    files = []
+    launcher = launcher or out / portable.BUILT_LAUNCHER
+    updater = updater or out / portable.UPDATER
+    if signer is not None:
+        launcher = signed_copy(launcher, signed_dir / "launcher", signer)
+        updater = signed_copy(updater, signed_dir / "updater", signer)
+    files.append(add_portable(chrome_bin, dist, version, variant, launcher, updater))
+    setup = out / SETUP
+    if setup.is_file():
+        found = setup_problems(setup)
+        if found:
+            raise ReleaseError("; ".join(found))
+        shutil.copy2(setup, dist / SETUP)
+        if signer is not None:
+            signer([dist / SETUP])
+        files.append(dist / SETUP)
+    if deltas_from:
+        made, reports = add_deltas(chrome_bin, dist, version, variant, list(deltas_from),
+                                   zucchini or out / "zucchini.exe")
+        files += made
+        if delta_reports is not None:
+            delta_reports.extend(reports)
+    if installed_from:
+        setup_exe = out / "setup.exe"
+        if not setup_exe.is_file():
+            raise ReleaseError("the build wrote no setup.exe, which an installed copy's delta carries")
+        if signer is not None:
+            setup_exe = signed_copy(setup_exe, signed_dir / "setup", signer)
+        scratch = Path(tempfile.mkdtemp(prefix="installed-deltas-", dir=work))
+        try:
+            made, reports = add_installed_deltas(chrome_bin, setup_exe, dist, version, variant,
+                                                 list(installed_from), zucchini or out / "zucchini.exe",
+                                                 sevenzip or "7z", scratch)
+        finally:
+            shutil.rmtree(scratch, ignore_errors=True)
+        files += made
+        if delta_reports is not None:
+            delta_reports.extend(reports)
+    return files
+
+
 def assemble(out: Path, dist: Path, version: str, variant: str, buildinfo: Path, chrome_bin: Path | None = None,
              licences: dict[str, bytes] | None = None, launcher: Path | None = None,
              updater: Path | None = None, deltas_from: list[Path] | None = None, zucchini: Path | None = None,
              delta_reports: list | None = None, installed_from: list[Path] | None = None,
-             sevenzip: str | None = None, work: Path | None = None) -> list[Path]:
+             sevenzip: str | None = None, work: Path | None = None, signer=None) -> list[Path]:
     """Fills the release folder. With `chrome_bin` the portable package of a Windows build is made beside
     the installer, with the launcher and the updater the build wrote into `out` unless others are named;
-    with `licences` the licence bundle. SHA256SUMS lists every file."""
+    with `licences` the licence bundle. With `signer` (authenticode_signer) every program a Windows release
+    holds itself is signed before SHA256SUMS is written: the installer, ThoronSetup.exe, and copies of the
+    portable package's launcher and updater and of the setup.exe an installed copy's delta carries; the
+    programs inside the installer were signed by its archive step. SHA256SUMS lists every file."""
     if not _VARIANT.match(variant):
         raise ReleaseError(f"variant must look like win-x64-avx2, got {variant!r}")
     if dist.exists() and any(dist.iterdir()):
@@ -909,39 +994,19 @@ def assemble(out: Path, dist: Path, version: str, variant: str, buildinfo: Path,
             target.write_bytes(apt_repo.variant_deb(installer.read_bytes(), variant))
         else:
             shutil.copy2(installer, target)
+            if signer is not None:
+                signer([target])
         files.append(target)
     if installer and platform == "linux":
         files.append(add_linux_portable(installer, dist, version, variant, updater or out / LINUX_UPDATER))
-    if chrome_bin is not None and platform == "win":
-        files.append(add_portable(chrome_bin, dist, version, variant, launcher or out / portable.BUILT_LAUNCHER,
-                                  updater or out / portable.UPDATER))
-        setup = out / SETUP
-        if setup.is_file():
-            found = setup_problems(setup)
-            if found:
-                raise ReleaseError("; ".join(found))
-            shutil.copy2(setup, dist / SETUP)
-            files.append(dist / SETUP)
-        if deltas_from:
-            made, reports = add_deltas(chrome_bin, dist, version, variant, list(deltas_from),
-                                       zucchini or out / "zucchini.exe")
-            files += made
-            if delta_reports is not None:
-                delta_reports.extend(reports)
-        if installed_from:
-            setup_exe = out / "setup.exe"
-            if not setup_exe.is_file():
-                raise ReleaseError("the build wrote no setup.exe, which an installed copy's delta carries")
-            scratch = Path(tempfile.mkdtemp(prefix="installed-deltas-", dir=work))
-            try:
-                made, reports = add_installed_deltas(chrome_bin, setup_exe, dist, version, variant,
-                                                     list(installed_from), zucchini or out / "zucchini.exe",
-                                                     sevenzip or "7z", scratch)
-            finally:
-                shutil.rmtree(scratch, ignore_errors=True)
-            files += made
-            if delta_reports is not None:
-                delta_reports.extend(reports)
+    signed_dir = Path(tempfile.mkdtemp(prefix="signed-", dir=work)) if signer is not None else None
+    try:
+        if chrome_bin is not None and platform == "win":
+            files += assemble_windows(out, dist, version, variant, chrome_bin, launcher, updater, deltas_from,
+                                      zucchini, delta_reports, installed_from, sevenzip, work, signer, signed_dir)
+    finally:
+        if signed_dir is not None:
+            shutil.rmtree(signed_dir, ignore_errors=True)
     info = dist / f"BUILDINFO-{version}-{variant}.json"
     shutil.copy2(buildinfo, info)
     files.append(info)
@@ -1467,6 +1532,16 @@ def _prepare(a) -> int:
                      for p in portable_problems(chrome_bin, version, a.variant, launcher, updater, info.get("variant"))]
         problems += [f"browser: {p}" for p in browser_problems(chrome_bin, version)]
         problems += [f"programs: {p}" for p in programs_problems(chrome_bin, a.variant, [launcher, updater])]
+    signer = None
+    if a.authenticode_command is not None:
+        if a.platform != "win":
+            problems.append("authenticode: Authenticode signing is for a Windows release")
+        else:
+            signer = authenticode_signer(a.authenticode_command)
+            # what the installer holds was signed in its archive step (GN's thoron_authenticode_command_file)
+            if chrome_bin is not None and chrome_bin.is_dir():
+                problems += [f"authenticode: {p} (build the installer with thoron_authenticode_command_file)"
+                             for p in signature_problems([chrome_bin])]
     problems += [f"credits: {p}" for p in credits_problems(a.repo, upstream_contributors(a.contributors))]
     problems += [f"patch licences: {p}" for p in licence_record_problems(a.repo)]
     problems += [f"performance: {p}" for p in performance_problems(a.repo, a.bench, thoron)]
@@ -1511,7 +1586,14 @@ def _prepare(a) -> int:
         delta_reports: list = []
         files = assemble(a.out, a.dist, version, a.variant, a.buildinfo, chrome_bin, licences, launcher, updater,
                          a.delta_from, a.zucchini, delta_reports, a.installed_delta_from,
-                         sevenzip_for(a.sevenzip, a.src), a.dist.parent)
+                         sevenzip_for(a.sevenzip, a.src), a.dist.parent, signer)
+        if signer is not None:
+            unsigned = signature_problems([f for f in files if f.suffix.lower() == ".exe"])
+            if unsigned:
+                raise ReleaseError("authenticode: " + "; ".join(unsigned))
+            print("release: every program of the release is signed with Authenticode and timestamped")
+        elif a.platform == "win":
+            print("release: the programs are not signed with Authenticode (no --authenticode-command; ROADMAP S.8)")
         installer = built_installer(a.out, a.platform)
         kept = keep_symbols(a.out, a.dist, version, a.variant, chrome_bin,
                             [p.name for p in (installer, launcher, updater) if p is not None] + [SETUP])
@@ -1609,6 +1691,10 @@ def main(argv: list[str], run=None) -> int:
     a_.add_argument("--contributors", type=Path, help="a saved list of upstream's contributors, as "
                     "tools/credits/contributors.py --from-json reads it; default: ask GitHub (read only)")
     a_.add_argument("--minisign-key", type=Path)
+    a_.add_argument("--authenticode-command", type=Path,
+                    help="a file holding the Authenticode signing command as a JSON list (tools/release/"
+                         "authenticode.py sign ...), the same file the installer was built with "
+                         "(thoron_authenticode_command_file); Windows releases only (ROADMAP S.8)")
     a_.add_argument("--security", type=Path, help="security.json: the fixes the notes name")
     a_.add_argument("--highlights", type=Path, help="a hand-written opening of the notes")
     a_.add_argument("--network-report", type=Path,

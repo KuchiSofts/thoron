@@ -33,7 +33,10 @@ yet. The tree hash still verifies; `materialize` says which content is missing.
 - `other/thorium-build-config-and-simd.patch`: 36 of its lines come from an author who publishes no licence
   (listed as NOT STATED in [`docs/legal/PATCH_LICENSES.md`](../docs/legal/PATCH_LICENSES.md)). It waits for
   the author's permission, or the lines come out, ROADMAP **L.1**
-  ([`docs/legal/UNLICENSED_PATCHES.md`](../docs/legal/UNLICENSED_PATCHES.md)).
+  ([`docs/legal/UNLICENSED_PATCHES.md`](../docs/legal/UNLICENSED_PATCHES.md)). The patch without those
+  lines, Thorium's and Chromium's text only, is published in
+  [`alternatives/`](alternatives/thorium-build-config-and-simd.without-36-lines.patch); it is not in the
+  series until the release build is made without an answer.
 
 ## Licences and credit
 

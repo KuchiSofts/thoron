@@ -394,7 +394,18 @@ What to ask, in his repository's issues or wherever he asks to be reached:
 The reply's link goes into [`PATCH_ORIGINS.md`](PATCH_ORIGINS.md) and the patch's header.
 
 **Without a written yes when the release build is made:** take the 36 lines out. The patch is then
-Thorium's and Chromium's text only (BSD-3-Clause) and can be published. Then measure as above. If the
+Thorium's and Chromium's text only (BSD-3-Clause) and can be published.
+
+**Ready since 2026-11-22:** that patch, made by taking out exactly the 36 lines and nothing else of his, is
+[`source/alternatives/thorium-build-config-and-simd.without-36-lines.patch`](../../source/alternatives/thorium-build-config-and-simd.without-36-lines.patch),
+published, with its header saying Thorium and BSD-3-Clause. What went: the four lines of hunk 3 (back to
+Chromium's own), and in `thinlto_optimize_default` (hunk 6) and `thinlto_optimize_max` (hunk 7) the link
+step's code generation level and the eleven options, with the blocks that held only them, the Windows variable
+that only they used (GN refuses an unused one) and the comment's words about the GVN exception, which went with
+them. What stays: O3, link-time optimization at level 2 (Chromium's line), Thorium's SLP exception for AVX-512
+and the whole profile. Checked: the whole series applies with it in that patch's place (151 of 151, the rebase
+report), and GN generates the Windows release build with it (37,109 targets); not built or measured yet. Taking
+it means putting it in the series in place of the patch, then step 5 below. Then measure as above. If the
 loss matters, choose options anew, from LLVM's own list, by this specification:
 
 1. Scope: official x86 and x64 builds for Windows and Linux, the link step of ThinLTO, both configs.
@@ -504,8 +515,8 @@ In this order. The only wait, the author's answer, starts first and runs beside 
 4. **Patch 4:** write the Thoron patch from the specification of section 4 and put it in the old one's
    place in the series; remove the old patch and its research row.
 5. **Patch 6**, when the release build is prepared: with a written yes, keep the lines, name the reply
-   in the header and the research row, and set the licence he gave. Without one, remove the 36 lines;
-   header and research row become Thorium, BSD-3-Clause.
+   in the header and the research row, and set the licence he gave. Without one, remove the 36 lines (the
+   patch without them is ready, see section 6); header and research row become Thorium, BSD-3-Clause.
 6. **One rebuild** for all of it, Windows then Linux; the smoke tests; the playback test of section 4;
    if the 36 lines went, the measurement of section 6.
 7. **Tools:** read the same header text in `patch_licenses.py` as in `patch_headers.py` (finding 2);

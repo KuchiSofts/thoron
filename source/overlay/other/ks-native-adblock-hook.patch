@@ -12378,10 +12378,10 @@ index 0000000000000000000000000000000000000000..4799c6d350ece531f3e38ba1be3ceb20
 +#endif  // CHROME_BROWSER_UI_WEBUI_THORON_MAIL_UI_H_
 diff --git a/chrome/browser/ui/webui/thoron_portable_ui.cc b/chrome/browser/ui/webui/thoron_portable_ui.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..8df3aeaca12f6b44606aacdc0cd9ef8908092d88
+index 0000000000000000000000000000000000000000..d08b52b50b50411bbbf7bdb097dd985025b99e9f
 --- /dev/null
 +++ b/chrome/browser/ui/webui/thoron_portable_ui.cc
-@@ -0,0 +1,915 @@
+@@ -0,0 +1,916 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -12810,9 +12810,10 @@ index 0000000000000000000000000000000000000000..8df3aeaca12f6b44606aacdc0cd9ef89
 +<section id="unlocked" hidden><h2>Lock this copy with a passphrase</h2>
 +<p>Today this copy's saved passwords and sign-ins (cookies) open only on this PC and this Windows
 +account. With a passphrase they open on any PC once you type it, and stay locked for anyone else.</p>
-+<p class="note">Only passwords and cookies are locked. Bookmarks, history, open tabs and what sites keep in
-+their own storage stay readable to whoever holds the drive. If you forget the passphrase and have no
-+recovery key, the passwords and sign-ins cannot be opened again by anyone.</p>
++<p class="note">What Chromium encrypts is locked: saved passwords, cookies, cards and sign-in tokens.
++Bookmarks, history, open tabs and what sites keep in their own storage stay readable to whoever holds the
++drive. If you forget the passphrase and have no recovery key, the passwords and sign-ins cannot be opened
++again by anyone.</p>
 +<div id="form"><label for="pass">Passphrase (at least 12 characters; a few words are easy to type)</label>
 +<input id="pass" type="password" autocomplete="new-password">
 +<label for="repeat">The same passphrase again</label><input id="repeat" type="password" autocomplete="new-password">

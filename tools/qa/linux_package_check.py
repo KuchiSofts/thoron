@@ -50,6 +50,8 @@ from tools.release import package_audit as audit  # noqa: E402
 REPO = Path(__file__).resolve().parents[2]
 
 SCRIPT = r"""#!/bin/bash
+# Other work may share this WSL machine: if memory runs out, the kernel ends this check's processes first.
+echo 1000 > /proc/self/oom_score_adj 2>/dev/null
 # Run as root inside a clean test machine: $1 work folder, $2 Thoron's .deb, $3 upstream's .deb, $4 tools, $5 online,
 # $6 network log
 set -u

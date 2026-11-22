@@ -165,8 +165,8 @@ Residual risks:
 
 Residual risks:
 
-1. **Only passwords and cookies are encrypted**, as the design says: what Chromium passes through
-   `os_crypt`. History, bookmarks, open tabs, the cache, downloads and what sites keep in their own
+1. **Only what Chromium encrypts is locked**, as the design says: what it passes through `os_crypt`
+   (passwords, cookies, cards, sign-in tokens). History, bookmarks, open tabs, the cache, downloads and what sites keep in their own
    storage stay readable to whoever holds the drive, and some sites keep a login there. Setup and the
    user guide (**D.2**) must say so. A drive that must be private as a whole needs an encrypted volume.
 2. **A hostile PC (P2).** Once a profile is unlocked on a PC that runs malware, everything in it is
@@ -268,7 +268,11 @@ The C++ tests are in `thoron_update_unittests` (the `*_unittest.cc` files of
    On 2026-11-20 P4.9 was built for Windows with questions 5 to 7 taken as proposed, so that the work
    could go on: no keyring entry on Linux yet (Linux comes later, with one format for both systems: the
    key file is the same bytes on either), passwords and cookies only (the page and the guide say so), and
-   the "new key" action later. Each can still be changed by the owner.
+   the "new key" action later. Each can still be changed by the owner. Since 2026-11-22 the lock covers
+   what Chromium encrypts with its key, not passwords and cookies only: on Windows that was so from the
+   start (the key itself is locked); on Linux the passwords, cookies and Web Data's own values (cards,
+   sign-in tokens) are encrypted again, and every value saved while locked uses the copy's key. The page
+   and the guide say so.
 8. **Who reviews.** This page needs a review to finish S.2, and **P4.9** needs "its own security
    review". Proposed: someone who did not write the code, for both.
 

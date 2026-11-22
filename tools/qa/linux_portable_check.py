@@ -37,6 +37,8 @@ FOLDER = "Thoron portable é Тест"
 MOVED = "Thoron moved ü Ж"
 
 SCRIPT = r"""#!/bin/bash
+# Other work may share this WSL machine: if memory runs out, the kernel ends this check's processes first.
+echo 1000 > /proc/self/oom_score_adj 2>/dev/null
 # As root in a clean test machine: $1 work folder, $2 the .tar.xz, $3 the .deb (for what it depends on)
 set -u
 W="$1"; TAR="$2"; DEB="$3"

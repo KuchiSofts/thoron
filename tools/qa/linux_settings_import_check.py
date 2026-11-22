@@ -57,6 +57,8 @@ STEPS = ("source", "listed", "import", "passwords", "cookie", "the data", "the r
 WATCHED = ("Default/Bookmarks", "Default/History", "Default/Login Data", "Default/Cookies", "Local State")
 
 SCRIPT = r"""#!/bin/bash
+# Other work may share this WSL machine: if memory runs out, the kernel ends this check's processes first.
+echo 1000 > /proc/self/oom_score_adj 2>/dev/null
 # As root inside a clean test machine: $1 work folder, $2 Thoron's .deb, $3 upstream's .deb, $4 tools
 set -u
 W="$1"; DEB="$2"; UP="$3"; TOOLS="$4"

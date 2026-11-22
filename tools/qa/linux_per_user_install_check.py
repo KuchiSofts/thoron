@@ -36,6 +36,8 @@ if __package__ in (None, ""):  # running as a script: make `tools` importable
 STEPS = ("no admin", "install", "timer run", "profile", "removed")
 
 SCRIPT = r"""#!/bin/bash
+# Other work may share this WSL machine: if memory runs out, the kernel ends this check's processes first.
+echo 1000 > /proc/self/oom_score_adj 2>/dev/null
 # As root inside a clean test machine: $1 work folder, $2 the portable .tar.xz, $3 the .deb (for its dependencies)
 set -u
 W="$1"; ARCHIVE="$2"; DEB="$3"

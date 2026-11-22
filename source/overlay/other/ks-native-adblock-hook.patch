@@ -609,10 +609,23 @@ index 823e20d1eb27b262701066c650f845c05bb1d690..a514afcedd1d6aff57e2a635c27db679
        installer_state.target_path().Append(installer::kChromeProxyExe));
  
 diff --git a/chrome/installer/mini_installer/BUILD.gn b/chrome/installer/mini_installer/BUILD.gn
-index 5f9479bc4a852e38be23ccf129196a48a8b72286..53e0c4c044cf40db5529b1fbbdb858d9d02ed704 100644
+index 5f9479bc4a852e38be23ccf129196a48a8b72286..4fe930b620fa5bbbabd59fc27129fe81326c1dda 100644
 --- a/chrome/installer/mini_installer/BUILD.gn
 +++ b/chrome/installer/mini_installer/BUILD.gn
-@@ -206,6 +206,7 @@ action("mini_installer_archive") {
+@@ -33,6 +33,12 @@ declare_args() {
+   # possible. This must be ignored for debug builds and is only intended to
+   # allow developers to test the uncompressed installer locally.
+   enable_uncompressed_archive = false
++
++  # Thoron (ROADMAP S.8): a file holding the command that signs the packed
++  # programs and libraries (Authenticode) in the archive's staging folder, a
++  # JSON list of strings (tools/release/authenticode.py sign ...), as an
++  # absolute path ("/C:/..."); empty: nothing is signed.
++  thoron_authenticode_command_file = ""
+ }
+ 
+ windows_manifest("mini_installer_exe_manifest") {
+@@ -206,6 +212,7 @@ action("mini_installer_archive") {
      "//chrome/chrome_elf",
      "//chrome/common/win:eventlog_provider",
      "//chrome/installer/setup",
@@ -620,6 +633,21 @@ index 5f9479bc4a852e38be23ccf129196a48a8b72286..53e0c4c044cf40db5529b1fbbdb858d9
      "//third_party/icu:icudata",
    ]
  
+@@ -260,6 +267,14 @@ action("mini_installer_archive") {
+     args += [ "--include_dxc=1" ]
+   }
+ 
++  if (thoron_authenticode_command_file != "") {
++    inputs += [ thoron_authenticode_command_file ]
++    args += [
++      "--thoron_authenticode_command_file",
++      rebase_path(thoron_authenticode_command_file, root_build_dir),
++    ]
++  }
++
+   depfile = "$target_gen_dir/archive.d"
+   args += [
+     "--depfile",
 diff --git a/chrome/browser/extensions/external_registry_loader_win.cc b/chrome/browser/extensions/external_registry_loader_win.cc
 index 7ea42cc7c8da0a3a91c0ed93e8e5c6189812a16d..3feae7d09c9db177fc82007604ab7b63204e13b2 100644
 --- a/chrome/browser/extensions/external_registry_loader_win.cc
@@ -3325,6 +3353,100 @@ index 4068abe94c19453f23cf39f261c1fb25bd640625..b2ce3dca4ca34e9ecaab07d91066d607
    if (regkey.Open(HKEY_CURRENT_USER, backup_registry_key_.c_str(),
                    KEY_ALL_ACCESS) == ERROR_SUCCESS &&
        regkey.ReadValueDW(
+diff --git a/chrome/tools/build/win/create_installer_archive.py b/chrome/tools/build/win/create_installer_archive.py
+index d11825421ef5018875aac86d11109cfd68178438..1bd57adc8886138d5ca80a6be0bb9869d975952b 100644
+--- a/chrome/tools/build/win/create_installer_archive.py
++++ b/chrome/tools/build/win/create_installer_archive.py
+@@ -14,6 +14,7 @@ generates packed_files.txt for mini_installer project.
+ import configparser
+ import fnmatch
+ import glob
++import json
+ import optparse
+ import os
+ import shutil
+@@ -473,8 +474,38 @@ def CreateArchiveFiles(options, staging_dir, current_version, prev_version):
+     return compressed_archive_file, os.path.basename(archive_file)
+ 
+ 
++def ThoronAuthenticodeSign(command_file, paths, verbose):
++    """Thoron (ROADMAP S.8): signs the programs and libraries (.exe, .dll) of
++    |paths| (files, or folders taken whole) with the command a person wrote in
++    |command_file|, a JSON list of strings (tools/release/authenticode.py sign
++    ...), the files appended. Only staged copies are signed: the build's own
++    files are never changed, as the build would make them again."""
++    with open(command_file, encoding='utf-8') as f:
++        command = json.load(f)
++    if (not isinstance(command, list) or not command
++            or not all(isinstance(part, str) for part in command)):
++        raise Exception('%s must hold a JSON list of strings' % command_file)
++    files = []
++    for path in paths:
++        if os.path.isdir(path):
++            for root, _, names in os.walk(path):
++                files += [
++                    os.path.join(root, name) for name in sorted(names)
++                    if name.lower().endswith(('.exe', '.dll'))
++                ]
++        else:
++            files.append(path)
++    if not files:
++        raise Exception('nothing to sign in %s' % ', '.join(paths))
++    RunSystemCommand(command + files, verbose)
++
++
+ def PrepareSetupExec(options, current_version, prev_version):
+     """Prepares setup.exe for bundling in mini_installer based on options."""
++    # Thoron (ROADMAP S.8): only the compressed setup.exe can be signed here.
++    if (options.thoron_authenticode_command_file
++            and options.setup_exe_format in ('FULL', 'DIFF')):
++        raise Exception('signing needs the COMPRESSED setup.exe format')
+     if options.setup_exe_format == 'FULL':
+         setup_file = SETUP_EXEC
+     elif options.setup_exe_format == 'DIFF':
+@@ -508,6 +539,15 @@ def PrepareSetupExec(options, current_version, prev_version):
+         )
+     else:
+         setup_file_path = os.path.join(options.build_dir, SETUP_EXEC)
++        # Thoron (ROADMAP S.8): with a signing command, a copy of setup.exe in
++        # the staging folder is signed and packed, never the build's own file.
++        if options.thoron_authenticode_command_file:
++            signed_setup = os.path.join(options.staging_dir, SETUP_EXEC)
++            shutil.copy2(setup_file_path, signed_setup)
++            ThoronAuthenticodeSign(
++                options.thoron_authenticode_command_file, [signed_setup],
++                options.verbose)
++            setup_file_path = signed_setup
+         # The mtime of the setup file gets baked into makecab's output,
+         # so if build_time is specified, then apply it here too.
+         mtimestamp = os.path.getmtime(setup_file_path)
+@@ -750,6 +790,13 @@ def main(options):
+             current_version,
+         )
+ 
++    # Thoron (ROADMAP S.8): with a signing command, the staged programs and
++    # libraries are signed before they are packed.
++    if options.thoron_authenticode_command_file:
++        ThoronAuthenticodeSign(
++            options.thoron_authenticode_command_file,
++            [os.path.join(staging_dir, CHROME_DIR)], options.verbose)
++
+     version_numbers = current_version.split('.')
+     current_build_number = version_numbers[2] + '.' + version_numbers[3]
+     prev_build_number = ''
+@@ -958,6 +1005,12 @@ def _ParseOptions():
+         help='Epoch second in string. If set, overwrite the timestamp for '
+         'files archived, to keep output artifacts deterministic.',
+     )
++    parser.add_option(
++        '--thoron_authenticode_command_file',
++        default='',
++        help='Thoron: a JSON list, the command that signs the staged files '
++        '(tools/release/authenticode.py sign ...); empty: nothing is signed.',
++    )
+     parser.add_option(
+         '-v', '--verbose', action='store_true', dest='verbose', default=False
+     )
 diff --git a/chrome/installer/linux/debian/build.py b/chrome/installer/linux/debian/build.py
 index d1e21f312ff5fc77ebc4c3d1e508cd1bc649b1d6..8c6bd4c9957b6f2b1afeb3ad295ae25fad425002 100644
 --- a/chrome/installer/linux/debian/build.py

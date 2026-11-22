@@ -7,6 +7,7 @@ Explanations live in the design docs under `docs/design/`.
 ## [Unreleased]
 
 ### Added
+- **Release:** code signing is ready for Thoron's certificate: every program and library of a Windows release (inside the installer too) signed with Authenticode, SHA-256 and a timestamp, and checked (`docs/release/SIGNING.md`).
 - **Legal:** a version of the build configuration patch without the 36 lines whose author publishes no licence is ready and published (`source/alternatives/`), for a release made without his answer.
 - **Import on Linux:** Settings' import also reads the key a browser keeps in KDE's KWallet (Thorium, Chromium and Chrome), from a wallet that is open already; a closed wallet is left alone.
 - **QA tools:** `linux_keyring_check.py --desktop kde` checks saved passwords with KDE's KWallet (5 and 6) on the Ubuntu test machines, the wallet opened as at sign-in, without a person: a Thorium profile copied into Thoron keeps its passwords readable, and both share one key in the wallet.

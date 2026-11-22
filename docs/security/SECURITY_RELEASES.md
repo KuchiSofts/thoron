@@ -334,6 +334,8 @@ and the cause becomes a roadmap task.
 [ ] SHA256SUMS signed and the signature verified
 [ ] update.json signed (critical for class A and E) and verified with manifest.py verify
 [ ] netlog_hosts.py --json of this build given to prepare --network-report: every host in NETWORK.md
+[ ] Windows, once Thoron has a certificate: the installer built with thoron_authenticode_command_file and
+    prepare given --authenticode-command: every program signed and timestamped (docs/release/SIGNING.md)
 [ ] Linux: linux_package_check.py PASSED; linux_apparmor_vm_check.py --evidence PASSED, given to prepare --sandbox-evidence
 [ ] Linux: apt_repo.py build from the release's .deb files; its files ready for the release `apt` (docs/release/APT.md)
 [ ] release.py publish --version <Thoron version>: draft created

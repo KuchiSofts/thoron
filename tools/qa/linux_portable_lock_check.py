@@ -20,14 +20,22 @@ asked. Steps:
                the open browser takes it; 21, profile in use, when a headless one does not answer), never a second
                browser on the same profile
     recovery   the recovery key, typed as a person might (small letters, no dashes), opens the copy
-    remember   the page remembers this PC in the user's keyring: the next start asks nothing and the passwords read;
-               the page forgets it: the start after asks again
+    remember   the page remembers this PC in the user's keyring (one item there): the next start asks nothing and the
+               passwords read; the page forgets it: the start after asks again, and the keyring's item is gone
     change     the page changes the passphrase: the old one is refused, the new one opens the copy
     tampered   a changed byte in the key file opens nothing (the passphrase is refused, nothing starts); a damaged
                key file stops the browser at once and the launcher shows why
+    forged     Local State edited to ask for the lock's removal without the page's proof: the next start (with the
+               passphrase) drops the request, the lock stays and the values stay under the copy's key
     remove     the page removes the lock with the passphrase: the next start (with the passphrase once more) puts
-               every value back under GNOME's key ("v11"), removes the key file and no checked copy is left; the
-               start after asks nothing, and both passwords and the cookie read
+               every value back under Chromium's fixed key ("v10", which every Linux build reads), removes the key
+               file, keeps the copy's key only for reading (Local State's former key) and no checked copy is left;
+               the start after asks nothing, and both passwords and the cookie read
+    relock     locked again: the lock takes the former key again (Local State keeps it no longer), and the start
+               after it with the passphrase encrypts the values again; both passwords and the cookie read
+    taken      the key file taken away and Local State edited to say "not locked": the browser finds the lock's values
+               and stops (82), the launcher asks at once with the browser's reason, and "start without them" sets
+               the locked databases aside (kept, not deleted) and starts the copy
     missing    locked again, then without its key file: the launcher asks first; "start without them" starts the
                copy unlocked
 
@@ -52,8 +60,8 @@ if __package__ in (None, ""):  # running as a script: make `tools` importable
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 REPO = Path(__file__).resolve().parents[2]
-STEPS = ("seed", "lock", "wrong", "unlock", "second", "recovery", "remember", "change", "tampered", "remove",
-         "missing")
+STEPS = ("seed", "lock", "wrong", "unlock", "second", "recovery", "remember", "change", "tampered", "forged",
+         "remove", "relock", "taken", "missing")
 PASSPHRASE = "violet harbour lantern seven"
 NEW_PASSPHRASE = "quiet orchard copper ninety"
 KEY_FILE = "Thoron Portable Key"
@@ -202,6 +210,20 @@ class Copy:
 
     def local_state(self) -> dict:
         return json.loads((self.data / "Local State").read_text(encoding="utf-8")).get("thoron_portable", {})
+
+    def edit_local_state(self, **changes) -> None:
+        """What someone holding the drive can do: Local State is plain JSON."""
+        path = self.data / "Local State"
+        state = json.loads(path.read_text(encoding="utf-8"))
+        state.setdefault("thoron_portable", {}).update(changes)
+        path.write_text(json.dumps(state), encoding="utf-8")
+
+    def keyring_items(self) -> int:
+        """The copy's "remember this PC" items in the user's keyring."""
+        # bytes: secret-tool also prints each item's secret, which here is a random key, not text
+        found = subprocess.run(["secret-tool", "search", "--all", "application", "thoron-portable"],
+                               capture_output=True, timeout=30)
+        return sum(1 for line in (found.stdout + found.stderr).splitlines() if line.startswith(b"[/"))
 
     def leftovers(self) -> list[str]:
         return sorted(str(p.relative_to(self.data)) for p in self.data.rglob(f"*{BACKUP_SUFFIX}"))
@@ -398,6 +420,7 @@ def probe(tools: Path, package: Path, out: Path) -> int:
         remembered = _wait_text(run, "message", "remembered")
         b.close()
         b = None
+        items_remembered = copy.keyring_items()
         entries = asked(copy.zenity(), "--entry")
         b = copy.open([])
         readable = b.readable()
@@ -406,12 +429,16 @@ def probe(tools: Path, package: Path, out: Path) -> int:
         forgotten = _wait_text(run, "message", "forgotten")
         b.close()
         b = None
+        items_forgotten = copy.keyring_items()
         asked_remembered = asked(copy.zenity(), "--entry") - entries
         entries = asked(copy.zenity(), "--entry")
         b = copy.open([PASSPHRASE])
         b.close()
         b = None
-        notes["remember"] = f"{remembered[:90]} / {forgotten[:60]}"
+        notes["remember"] = f"{remembered[:90]} / {forgotten[:60]} / keyring items {items_remembered}, then {items_forgotten}"
+        if items_remembered != 1 or items_forgotten != 0:
+            problems["remember"].append(f"the keyring held {items_remembered} item(s) once remembered and "
+                                        f"{items_forgotten} once forgotten (want 1, then 0)")
         if "keyring" not in remembered:
             problems["remember"].append(f"the page said {remembered!r}")
         if asked_remembered:
@@ -473,6 +500,24 @@ def probe(tools: Path, package: Path, out: Path) -> int:
         if (copy.data / "Thoron Unlock Problem").exists():
             problems["tampered"].append("the problem file was left")
 
+        # forged
+        locked_tags = copy.tags()
+        copy.edit_local_state(remove_pending=True, remove_proof="AAAA")
+        b = copy.open([NEW_PASSPHRASE])
+        readable = b.readable()
+        b.close()
+        b = None
+        state = copy.local_state()
+        notes["forged"] = json.dumps({k: v for k, v in state.items() if k != "former_key"})
+        if not key_file.is_file():
+            problems["forged"].append("an edited Local State removed the lock")
+        if copy.tags() != locked_tags:
+            problems["forged"].append(f"the values changed: {copy.tags()}")
+        if state.get("remove_pending") is not False or state.get("remove_proof"):
+            problems["forged"].append(f"the request was not dropped: {state}")
+        if not any(KEYRING_PASSWORD["password"] == t for t in readable.values()):
+            problems["forged"].append(f"the password is not readable: {readable}")
+
         # remove
         b = copy.open([NEW_PASSPHRASE])
         page = b.tab(PAGE_URL)
@@ -496,9 +541,14 @@ def probe(tools: Path, package: Path, out: Path) -> int:
         notes["remove"] = f"{removed[:90]} / {json.dumps(back)}"
         if "next start" not in removed or pending.get("remove_pending") is not True:
             problems["remove"].append(f"the page said {removed!r}; Local State {pending}")
-        problems["remove"] += tags_problems(back, {"v11"})  # GNOME's keyring is there: its key, not the fixed one
+        # Chromium's fixed key, which every Linux build reads, even with GNOME's keyring there
+        problems["remove"] += tags_problems(back, {"v10"})
         if key_file.exists() or state.get("locked") is not False or state.get("remove_pending") is not False:
             problems["remove"].append(f"the lock is still there: key file {key_file.exists()}, Local State {state}")
+        if len(state.get("former_key") or "") != 44:  # 32 bytes in base64
+            problems["remove"].append("the copy's key was not kept for reading")
+        if not pending.get("remove_proof"):
+            problems["remove"].append("the page's request carries no proof")
         if asked(copy.zenity(), "--entry") != entries:
             problems["remove"].append("the copy still asks for a passphrase")
         for entry in (KEYRING_PASSWORD, FIXED_PASSWORD):
@@ -509,6 +559,61 @@ def probe(tools: Path, package: Path, out: Path) -> int:
             problems["remove"].append(f"the cookie is not readable after the removal: {cookies}")
         if copy.leftovers():
             problems["remove"].append(f"checked copies left: {copy.leftovers()}")
+
+        # relock
+        former = copy.local_state().get("former_key")
+        b = copy.open([])
+        page = b.tab(PAGE_URL)
+        run(f"""(() => {{ document.getElementById('pass').value = {json.dumps(PASSPHRASE)};
+                document.getElementById('repeat').value = {json.dumps(PASSPHRASE)};
+                document.getElementById('with-recovery').checked = false;
+                document.getElementById('next').click(); }})()""")
+        time.sleep(2)
+        run("document.getElementById('lock').click()")
+        relocked = _wait_text(run, "message", "locked with your passphrase")
+        b.close()
+        b = None
+        after_lock = copy.local_state()
+        b = copy.open([PASSPHRASE])
+        readable = b.readable()
+        cookies = b.cookies()
+        time.sleep(5)
+        b.close()
+        b = None
+        tags = copy.tags()
+        notes["relock"] = f"{relocked[:60]} / {json.dumps(tags)}"
+        if "locked with your passphrase" not in relocked or not key_file.is_file():
+            problems["relock"].append(f"the page said {relocked!r}")
+        if not former or after_lock.get("former_key"):
+            problems["relock"].append("the former key was not there before, or stayed in Local State beside the lock")
+        problems["relock"] += tags_problems(tags, {"t10"})
+        for entry in (KEYRING_PASSWORD, FIXED_PASSWORD):
+            site = entry["url"].split("/")[2]
+            if not any(site in s and text == entry["password"] for s, text in readable.items()):
+                problems["relock"].append(f"{site} is not readable after locking again: {readable}")
+        if COOKIE["value"] not in cookies:
+            problems["relock"].append(f"the cookie is not readable after locking again: {cookies}")
+
+        # taken
+        taken = package.parent / (KEY_FILE + ".taken")
+        shutil.move(key_file, taken)
+        copy.edit_local_state(locked=False)
+        questions = len([line for line in copy.zenity() if "[--question]" in line])
+        # the browser finds the lock's values and stops (82); the launcher asks at once, with its reason, and the
+        # stand-in answers "start without them"
+        b = copy.open([])
+        b.close()
+        b = None
+        asked_now = [line for line in copy.zenity() if "[--question]" in line][questions:]
+        aside = sorted(p.name for p in (copy.data / "Default").glob("*.thoron-without-key*"))
+        notes["taken"] = f"asked: {asked_now[-1][:160] if asked_now else 'nothing'}; set aside {aside}"
+        if len(asked_now) != 1 or "key file" not in asked_now[0]:
+            problems["taken"].append(f"the launcher did not ask, with the browser's reason: {asked_now}")
+        if "Login Data.thoron-without-key" not in aside:
+            problems["taken"].append(f"the locked databases were not set aside: {aside}")
+        if copy.local_state().get("locked") is not False:
+            problems["taken"].append(f"the copy is still marked as locked: {copy.local_state()}")
+        taken.unlink(missing_ok=True)
 
         # missing
         b = copy.open([])

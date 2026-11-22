@@ -489,8 +489,27 @@ The installer, and later Settings, shows **"Import from…"** with:
   GNOME's keyring, KWallet, KeePassXC), with the profile key sealed with it in the key file; no prompt is ever
   shown, and with no keyring nothing is kept.
 - **Removing the lock** takes the same path back at the next start, after the passphrase once more: every
-  value under the keyring's key (or Chromium's fixed key where there is none), each read back, and only then
-  the key file goes.
+  value under Chromium's fixed key (`v10`, which every Linux build reads; not a keyring's, whose secret found
+  first need not be the one the browser reads on that PC), each read back, and only then the key file goes.
+- **After a separate read of the code (2026-11-22):**
+  - the removal is asked for in Local State together with a proof only the opened key makes for that very key
+    file (an HMAC over the key file's own MAC, `key_file.h`, RemovalProof), so an edited Local State cannot
+    remove a lock;
+  - Web Data's own values (cards, IBANs, stored CVCs, sign-in tokens, Autofill AI values) are turned too, both
+    ways;
+  - a value read with an old key must be what its column holds (a cookie starts with its host's SHA-256, the
+    rest is text), or it stays as it is: `v11` has no tag, and another PC's keyring key decrypts about one value
+    in 256 to garbage;
+  - the work is looked for at every start of a locked copy, and a database with nothing to turn is not touched;
+  - after a removal the copy's key stays in Local State only to read what other stores still hold under it
+    (Chromium encrypts sync, bookmarks, sessions and more with the same key), through Thoron's provider with
+    `UseForEncryption` false; a later lock takes that key again (threat model E6, residual 9);
+  - a lock's values with no key file, while Local State says unlocked, stop the start like a missing key file,
+    and a start without the key file sets those databases aside (`<name>.thoron-without-key`), never deletes
+    them;
+  - a locked copy's crash reports go to the user's runtime folder, not the drive (on Windows a locked copy
+    writes none: its browser starts no crash handler while the key file is there); "Forget this PC" deletes the
+    keyring's item; a damaged key file beside a good one a write left does not cost the good one.
 
 ## 8. Release process and full changelog **[owner]**
 

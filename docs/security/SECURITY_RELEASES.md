@@ -7,8 +7,8 @@ follow it from the first notice to the draft release. The targets are those of t
 - **7 days** from a Chrome release that fixes a bug exploited in the wild to the Thoron release;
 - **14 days** from a new Chrome major version.
 
-Status: written 2026-11-16; first drill 2026-11-17 (section 8). There is no public release yet, so
-the release step still lacks its keys (ROADMAP **P2.11**); the steps that depend on them say so. What a
+Status: written 2026-11-16; first drill 2026-11-17 (section 8). There is no public release yet. The
+release keys exist since 2026-11-22 (ROADMAP **P2.11**, `docs/release/KEYS.md`) and are unlocked only to sign. What a
 fix must not break is in the [threat model](THREAT_MODEL.md).
 
 ## 1. What to watch
@@ -331,6 +331,7 @@ and the cause becomes a roadmap task.
 [ ] portable_update_check.py --previous <last release's portable .zip> --report: PASSED
 [ ] release.py prepare with --security and --highlights: no problem; NOTES.md names the fixes, in-the-wild ones first
 [ ] The release folder holds the installer, the portable .zip, BUILDINFO and the licence bundle
+[ ] The keys unlocked from the backup for this release (key_ceremony.py unlock), locked after (lock)
 [ ] SHA256SUMS signed and the signature verified
 [ ] update.json signed (critical for class A and E) and verified with manifest.py verify
 [ ] netlog_hosts.py --json of this build given to prepare --network-report: every host in NETWORK.md

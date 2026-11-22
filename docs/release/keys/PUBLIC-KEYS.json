@@ -1,0 +1,10 @@
+{
+  "format": 1,
+  "made": "2026-11-22",
+  "made_offline": true,
+  "update_manifest": "VfnqnfZ76GAmWa6V6UHYOoXcHLAKluq0TeqN+RvwvqI=",
+  "adblock_resources": "lGdvmUJtZE+Lej3xAjNMkl3xiurR/94S9QTJ9YSGaw0=",
+  "minisign": "RWRDocGSocH5oNG44mARtklr1fwkUNQ5SaVcmWu0TCRkf196n/H6Wruf",
+  "apt_fingerprint": "82F8C3647375F9842EECD9F74CA0C6EA3B45335B",
+  "apt_keyring_sha256": "0d7a2e89aafd4f73e382d9a35121a37dea32cfadb2b9a16fdbba3da470e71e45"
+}

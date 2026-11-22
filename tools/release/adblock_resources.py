@@ -18,8 +18,8 @@ enters the repository, the build machine's tree or any log.
 
     keygen  --out <private key file>       a new key (the key ceremony, ROADMAP P2.11): the private key is
                                            written to the file (offline, kept as the release key is), the
-                                           public key is printed, in base64 and as the C++ array for
-                                           kResourcesPublicKey
+                                           public key is printed in base64, for GN's
+                                           thoron_adblock_resources_public_key (release builds)
     sign    --resources <json> --serial N --key <private key file> --out <file>
     verify  <file> --public-key <base64>   prints the serial when the signature holds
 
@@ -121,7 +121,6 @@ def main(argv: list[str]) -> int:
         private, public = keygen()
         a.out.write_bytes(base64.b64encode(private) + b"\n")
         print("public key (base64):", base64.b64encode(public).decode("ascii"))
-        print("kResourcesPublicKey:", cpp_array(public))
         return 0
     if a.command == "sign":
         private = base64.b64decode(a.key.read_bytes().strip(), validate=True)

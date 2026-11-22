@@ -2173,7 +2173,8 @@ response's body. Thoron is the browser, so it does it for every page:
   atomically to `<user data>/Thoron Adblock/resources.signed`, and the engine is rebuilt with it at once.
   Every time the engine is built the stored copy is verified again; anything that does not hold leaves the
   shipped copy in use. A newer browser with newer shipped resources (a higher serial) uses its own.
-- **No key, no update:** `kResourcesPublicKey` is all zero until the key ceremony (ROADMAP P2.11, the owner's).
+- **No key, no update:** the key is GN's `thoron_adblock_resources_public_key`, which release builds set
+  (ROADMAP P2.11, `docs/release/KEYS.md`); a build without it asks for no update.
   Until then nothing is asked for and only the shipped copy is used. For the offline check a switch gives a
   key made for that run, honoured only while the lists come from a local server.
 - **Making one:** `tools/release/adblock_resources.py keygen` makes the key (offline; the private key goes to a

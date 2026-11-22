@@ -316,14 +316,16 @@ or other credentials, not stored in the HTTP cache, no identifiers. A redirect a
 refused. What happens to a downloaded list is in the native ad-blocking design, section 6. "Auto-update
 filter lists" on `chrome://adblock` switches the downloads off; "Update now" still fetches.
 
-Not contacted yet (from the source): once Thoron has its signing key (ROADMAP **P2.11**), the same
-check also asks `github.com` for a signed file of the blocker's stand-in scripts
-(`KuchiSofts/thoron/releases/download/adblock-resources/`). Without a key nothing is asked.
+Release builds only (from the source): a release build holds Thoron adblock's resources key (ROADMAP
+**P2.11**, `docs/release/KEYS.md`), and with it the same check also asks `github.com` for a signed file of the
+blocker's stand-in scripts (`KuchiSofts/thoron/releases/download/adblock-resources/`). A build without the key,
+as every build made for testing, asks nothing.
 
 ### 7.1 The updater (ROADMAP P3.20)
 
-Not contacted yet: a build has no update key until the key ceremony (ROADMAP **P2.11**), and without one
-the updater asks nothing, also when the About page is opened. With a key, an installed copy on Windows
+Release builds only: the update key is a release build setting (ROADMAP **P2.11**, `docs/release/KEYS.md`).
+A build without it, as every build made for testing, asks nothing, also when the About page is opened. With
+the key, an installed copy on Windows
 asks `github.com` for three small files of the newest published release
 (`KuchiSofts/thoron/releases/latest/download/update.json`, `update.json.sig` and `update.key`, the last
 one only there when the release moves to a new key), and, when they name a newer release, for its

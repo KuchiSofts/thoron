@@ -60,8 +60,9 @@ How to read the tables:
    read and changed by whoever holds it. Only the passphrase, the recovery key and a remembered PC's
    OS store are outside the attacker's reach.
 6. **Portable drive in use.** The PC it is plugged into is trusted while the profile is unlocked.
-7. **Signing key to the rest.** The private key is outside the repository, GitHub and every log. Where
-   it is while it signs is open question 2.
+7. **Signing key to the rest.** The private key is outside the repository, GitHub and every log. It is
+   on the release computer only while a release is signed: unlocked from the encrypted backup, then deleted
+   (`key_ceremony.py unlock` and `lock`, `docs/release/KEYS.md`; open question 2).
 
 ## 4. Updater
 
@@ -72,7 +73,7 @@ How to read the tables:
 | U3 | Downgrade: an old, validly signed manifest is replayed to install a vulnerable version (N1, N2) | Only a higher build version installs; an older manifest is rejected. The only way back is the local rollback command (U11) | design 7.2 | P3.3: unit tests reject older manifests |
 | U4 | Freeze: the current manifest is served for ever, or new ones are blocked, so the browser never learns of a fix (N1, N2) | The manifest carries `expires`. When the only manifest it can get has expired, the updater says "cannot verify updates", never "up to date" | design 7.2 | P3.3: "cannot verify" on an expired manifest. P4.5: a replayed old manifest triggers that state |
 | U5 | The PC's clock is wrong or set back, so an expired manifest looks valid | Clock-skew tolerance. Proposed: the updater remembers the newest release date it has verified and refuses a manifest older than that | design 7.2, proposed | P4.5 for the tolerance. The remembered date, kept as the serial of the newest accepted manifest: RejectsOlderManifests, AManifestOlderThanOneAcceptedIsAReplay |
-| U6 | The signing key is stolen (N3) | The key is offline, with encrypted backups whose restore is tested; a rotation counts only when the old key signed it; a second offline key can replace a lost or stolen one | design 7.2, release program 9 | P2.11: backup restore tested by sign and verify. P4.7: a rotation drill passes end to end. Residual 1, question 1 |
+| U6 | The signing key is stolen (N3) | The key is offline, with encrypted backups whose restore is tested; a rotation counts only when the old key signed it; a second offline key can replace a lost or stolen one | design 7.2, release program 9 | P2.11: backup restore tested by sign and verify (done 2026-11-22, `docs/release/KEYS.md`). P4.7: a rotation drill passes end to end. Residual 1, question 1 |
 | U7 | The GitHub account or a release is taken over (N2) | It can publish files but not sign them. A release is a draft until the owner publishes it; `main` is protected | design 8, release program 9 | P2.12: publishing needs the owner and refuses an unsigned release. P2.26. Residual 2 |
 | U8 | A checked file is swapped before it runs (L1, L2) | The download goes to a folder only the user can write, and the checked file stays open until it runs. Every staged file is verified in `<new>.staging`, then the folder is renamed in one step | release program 4, design 7.3 | P3.5: killing the updater at any step leaves a launchable browser. P3.4: checked again where it is used (NeverPlacesAnUnverifiedFile). Between that check and the installer: checked once more and held open while the installer runs, so it cannot be changed, renamed or removed (AHeldFileCannotBeChangedRenamedOrRemovedUntilLetGo, and the installer of AnUpdateIsDownloadedCheckedInstalledAndThenWaitsForARelaunch finds it held) |
 | U9 | Hostile bytes reach a parser: manifest JSON, the delta container, Zucchini input, entries named with `..` or an absolute path (N1, N2, N3) | Nothing is parsed before its signature or hash holds. Proposed: every path in a package or delta must stay inside the staging folder, links are refused, and the manifest and delta parsers are fuzzed as the import parsers are | design 7.2, proposed | P3.3: malformed JSON rejected. P3.5, P4.1: a path that leaves the folder is refused (APathThatLeavesTheFolderIsRefused). A ZIP entry with a `..`, `.` or leading `/` part, or a link: refused by both readers (AnEntryThatClimbsOutOfTheFolderIsRefused, ALinkInThePackageIsRefused on Linux). Fuzzing: 2 hours each for the manifest and the delta's file list on Linux, no crash (section 8) |
@@ -254,7 +255,9 @@ The C++ tests are in `thoron_update_unittests` (the `*_unittest.cc` files of
    The script reads a key only from the file it is given and refuses a key file inside the repository,
    the build tree or the release folder. Either that is accepted (key on removable, encrypted media,
    present only for the signing), or `SHA256SUMS` and the manifest are carried to a machine that is
-   never online, or a hardware token signs.
+   never online, or a hardware token signs. Taken for now on 2026-11-22 (P2.11): the first, with the keys
+   made in a Windows Sandbox with no network and unlocked from their encrypted backup only for the signing
+   (`docs/release/KEYS.md`); the owner can still choose another.
 3. **How long a manifest is valid** (`expires`), and who signs it again when no release is due. A short
    time narrows the freeze window (residual 3 of the updater) but needs the offline key more often.
 4. **Extensions in an import from another browser:** installed again from their store by ID

@@ -167,7 +167,7 @@ it from the caller, and the command line defaults to `github.com`.
   (hex `74 68 6f 72 6f 6e 2d 75 70 64 61 74 65 2d 6d 61 6e 69 66 65 73 74 2d 76 31 0a`),
   followed by every byte of `update.json` as fetched.
 - **`update.json.sig`:** the 64 bytes of the signature (R, then S). No encoding, no line end.
-- **Public key:** 32 bytes, compiled into the updater and into the small installer.
+- **Public key:** 32 bytes, compiled into the updater and into the small installer of a release build (GN `thoron_update_public_key`, [KEYS.md](../release/KEYS.md), section 1a).
 - **Private key:** the release key of the key ceremony (P2.11). It is never in the repository, the
   build tree or a log. The tool reads it from a file holding the 32 bytes in base64, the form the ad
   blocker's tool ([`tools/release/adblock_resources.py`](../../tools/release/adblock_resources.py)) uses.

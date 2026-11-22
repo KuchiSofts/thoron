@@ -81,14 +81,15 @@ index 0f7d54fe9798d8726656c6cd8f30ea2194b8c4e1..00a52f87605c041593bc671257c93595
        "//sandbox:sandbox_unittests",
 diff --git a/components/thoron_adblock/BUILD.gn b/components/thoron_adblock/BUILD.gn
 new file mode 100644
-index 0000000000000000000000000000000000000000..4edf89b3712760b73aaab4970f4f948470954b7f
+index 0000000000000000000000000000000000000000..2be6f0bc14bed0ad2be9869d6bfdff3c1f43123e
 --- /dev/null
 +++ b/components/thoron_adblock/BUILD.gn
-@@ -0,0 +1,286 @@
+@@ -0,0 +1,292 @@
 +# Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +# found in the LICENSE file.
 +
 +import("//build/compiled_action.gni")
++import("//components/thoron_adblock/args.gni")
 +import("//build/config/sanitizers/sanitizers.gni")
 +import("//build/rust/rust_executable.gni")
 +import("//build/rust/rust_static_library.gni")
@@ -230,6 +231,11 @@ index 0000000000000000000000000000000000000000..4edf89b3712760b73aaab4970f4f9484
 +    "websocket.cc",
 +    "websocket.h",
 +  ]
++
++  # Thoron's key for the scriptlet and stand-in updates (args.gni, ROADMAP P2.11)
++  defines = [
++    "THORON_ADBLOCK_RESOURCES_PUBLIC_KEY=\"$thoron_adblock_resources_public_key\"",
++  ]
 +  public_deps = [
 +    ":engine",
 +    ":features",
@@ -370,6 +376,22 @@ index 0000000000000000000000000000000000000000..4edf89b3712760b73aaab4970f4f9484
 +    rebase_path(outputs[0], root_build_dir),
 +  ]
 +  deps = [ ":lists" ]
++}
+diff --git a/components/thoron_adblock/args.gni b/components/thoron_adblock/args.gni
+new file mode 100644
+index 0000000000000000000000000000000000000000..ac5591ed2c92cb764ac132dc68d6a0dd74500182
+--- /dev/null
++++ b/components/thoron_adblock/args.gni
+@@ -0,0 +1,10 @@
++# Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
++# found in the LICENSE file.
++
++declare_args() {
++  # The base64 of Thoron's Ed25519 key for the updates of Thoron adblock's
++  # scriptlets and stand-ins (ROADMAP P5.23), made at the key ceremony (P2.11,
++  # docs/release/KEYS.md). Release builds set it (tools/build/release_args.py).
++  # Empty: no update is fetched or used.
++  thoron_adblock_resources_public_key = ""
 +}
 diff --git a/components/thoron_adblock/assemble_resources.mjs b/components/thoron_adblock/assemble_resources.mjs
 new file mode 100644
@@ -12001,10 +12023,10 @@ index 0000000000000000000000000000000000000000..eed875cd4da34b0f151586a64b5700ff
 +#endif  // COMPONENTS_THORON_ADBLOCK_LIST_FETCH_H_
 diff --git a/components/thoron_adblock/list_store.cc b/components/thoron_adblock/list_store.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..8772fa3e3df4906f4d28071c9840236aaf1c4a0b
+index 0000000000000000000000000000000000000000..12070189d38ba42c0b44c5f0301e4a5731fb0404
 --- /dev/null
 +++ b/components/thoron_adblock/list_store.cc
-@@ -0,0 +1,1204 @@
+@@ -0,0 +1,1206 @@
 +// Copyright 2026 KuchiSofts. Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
@@ -12048,8 +12070,10 @@ index 0000000000000000000000000000000000000000..8772fa3e3df4906f4d28071c9840236a
 +constexpr size_t kMaxSignedResourcesBytes = kMaxResourcesBytes + 4096;
 +constexpr std::string_view kResourcesHeader = "thoron-adblock-resources 1";
 +// Thoron's Ed25519 key for these updates (P5.23), made at the key ceremony
-+// (ROADMAP P2.11). All zero until then: no update is fetched or used.
-+constexpr uint8_t kResourcesPublicKey[ED25519_PUBLIC_KEY_LEN] = {};
++// (ROADMAP P2.11, docs/release/KEYS.md): base64, set for release builds by
++// GN's thoron_adblock_resources_public_key (args.gni). Empty: no update is
++// fetched or used.
++constexpr char kResourcesPublicKey[] = THORON_ADBLOCK_RESOURCES_PUBLIC_KEY;
 +constexpr char kResourcesKeyForTesting[] =
 +    "thoron-adblock-resources-key-for-testing";
 +constexpr base::FilePath::CharType kStoredEngine[] =
@@ -12411,13 +12435,13 @@ index 0000000000000000000000000000000000000000..8772fa3e3df4906f4d28071c9840236a
 +    }
 +    return std::string();
 +  }
-+  if (std::all_of(std::begin(kResourcesPublicKey),
-+                  std::end(kResourcesPublicKey),
-+                  [](uint8_t b) { return b == 0; })) {
++  std::string key;
++  if (!base::Base64Decode(kResourcesPublicKey, &key) ||
++      key.size() != ED25519_PUBLIC_KEY_LEN ||
++      std::all_of(key.begin(), key.end(), [](char b) { return b == 0; })) {
 +    return std::string();
 +  }
-+  return std::string(std::begin(kResourcesPublicKey),
-+                     std::end(kResourcesPublicKey));
++  return key;
 +}
 +
 +namespace {

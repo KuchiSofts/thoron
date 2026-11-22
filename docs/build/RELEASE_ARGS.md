@@ -22,6 +22,8 @@ args, using the values GN resolves for the release output folder (`gn args <out>
 | `enable_rlz` | `true` (Windows) | `false` | RLZ is Google's promotion-tracking library (install and first-search pings with a brand code). Chromium turns it on only for Google Chrome; no Thorium patch needs it. |
 | `enable_cdm_storage_id` | `true` (Windows) | `false` | Gives DRM modules a per-device storage ID. It needs a private key that only Google Chrome has; with the empty key upstream uses, the ID is always empty, so the setting only made the browser read the machine ID. Chromium turns it off for non-Google builds. |
 | `bundle_widevine_cdm` | `true` | `false` | Google's proprietary Widevine module may not be redistributed. Chromium downloads it from Google's component updater when a site needs DRM (ROADMAP **P2.6**). |
+| `thoron_update_public_key` | Thoron's (empty) | Thoron's update key | The built-in updater takes only an `update.json` this key signed. Empty in a build made for testing, which then asks for no update ([KEYS.md](../release/KEYS.md), section 1a). |
+| `thoron_adblock_resources_public_key` | Thoron's (empty) | Thoron adblock's resources key | Only scriptlets and stand-ins this key signed replace the shipped ones; empty in a build made for testing, which then asks for none. |
 | `use_official_google_api_keys` | not set | `false` | Never build with Google's official Chrome keys. (Keys compiled in by a patch are a separate matter, see below.) |
 
 ## Kept from upstream, now checked

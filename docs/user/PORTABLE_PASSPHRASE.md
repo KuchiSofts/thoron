@@ -51,9 +51,11 @@ All on `chrome://thoron-portable` in the unlocked copy:
 
 ## 4. What it covers, and what it does not
 
-- **Only passwords and cookies are locked.** History, bookmarks, open tabs, the cache, downloads and what sites
-  keep in their own storage stay readable to whoever holds the folder, and some sites keep a sign-in there. For
-  those, an encrypted drive is still needed.
+- **What Chromium encrypts is locked:** saved passwords, cookies, cards and sign-in tokens (on Windows every
+  value under the copy's key; on Linux these are encrypted again at the first start after the lock, and every
+  value saved while locked uses the copy's key). History, bookmarks, open tabs, the cache, downloads and what
+  sites keep in their own storage stay readable to whoever holds the folder, and some sites keep a sign-in there.
+  For those, an encrypted drive is still needed.
 - **A forgotten passphrase without the recovery key cannot be undone.** Nobody, Thoron included, can open the
   passwords and sign-ins then. That is the point of the lock.
 - **A long passphrase.** A short or common one can be guessed, whatever the protection. Thoron makes each guess

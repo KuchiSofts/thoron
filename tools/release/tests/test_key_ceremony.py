@@ -44,6 +44,27 @@ def fake_apt(test: unittest.TestCase):
         test.addCleanup(patcher.stop)
 
 
+def armored_public(keys: Path, folder: Path) -> Path:
+    """The public folder as the repository holds it: the keyring armored (RFC 4880, CRC-24 included)."""
+    folder.mkdir()
+    for name in (kc.PUBLIC_JSON, kc.MINISIGN_PUB):
+        shutil.copyfile(keys / "public" / name, folder / name)
+    raw = (keys / "public" / kc.KEYRING).read_bytes()
+    crc = 0xB704CE
+    for byte in raw:
+        crc ^= byte << 16
+        for _ in range(8):
+            crc <<= 1
+            if crc & 0x1000000:
+                crc ^= 0x1864CFB
+    body = base64.b64encode(raw).decode("ascii")
+    (folder / kc.ARMORED).write_text(
+        "-----BEGIN PGP PUBLIC KEY BLOCK-----\n\n" + "\n".join(body[i:i + 64] for i in range(0, len(body), 64))
+        + "\n=" + base64.b64encode((crc & 0xFFFFFF).to_bytes(3, "big")).decode("ascii")
+        + "\n-----END PGP PUBLIC KEY BLOCK-----\n", encoding="ascii")
+    return folder
+
+
 class Case(unittest.TestCase):
     def setUp(self):
         self.root = Path(tempfile.mkdtemp(prefix="kc-test-"))
@@ -232,11 +253,20 @@ class CeremonyTests(Case):
             kc.lock(other)
         self.assertTrue((other / "a.jpg").exists())
 
+    def test_the_repository_s_armored_keyring_reads_as_the_exported_one(self):
+        keys = self.made()
+        public = armored_public(keys, self.root / "repo-public")
+        self.assertEqual(kc.public_keyring(public).name, kc.ARMORED)
+        self.assertEqual(kc.read_public(public), kc.read_public(keys / "public"))
+        (public / kc.ARMORED).write_text("not a key\n", encoding="ascii")
+        with self.assertRaisesRegex(kc.CeremonyError, "not an armored"):
+            kc.read_public(public)
+
     def test_test_keys_are_marked(self):
         kc.make(self.root / "online", offline=False)
         info = kc.read_public(self.root / "online" / "public")
         self.assertIn("TEST KEYS", kc.where_they_go(info)[0])
-        self.assertIn("kResourcesPublicKey", "\n".join(kc.where_they_go(info)))
+        self.assertIn("thoron_adblock_resources_public_key", "\n".join(kc.where_they_go(info)))
 
     def test_make_refuses_with_a_network_route(self):
         with mock.patch.object(kc, "network_route", lambda: True):
@@ -262,6 +292,13 @@ class GnuPGTests(Case):
         self.assertEqual([r[14] for r in unlocked if r[0] == "sec"], ["#"])        # only the root's stub
         self.assertFalse((out / kc.APT_HOME / "openpgp-revocs.d").exists())
         kc.lock(out)
+
+    def test_the_restore_test_takes_the_repository_s_public_folder(self):
+        keys = self.made()
+        sealed = self.root / "keys.thoronkeys"
+        kc.backup(keys, sealed, PASSPHRASE)
+        public = armored_public(keys, self.root / "repo-public")
+        self.assertEqual(len(kc.restore_test(sealed, public, PASSPHRASE)), 4)
 
     def test_apt_repo_signs_with_the_unlocked_subkey(self):
         from tools.release import apt_repo

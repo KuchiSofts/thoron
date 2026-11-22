@@ -24,7 +24,7 @@ The keys:
                            half is built into Thoron (GN thoron_update_public_key) and is release.py's
                            --manifest-public-key
     adblock-resources.key  Ed25519, the same form: signs Thoron adblock's scriptlets and stand-ins
-                           (kResourcesPublicKey in components/thoron_adblock/list_store.cc)
+                           (GN thoron_adblock_resources_public_key, components/thoron_adblock/args.gni)
     minisign.key           minisign: signs SHA256SUMS (SHA256SUMS.minisig); public key minisign.pub, in the
                            README. Not encrypted by minisign itself: the backup is what protects it
     apt-gnupg/             a GnuPG home: an Ed25519 root that only certifies, and an Ed25519 subkey that signs
@@ -69,6 +69,7 @@ from tools.update import manifest as mf  # noqa: E402
 UPDATE_KEY, ADBLOCK_KEY, MINISIGN_KEY = "update-manifest.key", "adblock-resources.key", "minisign.key"
 APT_HOME, PUBLIC = "apt-gnupg", "public"
 PUBLIC_JSON, MINISIGN_PUB, KEYRING = "PUBLIC-KEYS.json", "minisign.pub", "thoron-archive-keyring.gpg"
+ARMORED = "thoron-archive-key.asc"      # the same keyring as text, as the repository holds it (docs/release/keys)
 TOP = (UPDATE_KEY, ADBLOCK_KEY, MINISIGN_KEY, APT_HOME, PUBLIC)
 APT_NAME = "Thoron archive signing key"
 MAGIC = b"THORON-KEYS\n"
@@ -402,9 +403,9 @@ def read_public(public: Path) -> dict:
     for name in ("update_manifest", "adblock_resources", "minisign", "apt_fingerprint", "apt_keyring_sha256"):
         if not isinstance(info.get(name), str):
             raise CeremonyError(f"{PUBLIC_JSON} has no {name}")
-    keyring = public / KEYRING
-    if not keyring.is_file() or hashlib.sha256(keyring.read_bytes()).hexdigest() != info["apt_keyring_sha256"]:
-        raise CeremonyError(f"{KEYRING} is missing or is not the one {PUBLIC_JSON} names")
+    keyring = public_keyring(public)
+    if keyring is None or hashlib.sha256(keyring_bytes(keyring)).hexdigest() != info["apt_keyring_sha256"]:
+        raise CeremonyError(f"{KEYRING} (or {ARMORED}) is missing or is not the one {PUBLIC_JSON} names")
     try:
         minisign_public = (public / MINISIGN_PUB).read_text(encoding="ascii")
     except OSError:
@@ -412,6 +413,34 @@ def read_public(public: Path) -> dict:
     if minisign_public.splitlines()[1:2] != [info["minisign"]]:
         raise CeremonyError(f"{MINISIGN_PUB} is not the key {PUBLIC_JSON} names")
     return info
+
+
+def public_keyring(public: Path) -> Path | None:
+    """The APT keyring of a public folder: as GnuPG exports it, or the same armored (the repository's copy)."""
+    for name in (KEYRING, ARMORED):
+        if (public / name).is_file():
+            return public / name
+    return None
+
+
+def dearmor(text: str) -> bytes:
+    """The bytes of an ASCII-armored OpenPGP public key block (RFC 4880, section 6.2)."""
+    lines = [line.strip() for line in text.strip().splitlines()]
+    try:
+        body = lines[lines.index("-----BEGIN PGP PUBLIC KEY BLOCK-----") + 1:
+                     lines.index("-----END PGP PUBLIC KEY BLOCK-----")]
+    except ValueError:
+        raise CeremonyError(f"{ARMORED} is not an armored OpenPGP public key") from None
+    if "" in body:
+        body = body[body.index("") + 1:]            # the armor headers end with an empty line
+    try:
+        return base64.b64decode("".join(line for line in body if not line.startswith("=")), validate=True)
+    except ValueError:
+        raise CeremonyError(f"{ARMORED} is damaged") from None
+
+
+def keyring_bytes(path: Path) -> bytes:
+    return dearmor(path.read_text(encoding="ascii")) if path.name == ARMORED else path.read_bytes()
 
 
 def _ed25519_key(path: Path) -> bytes:
@@ -453,7 +482,7 @@ def check_keys(keys: Path, public: Path, root_needed: bool) -> list[str]:
         found.append(f"{MINISIGN_KEY}: signs, the published key verifies (minisign itself too)")
     else:
         found.append(f"{MINISIGN_KEY}: signs, the published key verifies")
-    found.append(check_apt(keys / APT_HOME, public / KEYRING, info["apt_fingerprint"], root_needed))
+    found.append(check_apt(keys / APT_HOME, public_keyring(public), info["apt_fingerprint"], root_needed))
     return found
 
 
@@ -611,13 +640,12 @@ def lock(keys: Path) -> None:
 
 
 def where_they_go(info: dict) -> list[str]:
-    adblock = base64.b64decode(info["adblock_resources"])
     lines = [
         f"update manifest key (base64): {info['update_manifest']}",
         f"    GN: thoron_update_public_key = \"{info['update_manifest']}\" and release.py --manifest-public-key",
         f"Thoron adblock resources key (base64): {info['adblock_resources']}",
-        "    components/thoron_adblock/list_store.cc kResourcesPublicKey = "
-        "{" + ", ".join(f"0x{b:02x}" for b in adblock) + "}",
+        f"    GN: thoron_adblock_resources_public_key = \"{info['adblock_resources']}\" and release.py "
+        "--adblock-public-key",
         f"minisign public key: {info['minisign']}   (README, release notes: minisign -Vm SHA256SUMS -P <key>)",
         f"APT key fingerprint: {info['apt_fingerprint']}   (README; {KEYRING} beside the APT repository)",
     ]

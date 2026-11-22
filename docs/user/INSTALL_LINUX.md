@@ -50,8 +50,8 @@ repository (section 2a).
 ### 2a. Updates through apt
 
 Thoron's APT repository is signed with Thoron's own key, and apt trusts that key for this repository only
-([how it is made](../release/APT.md)). **It goes live with the first release**, once the owner's signing key
-exists (ROADMAP P2.10, P2.11); until then these steps have nothing to fetch.
+([how it is made](../release/APT.md)). **It goes live with the first release** (ROADMAP P2.10, P2.12); until
+then these steps have nothing to fetch. The key's fingerprint is `82F8C3647375F9842EECD9F74CA0C6EA3B45335B`.
 
 ```bash
 curl -fsSLo /tmp/thoron-archive-keyring.gpg https://github.com/KuchiSofts/thoron/releases/download/apt/thoron-archive-keyring.gpg
@@ -92,7 +92,7 @@ tar -xf thoron-<version>-linux-x64-avx2-portable.tar.xz
   `thoron` file asks for it at each start ([Portable passphrase](PORTABLE_PASSPHRASE.md#5-on-linux)).
 
 **A newer version:** a Linux portable copy looks for updates from inside Thoron, but there is no signed
-release for it to find yet (ROADMAP P2.11, P3.23). Until then, unpack the newer package and move your old
+release for it to find yet (ROADMAP P2.12). Until then, unpack the newer package and move your old
 folder's `User Data` into it (with Thoron closed).
 
 ## 4. For this user only

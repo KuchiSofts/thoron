@@ -50,6 +50,11 @@ DECISIONS = (
              "No hidden component extension that gives Google Meet pages extra system information"),
     Decision("disable_fieldtrial_testing_config", "true", _ALL,
              "No Google field-trial configuration compiled in; features keep their coded defaults"),
+    # Thoron's public keys from the key ceremony (docs/release/KEYS.md, docs/release/keys/PUBLIC-KEYS.json)
+    Decision("thoron_update_public_key", '"VfnqnfZ76GAmWa6V6UHYOoXcHLAKluq0TeqN+RvwvqI="', _ALL,
+             "Thoron's update key: the built-in updater takes only an update.json it signed"),
+    Decision("thoron_adblock_resources_public_key", '"lGdvmUJtZE+Lej3xAjNMkl3xiurR/94S9QTJ9YSGaw0="', _ALL,
+             "Thoron adblock's resources key: only scriptlets and stand-ins it signed replace the shipped ones"),
 )
 # Google API keys and OAuth client IDs must never be set to a value in a release build.
 _KEY_ARGS = re.compile(r"^(google_api_key|google_default_client_id|google_default_client_secret)$")

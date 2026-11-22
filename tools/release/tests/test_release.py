@@ -5,6 +5,7 @@ gh, and nothing contacts the network: the repository's tags and upstream's contr
 the fixture."""
 import base64
 import contextlib
+import dataclasses
 import hashlib
 import io
 import json
@@ -304,6 +305,16 @@ class AssembleTests(unittest.TestCase):
                                                             for f in files})
         self.assertEqual(found, ["thoron.exe: not signed as Windows trusts it (NotSigned)"])
 
+    def test_the_public_keys_given_must_be_the_ones_the_build_holds(self):
+        # the fixture's args.gn is composed with Thoron's decisions: the keys of docs/release/KEYS.md
+        update = "VfnqnfZ76GAmWa6V6UHYOoXcHLAKluq0TeqN+RvwvqI="
+        adblock = "lGdvmUJtZE+Lej3xAjNMkl3xiurR/94S9QTJ9YSGaw0="
+        self.assertEqual(rel.built_in_key_problems(self.f.out, update, adblock), [])
+        self.assertEqual(rel.built_in_key_problems(self.f.out, None, None), [])
+        other = "9i/S9Os0cVBrrPIeJJEiTNqJucILUa97MBNquyuERHM="
+        found = rel.built_in_key_problems(self.f.out, other, other)
+        self.assertEqual([p.split(" ")[0] for p in found], ["--manifest-public-key", "--adblock-public-key"])
+
     def test_refuses_to_overwrite_an_existing_release_folder(self):
         rel.assemble(self.f.out, self.f.dist, "158.0.8127.3000", "win-x64-avx2", self.f.buildinfo)
         with self.assertRaises(rel.ReleaseError):
@@ -364,6 +375,16 @@ class ReleaseFixture(Fixture):
         self.private, self.public = ar.keygen()
         self.adblock_private, self.adblock_public = ar.keygen()
         self.key_reads = []
+        # a release build holds Thoron's public keys (release_args.DECISIONS); this one holds the throwaway ones
+        held = {"thoron_update_public_key": self.public, "thoron_adblock_resources_public_key": self.adblock_public}
+        self.decisions = mock.patch.object(ra, "DECISIONS", tuple(
+            dataclasses.replace(d, value=f'"{text(held[d.name])}"') if d.name in held else d for d in ra.DECISIONS))
+        self.decisions.start()
+        (self.out / "args.gn").write_text(ra.compose(UPSTREAM_ARGS, "win", "test"), encoding="ascii")
+
+    def cleanup(self):
+        self.decisions.stop()
+        super().cleanup()
 
     def repo_file(self, name: str, content: str) -> Path:
         path = self.repo / name
@@ -1046,7 +1067,8 @@ class DryRunTests(ReleaseTestCase):
                                         "--min-updater-version", BUILD)
         self.assertEqual(code, 1)
         self.assertIn("release: update manifest: --manifest-key does not belong to the public key", err)
-        self.assertIn("1 problem(s); nothing was packaged", out)
+        self.assertIn("release: keys: --manifest-public-key is not the key this build holds", err)
+        self.assertIn("2 problem(s); nothing was packaged", out)
         self.assert_nothing_packaged()
 
     def test_a_build_without_thorons_version_gets_no_manifest(self):

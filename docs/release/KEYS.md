@@ -8,8 +8,8 @@ no secret: only how the keys are made, kept, used and checked, and where their p
 
 | Key | Signs | Its public half is in |
 |---|---|---|
-| `update-manifest.key` (Ed25519) | `update.json`, which the built-in updater trusts ([MANIFEST.md](../update/MANIFEST.md)) | every build: GN `thoron_update_public_key`; `release.py --manifest-public-key` |
-| `adblock-resources.key` (Ed25519) | Thoron adblock's scriptlets and stand-ins | every build: `kResourcesPublicKey` in `components/thoron_adblock/list_store.cc` |
+| `update-manifest.key` (Ed25519) | `update.json`, which the built-in updater trusts ([MANIFEST.md](../update/MANIFEST.md)) | every release build: GN `thoron_update_public_key`; `release.py --manifest-public-key` |
+| `adblock-resources.key` (Ed25519) | Thoron adblock's scriptlets and stand-ins | every release build: GN `thoron_adblock_resources_public_key` (`components/thoron_adblock/args.gni`) |
 | `minisign.key` (minisign, Ed25519) | `SHA256SUMS` of each release (`SHA256SUMS.minisig`) | the README and the release notes, for people who check a download |
 | `apt-gnupg/` (OpenPGP, Ed25519) | the APT repository's `InRelease` ([APT.md](APT.md)) | `thoron-archive-keyring.gpg` beside the repository; its fingerprint in the README |
 
@@ -17,36 +17,57 @@ The APT key has two parts: a root that only certifies, and a subkey that signs. 
 unlocked for a release. If it is lost or leaks, the root revokes it and certifies a new one, and apt follows that.
 The root's revocation certificate is in the backup (`openpgp-revocs.d`).
 
+## 1a. The public keys
+
+Made on 2026-11-22 (UTC). The same values are in [keys/PUBLIC-KEYS.json](keys/PUBLIC-KEYS.json), beside
+`minisign.pub` and the APT key as text (`thoron-archive-key.asc`).
+
+| Key | Public half |
+|---|---|
+| Update manifests | `VfnqnfZ76GAmWa6V6UHYOoXcHLAKluq0TeqN+RvwvqI=` |
+| Thoron adblock's resources | `lGdvmUJtZE+Lej3xAjNMkl3xiurR/94S9QTJ9YSGaw0=` |
+| minisign (`SHA256SUMS`) | `RWRDocGSocH5oNG44mARtklr1fwkUNQ5SaVcmWu0TCRkf196n/H6Wruf` |
+| APT (OpenPGP fingerprint) | `82F8C3647375F9842EECD9F74CA0C6EA3B45335B` |
+
+The two Ed25519 keys are release build settings (`tools/build/release_args.py`): `release.py prepare`
+refuses a release build without them, and refuses a public key given for signing that is not the one the
+build holds. A build made for testing has neither, so it asks for no update (docs/security/NETWORK.md).
+
 ## 2. How they are kept
 
 - The backup is one file, `thoron-keys-<date>.thoronkeys`. It holds all four keys and their public halves,
   encrypted with AES-256-GCM under a key derived from the passphrase with scrypt (N 2^18, r 8, p 1: 256 MiB and
   about a second for each guess). Its header is authenticated too, so a changed byte anywhere fails.
-- It is kept in two places: two USB sticks, or one stick and a cloud folder (the file is encrypted).
-- The passphrase is at least 20 characters (six or more random words are good). It is typed, never given
-  on a command line or in a file. Write it on paper and keep the paper apart from the backup. Without the
-  passphrase the keys are lost, and so is the built-in updater's trust (section 6).
+- It is kept in two places: the owner's computer and a cloud folder (the file is encrypted), or two USB sticks.
+- The passphrase is at least 20 characters. Either it is typed (six or more random words are good), or the
+  ceremony makes it: 39 random characters, about 158 bits, written only to a new file that only the owner's
+  account may read, never in a git repository or a synchronised folder, and never shown. A copy belongs
+  apart from the computer (a password manager, or paper). Without the passphrase the keys are lost, and so
+  is the built-in updater's trust (section 7).
 - Unencrypted keys never go into a git repository or a folder a cloud service synchronises: `key_ceremony.py`
   refuses both. `release.py` refuses a key inside the repository, the build tree or the release folder.
 
-## 3. The ceremony (owner, once)
+## 3. The ceremony (once)
+
+Done on 2026-11-22 (UTC), as below, with the passphrase made by the ceremony and the backup in two places.
 
 On Windows, the ceremony runs in a Windows Sandbox with no network. The keys exist unencrypted only inside
 the Sandbox, and Windows deletes it when it shuts down. The Sandbox can read the ceremony, this Python with
-`cryptography`, and Git for Windows (its GnuPG); it can write only to the folder you name.
+`cryptography`, and Git for Windows (its GnuPG); it can write only to the folder named with `--out`.
 
-1. Turn on Windows Sandbox if it is off (Windows features), and plug in a USB stick.
-2. Run, naming a new folder on the stick:
+```powershell
+py -3 -I tools/release/key_ceremony_sandbox.py --out <new local folder> `
+    --make-passphrase <new file in a private local folder> --copy-to <a second place, a cloud folder is fine>
+```
 
-   ```powershell
-   py -3 -I tools/release/key_ceremony_sandbox.py --out <stick>\thoron-keys
-   ```
+1. The Sandbox makes the keys, writes the encrypted backup, copies the public halves out, deletes the keys
+   and runs the restore test on the backup. Then it shuts itself down.
+2. `--out` now holds `thoron-keys-<date>.thoronkeys` and `public\`; `--copy-to` holds a copy of the backup,
+   checked byte for byte.
+3. `public\` holds only public keys. They go into the release build settings and the README (section 1a).
 
-3. A console window opens in the Sandbox. Type the passphrase twice for the backup, then once more for the
-   restore test, and press Enter at the end. The Sandbox shuts itself down.
-4. `<stick>\thoron-keys` now holds `thoron-keys-<date>.thoronkeys` and `public\`. Copy the backup file to a second
-   place.
-5. Hand over `public\`: it holds only public keys. They go into the build and the README (section 1).
+Without `--make-passphrase`, a console window opens in the Sandbox: type the passphrase twice for the
+backup, then once more for the restore test, and press Enter at the end.
 
 Without Windows Sandbox, the same steps run on a computer with no network (cable out, Wi-Fi off). `make`
 refuses to run while the computer has a network route:
@@ -75,8 +96,7 @@ root stays in the backup). It prints the options to use: `release.py prepare --m
 py -3 -I tools/release/key_ceremony.py lock --keys <folder>
 ```
 
-`py -3 -I tools/release/key_ceremony.py show --public <folder>\public` prints where each public half goes,
-including the C++ array for `kResourcesPublicKey`.
+`py -3 -I tools/release/key_ceremony.py show --public <folder>\public` prints where each public half goes.
 
 ## 5. Checking the backup
 
@@ -85,7 +105,8 @@ signature must verify under the public halves as published, the APT one under a 
 published keyring, and made by the subkey. The test also checks that the root's secret and its revocation
 certificate are there, then deletes the folder. Run it after every copy to a new medium, and once a year.
 
-What was tested on 2026-11-22, with throwaway keys deleted afterwards:
+The ceremony of 2026-11-22: the restore test passed in the Sandbox, and both copies of the backup are the
+same bytes. What was tested before it, on the same day, with throwaway keys deleted afterwards:
 
 - In a Windows Sandbox with no network, the whole ceremony ran and marked the keys as made offline. Only the backup, the
   public halves and the result came out, and the backup then restored and passed the restore test outside the

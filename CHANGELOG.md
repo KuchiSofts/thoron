@@ -7,6 +7,7 @@ Explanations live in the design docs under `docs/design/`.
 ## [Unreleased]
 
 ### Added
+- **Release:** Thoron's release keys are made. The public keys are in the README and `docs/release/keys`; release builds hold the update and ad blocker keys, and a release is refused when a key it signs with is not the one the build holds.
 - **Release:** the key ceremony is ready: the four release keys made with no network (in a Windows Sandbox, or on an offline computer), kept in one encrypted backup, checked by a restore test that signs with each key, and unlocked only while a release is signed (`docs/release/KEYS.md`).
 - **Release:** code signing is ready for Thoron's certificate: every program and library of a Windows release (inside the installer too) signed with Authenticode, SHA-256 and a timestamp, and checked (`docs/release/SIGNING.md`).
 - **Legal:** a version of the build configuration patch without the 36 lines whose author publishes no licence is ready and published (`source/alternatives/`), for a release made without his answer.

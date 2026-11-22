@@ -7,8 +7,8 @@ follow it from the first notice to the draft release. The targets are those of t
 - **7 days** from a Chrome release that fixes a bug exploited in the wild to the Thoron release;
 - **14 days** from a new Chrome major version.
 
-Status: written 2026-11-16; first drill 2026-11-17 (section 8). There is no public release yet, so
-the release step still lacks its keys (ROADMAP **P2.11**); the steps that depend on them say so. What a
+Status: written 2026-11-16; first drill 2026-11-17 (section 8). There is no public release yet. The
+release keys exist since 2026-11-22 (ROADMAP **P2.11**, `docs/release/KEYS.md`) and are unlocked only to sign. What a
 fix must not break is in the [threat model](THREAT_MODEL.md).
 
 ## 1. What to watch

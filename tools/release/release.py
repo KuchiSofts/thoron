@@ -1201,6 +1201,21 @@ def read_signing_key(path: Path, option: str, keep_out_of) -> bytes:
         raise ReleaseError(f"{option}: {exc}") from None
 
 
+def built_in_key_problems(out: Path, manifest_public_key: str | None, adblock_public_key: str | None) -> list[str]:
+    """A public key given for signing that is not the one the build holds inside (args.gn): its copies would
+    refuse what is signed (docs/release/KEYS.md)."""
+    try:
+        args = release_args.parse((out / "args.gn").read_text(encoding="utf-8"))
+    except (OSError, release_args.ArgsError):
+        return []       # preflight says what is wrong with args.gn
+    found = []
+    for given, name, option in ((manifest_public_key, "thoron_update_public_key", "--manifest-public-key"),
+                                (adblock_public_key, "thoron_adblock_resources_public_key", "--adblock-public-key")):
+        if given is not None and args.get(name, '""').strip('"') != given:
+            found.append(f"{option} is not the key this build holds ({name} in args.gn)")
+    return found
+
+
 def public_key_from(text: str, option: str) -> bytes:
     """A public key as given on the command line: 32 bytes in base64 that are a usable key."""
     try:
@@ -1527,6 +1542,7 @@ def _prepare(a) -> int:
     problems += [f"BUILDINFO: {p}" for p in source_problems(info, thoron, chromium_new)]
     licences, found = licence_texts(a.repo, a.src)
     problems += [f"licences: {p}" for p in found]
+    problems += [f"keys: {p}" for p in built_in_key_problems(a.out, a.manifest_public_key, a.adblock_public_key)]
     if chrome_bin is not None:
         problems += [f"portable package: {p}"
                      for p in portable_problems(chrome_bin, version, a.variant, launcher, updater, info.get("variant"))]

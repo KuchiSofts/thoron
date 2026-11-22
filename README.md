@@ -6,7 +6,7 @@
 
 **A fast, secure and private browser for Windows, based on Thorium and Chromium.**
 
-[![Status](https://img.shields.io/badge/status-pre--release-F72F8E?style=flat-square)](#roadmap) <!-- progress-badge:start -->[![Roadmap progress](https://img.shields.io/badge/roadmap-79%25-7B2FF7?style=flat-square)](#roadmap)<!-- progress-badge:end --> [![Platforms](https://img.shields.io/badge/platforms-Windows%20first-24292f?style=flat-square)](#platforms) [![CPU](https://img.shields.io/badge/cpu-x64%20%7C%20ARM64-24292f?style=flat-square)](#platforms) [![License](https://img.shields.io/badge/license-BSD--3--Clause-24292f?style=flat-square)](LICENSE.md)
+[![Status](https://img.shields.io/badge/status-pre--release-F72F8E?style=flat-square)](#roadmap) <!-- progress-badge:start -->[![Roadmap progress](https://img.shields.io/badge/roadmap-80%25-7B2FF7?style=flat-square)](#roadmap)<!-- progress-badge:end --> [![Platforms](https://img.shields.io/badge/platforms-Windows%20first-24292f?style=flat-square)](#platforms) [![CPU](https://img.shields.io/badge/cpu-x64%20%7C%20ARM64-24292f?style=flat-square)](#platforms) [![License](https://img.shields.io/badge/license-BSD--3--Clause-24292f?style=flat-square)](LICENSE.md)
 
 [Why Thoron](#why-thoron) · [Features](#features) · [Install and update](#install-and-update) · [Versions](#versions) · [Roadmap](#roadmap) · [Platforms](#platforms) · [Verify](#verifying-downloads) · [Security](#security) · [Contributing](#contributing) · [Credits](#credits) · [Wiki](https://github.com/KuchiSofts/thoron/wiki)
 
@@ -78,13 +78,13 @@ changed in each version is in the [changelog](CHANGELOG.md), one line per change
 Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always current.
 
 <!-- roadmap:start -->
-**Overall:** `████████████████░░░░` 169 of 213 tasks done (79%) · roadmap updated 2026-11-19
+**Overall:** `████████████████░░░░` 170 of 213 tasks done (80%) · roadmap updated 2026-11-19
 
 | Area | Progress | Done | Status |
 |---|---|---|---|
 | [P0 - Foundation](ROADMAP.md#p0---foundation) | `████████████████████` | 11/11 | ✅ Done |
 | [P1 - Build environment](ROADMAP.md#p1---build-environment) | `██████████████████░░` | 9/10 | 🔄 In progress |
-| [P2 - First release](ROADMAP.md#p2---first-release) | `██████████████░░░░░░` | 18/26 | 🔄 In progress |
+| [P2 - First release](ROADMAP.md#p2---first-release) | `███████████████░░░░░` | 19/26 | 🔄 In progress |
 | [P2b - ARM64](ROADMAP.md#p2b---arm64) | `████████░░░░░░░░░░░░` | 2/5 | 🔄 In progress · ⛔ blocked item |
 | [P3 - Updater v1 + Import](ROADMAP.md#p3---updater-v1--import) | `███████████████░░░░░` | 17/23 | 🔄 In progress |
 | [P4 - Updater v2](ROADMAP.md#p4---updater-v2) | `████████████████░░░░` | 9/11 | 🔄 In progress |
@@ -146,7 +146,7 @@ Generated from [`ROADMAP.md`](ROADMAP.md) on every change, so it is always curre
 - [ ] **P2.8** Windows packaging: Thoron mini_installer, portable `.zip` with launcher
 - [x] **P2.9** Linux packaging: `.deb` with an AppArmor profile for user namespaces, plus portable `.tar.xz`
 - [ ] **P2.10** Signed APT repository on GitHub Pages (fixes the unsigned-repo problem of upstream #1164 and #1049)
-- [ ] **P2.11** Key ceremony: Ed25519 release key (minisign) and APT signing key, offline root, encrypted backups
+- [x] **P2.11** Key ceremony: Ed25519 release key (minisign) and APT signing key, offline root, encrypted backups
 - [ ] **P2.12** Release script `tools/release/release.py`: build matrix → package → `SHA256SUMS` → sign → `BUILDINFO` → **draft** GitHub release; sets the version and refuses a non-increasing one with `tools/release/version.py` (P2.14)
 - [ ] **P2.13** `tools/release/changelog.py`: release notes generated from commit prefixes, upstream merges (author-credited), the Chromium version diff and security fixes (CVE and severity), patch changes, and issues
 - [x] **P2.14** Version scheme for Thoron rebuilds of the same Chromium version (4-part numeric, Windows-installer compatible)
@@ -371,9 +371,16 @@ Windows comes first. ARM64 builds stay labelled *beta* until they have been test
 
 ## Verifying downloads
 
-Each release will include `SHA256SUMS` and its signature `SHA256SUMS.minisig`. The public key will be
-published here and in the release notes with the first release. How the release keys are made and kept:
-[docs/release/KEYS.md](docs/release/KEYS.md).
+Each release will include `SHA256SUMS` and its signature `SHA256SUMS.minisig`, signed with Thoron's
+minisign key:
+
+```
+RWRDocGSocH5oNG44mARtklr1fwkUNQ5SaVcmWu0TCRkf196n/H6Wruf
+```
+
+The APT repository is signed with the OpenPGP key `82F8C3647375F9842EECD9F74CA0C6EA3B45335B`.
+Both are also in [docs/release/keys](docs/release/keys), with the keys built into Thoron, and the release
+notes repeat them. How the keys are made and kept: [docs/release/KEYS.md](docs/release/KEYS.md).
 
 **Always do both steps.** A checksum alone only proves the file matches `SHA256SUMS`. The signature
 proves `SHA256SUMS` itself came from Thoron. [minisign](https://jedisct1.github.io/minisign/) is
@@ -381,13 +388,13 @@ available for Windows and Ubuntu.
 
 ```powershell
 # Windows (PowerShell)
-minisign -Vm SHA256SUMS -P <thoron-public-key>            # 1. the checksum list is genuine
+minisign -Vm SHA256SUMS -P RWRDocGSocH5oNG44mARtklr1fwkUNQ5SaVcmWu0TCRkf196n/H6Wruf   # 1. the checksum list is genuine
 Get-FileHash .\thoron-<version>-win-x64-avx2-installer.exe -Algorithm SHA256  # 2. its line in SHA256SUMS
 ```
 
 ```shell
 # Ubuntu
-minisign -Vm SHA256SUMS -P <thoron-public-key>            # 1. the checksum list is genuine
+minisign -Vm SHA256SUMS -P RWRDocGSocH5oNG44mARtklr1fwkUNQ5SaVcmWu0TCRkf196n/H6Wruf   # 1. the checksum list is genuine
 sha256sum --check --ignore-missing SHA256SUMS              # 2. your download matches it
 ```
 

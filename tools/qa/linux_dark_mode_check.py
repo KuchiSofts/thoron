@@ -36,6 +36,8 @@ REPO = Path(__file__).resolve().parents[2]
 STEPS = (("starts light", "default", False), ("goes dark", "prefer-dark", True), ("back light", "default", False))
 
 SCRIPT = r"""#!/bin/bash
+# Other work may share this WSL machine: if memory runs out, the kernel ends this check's processes first.
+echo 1000 > /proc/self/oom_score_adj 2>/dev/null
 # As root inside a clean test machine: $1 work folder, $2 Thoron's .deb, $3 tools
 set -u
 W="$1"; DEB="$2"; TOOLS="$3"

@@ -80,6 +80,8 @@ VALUES = (("Login Data", "logins", "password_value"), ("Login Data", "password_n
           ("Network/Cookies", "cookies", "encrypted_value"), ("Cookies", "cookies", "encrypted_value"))
 
 SCRIPT = r"""#!/bin/bash
+# Other work may share this WSL machine: if memory runs out, the kernel ends this check's processes first.
+echo 1000 > /proc/self/oom_score_adj 2>/dev/null
 # As root inside a clean test machine: $1 work folder, $2 the portable .tar.xz, $3 the .deb (for its dependencies),
 # $4 tools
 set -u

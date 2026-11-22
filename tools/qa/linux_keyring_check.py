@@ -51,6 +51,8 @@ SECOND = {"url": "https://example.com/sign-in", "username": "thoron-keyring-test
 STEPS = ("thorium saves", "imported", "thoron saves", "one key")
 
 SCRIPT = r"""#!/bin/bash
+# Other work may share this WSL machine: if memory runs out, the kernel ends this check's processes first.
+echo 1000 > /proc/self/oom_score_adj 2>/dev/null
 # As root inside a clean test machine: $1 work folder, $2 Thoron's .deb, $3 upstream's .deb, $4 tools
 set -u
 W="$1"; DEB="$2"; UP="$3"; TOOLS="$4"
@@ -78,6 +80,8 @@ echo done > "$out/reached"
 """
 
 KDE_SCRIPT = r"""#!/bin/bash
+# Other work may share this WSL machine: if memory runs out, the kernel ends this check's processes first.
+echo 1000 > /proc/self/oom_score_adj 2>/dev/null
 # As root inside a clean test machine: $1 work folder, $2 Thoron's .deb, $3 upstream's .deb, $4 tools, $5 the
 # check whose probe runs in the KDE session (a file of tools/qa)
 set -u
@@ -101,6 +105,8 @@ echo done > "$out/reached"
 """
 
 KDE_SESSION = r"""#!/bin/bash
+# Other work may share this WSL machine: if memory runs out, the kernel ends this check's processes first.
+echo 1000 > /proc/self/oom_score_adj 2>/dev/null
 # As the user tester in a D-Bus session: $1 results folder, $2 tools, $3 KWallet's version (5 or 6), $4 the check
 out="$1"; TOOLS="$2"; kde="$3"; CHECK="$4"
 call() { gdbus call --session --dest "$1" --object-path "$2" --method "org.kde.KWallet.$3" "${@:4}" 2>&1; }

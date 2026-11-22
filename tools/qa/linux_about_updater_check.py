@@ -32,6 +32,8 @@ REPO = Path(__file__).resolve().parents[2]
 STEPS = ("deb", "portable")
 
 SCRIPT = r"""#!/bin/bash
+# Other work may share this WSL machine: if memory runs out, the kernel ends this check's processes first.
+echo 1000 > /proc/self/oom_score_adj 2>/dev/null
 # As root inside a clean test machine: $1 work folder, $2 the .deb, $3 the portable .tar.xz, $4 tools, $5 --expect-key or ""
 set -u
 W="$1"; DEB="$2"; ARCHIVE="$3"; TOOLS="$4"; KEY="$5"

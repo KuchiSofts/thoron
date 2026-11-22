@@ -38,6 +38,8 @@ PAGE = ("data:text/html,<title>t</title><p id=x>sse4 smoke</p>"
         "<script>document.getElementById('x').textContent += ' ' + (6*7)</script>")
 
 SCRIPT = r"""#!/bin/bash
+# Other work may share this WSL machine: if memory runs out, the kernel ends this check's processes first.
+echo 1000 > /proc/self/oom_score_adj 2>/dev/null
 # As root inside a clean test machine: $1 the SSE4 .deb, $2 the AVX2 .deb, $3 the results folder
 set -uo pipefail
 SSE4="$1"; AVX2="$2"; OUT="$3"

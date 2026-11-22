@@ -59,6 +59,10 @@ back on the VM's second serial port. This PC's WSL exposes no virtualisation to 
 QEMU emulates the processor: one run takes about 15 minutes. The kernel is Ubuntu's (6.8), AppArmor is on and
 unprivileged user namespaces are restricted, as on the desktop; there is still no desktop session.
 
+**Sharing the WSL machine.** Every WSL distribution runs in one virtual machine, so a test machine shares its
+memory with whatever else runs in WSL on the PC. Each check's script marks its processes as the first the
+kernel ends when memory runs out (`oom_score_adj` 1000), so a check never costs other work its processes.
+
 The checks that use them, each from Windows, each putting the machines back to their clean state first:
 
 | Check | What it proves |

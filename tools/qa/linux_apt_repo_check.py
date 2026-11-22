@@ -42,6 +42,8 @@ PORT = 8098
 BASE = f"http://127.0.0.1:{PORT}/KuchiSofts/thoron/releases/download/"
 
 SCRIPT = r"""#!/bin/bash
+# Other work may share this WSL machine: if memory runs out, the kernel ends this check's processes first.
+echo 1000 > /proc/self/oom_score_adj 2>/dev/null
 # As root inside a clean test machine: $1 work folder, $2 tools, $3.. the packages as variant=path
 set -u
 W="$1"; TOOLS="$2"; shift 2

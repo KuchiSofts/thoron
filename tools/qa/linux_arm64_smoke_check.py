@@ -36,6 +36,8 @@ PAGE = ("data:text/html,<title>t</title><p id=x>arm64 smoke</p>"
         "<script>document.getElementById('x').textContent += ' ' + (6*7)</script>")
 
 SCRIPT = r"""#!/bin/bash
+# Other work may share this WSL machine: if memory runs out, the kernel ends this check's processes first.
+echo 1000 > /proc/self/oom_score_adj 2>/dev/null
 # As root inside a clean x64 test machine: $1 the ARM64 .deb, $2 the results folder, $3 install or run
 set -uo pipefail
 DEB="$1"; OUT="$2"; STEP="$3"

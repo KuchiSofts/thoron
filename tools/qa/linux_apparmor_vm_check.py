@@ -49,6 +49,8 @@ BEGIN, END = "=====THORON-RESULTS-BEGIN=====", "=====THORON-RESULTS-END====="
 
 # As root in a clean test machine: $1 work folder, $2 the .deb, $3 the portable .tar.xz, $4 tools, $5 image cache
 HOST_SCRIPT = r"""#!/bin/bash
+# Other work may share this WSL machine: if memory runs out, the kernel ends this check's processes first.
+echo 1000 > /proc/self/oom_score_adj 2>/dev/null
 set -u
 W="$1"; DEB="$2"; ARCHIVE="$3"; TOOLS="$4"; CACHE="$5"
 out="$W/out"; rm -rf "$out"; mkdir -p "$out"
@@ -99,6 +101,8 @@ META_DATA = "instance-id: thoron-apparmor-check\nlocal-hostname: thoron-apparmor
 
 # Inside the VM, as root: the four steps; the results go out on the second serial port.
 VM_SCRIPT = r"""#!/bin/bash
+# Other work may share this WSL machine: if memory runs out, the kernel ends this check's processes first.
+echo 1000 > /proc/self/oom_score_adj 2>/dev/null
 set -u
 H=http://10.0.2.2:18099
 # a folder the user tester can write in (root's own is closed to it)

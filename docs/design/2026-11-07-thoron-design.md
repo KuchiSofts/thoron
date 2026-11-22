@@ -336,8 +336,9 @@ Upstream and ours can coexist on the same machine. Version numbers are independe
   - **Windows:** the DPAPI-wrapped key travels inside the copied `Local State`, which works because it
     is the same Windows user.
   - **Linux:** upstream's key lives in the system keyring under `Chromium Safe Storage`, which Thoron
-    reads too, so the copied passwords stay readable as they are. This still gets its own test on
-    GNOME and KDE, because a wrong keyring name silently makes every saved password unreadable.
+    reads too, so the copied passwords stay readable as they are. This has its own test on GNOME and
+    KDE, because a wrong keyring name silently makes every saved password unreadable
+    (`tools/qa/linux_keyring_check.py`, GNOME's keyring and, with `--desktop kde`, KWallet 5 and 6).
 - **Extensions:** they come along in the copy. The frozen Chrome Web Store copy of uBlock Origin
   triggers the optional migration in §10.
 - **Afterwards:** the import never disables, modifies or uninstalls upstream Thorium or its updater.

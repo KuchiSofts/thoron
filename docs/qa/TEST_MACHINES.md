@@ -43,6 +43,15 @@ rule for unprivileged user namespaces, P2.9 and S.5) is not what a desktop Ubunt
 (Wayland and X11 windows, no GNOME or KDE session and no GNOME keyring unless one is installed for a test). A
 check that needs those says so and still needs a full Ubuntu desktop.
 
+**KDE's KWallet without a desktop.** A KDE session's wallet is made and opened at sign-in by KDE's PAM module,
+which hands the wallet daemon a hash of the password (`pamOpen`). The KDE checks do the same over D-Bus with a
+made-up hash, in a D-Bus session that says it is KDE's (`XDG_CURRENT_DESKTOP=KDE`), so the first-use dialog
+never comes and the browsers choose KWallet by themselves. KWallet asks nothing when a program opens an open
+wallet unless "Prompt on Open" is set (it is not by default). Since KWallet 6.24 the wallets live in `ksecretd`,
+with `kwalletd6` in front of it; the login path goes to `ksecretd`, which must run before the wallet is made, or
+the front sees no wallet and the browser waits on it. KWallet's programs run on a virtual display inside the
+test machine (Xvfb), nothing on the PC's screen.
+
 **Ubuntu's own kernel, with AppArmor.** For the AppArmor side, `tools/qa/linux_apparmor_vm_check.py` boots
 Ubuntu 24.04's own cloud image (from cloud-images.ubuntu.com, its `SHA256SUMS` checked with `gpgv` against
 Ubuntu's cloud image key) in QEMU inside a test machine, with cloud-init doing the steps and the results coming
@@ -59,4 +68,5 @@ The checks that use them, each from Windows, each putting the machines back to t
 | `tools/qa/linux_apparmor_vm_check.py` | on Ubuntu's own kernel with AppArmor: the `.deb`'s profile is loaded and its `chrome://sandbox` is on; the portable copy without a profile says so and refuses to run without its sandbox; with the README's profile it is sandboxed (S.5, D.2) |
 | `tools/qa/linux_apt_repo_check.py` | Thoron's signed APT repository with apt: update, install, an upgrade that keeps the SSE4.2 package, and a changed, foreign-key, expired or mismatched index refused (P2.10) |
 | `tools/qa/linux_portable_lock_check.py` | the Linux portable copy locked with a passphrase: the launcher's question, the values encrypted again, recovery key, remember this PC, change, removal (P4.9) |
-| `tools/qa/linux_keyring_check.py` | with GNOME's keyring, a password Thorium saved is readable in Thoron after the profile is copied, Thoron's own survive a restart, all encrypted with the keyring's key, which both share (P3.16, P5.8) |
+| `tools/qa/linux_keyring_check.py` | with GNOME's keyring, and with `--desktop kde` with KDE's KWallet (6 on Ubuntu 26.04, 5 on 24.04): a password Thorium saved is readable in Thoron after the profile is copied, Thoron's own survive a restart, all encrypted with the keyring's key, which both share (P3.16, P5.8) |
+| `tools/qa/linux_settings_import_check.py` | Settings' import from Thorium on Linux: bookmarks, history, both kinds of saved password and a cookie come over, the report counts them, Thorium's files are untouched; with GNOME's keyring, and with `--desktop kde` with KDE's KWallet (6 on 26.04, 5 on 24.04) (P3.14) |

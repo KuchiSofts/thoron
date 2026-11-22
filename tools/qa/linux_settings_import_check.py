@@ -21,8 +21,12 @@ headless, through DevTools on 127.0.0.1:
                 both passwords and the cookie counted, and no address or other value
     untouched   Thorium's files are as they were before the import
 
+--desktop kde does the same with KDE's KWallet in place of GNOME's keyring, set up as linux_keyring_check.py
+--desktop kde sets it up (the wallet opened as at sign-in, the browsers choosing KWallet by themselves): Thoron's
+import then reads Thorium's key from the open wallet.
+
     py -3 -I tools/qa/linux_settings_import_check.py --deb <thoron-browser_*.deb> --upstream <thorium-browser_*.deb>
-        --root <test machines folder> --work <scratch> [--machine thoron-test-2604]
+        --root <test machines folder> --work <scratch> [--machine thoron-test-2604] [--desktop kde]
 Exit status 0 only when every step passes on every machine.
 """
 from __future__ import annotations
@@ -174,13 +178,13 @@ IMPORT_JS = r"""
 """
 
 
-def probe(tools: Path, out: Path) -> int:
+def probe(tools: Path, out: Path, store: str = "gnome-libsecret") -> int:
     from tools.qa.linux_keyring_check import Browser
     home = Path.home()
     thorium, thoron = home / ".config/thorium", home / ".config/thoron"
     found: dict = {}
     try:
-        b = Browser("/usr/bin/thorium-browser", thorium)
+        b = Browser("/usr/bin/thorium-browser", thorium, store)
         found["source_added"] = b.add(KEYRING_PASSWORD)
         found["source_cookie"] = _call(b.page, "Network.setCookie", name=COOKIE["name"], value=COOKIE["value"],
                                        domain=COOKIE["domain"], path="/", secure=True, httpOnly=True,
@@ -192,7 +196,7 @@ def probe(tools: Path, out: Path) -> int:
         _add_bookmark_and_history(thorium)
         time.sleep(30)        # the import refuses a profile written a moment ago
         found["before"] = _hashes(thorium)
-        b = Browser("/usr/bin/thoron-browser", thoron)
+        b = Browser("/usr/bin/thoron-browser", thoron, store)
         settings = _page(b, "chrome://settings/importData")
         value = _call(settings, "Runtime.evaluate", wait=300, expression=IMPORT_JS, returnByValue=True,
                       awaitPromise=True)
@@ -203,7 +207,7 @@ def probe(tools: Path, out: Path) -> int:
         b.close()
         time.sleep(5)
         found["after"] = _hashes(thorium)
-        b = Browser("/usr/bin/thoron-browser", thoron)
+        b = Browser("/usr/bin/thoron-browser", thoron, store)
         found["readable"] = b.readable()
         found["cookies"] = _cookies(b)
         b.close()
@@ -268,7 +272,9 @@ def problems(found: dict) -> dict[str, list[str]]:
     return out
 
 
-def run_machine(name: str, root: Path, work: Path, deb: Path, upstream: Path) -> tuple[dict[str, list[str]], dict]:
+def run_machine(name: str, root: Path, work: Path, deb: Path, upstream: Path,
+                desktop: str = "gnome") -> tuple[dict[str, list[str]], dict]:
+    from tools.qa import linux_keyring_check as keyring
     from tools.qa import linux_package_check as lp
     from tools.qa import wsl_test_vm as vm
     vm.restore(root, name)
@@ -276,11 +282,17 @@ def run_machine(name: str, root: Path, work: Path, deb: Path, upstream: Path) ->
     shutil.rmtree(folder, ignore_errors=True)
     folder.mkdir(parents=True)
     script = folder / "check.sh"
-    script.write_bytes(SCRIPT.encode("utf-8"))
+    extra = []
+    if desktop == "kde":      # KDE's KWallet, made and opened as at sign-in (linux_keyring_check.py --desktop kde)
+        script.write_bytes(keyring.KDE_SCRIPT.encode("utf-8"))
+        (folder / "kde-session.sh").write_bytes(keyring.KDE_SESSION.encode("utf-8"))
+        extra = [Path(__file__).name]
+    else:
+        script.write_bytes(SCRIPT.encode("utf-8"))
     tools = folder / "tools"
     shutil.copytree(REPO / "tools", tools, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
     done = subprocess.run(["wsl.exe", "-d", vm.checked_name(name), "-u", "root", "--", "bash", lp.wsl_path(script),
-                           lp.wsl_path(folder), lp.wsl_path(deb), lp.wsl_path(upstream), lp.wsl_path(tools)],
+                           lp.wsl_path(folder), lp.wsl_path(deb), lp.wsl_path(upstream), lp.wsl_path(tools), *extra],
                           capture_output=True, timeout=2400)
     (folder / "run-output.txt").write_bytes(done.stdout + done.stderr)
     out = folder / "out"
@@ -301,21 +313,24 @@ def main(argv: list[str]) -> int:
     pr = sub.add_parser("probe", help="inside a test machine (used by the check itself)")
     pr.add_argument("--tools", type=Path, required=True)
     pr.add_argument("--out", type=Path, required=True)
+    pr.add_argument("--store", default="gnome-libsecret", help='"desktop": the browser chooses (no --password-store)')
     p.add_argument("--deb", type=Path)
     p.add_argument("--upstream", type=Path)
     p.add_argument("--root", type=Path)
     p.add_argument("--work", type=Path)
     p.add_argument("--machine", action="append")
+    p.add_argument("--desktop", choices=("gnome", "kde"), default="gnome")
     a = p.parse_args(argv)
     if a.command == "probe":
-        return probe(a.tools, a.out)
+        return probe(a.tools, a.out, a.store)
     if not (a.deb and a.upstream and a.root and a.work):
         p.error("--deb, --upstream, --root and --work are needed")
     from tools.qa import wsl_test_vm as vm
     failed = 0
     for name in a.machine or vm.MACHINES:
-        print(f"== {name}")
-        issues_by_step, _ = run_machine(name, a.root, a.work.resolve(), a.deb.resolve(), a.upstream.resolve())
+        print(f"== {name} ({'KDE, KWallet' if a.desktop == 'kde' else 'GNOME, its keyring'})")
+        issues_by_step, _ = run_machine(name, a.root, a.work.resolve(), a.deb.resolve(), a.upstream.resolve(),
+                                        a.desktop)
         for step, issues in issues_by_step.items():
             print(f"{'PASS' if not issues else 'FAIL'}  {step}")
             for issue in issues:

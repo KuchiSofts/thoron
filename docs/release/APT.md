@@ -69,6 +69,6 @@ before `Valid-Until` passes, the same packages are signed again:
 py -3 -I tools/release/apt_repo.py resign --repo <apt folder> --gnupg-home <...> --key <fingerprint>
 ```
 
-`resign` checks first that every package is the one the index names. The signing key is the owner's APT key
-(ROADMAP P2.11, `docs/release/KEYS.md`); it never leaves the owner's machine, and its public fingerprint goes in
-the README.
+`resign` checks first that every package is the one the index names. The signing key is the APT key's signing
+subkey, unlocked from the encrypted backup for the time it signs (`key_ceremony.py unlock`, [KEYS.md](KEYS.md),
+ROADMAP P2.11); the key's root stays in the backup, and its fingerprint goes in the README.

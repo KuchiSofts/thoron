@@ -372,7 +372,8 @@ Windows comes first. ARM64 builds stay labelled *beta* until they have been test
 ## Verifying downloads
 
 Each release will include `SHA256SUMS` and its signature `SHA256SUMS.minisig`. The public key will be
-published here and in the release notes with the first release.
+published here and in the release notes with the first release. How the release keys are made and kept:
+[docs/release/KEYS.md](docs/release/KEYS.md).
 
 **Always do both steps.** A checksum alone only proves the file matches `SHA256SUMS`. The signature
 proves `SHA256SUMS` itself came from Thoron. [minisign](https://jedisct1.github.io/minisign/) is

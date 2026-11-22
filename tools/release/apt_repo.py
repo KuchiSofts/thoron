@@ -42,6 +42,7 @@ from pathlib import Path
 if __package__ in (None, ""):  # running as a script: make `tools` importable
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from tools.release import elf_check  # noqa: E402
+from tools.release.key_ceremony import gnupg_path  # noqa: E402
 
 PACKAGE = "thoron-browser"
 SSE4_PACKAGE = "thoron-browser-sse4"
@@ -193,7 +194,7 @@ def release_text(files: dict[str, bytes], architectures: list[str], now: dt.date
 
 def sign(release: bytes, gnupg_home: Path, key: str) -> tuple[bytes, bytes]:
     """InRelease (clear-signed) and Release.gpg (detached, armoured), with gpg and the key in `gnupg_home`."""
-    base = ["gpg", "--homedir", str(gnupg_home), "--batch", "--yes", "--no-tty", "--local-user", key,
+    base = ["gpg", "--homedir", gnupg_path(gnupg_home), "--batch", "--yes", "--no-tty", "--local-user", key,
             "--digest-algo", "SHA512"]
     inrelease = subprocess.run(base + ["--clearsign"], input=release, capture_output=True)
     detached = subprocess.run(base + ["--armor", "--detach-sign"], input=release, capture_output=True)
@@ -204,7 +205,7 @@ def sign(release: bytes, gnupg_home: Path, key: str) -> tuple[bytes, bytes]:
 
 
 def public_keyring(gnupg_home: Path, key: str) -> bytes:
-    done = subprocess.run(["gpg", "--homedir", str(gnupg_home), "--batch", "--export", key], capture_output=True)
+    done = subprocess.run(["gpg", "--homedir", gnupg_path(gnupg_home), "--batch", "--export", key], capture_output=True)
     if done.returncode != 0 or not done.stdout:
         raise AptError("gpg could not export the public key")
     return done.stdout

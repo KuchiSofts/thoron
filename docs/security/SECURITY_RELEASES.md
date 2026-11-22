@@ -331,6 +331,7 @@ and the cause becomes a roadmap task.
 [ ] portable_update_check.py --previous <last release's portable .zip> --report: PASSED
 [ ] release.py prepare with --security and --highlights: no problem; NOTES.md names the fixes, in-the-wild ones first
 [ ] The release folder holds the installer, the portable .zip, BUILDINFO and the licence bundle
+[ ] The keys unlocked from the backup for this release (key_ceremony.py unlock), locked after (lock)
 [ ] SHA256SUMS signed and the signature verified
 [ ] update.json signed (critical for class A and E) and verified with manifest.py verify
 [ ] netlog_hosts.py --json of this build given to prepare --network-report: every host in NETWORK.md

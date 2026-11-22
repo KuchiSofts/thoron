@@ -60,8 +60,9 @@ How to read the tables:
    read and changed by whoever holds it. Only the passphrase, the recovery key and a remembered PC's
    OS store are outside the attacker's reach.
 6. **Portable drive in use.** The PC it is plugged into is trusted while the profile is unlocked.
-7. **Signing key to the rest.** The private key is outside the repository, GitHub and every log. Where
-   it is while it signs is open question 2.
+7. **Signing key to the rest.** The private key is outside the repository, GitHub and every log. It is
+   on the release computer only while a release is signed: unlocked from the encrypted backup, then deleted
+   (`key_ceremony.py unlock` and `lock`, `docs/release/KEYS.md`; open question 2).
 
 ## 4. Updater
 
@@ -254,7 +255,9 @@ The C++ tests are in `thoron_update_unittests` (the `*_unittest.cc` files of
    The script reads a key only from the file it is given and refuses a key file inside the repository,
    the build tree or the release folder. Either that is accepted (key on removable, encrypted media,
    present only for the signing), or `SHA256SUMS` and the manifest are carried to a machine that is
-   never online, or a hardware token signs.
+   never online, or a hardware token signs. Taken for now on 2026-11-22 (P2.11): the first, with the keys
+   made in a Windows Sandbox with no network and unlocked from their encrypted backup only for the signing
+   (`docs/release/KEYS.md`); the owner can still choose another.
 3. **How long a manifest is valid** (`expires`), and who signs it again when no release is due. A short
    time narrows the freeze window (residual 3 of the updater) but needs the offline key more often.
 4. **Extensions in an import from another browser:** installed again from their store by ID
